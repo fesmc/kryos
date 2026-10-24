@@ -15,8 +15,8 @@ of the stack) that other programs can link, one driver program for N domains
 that is itself only a client of the library, analysis tooling in Julia.
 
 kryos replaces yelmox. The in-tree prototype `yelmox/libs/kryos*.f90` is the
-reference for what must be generalised; its module names must not be reused
-(the two may be built together during migration).
+reference for what must be generalised. (Its `kryos_*` module names may be
+reused: the two are never linked into one executable; phase 1 review.)
 
 ## 2. Vocabulary
 
@@ -152,8 +152,9 @@ data, but not by user configuration).
 
 The **hub** (`htopo`, moved to `dp`) stays the geometry source of truth per
 domain: reference topography from FesmData, refreshed after each ice step with
-the ice model's anomalies, read by climate, surface and shelf (and now also by
-geo, which today reads Yelmo directly). Slow, smooth fields (`dz_bed`,
+the ice model's anomalies, read by climate, surface and shelf. `geo` reads the
+ice instance's exports directly (`H_ice`; its grid may be coarser than the hub,
+as in Antarctica), not the hub. Slow, smooth fields (`dz_bed`,
 `dz_ss`) always cross grids as anomalies; the hub holds the reference.
 
 ## 6. Regional versus global
@@ -340,8 +341,17 @@ on the Levante test cases.
 0. fesm-utils additions 1–5, 9, 10 (independent of kryos).
 1. kryos core + `ice` (yelmo), `geo` (fastisostasy), `climate`
    (snapshots), `surface` (chion), `shelf` (marine_shelf), geothermal and
-   sediments as data; one domain; the hub; output and restart. Target:
-   reproduce `yelmox_Greenland` and `yelmox_Antarctica`.
+   sediments as data; one domain; the hub; output and restart; a minimal
+   globe (`forcing` = tsgen, geo's bsl part). Target: reproduce
+   `yelmox_Greenland` and `yelmox_Antarctica` (the latter with `relax` and
+   `opt` off; those plugins and the shipped base are the phase 2 gate), on
+   Levante only, built with `-O2 -fp-model precise`, against yelmox v2.4
+   rebuilt on fesm-utils `phase0-kryos` (R1 == R0 first). Phase 1 keeps the
+   hub in `sp`; the `dp` hub (§12 row 8) is a registered rebaseline after the
+   gate. Wiring transforms run in the consumer's declared precision with
+   yelmox's operand order. The lapse-rate transform applies whenever the
+   climate's reference surface differs from the consumer's (no identical-grid
+   shortcut; zero in the gate configurations). Details: `docs/dev/*-design.md`.
 2. `data` backends for every component; esm and rembo climate; smbpal and
    smb_simple; experiments plugins. Target: all yelmox base configs.
 3. Globe: `forcing`, N domains, `ocean = obm`. Target: `yelmox_bipolar`.
@@ -397,8 +407,15 @@ rejected.
    a check that `geo` and hub agree. Yelmo's internal `z_bed_ref` is set from
    the same reference at init, so phase 1 is bit-identical; CISM, PISM and
    `data` need no reference concept. `ice → geo` is total `H_ice` (both
-   backends apply flotation); Yelmo's `dzbdt_corr` becomes an optional export
-   that only FastIsostasy declares it accepts. Under `vilma2` the anomalies
+   backends apply flotation); Yelmo's `dzbdt_corr` is not wired (FastIsostasy
+   stores but never reads it). Refinement (phase 1 review, 2026-10-24): `geo`
+   is initialised from the ice instance's reference exports (`z_bed_ref`,
+   `H_ice_ref`), which default to the domain reference and, for Yelmo, are its
+   processed present-day state (ice under 1 m, englacial lakes and ice outside
+   the allowed mask removed). The reference load must be what the ice model
+   holds as its present day, otherwise excluded ice causes spurious uplift;
+   this also keeps today's yelmox behaviour. The hub keeps the domain
+   reference. Under `vilma2` the anomalies
    arrive on the global grid and are split onto each hub; under `geo = data` a
    bed or rsl history is differenced against the reference so it enters as
    anomalies too (the reference for a data history is a slice of the same
@@ -529,7 +546,9 @@ displacements are long-wavelength and survive
     `fastisostasy`, `vilma2`, `chion`, `smbpal`, `smb_simple`, `rembo`,
     `snapshots`, `esm`, `marine_shelf`, `pico`, `obm`, `data`). Module
     prefixes `kryos_` and `fesm_`, with the old bare fesm-utils names kept as
-    deprecated aliases. New types end in `_t`; existing library `_class`
+    deprecated aliases. The yelmox modules named `kryos_*` are not a constraint
+    (phase 1 review): yelmox and kryos are never linked into one executable,
+    so `kryos_forcing`, `kryos_output` may be reused. New types end in `_t`; existing library `_class`
     types stay. Lifecycle: `init`, `init_state`, `update`, `restart_write`,
     `restart_read`, `write_output`, `end`. Files: `<instance>.nc`,
     `<instance>_ts.nc`, `restart-<time>/<instance>_restart.nc`,

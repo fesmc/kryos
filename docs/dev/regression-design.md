@@ -36,6 +36,24 @@ Facts this note relies on (checked 2026-10-24):
   the sp `map_field` accumulates in `dp` and rounds once
   (`map_field_grid_grid_sp`).
 
+
+**Review outcome (2026-10-24, Alex).** All recommendations accepted: Antarctica
+gate with `relax = opt = False` (shipped base = phase 2 gate); geo initialised
+from the ice instance's reference exports (design decision 4 refined); hub in
+`sp` through the phase 1 gate, `dp` as a registered rebaseline after; wiring
+transforms in the consumer's declared precision with yelmox's operand order;
+`bmb_shlf` flips in Antarctica quantified on R1 output, registered as a
+deviation if any; gate flags `-O2 -fp-model precise`, production `-Ofast` once
+per phase as information; lapse-rate transform without the identical-grid
+shortcut; yelmox `kryos_*` module names may be reused; `Namelist.jl`/`Resolve.jl`
+move to FesmUtils.jl; multi-schema `nml_validate` and public `coupler_method`
+added to fesm-utils; `dwdt_corr` edge dropped. Gate runs on Levante only (no
+local data sync). Names and signatures: `contracts-design.md` wins where the
+notes differ (`M_ice`, `dV_bsl`, `to_ann`/`so_ann`/`dto_ann`, `z_srf_clim`,
+`init_ctx_t`, `step_time_t`, `PASS_*` + `PASS_RESTART`, `*_slot_t`, geo
+`gather_into`/`geo_reduce`/`geo_scatter`); `pr` converts with `sec_year/86400`
+via `fesm_units`, not 360.
+
 ## 1. Reference runs
 
 ### 1.1 Configurations
