@@ -56,8 +56,11 @@ run
 ```
 
 Dependency flow is one-directional: fesm-utils → kryos core → components →
-backends → driver. Backends never `use` the core's run or domain types; the
-core never `use`s a backend module.
+backends → driver. The core (`kryos_run`, domain, globe, wiring) uses the
+component abstractions; it never `use`s a backend module. Backends `use` their
+component's contract and their own library, never the run or domain types.
+Factories sit between (a submodule or a separate module per component) so
+that no module cycle arises.
 
 ## 4. The component contract
 
@@ -392,7 +395,10 @@ rejected.
    that only FastIsostasy declares it accepts. Under `vilma2` the anomalies
    arrive on the global grid and are split onto each hub; under `geo = data` a
    bed or rsl history is differenced against the reference so it enters as
-   anomalies too. Why anomalies: displacements are long-wavelength and survive
+   anomalies too (the reference for a data history is a slice of the same
+dataset at the reference time, not the domain's reference topography, so
+datasets are never mixed; review of 2026-10-24). Why anomalies:
+displacements are long-wavelength and survive
    a coarse geo grid; absolute beds would smooth troughs and sills. Rejected:
    anomalies into each backend's own reference (yelmox today; needs a
    reference in every backend and a runtime equality check), and the
