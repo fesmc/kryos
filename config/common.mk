@@ -120,23 +120,27 @@ else
     kryos_ice_yelmo_obj = $(objdir)/kryos_ice_yelmo_stub.o
 endif
 
-# No adapter yet (geo component, phase 1): the switch wires the library only.
 ifeq ($(fastisostasy), 1)
+    kryos_geo_fastisostasy_obj = $(objdir)/kryos_geo_fastisostasy.o
     INC_BACKENDS   += $(INC_ISOSTASY)
     LIB_BACKENDS   += $(LIB_ISOSTASY)
     dep_archives   += $(ISOSTASY_ARCHIVE)
     backend_roots  += $(ISOSTASYROOT)
     backend_static += isostasy-static
     need_lis_fftw   = 1
+else
+    kryos_geo_fastisostasy_obj = $(objdir)/kryos_geo_fastisostasy_stub.o
 endif
 
-# No adapter yet (surface component, phase 1): the switch wires the library only.
 ifeq ($(chion), 1)
+    kryos_surface_chion_obj = $(objdir)/kryos_surface_chion.o
     INC_BACKENDS   += $(INC_CHION)
     LIB_BACKENDS   += $(LIB_CHION)
     dep_archives   += $(CHION_ARCHIVE)
     backend_roots  += $(CHIONROOT)
     backend_static += chion-static
+else
+    kryos_surface_chion_obj = $(objdir)/kryos_surface_chion_stub.o
 endif
 
 ifeq ($(insol), 1)
