@@ -101,6 +101,15 @@ each model), and the restart bundles at 500 and 1000 of `K.cont` vs `Y.cont`.
 A kryos run never starts from a yelmox bundle (different layouts); the round
 trip is tested inside each model.
 
+`chunk` vs `cont` (`Compare.compare_chunks`, the gate's `chunks`): chunk `k`
+covers `(t_k, t_k+1]`, the first chunk also `t_0`. Every `cont` record in that
+interval must be in chunk `k` and equal (E), and the `cont` bundle at `t_k+1`
+must equal the bundle chunk `k` writes at `t_k+1`. The record at `t_k` and the
+bundle a chunk writes at its own start are not compared: they are written
+before the first step, and the diagnostics in them that a restart does not
+restore are still being recomputed (yelmox v2.4: `visc_bar`, `mb_clip_tot`, `pc_tau*`,
+`z_bed_filt`, … at t = 500; prognostic state exact, gate log 2026-10-24).
+
 ### 1.3 Dependency versions: the same fesm-utils for both
 
 yelmox pins fesm-utils `v1.4` (stable); kryos needs `phase0-kryos`. The gate
