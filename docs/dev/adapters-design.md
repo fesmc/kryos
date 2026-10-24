@@ -241,6 +241,20 @@ differing cells. A bed difference stops init (the core's `z_bed` would not be
 Yelmo's); an ice difference is Q1 (today's isostasy reference is Yelmo's
 processed `H_ice_ref`).
 
+**Decision 2026-10-24 (Alex), replaces 2.2 step 2-3 and 2.5.** Yelmo takes
+the core's reference as given (regression-design R2): `yelmo_init(...,
+topo_init=topo, topo_pd=topo, prepared=.true.)` with `topo` the narrowed
+`ctx%ref`, already prepared by the hub. Yelmo keeps its model logic
+(`mask_ice` from the regions, the connectivity filter, reference ice removed
+outside `mask_ice`, the 1 m start minimum). So `bnd%z_bed_ref` equals the
+narrowed `ctx%ref%z_bed` bit for bit: `init` stops on any difference (count,
+maximum); `H_ice_ref` differs only where `mask_ice` removes ice (logged).
+Output files are `<instance>_<stream>.nc` with streams `yelmo`, `yelmo_sm`,
+`yelmo_ts` (+ `<instance>_yelmo_ts_<region>.nc`), keys `out_yelmo`,
+`out_yelmo_sm`, `out_yelmo_ts`; the core's default writer keeps
+`<instance>.nc`, `<instance>_ts.nc`. Instance names are unique in a run (the
+core stops on a duplicate), so several domains need no further prefix.
+
 ### 2.6 Restart, output, end
 
 - `restart_write`: `yelmo_restart_write(ylmo, file, time)` (today

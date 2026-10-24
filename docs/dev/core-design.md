@@ -496,15 +496,16 @@ hub, the run (timing). Per instance `out_2D` → `<instance>.nc`, `out_1D` →
 `<instance>_ts.nc`: the default `write_output` writes the exports in
 `out_vars` with the `variable_io` table `input/kryos-variables-<component>.md`
 (fixed `prec_abs`/`prec_rel`, `float` as yelmox). A backend may declare
-extra streams (yelmo: `yelmo`, `sm`), keys `out_<stream>`, files
-`<instance>_<stream>.nc`. Each output time: `schedule_due` once per schedule
+extra streams (yelmo: `yelmo`, `yelmo_sm`, `yelmo_ts`), keys `out_<stream>`, files
+`<instance>_<stream>.nc`. Instance names are unique in a run (`run_init`
+stops on a duplicate), so file names need no domain or grid prefix. Each output time: `schedule_due` once per schedule
 (it moves a cursor), then `<comp>_write_output(inst, file, t, stream, init)`
 per due stream; files are created on a run's first write (anew per chunk).
 
 | yelmox file | kryos phase 1 |
 |---|---|
 | `yelmo.nc` (`YELMO_VARS_2D`) | `ice_grl.nc` (exports) + `ice_grl_yelmo.nc` (backend set) |
-| `yelmo_sm.nc`, `yelmo_ts.nc` + regions | `ice_grl_sm.nc`, `ice_grl_ts.nc` (Yelmo regions, by the adapter) |
+| `yelmo_sm.nc`, `yelmo_ts.nc` + regions | `ice_grl_yelmo_sm.nc`, `ice_grl_yelmo_ts.nc`, `ice_grl_yelmo_ts_<region>.nc` (by the adapter) |
 | `coef_*` in `yelmo_ts.nc` | `forcing_ts.nc` |
 | `htopo.nc` | `Greenland_hub.nc` (`htopo_write_init/step`) |
 | `isos.nc`, `isos_ts.nc` (`bsl`) | `geo_grl.nc` (+ backend `w`, `we`), `geo_grl_ts.nc`; `geo_glob_ts.nc` (`bsl`, `A_ocean`) |

@@ -125,6 +125,18 @@ is:
 3. **K**: kryos built on stack `S` (the same checkouts and archives). Gate 1:
    `K == R1`.
 
+4. **R2** (decision 2026-10-24, Alex): Yelmo is fed its topography as given,
+   as in CLIMBER-X. The cleaning Yelmo did itself (bed roughness scaling,
+   englacial lakes, thin ice, bed gradient limit) moves into the hub
+   (fesm-utils `htopo`, `[topo]` keys `z_bed_f_sd`, `remove_lakes`,
+   `H_ice_min`, `grad_lim_zb`, all off by default), done once on the hub
+   grid, and Yelmo gets `yelmo_init(..., prepared=.true.)`. Stack `S2` = `S`
+   with those fesm-utils and yelmo commits (both off by default: `R1(S2) ==
+   R0` first); R2 = yelmox `v2.4` + a preparatory commit that turns them on
+   (`[topo]` of the gate configs, `prepared=.true.`). Gate 1 becomes
+   `K == R2`; `R2` vs `R0` is documented (one thin-ice rule instead of Yelmo's
+   two, the gradient limit on the hub grid: Antarctica 16 km instead of 32 km).
+
 Whenever a library moves (a new fesm-utils commit, or a yelmo change kryos
 needs), the stack gets a new id, R1 is rerun on it and must equal R0 (or the
 change is a registered deviation, §3.4). If yelmox v2.4 does not build against
