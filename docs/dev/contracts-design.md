@@ -208,7 +208,7 @@ hub (domain, not a component): `hub_exports` = `z_bed`, `H_ice`, `z_srf`,
 ### 3.1 `kryos_component`
 
 ```fortran
-integer, parameter, public :: PASS_GEOMETRY = 1, PASS_BOUNDARY = 2, PASS_STATE = 3, PASS_FINAL = 4
+integer, parameter, public :: PASS_INIT = 0, PASS_GEOMETRY = 1, PASS_BOUNDARY = 2, PASS_STATE = 3, PASS_FINAL = 4
 
 type, public :: caps_t                          ! set by the backend in init
     logical :: has_ocn = .false., has_ocn_shelf = .false., has_smb = .false., has_Qd = .false.

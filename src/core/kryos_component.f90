@@ -23,8 +23,10 @@ module kryos_component
     private
 
     ! Initialisation passes of init_state (core-design section 3.2; PASS_RESTART
-    ! after a restore, review outcome).
-    integer, parameter, public :: PASS_GEOMETRY = 1, PASS_BOUNDARY = 2, PASS_STATE = 3, &
+    ! after a restore, review outcome). PASS_INIT: right after every instance's
+    ! init, cold start and restore alike, put the exports of the state as
+    ! initialised at t0 (what other instances read before the cold start).
+    integer, parameter, public :: PASS_INIT = 0, PASS_GEOMETRY = 1, PASS_BOUNDARY = 2, PASS_STATE = 3, &
                                   PASS_FINAL = 4, PASS_RESTART = 5
 
     ! The canonical four-value mask (contracts-design section 8).

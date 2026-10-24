@@ -155,11 +155,16 @@ follow from `schedule_due` being true once the clock is finished.
    `refs` (hub → grid by the coupler's sp path, §10 R4), instances in yelmox
    order ice, geo, geothermal, sediments, climate, surface, shelf;
    `wire_resolve` (stops on a gap: required import without producer, or a
-   capability mismatch); `coupler_prime` for every row; static rows
-   (geothermal, sediments → ice) exchanged once.
+   capability mismatch); `coupler_prime` for every row. Static rows
+   (geothermal, sediments → ice) are exchanged once after `PASS_INIT`.
 5. Schedules: one `schedule_init(s, clk, name, par, group)` per distinct
    group named by an instance `out_*` key or `[kryos] restart_out` (`restart=.true.`).
-6. Restore (§3.3) if `[kryos] restart /= "None"`, else cold start (§3.2).
+6. `<comp>_init_state(inst, st0, PASS_INIT)` for every instance (globe, then
+   domains in the order of step 4): each puts the exports of its state as
+   initialised at `t0` (yelmo: the geometry and its reference, read by geo
+   in the cold start; data backends: their static fields). Then restore
+   (§3.3) if `[kryos] restart /= "None"` (restored exports overwrite these),
+   else cold start (§3.2). Decision 2026-10-24 (Alex).
 7. `clock_start` (checks every restart time and `time_end` against every
    cadence; logs `clock_describe`); describes (§8); output at `time_init`.
 

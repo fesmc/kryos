@@ -10,7 +10,7 @@ module kryos_sediments
     use fesm_datasrc,    only: datasrc_t, datasrc_init, datasrc_update, datasrc_fill, datasrc_describe
     use kryos_component, only: component_t, init_ctx_t, step_time_t, census_t, constraints_t, &
                                component_identity, backend_admit, component_close, &
-                               component_enter, component_leave, component_optional, component_axis, PASS_GEOMETRY
+                               component_enter, component_leave, component_optional, component_axis, PASS_INIT
 
     implicit none
 
@@ -150,7 +150,7 @@ contains
 
     subroutine data_init_(self, ctx)
         ! Keep the context; the field is bound and served in init_state
-        ! (PASS_GEOMETRY), after the wrapper has declared the exports.
+        ! (PASS_INIT), after the wrapper has declared the exports.
         class(data_sediments_t), intent(inout) :: self
         type(init_ctx_t),     intent(in)    :: ctx
         self%ctx = ctx
@@ -160,14 +160,14 @@ contains
     end subroutine data_init_
 
     subroutine data_init_state_(self, st, pass)
-        ! PASS_GEOMETRY: datasrc_init, datasrc_update(t1) and datasrc_fill,
+        ! PASS_INIT: datasrc_init, datasrc_update(t1) and datasrc_fill,
         ! once; the export is INSTANT, valid at [t1, t1]. Other passes: nothing.
         class(data_sediments_t), intent(inout) :: self
         type(step_time_t),    intent(in)    :: st
         integer,             intent(in)    :: pass
         real(dp) :: v(self%nx, self%ny)
         integer  :: n
-        if (pass /= PASS_GEOMETRY) return
+        if (pass /= PASS_INIT) return
         n = count(len_trim(self%ctx%library) > 0)
         call datasrc_init(self%ds, self%ctx%par_file, self%ctx%instance, self%exports, ["H_sed"], &
                           self%ctx%grid, DATASRC_DEFAULTS, var_defs=pack(self%ctx%library, &
