@@ -371,7 +371,13 @@ rejected.
    yelmox climate pattern): the branch repeats in every procedure, every
    backend is always compiled in, and a host cannot add a backend. A
    string-keyed C API (Yelmo C API style) for PISM and a Julia host is
-   orthogonal and sits on top.
+   orthogonal and sits on top. Style rule (2026-10-24): fesm-utils has no
+   OOP at all (plain types, free procedures); in kryos the deferred
+   type-bound procedures exist only on the per-component abstract types and
+   are called from one place each through free-procedure wrappers
+   (`ice_update(ice, t)` wraps `ice%update(t)`), so driver, core and
+   experiment code never writes `%update` or `class(...)`; backends are plain
+   extension types with their bindings in one `contains` block.
 2. **Exchange precision**: decided (2026-10-24), `dp` buffers; each backend
    converts at its own boundary and keeps its internal `wp` (half the stack is
    already `dp`; volume and area sums over 1e6 cells need it). Rejected: a
