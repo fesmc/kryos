@@ -16,9 +16,12 @@ module kryos_ice_yelmo
     type, extends(ice_t) :: yelmo_ice_t
     contains
         procedure :: init          => yelmo_init_
+        procedure :: init_state    => yelmo_init_state_
         procedure :: update        => yelmo_update_
         procedure :: restart_write => yelmo_restart_write_
         procedure :: restart_read  => yelmo_restart_read_
+        procedure :: write_output  => yelmo_write_output_
+        procedure :: end           => yelmo_end_
     end type yelmo_ice_t
 
 contains
@@ -40,6 +43,14 @@ contains
         associate (unused => ctx%time); end associate
         call unavailable(self)
     end subroutine yelmo_init_
+
+    subroutine yelmo_init_state_(self, st, pass)
+        class(yelmo_ice_t), intent(inout) :: self
+        type(step_time_t),  intent(in)    :: st
+        integer,            intent(in)    :: pass
+        associate (unused => st%t1 + pass); end associate
+        call unavailable(self)
+    end subroutine yelmo_init_state_
 
     subroutine yelmo_update_(self, st)
         class(yelmo_ice_t), intent(inout) :: self
@@ -63,5 +74,20 @@ contains
         associate (unused => len(dir) + t); end associate
         call unavailable(self)
     end subroutine yelmo_restart_read_
+
+    subroutine yelmo_write_output_(self, file, t, stream, init)
+        class(yelmo_ice_t), intent(inout) :: self
+        character(len=*),   intent(in)    :: file, stream
+        real(dp),           intent(in)    :: t
+        logical,            intent(in)    :: init
+        associate (unused => len(file) + len(stream) + t); end associate
+        associate (unused => init); end associate
+        call unavailable(self)
+    end subroutine yelmo_write_output_
+
+    subroutine yelmo_end_(self)
+        class(yelmo_ice_t), intent(inout) :: self
+        call unavailable(self)
+    end subroutine yelmo_end_
 
 end module kryos_ice_yelmo
