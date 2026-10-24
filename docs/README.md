@@ -1,7 +1,10 @@
 # kryos documentation
 
-Design settled 2026-10-24 (thirteen decisions in design.md section 15). No code yet.
+Design settled 2026-10-24 (thirteen decisions in design.md section 15). Build
+system and source skeleton in place; components are placeholders.
 
+- [build.md](build.md): configure, targets, switches, generated dependencies,
+  adding a backend with a stub.
 - [design.md](design.md): the proposal — vocabulary, architecture, component
   contract, exchange, regional vs global, time, data backends, what is kept
   from yelmox and CLIMBER-X and why, what is shed and why, additions to
