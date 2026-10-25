@@ -1,0 +1,74 @@
+! ============================================================
+! snapshots_defaults.nml: schema of the snapshots climate backend.
+! ============================================================
+!
+! Templates of the groups the backend reads, each key declared here (a par
+! file lists only what differs; nml_validate stops on an undeclared key):
+!   [snapshots] (named by the instance key `snapshots`)  -> snapshots
+!   [snapshot_<name>]                                    -> snapshot
+!   [term_<name>] (names in the instance key `terms`)    -> term
+!   the transform groups named by the instance keys `taper`, `bias`
+!                                                        -> taper, bias
+! The coefficient groups [coef_<name>]: forcing_defaults.nml. Named groups
+! (snapshot_, term_, coef_, and the varslice groups of the fields) are read
+! from the par file if it has them, else from the first of the [kryos]
+! library files that does. A named transform group is active (yelmox had an
+! `active` key). Ported from yelmox input/yelmox_defaults.nml.
+
+&term
+    ! One term of the forcing: a coefficient times a pattern, on the fields listed.
+    ! By field, fixed: tas, to, so add; pr multiplies (the ratio of the
+    ! snapshots, or exp(beta_p*f_ta*f) in a uniform term, beta_p = [snapshots] f_p).
+    coef    = ""                  ! the coefficient ([forcing] coefs); "" = the constant 1 (snapshots pattern)
+    pattern = "snapshots"         ! snapshots: f*(snap1 - snap0), or f*snap1 without snap0 (a given anomaly / ratio);
+                                  ! uniform: tas + f_ta*f, pr * exp(beta_p*f_ta*f), to + f_to*f, so + f_so*f;
+                                  ! replace: to or so = f at every depth, in place of the reference (one per field)
+    snap0   = ""                  ! snapshots: the snapshot at coefficient 0 ([snapshot_<name>]); "" = none
+    snap1   = ""                  ! snapshots: the snapshot at coefficient 1
+    fields  = ""                  ! the fields the term touches: tas, pr, to, so (explicit, all bound by its snapshots and the reference)
+    f_ta    = 1.0                 ! [K]   uniform: gain on tas (and the pr factor)
+    f_to    = 1.0                 ! [K]   uniform: gain on to
+    f_so    = 1.0                 ! [psu] uniform: gain on so
+/
+
+&snapshots
+    ! The snapshot backend of a domain: the fixed rules of the composition.
+    ! The reference and the terms: [forcing<sfx>]; the snapshots are the
+    ! reference and the snap0/snap1 of the snapshot terms.
+    grid_global = "GLOBAL-1DEG"     ! global grid of the paleoclimate products ({grid_global})
+    fields      = "tas" "pr" "to" "so" "zs"  ! the fields a snapshot may bind
+    lapse       = 0.0080 0.0065     ! [K m-1] lapse rates: annual, summer
+    f_p         = 0.05              ! [K-1] precipitation-temperature scaling (beta_p)
+/
+
+&snapshot
+    ! One snapshot: a named climate state, its fields bound to varslice groups.
+    exp        = ""     ! experiment, the {exp} of its var_defs paths (lgm, piControl, ...)
+    monthly    = True   ! tas/pr monthly (else tas = [annual, season], pr annual)
+    clim_sigma = 0.0    ! [km] gaussian smoothing of the atmosphere at loading; 0 = none
+    ocn_sigma  = 0.0    ! [km] gaussian smoothing of the ocean at loading; 0 = none
+    tas_season = ""     ! season of the second tas group: jja | djf; "" = the summer of the hemisphere
+    ! bindings: var_defs group(s) of each field; "" = not bound
+    tas        = ""
+    pr         = ""
+    zs         = ""
+    to         = ""
+    so         = ""
+/
+
+&taper
+    ! The atmosphere towards the reference with a weight w in [0, 1] (static, on
+    ! the climate grid): now = ref + w*(now - ref) for tas, pr and their annual means.
+    weight   = ""       ! group of the weight w [1] (one 2D field; the par file, then [forcing] var_defs)
+    outside  = "ref"    ! where w < 1, towards: ref (the reference) or mean (ref + the mean anomaly of the cells with w = 1)
+/
+
+&bias
+    ! An additive temperature field and a precipitation factor field, monthly
+    ! (12) or annual (1), on the climate grid: tas + f_tas*dtas, pr*(1 + f_pr*(fpr - 1)).
+    ! A group with a time axis is sliced at the forcing time at every update.
+    dtas     = ""       ! group of the temperature correction [K] (the par file, then [forcing] var_defs); "" = none
+    fpr      = ""       ! group of the precipitation factor [1]; "" = none
+    f_tas    = 1.0      ! [1] weight of dtas
+    f_pr     = 1.0      ! [1] weight of fpr - 1
+/

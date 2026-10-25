@@ -1,0 +1,55 @@
+! ============================================================
+! forcing_defaults.nml: schema of the forcing coefficients.
+! ============================================================
+!
+! The template of the [coef_<name>] groups read by the forcing backend tsgen
+! (its keys besides the tsgen ones: units, restart_every_df, and from, factor,
+! region, anomaly of the derived coefficients) and by the climate backends
+! that name coefficients in their terms (snapshots). A coefficient group is
+! read from the par file if it has it, else from the first of the [kryos]
+! library files that does. Ported from yelmox input/yelmox_defaults.nml.
+
+&coef
+    ! A coefficient: tsgen (fesm-utils tsgen), advanced on the forcing time
+    ! time_rel, or derived (method = "derived"), set each step by the model.
+    ! method = "series" reads it from a time series file (series_file).
+    method           = "const"       ! const|ramp-slope|ramp-time|ramp-time-step|sin|series|exp|PI42|H312b|H312PID|H321PID|PID1|derived
+    sigma            = 0.0           ! [f] std. dev. of gaussian noise added to the coefficient
+    ! method series
+    series_file      = ""            ! table (time, f) or netcdf file of the series
+    series_var       = ""            ! variable of a netcdf series_file
+    series_time_name = "time"        ! its time variable
+    norm_t0          = 0.0           ! [yr] normalise: f = (S - S(t0))/(S(t1) - S(t0)), t one time or a window t0 t1 (the mean);
+    norm_t1          = 0.0           ! [yr]   only when both are set in the par group (the values here are not used)
+    ! analytic and feedback methods
+    with_kill        = False         ! stop the run once the response equilibrates at a bound
+    dt_init          = 0.0           ! [yr] hold the forcing flat during this initial interval
+    dt_ramp          = 1000.0        ! [yr] ramp/period length (ramp-time, ramp-time-step, sin)
+    dt_conv          = 1000.0        ! [yr] convergence interval (ramp-time-step)
+    dt_ave           = 100.0         ! [yr] averaging window of the response derivative (feedback, kill)
+    df_sign          = 1.0           ! +1/-1 direction of the forcing change
+    tol              = 1.0           ! response-rate tolerance (feedback, kill)
+    df_dt_max        = 0.0           ! [f/yr] forcing rate (const/ramp-slope; maximum for feedback)
+    f_min            = 0.0           ! [f] lower bound; the value of const (f_min + df_dt_max*t, clamped)
+    f_max            = 1.0           ! [f] upper bound
+    f_conv           = 0.0           ! [f] value held after convergence (ramp-time-step)
+    ! derived: computed by the model after the atmosphere of the step is composed
+    from             = ""            ! air_anomaly: factor * mean sea-level air anomaly of the climate update over region;
+                                     ! obm_north, obm_south: the box temperature of the bipolar ocean box model [K]
+    factor           = 1.0           ! [1] air_anomaly: value = factor * mean(tsl_ann - tsl_ann_ref)
+    region           = "all"         ! air_anomaly: cells of the mean: "all" or a [regions] selection, e.g. "zone:open_ocean"
+    anomaly          = True          ! obm_*: the box temperature minus its initial value (False: the temperature itself)
+    ! yelmox
+    units            = "1"           ! units label of coef_<name> in the 1D output
+    restart_every_df = 0.0           ! [f] write a restart each time f moves by this much; 0 = off
+    ! window modifier (tsgen): inside win_t0 < t < win_t1, f = win_ref + win_fac*(f - win_ref)
+    ! (only where f > win_ref if win_above), with linear ramps of win_taper at the edges;
+    ! off when win_t1 <= win_t0. The old snapclim f_hol rule: -12e3 -1e3, win_fac = f_hol,
+    ! win_ref = 1, win_above = True.
+    win_t0           = 0.0           ! [yr] window start
+    win_t1           = 0.0           ! [yr] window end
+    win_taper        = 0.0           ! [yr] ramp width inside the window edges
+    win_fac          = 1.0           ! [1] factor on f - win_ref inside the window
+    win_ref          = 0.0           ! [f] reference value of the scaling
+    win_above        = False         ! apply only where f > win_ref
+/
