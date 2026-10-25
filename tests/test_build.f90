@@ -1,9 +1,11 @@
 program test_build
-    ! Build smoke test (make check): the library links, the run sequence runs,
-    ! and the ice factory admits the yelmo backend when it is linked (a stub
-    ! stops in the factory, so with yelmo=0 that check is skipped).
+    ! Build smoke test (make check): the library links, the run sequence runs
+    ! (a clock only, no domain: test_run_clock covers it), and the ice factory
+    ! admits the yelmo backend when it is linked (a stub stops in the factory,
+    ! so with yelmo=0 that check is skipped). Run from the repo root.
 
     use precision, only: dp
+    use fesm_clock, only: clock_time
     use kryos_run, only: run_t, run_init, run_step, run_done, run_end
     use kryos_component, only: init_ctx_t, census_t, census_count, constraints_t
     use kryos_ice,       only: ice_slot_t, ice_create, ice_present
@@ -16,13 +18,28 @@ program test_build
     type(init_ctx_t) :: ctx
     type(census_t)   :: census
     type(constraints_t) :: con
+    integer :: u, nstep
 
-    call run_init(run, "none")
+    call execute_command_line("mkdir -p tmp/test_build")
+    open(newunit=u, file="tmp/test_build/par.nml", status="replace", action="write")
+    write(u,'(a)') '&kryos'
+    write(u,'(a)') '    log_level = "warn"'
+    write(u,'(a)') '/'
+    write(u,'(a)') '&clock'
+    write(u,'(a)') '    time_init = 0.0'
+    write(u,'(a)') '    time_end  = 30.0'
+    write(u,'(a)') '    dtt       = 10.0'
+    write(u,'(a)') '/'
+    close(u)
+
+    nstep = 0
+    call run_init(run, "tmp/test_build/par.nml")
     do while (.not. run_done(run))
         call run_step(run)
+        nstep = nstep + 1
     end do
     call run_end(run)
-    if (run%nstep /= 3 .or. abs(run%time - 3.0_dp) > 0.0_dp) then
+    if (nstep /= 3 .or. abs(clock_time(run%clk) - 30.0_dp) > 0.0_dp) then
         write(*,'(a)') "test_build: FAILED (run sequence)"
         error stop 1
     end if
