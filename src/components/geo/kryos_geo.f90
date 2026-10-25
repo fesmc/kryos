@@ -57,10 +57,14 @@ contains
 
     subroutine geo_adopt(geo, proto, con, ctx, census)
         type(geo_slot_t),    intent(out)   :: geo
-        class(geo_t),        intent(in)    :: proto
+        class(geo_t), allocatable, intent(in) :: proto
         type(constraints_t), intent(in)    :: con
         type(init_ctx_t),    intent(in)    :: ctx
         type(census_t),      intent(inout) :: census
+        ! proto is allocatable, so the actual is polymorphic: ifx 2023.2 builds the
+        ! descriptor of a non-polymorphic actual on the caller's stack, and an object
+        ! allocated with mold= from it keeps a pointer into that frame (its
+        ! deallocation later reads a dead stack).
         allocate(geo%c, mold=proto)
         call component_identity(geo%c, ctx, "geo", con)
         call backend_admit(geo%c, census)

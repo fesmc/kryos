@@ -164,9 +164,9 @@ program test_domain
     use kryos_component, only: init_ctx_t, census_t, constraints_t, grid_ref_t, kryos_mask
     use kryos_config,    only: config_t, config_init
     use kryos_wiring,    only: wire_t, wire_node_t, wiring_table
-    use kryos_ice,       only: ice_adopt, ice_init
-    use kryos_geo,       only: geo_adopt, geo_init
-    use kryos_surface,   only: surface_adopt, surface_init
+    use kryos_ice,       only: ice_t, ice_adopt, ice_init
+    use kryos_geo,       only: geo_t, geo_adopt, geo_init
+    use kryos_surface,   only: surface_t, surface_adopt, surface_init
     use kryos_domain
     use test_domain_toys
 
@@ -608,9 +608,9 @@ contains
         character(len=*), intent(in)    :: name
         logical,          intent(in), optional :: ice, geo, surface
 
-        type(toy_ice_t) :: p_ice
-        type(toy_geo_t) :: p_geo
-        type(toy_surface_t) :: p_surf
+        class(ice_t),     allocatable :: p_ice     ! prototypes (the adopt wrappers take
+        class(geo_t),     allocatable :: p_geo     ! polymorphic allocatables)
+        class(surface_t), allocatable :: p_surf
         type(census_t) :: census
         type(init_ctx_t) :: ctx
 
@@ -620,6 +620,7 @@ contains
         if (present(ice)) then
             if (ice) then
                 call toy_ctx(ctx, d, C_ICE, "ice")
+                allocate(toy_ice_t :: p_ice)
                 call ice_adopt(d%ice, p_ice, constraints_t(), ctx, census)
                 call ice_init(d%ice, ctx)
                 call cadence_init(d%ice%c%cadence, clk, "ice", .true.)
@@ -628,6 +629,7 @@ contains
         if (present(geo)) then
             if (geo) then
                 call toy_ctx(ctx, d, C_GEO, "geo")
+                allocate(toy_geo_t :: p_geo)
                 call geo_adopt(d%geo, p_geo, constraints_t(), ctx, census)
                 call geo_init(d%geo, ctx)
                 call cadence_init(d%geo%c%cadence, clk, "geo", 10.0_dp)
@@ -636,6 +638,7 @@ contains
         if (present(surface)) then
             if (surface) then
                 call toy_ctx(ctx, d, C_SURFACE, "surface")
+                allocate(toy_surface_t :: p_surf)
                 call surface_adopt(d%surface, p_surf, constraints_t(), ctx, census)
                 call surface_init(d%surface, ctx)
                 call cadence_init(d%surface%c%cadence, clk, "surface", .true.)

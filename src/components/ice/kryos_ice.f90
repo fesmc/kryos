@@ -51,10 +51,14 @@ contains
     subroutine ice_adopt(ice, proto, con, ctx, census)
         ! A host-provided extension of ice_t (design decision 1), admitted as a factory would.
         type(ice_slot_t),    intent(out)   :: ice
-        class(ice_t),        intent(in)    :: proto
+        class(ice_t), allocatable, intent(in) :: proto
         type(constraints_t), intent(in)    :: con
         type(init_ctx_t),    intent(in)    :: ctx
         type(census_t),      intent(inout) :: census
+        ! proto is allocatable, so the actual is polymorphic: ifx 2023.2 builds the
+        ! descriptor of a non-polymorphic actual on the caller's stack, and an object
+        ! allocated with mold= from it keeps a pointer into that frame (its
+        ! deallocation later reads a dead stack).
         allocate(ice%c, mold=proto)
         call component_identity(ice%c, ctx, "ice", con)
         call backend_admit(ice%c, census)

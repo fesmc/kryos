@@ -75,7 +75,7 @@ program test_globe
     use kryos_config,     only: config_t, config_init
     use kryos_component,  only: init_ctx_t, step_time_t, census_t, constraints_t, PASS_INIT
     use kryos_wiring,     only: wire_t, wire_node_t, wire_node, wire_node_states, wire_resolve, wire_label
-    use kryos_geo,        only: geo_slot_t, geo_adopt, geo_init, geo_scatter
+    use kryos_geo,        only: geo_t, geo_slot_t, geo_adopt, geo_init, geo_scatter
     use test_globe_toy,   only: toy_geo_t
     use kryos_globe,      only: globe_t, gather_src_t, globe_init, globe_init_state, globe_update, globe_reduce, &
                                 globe_end, globe_nodes, exchange_globe, exchange_to_globe, &
@@ -303,11 +303,12 @@ contains
     subroutine build_domains()
         ! The instances of a domain the globe reaches, as toy states, and their
         ! rows from the real table: wire_resolve with the globe nodes.
-        type(toy_geo_t)     :: proto
+        class(geo_t), allocatable :: proto
         type(init_ctx_t)    :: ctx
         type(wire_node_t), allocatable :: nodes(:)
         integer :: k
 
+        allocate(toy_geo_t :: proto)
         do k = 1, ND
             dom(k)%name = merge("d1", "d2", k == 1)
 

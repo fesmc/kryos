@@ -51,10 +51,14 @@ contains
     subroutine climate_adopt(climate, proto, con, ctx, census)
         ! A host-provided extension of climate_t (design decision 1), admitted as a factory would.
         type(climate_slot_t),     intent(out)   :: climate
-        class(climate_t),         intent(in)    :: proto
+        class(climate_t), allocatable, intent(in) :: proto
         type(constraints_t), intent(in)    :: con
         type(init_ctx_t),    intent(in)    :: ctx
         type(census_t),      intent(inout) :: census
+        ! proto is allocatable, so the actual is polymorphic: ifx 2023.2 builds the
+        ! descriptor of a non-polymorphic actual on the caller's stack, and an object
+        ! allocated with mold= from it keeps a pointer into that frame (its
+        ! deallocation later reads a dead stack).
         allocate(climate%c, mold=proto)
         call component_identity(climate%c, ctx, "climate", con)
         call backend_admit(climate%c, census)
