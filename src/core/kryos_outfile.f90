@@ -21,13 +21,19 @@ module kryos_outfile
     character(len=*), parameter, public :: OUTFILE_TABLE_DIR = "input"
     integer, parameter :: PATH_LEN = 512, NAME_LEN = 64
 
+    ! The cache is a list of nodes, each allocated once and never copied or
+    ! moved. A growing allocatable array of table_t fails under ifx 2023.2: its
+    ! intrinsic copy stops with severe (189) "incompatible types", and after
+    ! move_alloc of an element's v the deallocation of the module array stops
+    ! with severe (153) "not allocated" (both standard code; gfortran is right).
     type :: table_t                         ! one loaded table
         character(len=NAME_LEN) :: kind = ""
         character(len=PATH_LEN) :: file = ""
         type(var_io_type), allocatable :: v(:)
+        type(table_t), pointer :: next => null()
     end type table_t
 
-    type(table_t), allocatable, save :: cache(:)
+    type(table_t), pointer, save :: cache => null()   ! the most recently loaded table first
     character(len=PATH_LEN), save :: table_dir = OUTFILE_TABLE_DIR
 
     interface outfile_var2d
@@ -49,8 +55,13 @@ contains
         ! Folder of the tables (default `input`, relative to the working directory).
         ! Drops the cache: tables are reloaded from the new folder.
         character(len=*), intent(in) :: dir
+        type(table_t), pointer :: t
         table_dir = dir
-        if (allocated(cache)) deallocate(cache)
+        do while (associated(cache))
+            t => cache
+            cache => cache%next
+            deallocate(t)
+        end do
     end subroutine outfile_set_table_dir
 
     function outfile_table_file(kind) result(file)
@@ -67,15 +78,15 @@ contains
         type(var_io_type), allocatable, intent(out)           :: tab(:)
         integer,                        intent(out), optional :: stat
 
-        integer :: k
+        type(table_t), pointer :: t
 
         if (present(stat)) stat = 0
-        k = find(kind)
-        if (k == 0) then
-            call load(kind, k, stat)
-            if (k == 0) return
+        t => find(kind)
+        if (.not. associated(t)) then
+            call load(kind, t, stat)
+            if (.not. associated(t)) return
         end if
-        tab = cache(k)%v
+        tab = t%v
     end subroutine outfile_load
 
     subroutine outfile_row(kind, name, row, found)
@@ -85,48 +96,43 @@ contains
         type(var_io_type), intent(out) :: row
         logical,           intent(out) :: found
 
-        integer :: k, i
+        type(table_t), pointer :: t
+        integer :: i
 
         found = .false.
-        k = find(kind)
-        if (k == 0) call load(kind, k)
-        do i = 1, size(cache(k)%v)
-            if (trim(cache(k)%v(i)%varname) == trim(name)) then
-                row = cache(k)%v(i)
+        t => find(kind)
+        if (.not. associated(t)) call load(kind, t)
+        do i = 1, size(t%v)
+            if (trim(t%v(i)%varname) == trim(name)) then
+                row = t%v(i)
                 found = .true.
                 return
             end if
         end do
     end subroutine outfile_row
 
-    integer function find(kind) result(k)
+    function find(kind) result(t)
+        ! The cached table of `kind`, null when not loaded.
         character(len=*), intent(in) :: kind
-        integer :: i
-        k = 0
-        if (.not. allocated(cache)) return
-        do i = 1, size(cache)
-            if (trim(cache(i)%kind) == trim(kind)) then
-                k = i
-                return
-            end if
+        type(table_t), pointer :: t
+        t => cache
+        do while (associated(t))
+            if (trim(t%kind) == trim(kind)) return
+            t => t%next
         end do
     end function find
 
-    subroutine load(kind, k, stat)
-        ! Load the table of `kind` into the cache; k = its index (0 on failure).
-        ! The cache grows by moving its tables (move_alloc), never by copying
-        ! them: ifx stops on intrinsic copies of these nested allocatables.
-        character(len=*), intent(in)            :: kind
-        integer,          intent(out)           :: k
-        integer,          intent(out), optional :: stat
+    subroutine load(kind, t, stat)
+        ! Load the table of `kind` into the cache; t = its node (null on failure).
+        character(len=*),       intent(in)            :: kind
+        type(table_t), pointer, intent(out)           :: t
+        integer,                intent(out), optional :: stat
 
         character(len=*), parameter :: proc = "kryos_outfile::load"
         character(len=PATH_LEN) :: file
-        type(table_t), allocatable :: tmp(:)
         logical :: exists
-        integer :: i, n
 
-        k = 0
+        t => null()
         file = outfile_table_file(kind)
         inquire(file=trim(file), exist=exists)
         if (.not. exists) then
@@ -135,19 +141,12 @@ contains
             return
         end if
 
-        n = 0
-        if (allocated(cache)) n = size(cache)
-        allocate(tmp(n + 1))
-        do i = 1, n
-            tmp(i)%kind = cache(i)%kind
-            tmp(i)%file = cache(i)%file
-            call move_alloc(cache(i)%v, tmp(i)%v)
-        end do
-        tmp(n + 1)%kind = kind
-        tmp(n + 1)%file = file
-        call load_var_io_table(tmp(n + 1)%v, trim(file))
-        call move_alloc(tmp, cache)
-        k = n + 1
+        allocate(t)
+        t%kind = kind
+        t%file = file
+        call load_var_io_table(t%v, trim(file))
+        t%next => cache
+        cache => t
     end subroutine load
 
     ! =========================================================================
