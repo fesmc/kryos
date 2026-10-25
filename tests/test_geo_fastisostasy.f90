@@ -9,7 +9,7 @@ program test_geo_fastisostasy
     use precision,       only: sp, dp
     use coordinates,     only: grid_init
     use phys_constants,  only: phys_const_load
-    use fesm_fields,     only: fields_get, fields_put
+    use fesm_fields,     only: fields_get, fields_put, fields_restart_write, fields_restart_read
     use kryos_component, only: init_ctx_t, step_time_t, census_t, &
                                PASS_INIT, PASS_GEOMETRY, PASS_RESTART
     use kryos_geo,       only: geo_slot_t, geo_create, geo_init, geo_init_state, geo_update, geo_reduce, &
@@ -78,18 +78,25 @@ program test_geo_fastisostasy
 
     ! ---- restart round trip -------------------------------------------------------
     call execute_command_line("rm -rf "//RST//" && mkdir -p "//RST)
+    ! as the core's bundle: the backend files and the field states (kryos_restart)
     call geo_restart_write(glob, RST, t)
     call geo_restart_write(reg,  RST, t)
+    call fields_write(glob, RST)
+    call fields_write(reg,  RST)
 
+    ! as the core's restore: global part, then the regional one on the
+    ! restored global bsl and the restored ice (core-design 3.6 item 4)
     call geo_create(glob2, ctxg, census2)
     call geo_create(reg2,  ctxr, census2)
     call geo_init(glob2, ctxg)
     call geo_init(reg2,  ctxr)
     call geo_restart_read(glob2, RST, t)
+    call fields_read(glob2, RST)
     call geo_init_state(glob2, st(t, t), PASS_RESTART)
     call to_regional(glob2, reg2, t)
     call put_H(reg2, H, t)
     call geo_restart_read(reg2, RST, t)
+    call fields_read(reg2, RST)
     call geo_init_state(reg2, st(t, t), PASS_RESTART)
 
     t = t + DTT
@@ -138,6 +145,21 @@ contains
         call reduce(glob, reg, t)
         call geo_scatter(reg, st(t - DTT, t))
     end subroutine advance
+
+    subroutine fields_write(g, dir)
+        ! The imports and exports of an instance, as kryos_restart writes them.
+        type(geo_slot_t), intent(in) :: g
+        character(len=*), intent(in) :: dir
+        call fields_restart_write(g%c%imports, dir//"/"//trim(g%c%name)//"_imports.nc")
+        call fields_restart_write(g%c%exports, dir//"/"//trim(g%c%name)//"_exports.nc")
+    end subroutine fields_write
+
+    subroutine fields_read(g, dir)
+        type(geo_slot_t), intent(inout) :: g
+        character(len=*), intent(in)    :: dir
+        call fields_restart_read(g%c%imports, dir//"/"//trim(g%c%name)//"_imports.nc")
+        call fields_restart_read(g%c%exports, dir//"/"//trim(g%c%name)//"_exports.nc")
+    end subroutine fields_read
 
     subroutine bsl_update_global(glob, t)
         type(geo_slot_t), intent(inout) :: glob

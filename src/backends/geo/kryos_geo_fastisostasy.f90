@@ -16,7 +16,7 @@ module kryos_geo_fastisostasy
     use nml,             only: nml_read, nml_has_param
     use ncio,            only: nc_create, nc_write_dim, nc_write, nc_open, nc_close, nc_time_index
     use kryos_component, only: init_ctx_t, step_time_t, constraints_t, component_write_output, NAME_LEN, &
-                               PASS_INIT, PASS_GEOMETRY, PASS_RESTART
+                               PASS_INIT, PASS_GEOMETRY
     use kryos_geo,       only: geo_t, geo_opt_t
     use fastisostasy,    only: isos_class, isos_init, isos_init_ref, isos_init_state, isos_update, isos_end, &
                                isos_restart_write, bsl_class, bsl_init, bsl_update, bsl_restart_write, &
@@ -114,19 +114,18 @@ contains
     end subroutine fastiso_geo_init_
 
     subroutine fastiso_geo_init_state_(self, st, pass)
-        ! Passes of core-design 3.2; others: nothing.
+        ! Passes of core-design 3.2; others: nothing. PASS_INIT: nothing to put
+        ! (the state needs the global bsl). PASS_RESTART: nothing, restart_read
+        ! rebuilt the state and the core restored the exports (adapters-design A5).
         class(fastiso_geo_t), intent(inout) :: self
         type(step_time_t),    intent(in)    :: st
         integer,              intent(in)    :: pass
 
         select case (pass)
-        case (PASS_INIT)                                ! nothing to put: the state needs the global bsl
         case (PASS_GEOMETRY)                            ! domain_init_isostasy (kryos_startup.f90:236-241)
             call state_from_ice(self, st%t1)
             call exports_state(self, st%t1)
             call exports_volume(self, st%t1)
-        case (PASS_RESTART)                             ! the state restart_read rebuilt
-            call exports_state(self, st%t1)
         end select
     end subroutine fastiso_geo_init_state_
 
@@ -436,15 +435,13 @@ contains
     end subroutine fastiso_bsl_init_
 
     subroutine fastiso_bsl_init_state_(self, st, pass)
-        ! The state of bsl_init + bsl_update, and after a restart read.
+        ! PASS_INIT: the state of bsl_init + bsl_update. PASS_RESTART: nothing,
+        ! the core restored the exports with the bundle (adapters-design A5).
         class(fastiso_bsl_t), intent(inout) :: self
         type(step_time_t),    intent(in)    :: st
         integer,              intent(in)    :: pass
 
-        select case (pass)
-        case (PASS_INIT, PASS_RESTART)
-            call exports_bsl(self, st%t1, with_A=.true.)
-        end select
+        if (pass == PASS_INIT) call exports_bsl(self, st%t1, with_A=.true.)
     end subroutine fastiso_bsl_init_state_
 
     subroutine fastiso_bsl_update_(self, st)

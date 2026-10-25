@@ -88,7 +88,10 @@ contains
     end subroutine yelmo_init_
 
     subroutine yelmo_init_state_(self, st, pass)
-        ! Passes of core-design 3.2; others: nothing.
+        ! Passes of core-design 3.2; others: nothing. PASS_RESTART (after
+        ! restart_read and the core's restore of the imports and exports):
+        ! Yelmo's diagnostics on the restored state; no export is put, the
+        ! core restored them as the bundle holds them (adapters-design A5).
         class(yelmo_ice_t), intent(inout) :: self
         type(step_time_t),  intent(in)    :: st
         integer,            intent(in)    :: pass
@@ -111,10 +114,9 @@ contains
                                         topo_fixed=.false.)
             call exports_all(self, st)
         case (PASS_RESTART)                             ! domain_restart_read tail (kryos_startup.f90:521-527)
-            call bnd_geometry(self)
+            call bnd_geometry(self)                     ! the restored imports; exports: restored by the core
             call topo_diagnostic(self)
             call yelmo_regions_update(self%ylmo)
-            call exports_all(self, st)
         end select
     end subroutine yelmo_init_state_
 
