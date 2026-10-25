@@ -1,13 +1,18 @@
 program kryos
     ! The kryos driver: one program for N domains (design decision 10). The
     ! coupling sequence lives in the library (kryos_run), not here.
+    !
+    !     kryos.x <par file>        (default par/kryos.nml)
+    !
+    ! Run from the run directory: the par file's relative paths (input/,
+    ! maps/, fesmdata/, ice_data/, isostasy_data/, fesm-utils/) resolve there.
 
     use kryos_run, only: run_t, run_init, run_step, run_done, run_end
 
     implicit none
 
-    type(run_t)        :: run
-    character(len=512) :: par_file
+    type(run_t), target :: run              ! output streams point into it
+    character(len=512)  :: par_file
 
     par_file = "par/kryos.nml"
     if (command_argument_count() >= 1) call get_command_argument(1, par_file)

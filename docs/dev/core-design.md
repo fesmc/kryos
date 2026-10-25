@@ -317,6 +317,36 @@ include them:
    start and round-off after steps: the 1 m tolerance stays.
 7. **`forcing_kill`** is called by `run_step` (yelmox `with_kill`).
 
+### 3.7 As implemented (C9)
+
+- `kryos_run` (lifecycle, setup) + submodule `kryos_run_sequence` (cold start,
+  step). `run_t` adds `cnst`, `census`, `globe`, `dom(:)`, `dom_order(:)`
+  (name order, for gathers), `out`, `tmr`; the run must be a target (output
+  streams and gather sources point into it).
+- `run_init`: constants (`phys_const_load` of `[kryos] phys_const_file`,
+  group `phys_const`; `input/phys_const.nml` = yelmox `yelmo_phys_const.nml`),
+  clock, `globe_init` (skipped, logged, when the `[kryos] globe` group is
+  absent), per domain `domain_init` + `domain_create` (instances in
+  `INIT_ORDER` = ice, geo, geothermal, sediments, climate, surface, shelf;
+  `init_ctx_t` with grid, regions on it (`regions_init_nml`, as yelmox
+  `domain_regions_load`), reference, `cnst`, `library`, `time_rel`, `sec_year`
+  = `clk%sec_year`, the axes of the instances made before), unique instance
+  names, `domain_wire` with `globe_nodes`, schedules, output streams (globe,
+  each domain's instances in `INIT_ORDER`, hub, timing), `PASS_INIT` (globe,
+  then domains), `exchange_static` (every `LAG_INIT` row), cold start, describe,
+  `clock_start`, output at `time_init`.
+- Cold start: block a) runs for every domain first, then `reduce_bsl` (gather
+  `dV_bsl`, `globe_reduce`, `exchange_globe` bsl, `geo_scatter`), then per
+  domain geo → ice and b)-d). The climate → forcing row is `exchange_to_globe`
+  (lag 1; with `init` after `PASS_BOUNDARY`, and at the start of every step).
+- `exchange_into(dom, dst)`: sources geo, surface, shelf, climate, then the
+  static ones (their `LAG_INIT` rows are done). Instance helpers:
+  `domain_pass`, `domain_update` (update + mark), `domain_time`
+  (`step_time_of`), `domain_due`, `domain_present`, `domain_end` (ice last).
+  `config_cadence` (keys `dt`, `phase`, `clock`) serves globe and domains.
+- Restore with instances stops in `run_restore` (C10); a bundle holds the
+  clock only (C10 plugs in at the marked points).
+
 ## 4. Timing, cadences, lags
 
 | Instance | Cadence (phase 1 configs) | `clock` | yelmox source |

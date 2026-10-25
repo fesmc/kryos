@@ -236,7 +236,7 @@ contains
 
         call check(.not. aborts("valid"),    "abort: a valid par file does not stop")
         call check(aborts("missing-key"),    "abort: [clock] without time_end stops")
-        call check(aborts("domains"),        "abort: [kryos] domains stops until C6")
+        call check(aborts("domains"),        "abort: [kryos] domains naming a missing group stops")
         call check(aborts("missing-bundle"), "abort: a restart folder without clock_restart.nc stops")
         call check(aborts("off-grid-end"),   "abort: time_end off the step grid stops")
     end subroutine test_aborts
