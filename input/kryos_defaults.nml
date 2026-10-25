@@ -11,7 +11,8 @@
 !
 ! Backend physics groups (yelmo, isos, chion, ...) keep their own schemas in the
 ! libraries' defaults files (<library>_defaults.nml); data field groups follow
-! input/datasrc_defaults.nml. "required" marks keys a group must set (checked
+! input/datasrc_defaults.nml. The groups of code kryos hosts itself (the chion
+! host's [orbit]) have their schema at the end of this file. "required" marks keys a group must set (checked
 ! by config_validate): the value shown is a placeholder.
 
 &kryos
@@ -126,15 +127,15 @@
     H_sed = ""                                 ! field group of H_sed [m]
 /
 
-! The orbit of the chion host (yelmox orbit_forcing, template copied from yelmox v2.4
-! input/yelmox_defaults.nml)
+! ===== Backend physics groups kryos owns (no library defaults file) =====
+
 &orbit
-    ! The orbital elements of the insolation of the surface models (chion
-    ! itm/bessi, smbpal itm; fesmc/insol, Laskar et al. 2004 tables).
+    ! The orbital elements of the insolation of the chion host (yelmox
+    ! input/yelmox_defaults.nml [orbit]; fesmc/insol, Laskar et al. 2004 tables).
     method = "fixed_time"   ! forcing_time: at the forcing time time_rel; fixed_time: at time; fixed_orbit: ecc, obl, per
-    time   = 0.0        ! [yr] model time of the orbit (fixed_time; relative to 1950, past < 0)
-    ecc    = 0.016702   ! [1]   eccentricity (fixed_orbit; these: the tables at 1950)
-    obl    = 23.4393    ! [deg] obliquity (fixed_orbit)
-    per    = 102.918    ! [deg] longitude of perihelion (fixed_orbit)
-    fldr   = "input"    ! folder of the orbital tables (LA2004.INSOLN.5Ma.txt, LA2004.INSOLP.1Ma.txt)
+    time   = 0.0            ! [yr] model time of the orbit (fixed_time; relative to 1950, past < 0)
+    ecc    = 0.016702       ! [1]   eccentricity (fixed_orbit; these: the tables at 1950)
+    obl    = 23.4393        ! [deg] obliquity (fixed_orbit)
+    per    = 102.918        ! [deg] longitude of perihelion (fixed_orbit)
+    fldr   = "input"        ! folder of the orbital tables (LA2004.INSOLN.5Ma.txt, LA2004.INSOLP.1Ma.txt)
 /

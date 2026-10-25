@@ -119,6 +119,7 @@ ifeq ($(yelmo), 1)
     need_lis_fftw   = 1
 else
     kryos_ice_yelmo_obj = $(objdir)/kryos_ice_yelmo_stub.o
+    test_skip += $(testdir)/test_run_sequence.f90
 endif
 
 ifeq ($(fastisostasy), 1)
@@ -131,7 +132,7 @@ ifeq ($(fastisostasy), 1)
     need_lis_fftw   = 1
 else
     kryos_geo_fastisostasy_obj = $(objdir)/kryos_geo_fastisostasy_stub.o
-    test_skip += $(testdir)/test_geo_fastisostasy.f90 $(testdir)/test_globe.f90
+    test_skip += $(testdir)/test_geo_fastisostasy.f90 $(testdir)/test_globe.f90 $(testdir)/test_run_sequence.f90
 endif
 
 ifeq ($(chion), 1)
@@ -147,6 +148,7 @@ ifeq ($(chion), 1)
     backend_static += chion-static
 else
     kryos_surface_chion_obj = $(objdir)/kryos_surface_chion_stub.o
+    test_skip += $(testdir)/test_run_sequence.f90
 endif
 
 ifeq ($(insol), 1)
