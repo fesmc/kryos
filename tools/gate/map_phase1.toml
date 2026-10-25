@@ -51,19 +51,15 @@ comp = "ice"
 [[row]]
 ref = "yelmo.nc"
 vars = ["H_ice", "z_srf"]
-run = "{ice}.nc"                  # exports
-class = "C"
-expr = "Float64(x)"
-units = "m"
+run = "{ice}.nc"                  # exports, written as float by the default writer
+class = "E"
 comp = "ice"
 
 [[row]]
 ref = "yelmo.nc"
 vars = ["dHidt"]
 run = "{ice}.nc"
-class = "C"
-expr = "Float64(x)"
-units = "m yr-1"
+class = "E"
 comp = "ice"
 
 [[row]]
@@ -71,7 +67,7 @@ ref = "yelmo.nc"
 vars = ["smb", "bmb", "cmb", "mb_net"]   # m ice yr-1 -> kg m-2 yr-1
 run = "{ice}.nc"
 class = "C"
-expr = "Float64(x) * rho_ice"
+expr = "Float32(Float64(x) * rho_ice)"   # the dp export, written as float
 units = "kg m-2 yr-1"
 comp = "ice"
 
@@ -113,8 +109,8 @@ comp = "hub"
 
 [[row]]
 ref = "isos.nc"
-vars = ["z_bed", "z_ss"]
-run = "{geo}_isos.nc"
+vars = ["z_bed", "z_ss", "w", "we"]
+run = "{geo}_isos.nc"             # the adapter's isos stream
 class = "E"
 comp = "geo"
 
@@ -124,7 +120,7 @@ vars = ["w", "we"]
 run = "{geo}.nc"
 run_var = "dz_bed"
 class = "C"
-expr = "Float64(w + we)"          # the sum in FastIsostasy's kind (sp), widened
+expr = "Float32(w + we)"          # the sum in FastIsostasy's kind (sp); the export, written as float
 units = "m"
 comp = "geo"
 
@@ -138,37 +134,7 @@ comp = "geo"
 
 [[row]]
 ref = "chion.nc"
-vars = ["smb", "melt", "runoff", "refrz"]   # mm w.e. yr-1 = kg m-2 yr-1
-run = "{surface}.nc"
-class = "C"
-expr = "Float64(x)"
-units = "kg m-2 yr-1"
-comp = "surface"
-
-[[row]]
-ref = "chion.nc"
-vars = ["tsrf"]
-rename = { tsrf = "T_srf" }
-run = "{surface}.nc"
-class = "C"
-expr = "Float64(x)"
-units = "K"
-comp = "surface"
-
-[[row]]
-ref = "chion.nc"
-vars = ["alb_s"]
-rename = { alb_s = "albedo" }
-run = "{surface}.nc"
-class = "C"
-expr = "Float64(x)"
-units = "1"
-comp = "surface"
-
-[[row]]
-ref = "chion.nc"
-vars = ["pr", "sf", "t2m", "S", "PDDs", "H_snow", "mask"]
-run = "{surface}.nc"              # the adapter keeps the 13 annual fields (adapters §5.4)
+run = "{surface}.nc"              # the adapter writes chion's 13 annual fields, yelmox names and units (adapters §5.4)
 class = "E"
 comp = "surface"
 
@@ -176,20 +142,8 @@ comp = "surface"
 
 [[row]]
 ref = "mshlf.nc"
-vars = ["bmb_shlf"]               # m ice yr-1 -> kg m-2 yr-1
-run = "{shelf}.nc"
-class = "C"
-expr = "Float64(x) * rho_ice"
-units = "kg m-2 yr-1"
-comp = "shelf"
-
-[[row]]
-ref = "mshlf.nc"
-vars = ["T_shlf", "tf_shlf"]
-run = "{shelf}.nc"
-class = "C"
-expr = "Float64(x)"
-units = "K"
+run = "{shelf}.nc"                # the adapter writes bmb_shlf [m ie yr-1], T_shlf, tf_shlf as yelmox
+class = "E"
 comp = "shelf"
 
 # ===== Climate (snapshots) =====
@@ -200,22 +154,6 @@ run = "{climate}.nc"
 class = "E"
 comp = "climate"
 
-[[row]]
-ref = "snap.nc"
-vars = ["z_srf"]
-rename = { z_srf = "z_srf_clim" }
-run = "{climate}.nc"
-class = "E"
-comp = "climate"
-
-[[row]]
-ref = "snap.nc"
-vars = ["pr"]                     # mm d-1 -> kg m-2 yr-1 with the run calendar's year
-run = "{climate}.nc"
-class = "C"
-expr = "Float64(x) * (sec_year / sec_day)"
-units = "kg m-2 yr-1"
-comp = "climate"
 
 # ===== Restart bundles (--restarts) =====
 

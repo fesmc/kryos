@@ -242,3 +242,26 @@ Results (all jobs COMPLETED, exit 0):
   Hub `H_ice`, `z_srf` at t0 differ from R2's `htopo.nc` t0, which is written
   after the cold start (the hub then follows the ice; Antarctica after its 10 yr
   equilibration): that comparison belongs to C9.
+
+## Gate 1, Greenland: K == R2 (2026-10-25)
+
+- Run: kryos `a8666f2` on stack S2 (`tools/run_kryos.sh grl cont`, job 28411222,
+  `$G/runs/grl/kx-a8666f2/S2/cont`), 1000 yr in 2:51 (yelmox R2 2:34), par file
+  `par/gate/grl.nml` (converted, `tools/bin/yelmox2kryos.jl`).
+- Compare (`tools/bin/kryos-compare.jl R2 K --map tools/gate/map_phase1.toml
+  --gate grl`, run locally on copies): **PASS**, 202 variables, 0 failing, first
+  divergence none, 12 kryos-only variables (N). Report:
+  `docs/dev/gate-reports/grl-K-a8666f2-vs-R2.md`.
+- On the way:
+  - wiring rule changed (`9fadf2f`): rows never round; sp kernels narrow
+    their operands; consumers narrow once (the pr / bmb_shlf / Q_geo round trips
+    were not exact before);
+  - ifx: five compiler bugs worked around (`40f54fa`..`a8666f2`): the output
+    table cache, host-associated arrays in tests duplicated under `-qopenmp`,
+    assumed-rank in a nested SELECT RANK, and `mold=` from a non-polymorphic
+    actual (the `*_adopt` wrappers now take an allocatable prototype); the whole
+    test suite passes under ifx with the gate flags;
+  - gate map: the surface, shelf and climate adapters write yelmox's own
+    fields and units (class E), the default writer writes exports as float
+    (C rows wrapped in `Float32`).
+- Not yet: restart bundles (C10), chunk vs cont, Antarctica (C11).
