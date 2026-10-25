@@ -266,7 +266,7 @@ Keys set by the converter, not from a yelmox key (fixed by the schema or by a ru
 - `Q_geo_ant.filename` = "fesmdata/{domain}/{grid_name}/{grid_name}_GHF-Shapiro2004.nc"
 - `Q_geo_ant.name` = "ghf"
 - `Q_geo_ant.mode` = "static"
-- `Q_geo_ant.remap` = "bilin"
+- `Q_geo_ant.remap` = "auto"
 - `Q_geo_ant.fill` = "nearest"
 - `H_sed_ant.mode` = "const"
 - `H_sed_ant.value` = 0.0

@@ -67,7 +67,7 @@ kvg(G, g) = Dict(k.name => NL.parse_value(k.raw) for k in G[g].keys)
         g = kv(G, "ghf_tes")
         @test g["backend"] == "data" && g["dt"] === -1.0 && g["Q_geo"] == "Q_geo_tes" && g["Q_geo_min"] === 1e-4
         f = kv(G, "Q_geo_tes")
-        @test f["mode"] == "static" && f["name"] == "ghf" && f["fill"] == "nearest" && f["remap"] == "bilin"
+        @test f["mode"] == "static" && f["name"] == "ghf" && f["fill"] == "nearest" && f["remap"] == "auto"
         @test occursin("GHF.nc", f["filename"])
         s = kv(G, "H_sed_tes")
         @test s["mode"] == "const" && s["value"] === 0.0

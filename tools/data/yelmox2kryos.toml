@@ -563,10 +563,10 @@ rule = "sed_field"
 
 [rules.ghf_field]
 ghf_min = 1e-4             # [W m-2] yelmox geothermal.f90 floor ghf_min = 0.1 mW m-2
-remap   = "bilin"          # read_ghf: fesmdata_map_init(..., "bilin")
+remap   = "auto"           # read_ghf: bilin, short-circuited to a copy on the same grid; datasrc auto = none on the instance grid, else bilin (Q_geo intensive)
 fill    = "nearest"        # missing values (negative) filled from the nearest valid cell
 [rules.sed_field]
-remap   = "bilin"
+remap   = "auto"           # as ghf (H_sed intensive)
 fill    = "nearest"
 
 # Files whose sha256 the header records besides the ones the par file names

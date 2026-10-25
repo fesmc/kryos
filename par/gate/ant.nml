@@ -222,7 +222,7 @@
     out_of_range = "error"
     units        = "auto" "auto"
     scaling      = 1.0 0.0
-    remap        = "bilin"
+    remap        = "auto"
     grid_src     = ""
     fill         = "nearest"
     fill_value   = 0.0
