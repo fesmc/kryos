@@ -352,8 +352,8 @@ include them:
 - `kryos_restart` (bundle names, `restart_write`, the manifest, the clock
   and cadence restore, the restore of one instance); the restore order is
   `run_restore` in `kryos_run_sequence`, next to the cold start. Slot
-  dispatchers `domain_restart_write/read` (domain) and `globe_restart_write/read`,
-  `globe_pass`, `globe_component` (globe); `RESTORE_ORDER` = ice, geo,
+  dispatchers `domain_restart_write/read/files` (domain) and
+  `globe_restart_write/read/files`, `globe_pass`, `globe_component` (globe); `RESTORE_ORDER` = ice, geo,
   climate, surface, shelf, geothermal, sediments.
 - `run_restore`: (1) `clock_restart_read`, then `cadence_restart_read` of
   every instance that steps; a branch (bundle time ≠ `time_init`) with
@@ -381,13 +381,24 @@ include them:
   bundle. A run ended by the kill switch off a cadence grid writes no bundle
   (`clock_restart_allowed`) and logs why.
 - Manifest: `[bundle]` adds `fesm_utils_git`; an instance group adds `domain`
-  and lists in `files` its two field files and the files its backend's
-  `restart_write` added to the folder. The check compares scope, domain,
+  and lists in `files` its two field files, then the files its backend
+  declares (`restart_files`, see below). The check compares scope, domain,
   component, backend and grid both ways (an instance of the run missing in
   the bundle, or of the bundle missing in the run, stops). Versions:
   `kryos_build_info` (generated each build by `config/build_info.sh`, `git
   describe --always --dirty`); `git` of an instance is its build switch's
   library (yelmo, fastisostasy, chion), else kryos.
+- Backend files are declared, not listed from the folder: the binding
+  `restart_files` of `component_t` returns the base names the backend's
+  `restart_write` creates in its folder (default `<name>_restart.nc` when
+  `con%restart`, else none; overridden by the tsgen forcing, one
+  `<instance>_<coef>_restart.nc` per non-derived coefficient, and by Yelmo,
+  which adds the `_elsa`/`_tracer` sidecars of an active Lagrangian backend).
+  The writer checks after each `restart_write` that every declared file
+  exists (stop naming instance, file, folder); the restore checks, after the
+  manifest comparison and before any read, that every file the manifest lists
+  exists in the bundle. The only shell call is the one that replaces and makes
+  the bundle folders (Fortran has no `mkdir`).
 - Chunks: chunk k is the same par file with `[clock] time_init`,
   `time_end` and `[kryos] restart` overridden, e.g. with runme `-p
   clock.time_init=500 clock.time_end=1000 kryos.restart=<run dir of chunk
@@ -687,7 +698,8 @@ named as in the par file (`scope`, `component`, `backend`, `grid`, `files`,
 - Written when the restart schedule is due (always at `time_end`); write
   order = restore order (§3.3). `<instance>_restart.nc` only for stateful
   instances (no file is a valid choice of the adapter); `_fields.nc` for all.
-  The hub is not stored. Folder creation as yelmox (`mkdir -p`).
+  The hub is not stored. Folder creation as yelmox (`mkdir -p`); the
+  backend files of an instance are the ones its `restart_files` declares (§3.8).
 - Validity: `clock_start` stops at init if a restart time or `time_end` is
   off any cadence grid; a killed run writes a bundle only if
   `clock_restart_allowed`, else logs why (fesm_clock §4.2).

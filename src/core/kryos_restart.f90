@@ -18,7 +18,9 @@ module kryos_restart
     ! are the core's: a published import or export survives the restart
     ! without the adapter (adapters-design A5); the backend files are the
     ! adapter's (restart_write/read through the component wrappers, nothing for
-    ! a backend without state). The hub is not stored: it is derived from the
+    ! a backend without state); a backend declares the files its restart_write
+    ! creates (restart_files, <comp>_restart_files), and the writer checks that
+    ! each exists. The hub is not stored: it is derived from the
     ! restored ice. Write order = restore order: the globe (forcing, geo),
     ! then each domain's instances in RESTORE_ORDER (ice, geo, climate,
     ! surface, shelf, geothermal, sediments).
@@ -32,12 +34,14 @@ module kryos_restart
     ! manifest.nml (read back with nml): group [bundle] (time, ticks,
     ! ticks_per_year, kryos_git, fesm_utils_git, domains) and one group per
     ! instance, named as the instance (scope, domain, component, backend,
-    ! grid, files, git). A restore checks the run's instances against it:
+    ! grid, files, git; files: the two field files, then the backend's
+    ! declared files). A restore checks the run's instances against it:
     ! the same instances, each with the same scope, domain, component,
     ! backend and grid, or it stops naming the instance (a changed cadence is
-    ! allowed and logged by fesm_clock).
+    ! allowed and logged by fesm_clock); then that every file the manifest
+    ! lists exists in the bundle.
     !
-    ! Folders are made and listed with the shell (mkdir -p, ls), as yelmox.
+    ! The folders are made with the shell (rm -rf, mkdir -p; one call, as yelmox).
 
     use precision,        only: dp
     use iso_fortran_env,  only: int64
@@ -47,9 +51,10 @@ module kryos_restart
                                 cadence_restart_write, cadence_restart_read, cadence_dt_years
     use nml,              only: nml_read, nml_has_group, nml_group_names, nml_group_len
     use kryos_component,  only: component_t, PASS_RESTART, NAME_LEN, PATH_LEN
-    use kryos_globe,      only: globe_t, globe_component, globe_pass, globe_restart_write, globe_restart_read
+    use kryos_globe,      only: globe_t, globe_component, globe_pass, globe_restart_write, globe_restart_read, &
+                                globe_restart_files
     use kryos_domain,     only: domain_t, domain_component, domain_pass, domain_restart_write, &
-                                domain_restart_read, RESTORE_ORDER, NCOMP
+                                domain_restart_read, domain_restart_files, RESTORE_ORDER, NCOMP
     use kryos_build_info, only: GIT_KRYOS, LIB_NAME, LIB_GIT
 
     implicit none
@@ -57,12 +62,11 @@ module kryos_restart
     private
     public :: GLOBE_ORDER, year_label, restart_dir
     public :: restart_write, restart_read_clock, restart_check_manifest
-    public :: restart_read_global, restart_read_instance
+    public :: restart_read_global, restart_read_instance, restart_require_files
 
     character(len=*), parameter :: CLOCK_FILE    = "clock_restart.nc"
     character(len=*), parameter :: MANIFEST_FILE = "manifest.nml"
     character(len=*), parameter :: BUNDLE_GROUP  = "bundle"
-    character(len=*), parameter :: LS_FILE       = ".kryos_ls"      ! scratch listing, removed after use
 
     ! The global instances in write and restore order (core-design 3.3).
     character(len=8), parameter :: GLOBE_ORDER(2) = [character(len=8) :: "forcing", "geo"]
@@ -127,8 +131,8 @@ contains
         ! exists): the clock and the cadences, the globe's instances, each
         ! domain's instances in RESTORE_ORDER, the manifest last (a bundle
         ! without one is incomplete). The folders are made with one shell
-        ! command; each folder is listed once before its first instance (a
-        ! domain folder is new and empty) and once after each backend write.
+        ! command; after each backend write, every file the backend declared
+        ! (restart_files) must exist in its folder.
         character(len=*),       intent(in)    :: dir
         type(clock_t),          intent(in)    :: clk
         type(globe_t),  target, intent(inout) :: globe
@@ -136,7 +140,6 @@ contains
 
         type(entry_t), allocatable :: ent(:)
         class(component_t), pointer :: c
-        character(len=PATH_LEN), allocatable :: seen(:)
         character(len=:), allocatable :: ddir, file, cmd
         real(dp) :: t
         integer  :: d, j
@@ -164,23 +167,21 @@ contains
 
         ! the instances
         allocate(ent(0))
-        seen = dir_list(dir)
         do j = 1, size(GLOBE_ORDER)
             c => globe_component(globe, trim(GLOBE_ORDER(j)))
             if (.not. associated(c)) cycle
             ent = [ent, entry_of(c, dir)]
-            call backend_write(ent(size(ent)), seen, globe=globe, which=trim(GLOBE_ORDER(j)), t=t)
-            call fields_write(c, ent(size(ent)), seen)
+            call backend_write(ent(size(ent)), globe=globe, which=trim(GLOBE_ORDER(j)), t=t)
+            call fields_write(c, ent(size(ent)))
         end do
         do d = 1, size(dom)
             ddir = dir//"/"//trim(dom(d)%name)
-            seen = [character(len=PATH_LEN) ::]
             do j = 1, NCOMP
                 c => domain_component(dom(d), RESTORE_ORDER(j))
                 if (.not. associated(c)) cycle
                 ent = [ent, entry_of(c, ddir)]
-                call backend_write(ent(size(ent)), seen, dom=dom(d), k=RESTORE_ORDER(j), t=t)
-                call fields_write(c, ent(size(ent)), seen)
+                call backend_write(ent(size(ent)), dom=dom(d), k=RESTORE_ORDER(j), t=t)
+                call fields_write(c, ent(size(ent)))
             end do
         end do
 
@@ -205,41 +206,37 @@ contains
         allocate(e%files(0))
     end function entry_of
 
-    subroutine backend_write(e, seen, t, globe, which, dom, k)
+    subroutine backend_write(e, t, globe, which, dom, k)
         ! The backend's restart_write of one instance (globe: `which`; domain:
-        ! component k); the files it added to the folder (those not in `seen`,
-        ! the folder's entries before it) are recorded in e. seen becomes the
-        ! folder's entries after it.
+        ! component k), then the files it declares (restart_files): each must
+        ! exist in the instance's folder, else stop naming instance, file and
+        ! folder; they are recorded in e.
         type(entry_t),                        intent(inout)           :: e
-        character(len=PATH_LEN), allocatable, intent(inout)           :: seen(:)
         real(dp),                             intent(in)              :: t
         type(globe_t),                        intent(inout), optional :: globe
         character(len=*),                     intent(in),    optional :: which
         type(domain_t),                       intent(inout), optional :: dom
         integer,                              intent(in),    optional :: k
 
-        character(len=PATH_LEN), allocatable :: after(:)
-        integer :: i
+        character(len=PATH_LEN), allocatable :: declared(:)
 
         if (present(globe)) then
             call globe_restart_write(globe, which, trim(e%dir), t)
+            declared = globe_restart_files(globe, which)
         else
             call domain_restart_write(dom, k, trim(e%dir), t)
+            declared = domain_restart_files(dom, k)
         end if
-        after = dir_list(trim(e%dir))
-        do i = 1, size(after)
-            if (any(seen == after(i))) cycle
-            e%files = [character(len=PATH_LEN) :: e%files, after(i)]
-        end do
-        call move_alloc(after, seen)
+        call restart_require_files(e%name, e%dir, declared, "its restart_files declares was not created by its "// &
+                                   "restart_write (backend "//trim(e%backend)//")")
+        e%files = [character(len=PATH_LEN) :: e%files, declared]
     end subroutine backend_write
 
-    subroutine fields_write(c, e, seen)
+    subroutine fields_write(c, e)
         ! The imports and exports of an instance: <inst>_imports.nc, <inst>_exports.nc
-        ! (added to the folder's entries `seen`).
-        class(component_t),                   intent(in)    :: c
-        type(entry_t),                        intent(inout) :: e
-        character(len=PATH_LEN), allocatable, intent(inout) :: seen(:)
+        ! (recorded in e before the backend's files).
+        class(component_t), intent(in)    :: c
+        type(entry_t),      intent(inout) :: e
 
         character(len=PATH_LEN) :: files(2)
 
@@ -247,7 +244,6 @@ contains
         call fields_restart_write(c%imports, fields_file(e%dir, c%name, "imports"))
         call fields_restart_write(c%exports, fields_file(e%dir, c%name, "exports"))
         e%files = [character(len=PATH_LEN) :: files, e%files]
-        seen = [seen, files]
     end subroutine fields_write
 
     function fields_file(dir, name, which) result(file)
@@ -358,7 +354,9 @@ contains
         ! The run's instances against the bundle's manifest: every instance of
         ! the run is in the bundle with the same scope, domain, component,
         ! backend and grid, and the bundle holds no other instance; else stop
-        ! naming the instance. Logs the bundle's time and versions.
+        ! naming the instance. Every file the manifest lists for an instance
+        ! exists in its folder, else stop naming instance, file and folder
+        ! (before any read). Logs the bundle's time and versions.
         character(len=*),       intent(in) :: dir
         type(globe_t),  target, intent(in) :: globe
         type(domain_t), target, intent(in) :: dom(:)
@@ -418,6 +416,11 @@ contains
             call fesm_error(proc, "instance `"//trim(groups(i))//"` of the restart bundle is not in the run", hint)
         end do
 
+        ! the files the manifest lists
+        do i = 1, size(ent)
+            call check_listed_files(file, ent(i))
+        end do
+
         ftime = "";  kgit = ""
         call nml_read(file, BUNDLE_GROUP, "time", ftime)
         call nml_read(file, BUNDLE_GROUP, "kryos_git", kgit)
@@ -425,6 +428,74 @@ contains
                      to_str(size(ent))//" instances as in the run", "written by kryos "//trim(kgit)// &
                      "; this build "//GIT_KRYOS)
     end subroutine restart_check_manifest
+
+    subroutine check_listed_files(manifest, e)
+        ! Every file the manifest lists for the instance e exists in its folder.
+        character(len=*), intent(in) :: manifest
+        type(entry_t),    intent(in) :: e
+
+        call restart_require_files(e%name, e%dir, manifest_files(manifest, trim(e%name)), &
+                                   "the manifest lists is not in the restart bundle (an incomplete or damaged bundle)")
+    end subroutine check_listed_files
+
+    subroutine restart_require_files(instance, folder, files, what)
+        ! Every file of `files` exists in `folder`, else stop naming the
+        ! instance, the file and the folder; `what` completes "the file `f` ...".
+        character(len=*),        intent(in) :: instance, folder, what
+        character(len=PATH_LEN), intent(in) :: files(:)
+
+        character(len=:), allocatable :: f
+        integer :: i
+
+        do i = 1, size(files)
+            f = trim(files(i))
+            if (exists(trim(folder)//"/"//f)) cycle
+            call fesm_error("kryos_restart::restart_require_files", "instance `"//trim(instance)//"`: the file `"// &
+                            f//"` "//what, "folder "//trim(folder))
+        end do
+    end subroutine restart_require_files
+
+    function manifest_files(manifest, group) result(files)
+        ! The `files` list of a manifest group, the quoted names of the line
+        ! manifest_write wrote (not through nml: its string vector is 256
+        ! characters long, a list of many backend files is longer).
+        character(len=*), intent(in) :: manifest, group
+        character(len=PATH_LEN), allocatable :: files(:)
+
+        character(len=8192) :: line
+        integer :: u, ios, p, i, i0
+        logical :: in_group
+
+        allocate(files(0))
+        in_group = .false.
+        open(newunit=u, file=manifest, status="old", action="read")
+        do
+            read(u, '(a)', iostat=ios) line
+            if (ios /= 0) exit
+            line = adjustl(line)
+            if (line(1:1) == "&") then
+                in_group = trim(line(2:)) == trim(group)
+            else if (line(1:1) == "/") then
+                in_group = .false.
+            else if (in_group) then
+                p = index(line, "=")
+                if (p == 0) cycle
+                if (trim(line(1:p-1)) /= "files") cycle
+                i0 = 0
+                do i = p + 1, len_trim(line)
+                    if (line(i:i) /= '"') cycle
+                    if (i0 == 0) then
+                        i0 = i + 1                                  ! opening quote
+                    else
+                        files = [character(len=PATH_LEN) :: files, line(i0:i-1)]
+                        i0 = 0                                      ! closing quote
+                    end if
+                end do
+                exit
+            end if
+        end do
+        close(u)
+    end function manifest_files
 
     function entry_value(e, q) result(s)
         ! The value of CHECK_KEYS(q) of an entry.
@@ -520,26 +591,6 @@ contains
             if (trim(LIB_NAME(i)) == trim(name)) v = LIB_GIT(i)
         end do
     end function lib_version
-
-    function dir_list(dir) result(names)
-        ! The entries of a folder (ls -1A), without the scratch listing.
-        character(len=*), intent(in) :: dir
-        character(len=PATH_LEN), allocatable :: names(:)
-
-        character(len=PATH_LEN) :: line
-        integer :: u, ios
-
-        call shell("ls -1A '"//dir//"' > '"//dir//"/"//LS_FILE//"'", "the listing of "//dir)
-        allocate(names(0))
-        open(newunit=u, file=dir//"/"//LS_FILE, status="old", action="read")
-        do
-            read(u, '(a)', iostat=ios) line
-            if (ios /= 0) exit
-            if (trim(line) == LS_FILE .or. len_trim(line) == 0) cycle
-            names = [character(len=PATH_LEN) :: names, line]
-        end do
-        close(u, status="delete")
-    end function dir_list
 
     subroutine shell(cmd, what)
         ! A shell command that must succeed.

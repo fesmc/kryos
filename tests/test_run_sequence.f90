@@ -43,7 +43,12 @@ program test_run_sequence
     ! difference fails; Yelmo calves with "equil" as the gate configurations
     ! (with its default vm-m16 calving a Yelmo restart is not exact). A bundle
     ! whose manifest does not match the run stops the restore (an instance
-    ! renamed in the par file, a backend changed in the manifest).
+    ! renamed in the par file, a backend changed in the manifest). The
+    ! manifest's files of every instance equal the files the backend declares
+    ! (restart_files: the two field files, then the backend's); a file the
+    ! manifest lists that is missing from the bundle stops the restore, and
+    ! a declared file a backend did not create stops the write (both naming
+    ! instance, file and folder).
     !
     ! The runs execute in tmp/test_run_sequence/ (each run directory with its
     ! own input/ assembled from links: kryos input/, the yelmo and chion
@@ -52,15 +57,17 @@ program test_run_sequence
     !     test_run_sequence.x run <par file>          cold start + checks
     !     test_run_sequence.x plain <par file>        the run as the driver does it
     !     test_run_sequence.x restored <par file>     a restored chunk + checks
+    !     test_run_sequence.x require <folder> <file> restart_require_files of one file
     ! Built only with yelmo=1 fastisostasy=1 chion=1 (config/common.mk).
 
     use precision,       only: sp, dp
     use ncio,            only: nc_create, nc_write_dim, nc_write, nc_read, nc_exists_var, nc_size
     use nml,             only: nml_has_group, nml_read
+    use kryos_restart,   only: restart_require_files
     use coords,          only: grid_class, grid_cdo_read_desc
     use fesm_fields,     only: field_state_t, fields_get
     use fesm_clock,      only: clock_time, clock_time_elapsed, cadence_t_last
-    use kryos_component, only: component_t
+    use kryos_component, only: component_t, PATH_LEN
     use kryos_domain,    only: domain_component, NCOMP
     use kryos_run,       only: run_t, run_init, run_step, run_done, run_end
     use kryos_ice_yelmo, only: yelmo_ice_t
@@ -81,14 +88,20 @@ program test_run_sequence
     character(len=16), parameter :: INSTANCES(9) = [character(len=16) :: "forcing", "geo_glob", "ice_grl", &
         "geo_grl", "climate_grl", "surface_grl", "shelf_grl", "ghf_grl", "sed_grl"]
 
-    character(len=512) :: arg, par_arg, root, repo
+    character(len=512) :: arg, par_arg, file_arg, root, repo
+    character(len=PATH_LEN) :: files_arg(1)
     integer :: nfail = 0
 
     call get_command_argument(1, arg)
     select case (trim(arg))
-    case ("run", "plain", "restored")
+    case ("run", "plain", "restored", "require")
         call get_command_argument(2, par_arg)
         select case (trim(arg))
+        case ("require")
+            call get_command_argument(3, file_arg)
+            files_arg(1) = file_arg                 ! (a constructor of trim() as the actual argument crashes gfortran)
+            call restart_require_files("ice_grl", trim(par_arg), files_arg, &
+                                       "its restart_files declares was not created by its restart_write")
         case ("run");      call run_child(trim(par_arg))
         case ("plain");    call plain_child(trim(par_arg))
         case ("restored"); call restored_child(trim(par_arg))
@@ -321,7 +334,8 @@ contains
     subroutine manifest_mismatch()
         ! A restore whose bundle does not match the run stops, naming the
         ! instance: (1) the run's sediments instance renamed (not in the
-        ! bundle); (2) the bundle's manifest with another backend for ghf_grl.
+        ! bundle); (2) the bundle's manifest with another backend for ghf_grl;
+        ! (3) a file the manifest lists missing from the bundle.
         character(len=:), allocatable :: d
 
         write(*,'(a)') "--- manifest checks"
@@ -334,6 +348,25 @@ contains
         call check(.not. child(CMM, "plain rename.nml", "rename.log", quiet=.true.) .and. &
                    in_file(d//CMM//"rename.log", "sed2_grl") .and. in_file(d//CMM//"rename.log", "not in the restart bundle"), &
                    "restore stops: instance sed2_grl of the run is not in the bundle ("//DIR//CMM//"rename.log)")
+
+        ! a file the manifest lists is missing from the bundle (the shelf's restart file)
+        call sh("cp -R '"//d//C00//"restart-40' '"//d//CMM//"short-40'")
+        call sh("rm '"//d//CMM//"short-40/Greenland/shelf_grl_restart.nc'")
+        call write_par(d//CMM//"short.nml", "short-40", T_MID, T_END, T_MID)
+        call check(.not. child(CMM, "plain short.nml", "short.log", quiet=.true.) .and. &
+                   in_file(d//CMM//"short.log", "shelf_grl") .and. in_file(d//CMM//"short.log", "shelf_grl_restart.nc") .and. &
+                   in_file(d//CMM//"short.log", "short-40/Greenland") .and. &
+                   in_file(d//CMM//"short.log", "is not in the restart bundle"), &
+                   "restore stops: shelf_restart.nc listed in the manifest is missing ("//DIR//CMM//"short.log)")
+
+        ! a declared file the backend did not create stops the write (restart_require_files, as the writer calls it)
+        call check(child(CMM, "require "//d//C00//"restart-40/Greenland shelf_grl_restart.nc", "require-ok.log", &
+                         quiet=.true.), "restart_require_files: a declared file that exists passes")
+        call check(.not. child(CMM, "require "//d//C00//"restart-40/Greenland missing_restart.nc", "require.log", &
+                               quiet=.true.) .and. in_file(d//CMM//"require.log", "ice_grl") .and. &
+                   in_file(d//CMM//"require.log", "missing_restart.nc") .and. &
+                   in_file(d//CMM//"require.log", "restart-40/Greenland"), &
+                   "restart_require_files: a declared file that is missing stops naming instance, file and folder")
 
         call write_par(d//CMM//"backend.nml", "bad-40", T_MID, T_END, T_MID)
         call check(.not. child(CMM, "plain backend.nml", "backend.log", quiet=.true.) .and. &
@@ -410,7 +443,50 @@ contains
             end if
         end do
         call check(ok, bundle//": backend restart files of the stateful instances only")
+
+        ok = .true.
+        do i = 1, size(INSTANCES)
+            ok = ok .and. files_listed(b//"/manifest.nml", trim(INSTANCES(i)))
+        end do
+        call check(ok, bundle//": manifest files of every instance = the declared lists (the 2 field files, then "// &
+                   "the backend's)")
     end subroutine check_bundle
+
+    function declared_files(name) result(files)
+        ! The files the manifest must list for an instance of the par file: its
+        ! two field files, then the files its backend declares (restart_files):
+        ! one per coefficient of the forcing, <name>_restart.nc of the stateful
+        ! instances, none of the stateless (climate, data).
+        character(len=*), intent(in) :: name
+        character(len=64), allocatable :: files(:)
+
+        files = [character(len=64) :: trim(name)//"_imports.nc", trim(name)//"_exports.nc"]
+        select case (trim(name))
+        case ("forcing")
+            files = [character(len=64) :: files, "forcing_alpha_restart.nc", "forcing_beta_restart.nc"]
+        case ("climate_grl", "ghf_grl", "sed_grl")
+            continue
+        case default
+            files = [character(len=64) :: files, trim(name)//"_restart.nc"]
+        end select
+    end function declared_files
+
+    logical function files_listed(manifest, name)
+        ! The `files` of the instance group in the manifest equal declared_files, in order.
+        character(len=*), intent(in) :: manifest, name
+        character(len=64) :: got(12)
+        character(len=64), allocatable :: want(:)
+        integer :: n
+
+        got = ""
+        call nml_read(manifest, name, "files", got)
+        want = declared_files(name)
+        n = size(want)
+        files_listed = count(len_trim(got) > 0) == n
+        if (files_listed) files_listed = all(got(1:n) == want)
+        if (.not. files_listed) write(*,'(a)') "    manifest files of "//name//": "//trim(got(1))//", "//trim(got(2))// &
+                                               ", "//trim(got(3))//", "//trim(got(4))//" ..."
+    end function files_listed
 
     subroutine same_2d(fa, fb, var, what)
         ! A 2D field of two fields restart files, bitwise.
