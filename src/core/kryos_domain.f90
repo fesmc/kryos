@@ -7,12 +7,15 @@ module kryos_domain
     ! and the three procedures the run sequence calls on it: exchange,
     ! domain_hub_update and domain_check_reference.
     !
-    ! This module stops where the instances begin. domain_init does everything
-    ! that needs no instance; the instance slots stay unallocated, and the
-    ! plug-in point for the sequence (core C9) is marked at the end of
-    ! domain_init: factories (<comp>_create), the init_ctx_t of each instance
-    ! (from dom%grid, dom%backend, refs(domain_ref_index(dom, grid)), the
-    ! domain's regions on that grid), <comp>_init, then domain_wire.
+    ! domain_init does everything that needs no instance; domain_create then
+    ! makes the instances (the init_ctx_t of each: its grid, the domain's
+    ! regions on it, the reference on it, the run's constants and calendar
+    ! year, the axes of the producers made before it; factory, init, cadence),
+    ! and domain_wire resolves the rows. The run sequence (kryos_run) drives
+    ! the instances through domain_pass, domain_update, domain_time and
+    ! domain_due, and the rows through exchange, exchange_into and
+    ! exchange_static; this module is the one place that names the seven
+    ! slots (domain_component and the dispatchers below).
     !
     ! Plain types and free procedures; no OOP. Hub precision: the hub is htopo's
     ! (kind wp, sp in phase 1); the field states hold it widened to dp.
@@ -35,25 +38,33 @@ module kryos_domain
     use precision,       only: dp, wp
     use fesm_log,        only: LOG_INFO, log_msg, fesm_error, to_str
     use fesm_fields,     only: field_state_t, fields_init, fields_add, fields_lock, fields_put, &
-                               fields_has, fields_handle, FIELD_INSTANT, FIELD_INTENSIVE, &
+                               fields_has, fields_handle, fields_describe, FIELD_INSTANT, FIELD_INTENSIVE, &
                                FIELD_EXTENSIVE
-    use fesm_clock,      only: clock_t, clock_dtt, cadence_t_last, cadence_due, cadence_dt_years
+    use fesm_clock,      only: clock_t, clock_dtt, clock_time, clock_time_rel, cadence_t_last, cadence_due, &
+                               cadence_dt_years, cadence_mark
+    use coords,          only: grid_cdo_read_desc
+    use regions,         only: regions_init_nml
     use nml,             only: nml_has_group
     use ncio,            only: nc_open, nc_close, nc_write, nc_time_index
     use coupler,         only: coupler_class, coupler_init, coupler_prime, remap
     use htopo,           only: htopo_class, htopo_init, htopo_update, htopo_write_init, htopo_write_step
     use phys_constants,  only: phys_const_class
-    use kryos_component, only: component_t, grid_ref_t, kryos_mask, NAME_LEN
-    use kryos_config,    only: config_t, config_read, config_validate, config_validate_instance
+    use kryos_component, only: component_t, grid_ref_t, init_ctx_t, step_time_t, census_t, axis_t, &
+                               step_time_of, axis_find, kryos_mask, NAME_LEN
+    use kryos_config,    only: config_t, config_read, config_validate, config_validate_instance, config_cadence
     use kryos_wiring,    only: wire_t, wire_node_t, wire_node, wire_node_states, wire_resolve, &
-                               wire_prime, wire_exchange, wire_runs, wire_label
-    use kryos_ice,       only: ice_slot_t
-    use kryos_geo,       only: geo_slot_t
-    use kryos_climate,   only: climate_slot_t
-    use kryos_surface,   only: surface_slot_t
-    use kryos_shelf,     only: shelf_slot_t
-    use kryos_geothermal, only: geothermal_slot_t
-    use kryos_sediments, only: sediments_slot_t
+                               wire_prime, wire_exchange, wire_runs, wire_label, LAG_INIT
+    use kryos_ice,       only: ice_slot_t, ice_create, ice_init, ice_init_state, ice_update, ice_end
+    use kryos_geo,       only: geo_slot_t, geo_create, geo_init, geo_init_state, geo_update, geo_end
+    use kryos_climate,   only: climate_slot_t, climate_create, climate_init, climate_init_state, &
+                               climate_update, climate_end
+    use kryos_surface,   only: surface_slot_t, surface_create, surface_init, surface_init_state, &
+                               surface_update, surface_end
+    use kryos_shelf,     only: shelf_slot_t, shelf_create, shelf_init, shelf_init_state, shelf_update, shelf_end
+    use kryos_geothermal, only: geothermal_slot_t, geothermal_create, geothermal_init, geothermal_init_state, &
+                               geothermal_update, geothermal_end
+    use kryos_sediments, only: sediments_slot_t, sediments_create, sediments_init, sediments_init_state, &
+                               sediments_update, sediments_end
 
     implicit none
 
@@ -72,6 +83,18 @@ module kryos_domain
     character(len=16), parameter, public :: COMP_NAME(NCOMP) = &
         [character(len=16) :: "ice", "geo", "climate", "surface", "shelf", "geothermal", "sediments"]
 
+    ! The order the instances are made in (yelmox kryos.f90 domain_init;
+    ! core-design 3.1 step 4): a producer of an axis (the climate's depth)
+    ! before its consumers (surface, shelf).
+    integer, parameter, public :: INIT_ORDER(NCOMP) = [C_ICE, C_GEO, C_GEOTHERMAL, C_SEDIMENTS, &
+                                                       C_CLIMATE, C_SURFACE, C_SHELF]
+
+    ! exchange_into: the sources of the rows into one consumer, in this order
+    ! (yelmox couple_to_yelmo: isostasy, surface, shelf, climate; then the
+    ! static producers, whose rows have run once at init).
+    character(len=16), parameter :: INTO_ORDER(8) = [character(len=16) :: "geo", "surface", "shelf", &
+        "climate", "geothermal", "sediments", "ice", "hub"]
+
     real(dp), parameter :: REF_TOL = 1.0_dp     ! [m] domain_check_reference: round-off only
 
     type :: hub_handles_t                       ! handles into hub_imports / hub_exports
@@ -88,6 +111,7 @@ module kryos_domain
         character(len=NAME_LEN) :: inst(NCOMP) = ""     ! instance (group) name per component; "" = absent
         character(len=NAME_LEN) :: backend(NCOMP) = ""  ! its backend, from its group
         character(len=NAME_LEN) :: grid(NCOMP) = ""     ! resolved native grid; "" for an absent component
+        character(len=8)        :: clock(NCOMP) = "model"   ! the instance's `clock` key: model | forcing
         logical                 :: grid_default(NCOMP) = .true.   ! follows the chain (no `grid` in its group)
         type(htopo_class)       :: hub                  ! sp in phase 1
         logical                 :: hub_mirror = .false. ! grid_hub == grid(ice): the hub mirrors the ice geometry
@@ -97,7 +121,7 @@ module kryos_domain
         real(dp)                :: hub_t = 0.0_dp       ! time of the last hub update (lag checks)
         type(coupler_class)     :: cpl                  ! grids by name, map cache (maps/)
         type(grid_ref_t), allocatable :: refs(:)        ! one per distinct grid in use, hub first
-        type(ice_slot_t)        :: ice                  ! instance slots (core C9 fills them)
+        type(ice_slot_t)        :: ice                  ! instance slots (domain_create fills them)
         type(geo_slot_t)        :: geo
         type(climate_slot_t)    :: climate
         type(surface_slot_t)    :: surface
@@ -107,10 +131,11 @@ module kryos_domain
         type(wire_t), allocatable :: wires(:)           ! rows resolved for this domain (domain_wire)
     end type domain_t
 
-    public :: domain_init, domain_describe
-    public :: domain_ref_index, domain_comp_index, domain_component
+    public :: domain_init, domain_create, domain_describe
+    public :: domain_ref_index, domain_comp_index, domain_component, domain_present
+    public :: domain_time, domain_due, domain_pass, domain_update, domain_end
     public :: domain_nodes, domain_wire
-    public :: exchange, domain_hub_update, domain_check_reference
+    public :: exchange, exchange_into, exchange_static, domain_hub_update, domain_check_reference
     public :: domain_hub_write
 
 contains
@@ -214,15 +239,8 @@ contains
 
         call domain_describe(dom)
 
-        ! ---------------------------------------------------------------------
-        ! C9 plug-in point (instance creation, not in this module's scope): per
-        ! present component in the order ice, geo, geothermal, sediments,
-        ! climate, surface, shelf: fill init_ctx_t (grid_name = dom%grid(k),
-        ! backend = dom%backend(k), grid from maps/, regions on that grid, ref =
-        ! dom%refs(domain_ref_index(dom, dom%grid(k))), cnst, time), call the
-        ! factory <comp>_create(dom%<comp>, ctx, census) and <comp>_init; then
-        ! domain_wire(dom, clk, ...). Until then every slot is unallocated.
-        ! ---------------------------------------------------------------------
+        ! The instances: domain_create (needs the clock for their cadences),
+        ! then domain_wire. Until then every slot is unallocated.
     end subroutine domain_init
 
     subroutine resolve_grids(dom, explicit)
@@ -297,6 +315,250 @@ contains
         call remap(dom%cpl, a, trim(dom%grid_hub), tmp, trim(grid), method="con")
         b = real(tmp, dp)
     end subroutine ref_remap
+
+    ! =========================================================================
+    ! Instances
+    ! =========================================================================
+
+    subroutine domain_create(dom, cfg, clk, cnst, census)
+        ! The instances of the domain (core-design 3.1 step 4), in INIT_ORDER:
+        ! each present component's init_ctx_t (instance_ctx), its factory
+        ! (admission against the run's census), <comp>_init, its cadence on
+        ! the clock (config_cadence: keys dt, phase, clock), one describe line
+        ! and its field states. The axes an instance declares (the climate's
+        ! month and depth) reach the instances made after it in ctx%axes.
+        ! Call after domain_init and before domain_wire and clock_start.
+        type(domain_t),  target, intent(inout) :: dom
+        type(config_t),          intent(in)    :: cfg
+        type(clock_t),           intent(inout) :: clk
+        type(phys_const_class),  intent(in)    :: cnst
+        type(census_t),          intent(inout) :: census
+
+        type(init_ctx_t) :: ctx
+        type(axis_t), allocatable :: axes(:)
+        class(component_t), pointer :: c
+        integer :: j, k, i
+
+        allocate(axes(0))
+        do j = 1, NCOMP
+            k = INIT_ORDER(j)
+            if (len_trim(dom%inst(k)) == 0) cycle
+
+            call instance_ctx(dom, k, cfg, clk, cnst, axes, ctx)
+            call create_init(dom, k, ctx, census)
+
+            c => domain_component(dom, k)
+            call config_cadence(cfg, dom%inst(k), trim(COMP_NAME(k)), dom%backend(k), clk, c%cadence, dom%clock(k))
+            if (allocated(c%axes)) then
+                do i = 1, size(c%axes)
+                    if (axis_find(axes, c%axes(i)%name) == 0) axes = [axes, c%axes(i)]
+                end do
+            end if
+            call instance_describe(dom, k, clk)
+        end do
+    end subroutine domain_create
+
+    subroutine instance_ctx(dom, k, cfg, clk, cnst, axes, ctx)
+        ! The init_ctx_t of component k (core-design 2, 3.6 item 5): the
+        ! instance, its grid (maps/grid_<name>.txt), the domain's regions on it
+        ! (the [regions] group of the hub grid, remapped by nearest neighbour,
+        ! as yelmox domain_regions_load), the reference on it, the run's
+        ! constants, library and calendar year, and the time of the clock (t0).
+        type(domain_t),         intent(in)  :: dom
+        integer,                intent(in)  :: k
+        type(config_t),         intent(in)  :: cfg
+        type(clock_t),          intent(in)  :: clk
+        type(phys_const_class), intent(in)  :: cnst
+        type(axis_t),           intent(in)  :: axes(:)
+        type(init_ctx_t),       intent(out) :: ctx
+
+        integer :: ir
+
+        ctx%par_file  = cfg%par_file
+        ctx%library   = cfg%library
+        ctx%instance  = dom%inst(k)
+        ctx%component = COMP_NAME(k)
+        ctx%backend   = dom%backend(k)
+        ctx%domain    = dom%name
+        ctx%grid_name = dom%grid(k)
+        ctx%scope     = "regional"
+        call grid_cdo_read_desc(ctx%grid, trim(dom%grid(k)), trim(cfg%map_fldr))
+        call regions_init_nml(ctx%reg, trim(cfg%par_file), trim(dom%regions), domain=trim(dom%name), &
+                              grid_name=trim(dom%grid_hub), grid=ctx%grid, verbose=.false.)
+        ir = domain_ref_index(dom, dom%grid(k))
+        if (ir == 0) then
+            call fesm_error("kryos_domain::domain_create", "domain "//trim(dom%name)//": no reference on grid "// &
+                            trim(dom%grid(k)), "instance "//trim(dom%inst(k)))
+        end if
+        ctx%ref      = dom%refs(ir)
+        ctx%cnst     = cnst
+        ctx%time     = clock_time(clk)
+        ctx%time_rel = clock_time_rel(clk)
+        ctx%dtt      = clock_dtt(clk)
+        ctx%sec_year = clk%sec_year
+        ctx%axes     = axes
+    end subroutine instance_ctx
+
+    subroutine create_init(dom, k, ctx, census)
+        ! Factory and init of component k.
+        type(domain_t),   intent(inout) :: dom
+        integer,          intent(in)    :: k
+        type(init_ctx_t), intent(in)    :: ctx
+        type(census_t),   intent(inout) :: census
+
+        select case (k)
+        case (C_ICE)
+            call ice_create(dom%ice, ctx, census);                call ice_init(dom%ice, ctx)
+        case (C_GEO)
+            call geo_create(dom%geo, ctx, census);                call geo_init(dom%geo, ctx)
+        case (C_CLIMATE)
+            call climate_create(dom%climate, ctx, census);        call climate_init(dom%climate, ctx)
+        case (C_SURFACE)
+            call surface_create(dom%surface, ctx, census);        call surface_init(dom%surface, ctx)
+        case (C_SHELF)
+            call shelf_create(dom%shelf, ctx, census);            call shelf_init(dom%shelf, ctx)
+        case (C_GEOTHERMAL)
+            call geothermal_create(dom%geothermal, ctx, census);  call geothermal_init(dom%geothermal, ctx)
+        case (C_SEDIMENTS)
+            call sediments_create(dom%sediments, ctx, census);    call sediments_init(dom%sediments, ctx)
+        end select
+    end subroutine create_init
+
+    subroutine instance_describe(dom, k, clk)
+        ! core-design 8: backend, capabilities, cadence and clock, then the
+        ! field states (fields_describe of imports and exports).
+        type(domain_t), target, intent(in) :: dom
+        integer,                intent(in) :: k
+        type(clock_t),          intent(in) :: clk
+
+        class(component_t), pointer :: c
+        real(dp) :: dt
+        character(len=:), allocatable :: cad, caps
+
+        c => domain_component(dom, k)
+        dt = cadence_dt_years(c%cadence, clk)
+        if (dt > 0.0_dp) then
+            cad = "every "//to_str(dt)//" yr"
+        else
+            cad = "off (static)"
+        end if
+        caps = ""
+        if (c%caps%has_ocn)       caps = caps//" has_ocn"
+        if (c%caps%has_ocn_shelf) caps = caps//" has_ocn_shelf"
+        if (c%caps%has_smb)       caps = caps//" has_smb"
+        if (c%caps%has_Qd)        caps = caps//" has_Qd"
+        if (len(caps) == 0) caps = " none"
+        call log_msg(LOG_INFO, "kryos_domain", "domain "//trim(dom%name)//": "//trim(COMP_NAME(k))//" `"// &
+                     trim(c%name)//"` ("//trim(c%backend)//") on "//trim(c%grid)//", "//cad//", clock "// &
+                     trim(dom%clock(k))//", caps:"//caps)
+        call fields_describe(c%imports)
+        call fields_describe(c%exports)
+    end subroutine instance_describe
+
+    function domain_time(dom, k, clk, init) result(st)
+        ! The step_time_t of component k (step_time_of with its cadence and
+        ! clock key); init: t0 = t1 = now (the init passes).
+        type(domain_t), target, intent(in) :: dom
+        integer,                intent(in) :: k
+        type(clock_t),          intent(in) :: clk
+        logical,                intent(in), optional :: init
+        type(step_time_t) :: st
+
+        class(component_t), pointer :: c
+
+        c => require_component(dom, k, "domain_time")
+        st = step_time_of(c%cadence, clk, dom%clock(k), init)
+    end function domain_time
+
+    logical function domain_present(dom, k)
+        ! Is component k's instance created? (presence, never a backend name)
+        type(domain_t), target, intent(in) :: dom
+        integer,                intent(in) :: k
+        domain_present = associated(domain_component(dom, k))
+    end function domain_present
+
+    logical function domain_due(dom, k, clk)
+        ! Component k is present and its cadence is due at the clock's time.
+        type(domain_t), target, intent(in) :: dom
+        integer,                intent(in) :: k
+        type(clock_t),          intent(in) :: clk
+
+        class(component_t), pointer :: c
+
+        domain_due = .false.
+        c => domain_component(dom, k)
+        if (associated(c)) domain_due = cadence_due(c%cadence, clk)
+    end function domain_due
+
+    subroutine domain_pass(dom, k, clk, pass)
+        ! <comp>_init_state of component k at the clock's time (t0 = t1 = now),
+        ! pass PASS_INIT .. PASS_RESTART (core-design 3.2). Absent: nothing.
+        type(domain_t), target, intent(inout) :: dom
+        integer,                intent(in)    :: k
+        type(clock_t),          intent(in)    :: clk
+        integer,                intent(in)    :: pass
+
+        type(step_time_t) :: st
+
+        if (.not. domain_present(dom, k)) return
+        st = domain_time(dom, k, clk, init=.true.)
+        select case (k)
+        case (C_ICE);        call ice_init_state(dom%ice, st, pass)
+        case (C_GEO);        call geo_init_state(dom%geo, st, pass)
+        case (C_CLIMATE);    call climate_init_state(dom%climate, st, pass)
+        case (C_SURFACE);    call surface_init_state(dom%surface, st, pass)
+        case (C_SHELF);      call shelf_init_state(dom%shelf, st, pass)
+        case (C_GEOTHERMAL); call geothermal_init_state(dom%geothermal, st, pass)
+        case (C_SEDIMENTS);  call sediments_init_state(dom%sediments, st, pass)
+        end select
+    end subroutine domain_pass
+
+    subroutine domain_update(dom, k, clk)
+        ! <comp>_update of component k over its cadence interval, then the
+        ! cadence mark (core-design 3.4 `mark`). The caller tests domain_due.
+        type(domain_t), target, intent(inout) :: dom
+        integer,                intent(in)    :: k
+        type(clock_t),          intent(in)    :: clk
+
+        type(step_time_t) :: st
+
+        st = domain_time(dom, k, clk)
+        select case (k)
+        case (C_ICE);        call ice_update(dom%ice, st);               call cadence_mark(dom%ice%c%cadence, clk)
+        case (C_GEO);        call geo_update(dom%geo, st);               call cadence_mark(dom%geo%c%cadence, clk)
+        case (C_CLIMATE);    call climate_update(dom%climate, st);       call cadence_mark(dom%climate%c%cadence, clk)
+        case (C_SURFACE);    call surface_update(dom%surface, st);       call cadence_mark(dom%surface%c%cadence, clk)
+        case (C_SHELF);      call shelf_update(dom%shelf, st);           call cadence_mark(dom%shelf%c%cadence, clk)
+        case (C_GEOTHERMAL); call geothermal_update(dom%geothermal, st); call cadence_mark(dom%geothermal%c%cadence, clk)
+        case (C_SEDIMENTS);  call sediments_update(dom%sediments, st);   call cadence_mark(dom%sediments%c%cadence, clk)
+        end select
+    end subroutine domain_update
+
+    subroutine domain_end(dom)
+        ! <comp>_end of every instance, the ice last (Yelmo deallocates its
+        ! state; core-design 3.5).
+        type(domain_t), intent(inout) :: dom
+
+        if (allocated(dom%geo%c))        call geo_end(dom%geo)
+        if (allocated(dom%climate%c))    call climate_end(dom%climate)
+        if (allocated(dom%surface%c))    call surface_end(dom%surface)
+        if (allocated(dom%shelf%c))      call shelf_end(dom%shelf)
+        if (allocated(dom%geothermal%c)) call geothermal_end(dom%geothermal)
+        if (allocated(dom%sediments%c))  call sediments_end(dom%sediments)
+        if (allocated(dom%ice%c))        call ice_end(dom%ice)
+    end subroutine domain_end
+
+    function require_component(dom, k, who) result(c)
+        type(domain_t), target, intent(in) :: dom
+        integer,                intent(in) :: k
+        character(len=*),       intent(in) :: who
+        class(component_t), pointer :: c
+        c => domain_component(dom, k)
+        if (.not. associated(c)) then
+            call fesm_error("kryos_domain::"//who, "domain "//trim(dom%name)//": no "//trim(COMP_NAME(k))// &
+                            " instance", "test domain_present first")
+        end if
+    end function require_component
 
     ! =========================================================================
     ! Lookup
@@ -652,36 +914,17 @@ contains
         integer,                intent(out), optional :: stat
 
         character(len=*), parameter :: proc = "kryos_domain::exchange"
-        type(field_state_t), pointer :: s_exp, d_imp
-        type(grid_ref_t),    pointer :: rs, rd
-        real(dp) :: t_last
-        logical  :: due, ini
-        integer  :: i, ir, s
+        logical  :: ini
+        integer  :: i, s
 
         if (present(stat)) stat = 0
         ini = .false.
         if (present(init)) ini = init
-        if (.not. allocated(dom%wires)) then
-            call fesm_error(proc, "domain "//trim(dom%name)//": the wiring is not resolved (domain_wire)", &
-                            "row group "//trim(src)//" -> "//trim(dst), stat)
-            return
-        end if
+        if (.not. wired(dom, src//" -> "//dst, stat)) return
 
         do i = 1, size(dom%wires)
             if (.not. wire_runs(dom%wires(i), src, dst)) cycle
-
-            call kind_states(dom, src, exports=s_exp)
-            call kind_states(dom, dst, imports=d_imp)
-            call producer_time(dom, src, clk, t_last, due)
-
-            rs => null();  rd => null()
-            ir = domain_ref_index(dom, dom%wires(i)%src_grid)
-            if (ir > 0) rs => dom%refs(ir)
-            ir = domain_ref_index(dom, dom%wires(i)%dst_grid)
-            if (ir > 0) rd => dom%refs(ir)
-
-            call wire_exchange(dom%wires(i), s_exp, d_imp, dom%cpl, t, t_last, ref_src=rs, ref_dst=rd, &
-                               due=due, init=ini, stat=s)
+            call run_row(dom, i, t, clk, ini, s)
             if (s /= 0) then
                 call fesm_error(proc, "domain "//trim(dom%name)//": row "//wire_label(dom%wires(i))//" failed", &
                                 "t = "//to_str(t), stat)
@@ -689,6 +932,104 @@ contains
             end if
         end do
     end subroutine exchange
+
+    subroutine exchange_into(dom, dst, t, clk, init, stat)
+        ! Every row into `dst`, by source in INTO_ORDER (yelmox couple_to_yelmo:
+        ! geo, surface, shelf, climate), each source's rows in table order.
+        ! Rows of static producers (LAG_INIT) have run once, at init, and are
+        ! skipped by wire_exchange.
+        type(domain_t), target, intent(inout) :: dom
+        character(len=*),       intent(in)    :: dst
+        real(dp),               intent(in)    :: t
+        type(clock_t),          intent(in)    :: clk
+        logical,                intent(in),  optional :: init
+        integer,                intent(out), optional :: stat
+
+        integer :: j, s
+
+        if (present(stat)) stat = 0
+        do j = 1, size(INTO_ORDER)
+            if (trim(INTO_ORDER(j)) == trim(dst)) cycle
+            call exchange(dom, trim(INTO_ORDER(j)), dst, t, clk, init=init, stat=s)
+            if (s /= 0) then
+                call fesm_error("kryos_domain::exchange_into", "domain "//trim(dom%name)//": rows into "// &
+                                trim(dst)//" failed", "", stat)
+                return
+            end if
+        end do
+    end subroutine exchange_into
+
+    subroutine exchange_static(dom, t, clk, stat)
+        ! Every active LAG_INIT row not yet exchanged, in table order: the
+        ! static fields after PASS_INIT (core-design 3.6 item 1: ice z_bed_ref,
+        ! H_ice_ref -> geo; geothermal Q_geo, sediments H_sed -> ice; hub
+        ! z_srf_ref -> climate).
+        type(domain_t), target, intent(inout) :: dom
+        real(dp),               intent(in)    :: t
+        type(clock_t),          intent(in)    :: clk
+        integer,                intent(out), optional :: stat
+
+        integer :: i, s
+
+        if (present(stat)) stat = 0
+        if (.not. wired(dom, "static rows", stat)) return
+
+        do i = 1, size(dom%wires)
+            associate (w => dom%wires(i))
+                if (.not. (w%active .and. w%lag == LAG_INIT .and. .not. w%done .and. .not. w%gather)) cycle
+            end associate
+            call run_row(dom, i, t, clk, .true., s)
+            if (s /= 0) then
+                call fesm_error("kryos_domain::exchange_static", "domain "//trim(dom%name)//": row "// &
+                                wire_label(dom%wires(i))//" failed", "t = "//to_str(t), stat)
+                return
+            end if
+        end do
+    end subroutine exchange_static
+
+    subroutine run_row(dom, i, t, clk, init, stat)
+        ! Row i of the domain: the two field states, the producer's last update
+        ! and whether it is due, the references on the two grids; wire_exchange
+        ! checks the lag and remaps.
+        type(domain_t), target, intent(inout) :: dom
+        integer,                intent(in)    :: i
+        real(dp),               intent(in)    :: t
+        type(clock_t),          intent(in)    :: clk
+        logical,                intent(in)    :: init
+        integer,                intent(out)   :: stat
+
+        type(field_state_t), pointer :: s_exp, d_imp
+        type(grid_ref_t),    pointer :: rs, rd
+        real(dp) :: t_last
+        logical  :: due
+        integer  :: ir
+
+        associate (w => dom%wires(i))
+            call kind_states(dom, w%src_kind, exports=s_exp)
+            call kind_states(dom, w%dst_kind, imports=d_imp)
+            call producer_time(dom, w%src_kind, clk, t_last, due)
+
+            rs => null();  rd => null()
+            ir = domain_ref_index(dom, w%src_grid)
+            if (ir > 0) rs => dom%refs(ir)
+            ir = domain_ref_index(dom, w%dst_grid)
+            if (ir > 0) rd => dom%refs(ir)
+
+            call wire_exchange(w, s_exp, d_imp, dom%cpl, t, t_last, ref_src=rs, ref_dst=rd, &
+                               due=due, init=init, stat=stat)
+        end associate
+    end subroutine run_row
+
+    logical function wired(dom, what, stat)
+        ! The rows are resolved (domain_wire), else an error naming `what`.
+        type(domain_t),   intent(in) :: dom
+        character(len=*), intent(in) :: what
+        integer,          intent(inout), optional :: stat
+        wired = allocated(dom%wires)
+        if (wired) return
+        call fesm_error("kryos_domain::exchange", "domain "//trim(dom%name)//": the wiring is not resolved (domain_wire)", &
+                        "row group "//trim(what), stat)
+    end function wired
 
     subroutine kind_states(dom, kind, imports, exports)
         ! The field states of a kind: the hub's, or the created instance's.
