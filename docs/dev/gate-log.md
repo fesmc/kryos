@@ -284,3 +284,25 @@ Results (all jobs COMPLETED, exit 0):
   only if one of them exists (the Antarctica gate has no forcing coefficients).
 - Gate 1 (continuous runs) passes for both gates. Open: restart bundles and
   chunk vs cont (C10, in progress).
+
+## Phase 1 gate complete: restarts and chunks (2026-10-25)
+
+- kryos `a2cf248` (C10: restart bundles, manifest, restore) on stack S2; runs
+  staged by `tools/run_kryos.sh <gate> cont|chunk` (chunk: c00 0->500, c01
+  500->1000 from `c00/restart-500`, afterok; overrides set in the par file by
+  `tools/set_nml.py`). All six jobs COMPLETED (cont 2:55 / 3:33, chunks
+  2:14+2:26 / 2:22+2:15).
+
+| comparison | grl | ant |
+|---|---|---|
+| K cont vs R2, outputs + restart bundles 500, 1000 (`--restarts`) | PASS, 924 vars | PASS, 1036 vars |
+| K chunk vs K cont (`--chunks`, the §1.2 rule) | PASS, 1470 vars | PASS, 1710 vars |
+
+- Yelmo's `pc_tau_max` (running maximum over 50 internal steps, not
+  restored) is refilled within the 500 yr chunk: the bundle at 1000 is
+  identical. Reports in `docs/dev/gate-reports/*-a2cf248-*`.
+- With Gate 1 (continuous runs, above), kryos phase 1 reproduces the yelmox
+  baseline R2 bit for bit for both gates, including restart exactness.
+- Found on the way (C10, local test): with Yelmo's default `vm-m16` calving a
+  Yelmo restart is not exact (diverges in the first step after a restore);
+  the gate configs do not use it. Yelmo issue, not kryos.
