@@ -1,0 +1,124 @@
+! Templates of the kryos par file groups (core-design.md section 5): the schema
+! every group of a par file is validated against, and the defaults of the keys
+! it leaves out. One group per template; the key is the unit of validation.
+!
+!   run, clock, schedule, globe, domain   one template each: [kryos], [clock],
+!                                         [schedule], [globe], [domain]
+!   instance                              [instance] (core keys) plus the template
+!                                         [<component>_<backend>] of its backend
+!                                         (backend keys); a key is valid if either
+!                                         declares it (kryos_config)
+!
+! Backend physics groups (yelmo, isos, chion, ...) keep their own schemas in the
+! libraries' defaults files (<library>_defaults.nml); data field groups follow
+! input/datasrc_defaults.nml. "required" marks keys a group must set (checked
+! by config_validate): the value shown is a placeholder.
+
+&kryos
+    domains         = ""                       ! the domain groups of the run
+    globe           = "globe"                  ! the globe group
+    clock           = "clock"                  ! the clock group
+    restart         = "None"                   ! restart bundle to start from, or "None"
+    restart_out     = "none"                   ! schedule group of the restart bundles
+    out_dir         = "./"
+    map_fldr        = "maps"
+    phys_const      = "Earth"                  ! group of phys_const_file (one per run)
+    phys_const_file = "input/phys_const.nml"
+    library         = ""                       ! files of the named groups not in the par file
+    write_lossless  = False
+    log_level       = "info"                   ! debug | info | warn | error
+    timing          = True
+/
+
+&clock
+    time_init      = 0.0                       ! required [yr]
+    time_end       = 0.0                       ! required [yr]
+    dtt            = 0.0                       ! required [yr]
+    method         = "rel"                     ! rel | cal | const (fesm_clock)
+    time_ref       = 1950.0
+    calendar       = "365_day"
+    year           = "tropical"
+    time_const     = 0.0                       ! method = const: exactly one of time_const, time_const_cal
+    time_const_cal = 0.0
+    ticks_per_year = 36000
+/
+
+&schedule
+    method = "none"                            ! none | const | times | file (fesm_clock)
+    dt     = 0.0
+    times  = 0.0
+    file   = ""
+/
+
+&globe
+    forcing = ""                               ! the forcing instance
+    geo     = ""                               ! the global part of geo
+/
+
+&domain
+    grid_hub   = ""                            ! required
+    topo       = "topo"
+    regions    = "regions"
+    basins     = ""
+    out_2D     = "none"                        ! hub output schedule
+    ice        = ""                            ! instance of each component, "" = absent
+    geo        = ""
+    climate    = ""
+    surface    = ""
+    shelf      = ""
+    geothermal = ""
+    sediments  = ""
+/
+
+&instance
+    backend  = ""                              ! required
+    grid     = ""                              ! "" = the default chain
+    dt       = 0.0                             ! 0: every step; > 0: cadence; < 0: never after init
+    phase    = 0.0
+    clock    = "model"                         ! model | forcing
+    out_2D   = "none"
+    out_1D   = "none"
+    out_vars = ""                              ! "" = all exports
+/
+
+&forcing_tsgen
+    coefs = ""                                 ! [coef_<name>] groups
+/
+
+&geo_fastisostasy
+    isos = "isos"                              ! regional instance: the isos group
+    bsl  = "barysealevel"                      ! global instance: the barysealevel group
+/
+
+&ice_yelmo
+    yelmo           = "yelmo"                  ! Yelmo's top group
+    init_equil_time = 0.0                      ! [yr] cold start: yelmo_update_equil, 0 = none
+    out_yelmo       = "none"                   ! schedule of <instance>_yelmo.nc (YELMO_VARS_2D)
+    out_yelmo_sm    = "none"                   ! schedule of <instance>_yelmo_sm.nc (small 2D set)
+    out_yelmo_ts    = "none"                   ! schedule of <instance>_yelmo_ts[_<region>].nc
+/
+
+&climate_snapshots
+    snapshots = "snapshots"
+    reference = "pd"
+    terms     = ""
+/
+
+&surface_chion
+    surface_chion = "surface_chion"            ! host group
+    chion         = "chion"
+    orbit         = "orbit"
+/
+
+&shelf_marine_shelf
+    marine_shelf = "marine_shelf"
+/
+
+&geothermal_data
+    Q_geo     = ""                             ! field group of Q_geo [W m-2]
+    Q_geo_min = 0.0                            ! [W m-2] floor after the fill
+/
+
+&sediments_data
+    H_sed = ""                                 ! field group of H_sed [m]
+/
