@@ -291,6 +291,25 @@ suffixed multi-domain file (phase 3).
    sim.opt=False`) convert and validate; the others are refused with the right
    phase. This needs no data and runs locally.
 
+### 2.7 As implemented (2026-10-25)
+
+- Reader and `-p` semantics: `FesmUtils.Namelist` (`read_namelist`, `resolve`, `parse_overrides`;
+  no copy in `tools/`). `--par` takes the staged file (give no `-p`) or the base with the same `-p`
+  list; both resolve to the same configuration.
+- The mapping is data, `tools/data/yelmox2kryos.toml`; its schema is the kryos checkout's
+  `input/*_defaults.nml` (the converter reads them, no copy). Every core group is written with all
+  keys of its template(s) (`[kryos] library = ""`, the library groups are copied in); `ice` has no `dt`
+  (every step, `dtt` is the clock step); `ghf`/`sed` become the data instances `ghf_<sfx>`, `sed_<sfx>` with
+  field groups `Q_geo_<sfx>`, `H_sed_<sfx>`; an output switch sets the stream keys of its `[[stream]]`
+  row, and a key the templates do not declare is left out with a warning in the report.
+- Accounting: mapped / default-equal / dropped over every key of every resolved group; the keys that
+  yelmox fills from its defaults in a dropped group are not counted. `check-par` does not exist yet:
+  the converter validates every group against the templates in Julia (every key declared, required
+  keys, schedules on clock ticks, named groups present) and reads the written file back.
+- `Gate.jl`: `load_stack`/`stack_id` (id = hash of the stack tables without `[kryos]`), `plist`,
+  `chunk_overrides`, `restart_dir`, `ref_dir`/`run_dir`/`maps_dir`/`report_paths`, `input_overlay`
+  (the run's `input`: yelmox and kryos input files together), `check_instances`, `gate_row`.
+
 ## 3. Comparison tool
 
 ### 3.1 Usage

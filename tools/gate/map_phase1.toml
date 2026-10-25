@@ -1,0 +1,267 @@
+# kryos phase 1 against yelmox v2.4: the comparison map (regression-design.md §3.2).
+#
+# One [[row]] per yelmox file or set of variables. `ref` is a file of the yelmox
+# run directory, `run` the file of the kryos run directory; in both, `{name}`
+# is an instance placeholder of the gate (tools/gate/<gate>.toml [instances],
+# plus {domain}) or, when the gate does not define it, a capture of the ref
+# file name (yelmo_ts_{region}.nc -> {ice}_yelmo_ts_{region}.nc).
+#
+#   vars    "*" (the default: every variable of the ref file that no other row of
+#           the same ref and run file names, minus `exclude`) or a list; "coef_*"
+#           globs; dimension coordinates (xc, yc, depth, month, zeta) are compared
+#           with every file pair, the time axis first (bit for bit)
+#   exclude with "*": variables left out (globs)
+#   rename  ref name -> run name (default: the same)
+#   run_var one run variable computed from all `vars` together (expr over their names)
+#   class   E exact | C conversion-exact | A absent (no counterpart, listed only)
+#   expr    C: the run value from the ref value `x` (or the named variables), in
+#           Julia's arithmetic: Float64(x) widens, constants from [constants] are
+#           Float64; the product is evaluated in the order written, so a factor
+#           is parenthesised: Float64(x) * (sec_year / sec_day)
+#   units   C: the `units` attribute the run variable must have
+#   comp    component, for the order of the first divergence (`order`)
+#
+# A yelmox file or variable without a row fails the comparison: the table
+# stays complete. kryos file and variable names are the adapters' (to be
+# confirmed when the adapters land); the yelmox side is v2.4 (libs/kryos_output.f90,
+# yelmox_climate.f90, yelmo, chion).
+version = 1
+title = "kryos phase 1 vs yelmox v2.4"
+
+# Coupling sequence: the variables differing at the first divergence are listed in this order.
+order = ["geo", "ice", "hub", "climate", "surface", "shelf", "forcing"]
+
+[constants]
+rho_ice  = 910.0           # [kg m-3] yelmo_phys_const.nml [Earth]
+sec_year = 31556926.0      # [s] fesm_units, the run calendar's year
+sec_day  = 86400.0         # [s]
+
+# Integrated quantities of the drift report (after a rebaseline, §3.5).
+[drift]
+vars = ["yelmo_ts.nc:V_ice", "yelmo_ts.nc:A_ice", "yelmo_ts.nc:V_sl", "isos_ts.nc:bsl"]
+
+# ===== Ice (yelmo) =====
+
+[[row]]
+ref = "yelmo.nc"                  # YELMO_VARS_2D, Yelmo's writer
+run = "{ice}_yelmo.nc"
+class = "E"
+comp = "ice"
+
+[[row]]
+ref = "yelmo.nc"
+vars = ["H_ice", "z_srf"]
+run = "{ice}.nc"                  # exports
+class = "C"
+expr = "Float64(x)"
+units = "m"
+comp = "ice"
+
+[[row]]
+ref = "yelmo.nc"
+vars = ["dHidt"]
+run = "{ice}.nc"
+class = "C"
+expr = "Float64(x)"
+units = "m yr-1"
+comp = "ice"
+
+[[row]]
+ref = "yelmo.nc"
+vars = ["smb", "bmb", "cmb", "mb_net"]   # m ice yr-1 -> kg m-2 yr-1
+run = "{ice}.nc"
+class = "C"
+expr = "Float64(x) * rho_ice"
+units = "kg m-2 yr-1"
+comp = "ice"
+
+[[row]]
+ref = "yelmo_sm.nc"               # YELMO_VARS_2D_SM
+run = "{ice}_yelmo_sm.nc"
+class = "E"
+comp = "ice"
+
+[[row]]
+ref = "yelmo_ts.nc"               # Yelmo regions
+run = "{ice}_yelmo_ts.nc"
+exclude = ["coef_*"]
+class = "E"
+comp = "ice"
+
+[[row]]
+ref = "yelmo_ts.nc"               # the coefficients move to the forcing's file
+vars = ["coef_*"]
+run = "{forcing}_ts.nc"
+class = "E"
+comp = "forcing"
+
+[[row]]
+ref = "yelmo_ts_{region}.nc"      # region files (Yelmo-internal)
+run = "{ice}_yelmo_ts_{region}.nc"
+class = "E"
+comp = "ice"
+
+# ===== Hub =====
+
+[[row]]
+ref = "htopo.nc"
+run = "{domain}_hub.nc"           # sp hub through the phase 1 gate (Q2)
+class = "E"
+comp = "hub"
+
+# ===== Geo (fastisostasy) =====
+
+[[row]]
+ref = "isos.nc"
+vars = ["z_bed", "z_ss"]
+run = "{geo}_fastisostasy.nc"
+class = "E"
+comp = "geo"
+
+[[row]]
+ref = "isos.nc"
+vars = ["w", "we"]
+run = "{geo}.nc"
+run_var = "dz_bed"
+class = "C"
+expr = "Float64(w + we)"          # the sum in FastIsostasy's kind (sp), widened
+units = "m"
+comp = "geo"
+
+[[row]]
+ref = "isos_ts.nc"
+vars = ["bsl"]
+run = "{geo}_ts.nc"
+class = "E"
+comp = "geo"
+
+[[row]]
+ref = "isos_ts.nc"
+vars = ["z_bed_mean", "z_bed_min", "z_bed_max", "w_mean", "we_mean"]
+class = "A"                       # framework diagnostics, shed (design §11)
+comp = "geo"
+
+# ===== Surface (chion) =====
+
+[[row]]
+ref = "chion.nc"
+vars = ["smb", "melt", "runoff", "refrz"]   # mm w.e. yr-1 = kg m-2 yr-1
+run = "{surface}.nc"
+class = "C"
+expr = "Float64(x)"
+units = "kg m-2 yr-1"
+comp = "surface"
+
+[[row]]
+ref = "chion.nc"
+vars = ["tsrf"]
+rename = { tsrf = "T_srf" }
+run = "{surface}.nc"
+class = "C"
+expr = "Float64(x)"
+units = "K"
+comp = "surface"
+
+[[row]]
+ref = "chion.nc"
+vars = ["alb_s"]
+rename = { alb_s = "albedo" }
+run = "{surface}.nc"
+class = "C"
+expr = "Float64(x)"
+units = "1"
+comp = "surface"
+
+[[row]]
+ref = "chion.nc"
+vars = ["pr", "sf", "t2m", "S", "PDDs", "H_snow", "mask"]
+run = "{surface}.nc"              # the adapter keeps the 13 annual fields (adapters §5.4)
+class = "E"
+comp = "surface"
+
+# ===== Shelf (marine_shelf) =====
+
+[[row]]
+ref = "mshlf.nc"
+vars = ["bmb_shlf"]               # m ice yr-1 -> kg m-2 yr-1
+run = "{shelf}.nc"
+class = "C"
+expr = "Float64(x) * rho_ice"
+units = "kg m-2 yr-1"
+comp = "shelf"
+
+[[row]]
+ref = "mshlf.nc"
+vars = ["T_shlf", "tf_shlf"]
+run = "{shelf}.nc"
+class = "C"
+expr = "Float64(x)"
+units = "K"
+comp = "shelf"
+
+# ===== Climate (snapshots) =====
+
+[[row]]
+ref = "snap.nc"                   # t2m_ann, t2m_sum, pr_ann, to_ann, so_ann, tas, tsl_ann, term_<name>
+run = "{climate}.nc"
+class = "E"
+comp = "climate"
+
+[[row]]
+ref = "snap.nc"
+vars = ["z_srf"]
+rename = { z_srf = "z_srf_clim" }
+run = "{climate}.nc"
+class = "E"
+comp = "climate"
+
+[[row]]
+ref = "snap.nc"
+vars = ["pr"]                     # mm d-1 -> kg m-2 yr-1 with the run calendar's year
+run = "{climate}.nc"
+class = "C"
+expr = "Float64(x) * (sec_year / sec_day)"
+units = "kg m-2 yr-1"
+comp = "climate"
+
+# ===== Restart bundles (--restarts) =====
+
+[restart]
+ref_dir = "restart-{kyr}-kyr"     # yelmox: time/1000 with 3 decimals
+run_dir = "restart-{time}"        # kryos: time in years, shortest exact decimal
+
+[[restart.row]]
+ref = "yelmo_restart.nc"
+run = "{domain}/{ice}_restart.nc"
+class = "E"
+comp = "ice"
+
+[[restart.row]]
+ref = "isos_restart.nc"
+run = "{domain}/{geo}_restart.nc"
+class = "E"
+comp = "geo"
+
+[[restart.row]]
+ref = "marine_shelf.nc"
+run = "{domain}/{shelf}_restart.nc"
+class = "E"
+comp = "shelf"
+
+[[restart.row]]
+ref = "chion_restart.nc"
+run = "{domain}/{surface}_restart.nc"
+class = "E"
+comp = "surface"
+
+[[restart.row]]
+ref = "bsl_restart.nc"
+run = "{geo_glob}_restart.nc"
+class = "E"
+comp = "geo"
+
+[[restart.row]]
+ref = "coef_{name}_restart.nc"
+run = "{forcing}_{name}_restart.nc"
+class = "E"
+comp = "forcing"

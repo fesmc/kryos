@@ -1,0 +1,19 @@
+# Accepted differences between kryos and yelmox (regression-design.md §3.5).
+# Empty in phase 1: every compared value is bit-identical. One entry per
+# difference:
+#
+# [[deviation]]
+# id        = "chion-diag-mean"
+# rows      = ["chion.nc:PDDs"]       # <ref file>:<variable>, globs (* matches /)
+# class     = "U"                     # U (with n, default 1) | T (with atol, rtol) | skip
+# n         = 1
+# scope     = "local"                 # local | rebaseline
+# since     = "<kryos sha>"
+# changelog = "CHANGELOG.md#..."      # must exist (path relative to the kryos root)
+# approved  = "Alex, <date>"
+# gates     = ["ant"]                 # optional: only these gates
+#
+# local: only the listed rows are relaxed; every other row must still pass.
+# rebaseline: the yelmox comparison of the gate becomes a drift report of
+# [drift] vars of the map (no pass/fail); kryos is then gated against its own
+# runs at `since` with --map identity.

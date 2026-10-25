@@ -1,0 +1,39 @@
+name = "KryosTools"
+uuid = "625635d6-9c60-4abc-9605-9ee1fd5d629c"
+version = "0.1.0"
+authors = ["Alexander Robinson"]
+
+[deps]
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+FesmUtils = "87fa8290-809d-4b2a-a2bb-fb70d9529671"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+
+[weakdeps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+
+[extensions]
+KryosToolsMakieExt = "CairoMakie"
+
+[sources]
+FesmUtils = {path = "../../FesmUtils.jl"}
+
+[compat]
+CairoMakie = "0.12, 0.13, 0.14, 0.15"
+Dates = "1"
+FesmUtils = "0.1"
+JSON = "0.21, 1"
+NCDatasets = "0.14"
+Printf = "1"
+SHA = "0.7, 1"
+TOML = "1"
+julia = "1.10"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

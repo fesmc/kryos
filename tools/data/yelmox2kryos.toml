@@ -1,0 +1,612 @@
+# yelmox -> kryos par file conversion, phase 1 (core-design.md §5,
+# regression-design.md §2). The data side of KryosTools.Convert: the schema of
+# the kryos side is the committed input/kryos_defaults.nml (core and backend
+# templates), input/snapshots_defaults.nml, input/forcing_defaults.nml and
+# datasrc_defaults.nml; change the mapping here, the rules (named in `rule`)
+# are Julia functions in Convert.jl.
+#
+# Placeholders in names and values: {domain} ([domain] name), {sfx} (the
+# instance suffix) and every key of [names].
+version = 2
+
+# ===== yelmox side =====
+
+# Defaults (schema) of yelmox groups that its libraries read with their own
+# defaults file and that `.runme/info.json` par_defaults does not list.
+[[yelmox.schema]]
+name = "chion"
+file = "input/chion_defaults.nml"
+group = "chion"
+[[yelmox.schema]]
+name = "chion_const"
+file = "input/chion_defaults.nml"
+group = "chion_const"
+
+# The library: the files of [forcing] var_defs (yelmox var_defs_find: the par
+# file first, then these files in order).
+[yelmox.library]
+key = "forcing.var_defs"
+
+# Groups named by a key: resolved (from the par file, the library or new from
+# their defaults) and carried along. `when = [key, value]`: only when that key
+# of the naming group has that value (absent counts as equal). `template`:
+# [defaults file, defaults group] of the named group.
+[[yelmox.ref]]
+from = "^forcing$"
+key = "coefs"
+prefix = "coef_"
+[[yelmox.ref]]
+from = "^forcing$"
+key = "reference"
+prefix = "snapshot_"
+[[yelmox.ref]]
+from = "^forcing$"
+key = "terms"
+prefix = "term_"
+[[yelmox.ref]]
+from = "^term_\\w+$"
+key = "snap0"
+prefix = "snapshot_"
+when = ["pattern", "snapshots"]
+[[yelmox.ref]]
+from = "^term_\\w+$"
+key = "snap1"
+prefix = "snapshot_"
+when = ["pattern", "snapshots"]
+# the varslice field groups of a snapshot (input/clim_db.nml)
+[[yelmox.ref]]
+from = "^snapshot_\\w+$"
+keys = ["tas", "pr", "zs", "to", "so"]
+[[yelmox.ref]]
+from = "^yelmo$"
+file = "input/yelmo_defaults.nml"
+map = { nml_ytopo = "ytopo", nml_ycalv = "ycalv", nml_ydyn = "ydyn", nml_ytill = "ytill", nml_yhyd = "yhyd", nml_ymat = "ymat", nml_ytrc = "ytrc", nml_ytherm = "ytherm", nml_masks = "yelmo_masks", nml_init_topo = "yelmo_init_topo", nml_data = "yelmo_data" }
+[[yelmox.ref]]
+from = "^chion$"
+key = "nml_const"
+template = ["input/chion_defaults.nml", "chion_const"]
+[[yelmox.ref]]
+from = "^chion$"
+key = "nml_itm"
+when = ["model", "itm"]
+template = ["input/chion_defaults.nml", "itm"]
+[[yelmox.ref]]
+from = "^chion$"
+key = "nml_pdd"
+when = ["model", "pdd"]
+template = ["input/chion_defaults.nml", "pdd"]
+[[yelmox.ref]]
+from = "^chion$"
+key = "nml_bessi"
+when = ["model", "bessi"]
+template = ["input/chion_defaults.nml", "bessi"]
+
+# ===== Refusals (regression-design.md §2.5): the conversion stops, naming the key and the phase =====
+# A key absent from the resolved configuration is taken at its yelmox default.
+
+[[refuse_group]]
+pattern = "^rembo$"
+phase = "2"
+why = "a rembo par file (climate = rembo)"
+[[refuse_group]]
+pattern = "^esm$"
+phase = "2"
+why = "climate = esm"
+[[refuse_group]]
+pattern = "^(ctrl|comps|sim|output|domain|forcing|snapshots|taper|bias|orbit|ice_bnd|topo|regions)_\\w+$"
+phase = "3"
+why = "a suffixed multi-domain group"
+
+[[refuse]]
+key = "comps.climate"
+allow = ["snapshots"]
+phase = "2"
+why = "climate backends esm, rembo"
+[[refuse]]
+key = "comps.surface_method"
+allow = ["chion"]
+phase = "2"
+why = "surface backends smbpal, smb_simple, climate"
+[[refuse]]
+keys = ["comps.with_ice_sheet", "comps.with_isostasy", "comps.with_climate", "comps.with_surface", "comps.with_shelf"]
+allow = [true]
+phase = "2"
+why = "a component off: data backends"
+[[refuse]]
+keys = ["sim.relax", "sim.opt", "sim.use_negis", "sim.scale_glacial_smb", "sim.lim_pd_ice"]
+allow = [false]
+phase = "2"
+why = "plugin"
+[[refuse]]
+keys = ["sim.init_marine_H", "sim.init_kill_shelves"]
+allow = [false]
+phase = "2"
+why = "cold-start plugin"
+[[refuse]]
+key = "sim.init_time_thrm"
+allow = [0.0]
+phase = "2"
+why = "cold-start plugin (dropped, off in both gates)"
+[[refuse]]
+key = "sim.init_method"
+allow = ["none", "equil"]
+phase = "2"
+why = "cold-start plugins recon, recon_ref"
+[[refuse]]
+keys = ["ice_bnd.active", "bias.active", "taper.active"]
+allow = [false]
+phase = "2"
+why = "climate transform / prescribed ice"
+[[refuse]]
+key = "marine_shelf.bmb_method"
+deny = ["pico", "re:-slope$"]
+phase = "after the E30 fix"
+why = "broken (sweep E30)"
+[[refuse]]
+key = "output.write_cmip"
+allow = [false]
+phase = "later"
+why = "CMIP output becomes a post-processing table"
+[[refuse]]
+key = "ctrl.restart"
+allow = ["None", "none"]
+phase = "never"
+why = "a kryos run starts from its own bundles only"
+[[refuse]]
+key = "barysealevel.method"
+deny = ["mixed"]
+phase = "3"
+why = "bsl method mixed (per-domain accumulator)"
+[[refuse]]
+key = "ghf.f_stdev"
+allow = [0.0]
+phase = "2"
+why = "ensemble perturbation of the geothermal heat flux"
+[[refuse]]
+key = "ctrl.run_step"
+allow = ["ctrl"]
+phase = "2"
+why = "a timeline group other than [ctrl] (the esm spin-up chain)"
+[[refuse]]
+key = "sed.method"
+allow = [0, 1]
+phase = "never"
+why = "unknown sediment method"
+
+# ===== kryos side =====
+
+[names]
+# the instance suffix of a domain, else the first three letters in lower case
+suffix     = { Greenland = "grl", Antarctica = "ant" }
+globe      = "globe"
+clock      = "clock"
+forcing    = "forcing"
+geo_glob   = "geo_glob"
+ice        = "ice_{sfx}"
+geo        = "geo_{sfx}"
+climate    = "climate_{sfx}"
+surface    = "surface_{sfx}"
+shelf      = "shelf_{sfx}"
+geothermal = "ghf_{sfx}"
+sediments  = "sed_{sfx}"
+Q_geo      = "Q_geo_{sfx}"          # data field groups
+H_sed      = "H_sed_{sfx}"
+
+# The kryos groups the converter builds, in file order. `role` names the
+# instance of the group in the domain ("" for a core group); `templates` are
+# groups of the kryos template files (see [templates]), every key of which is
+# written with its default unless a mapped value or a [fixed] value sets it.
+# `skip` keys are not written (no meaning in this group: the global geo
+# instance has no isos group, the regional no bsl).
+[templates]
+kryos       = ["kryos_defaults", "kryos"]
+clock       = ["kryos_defaults", "clock"]
+schedule    = ["kryos_defaults", "schedule"]
+globe       = ["kryos_defaults", "globe"]
+domain      = ["kryos_defaults", "domain"]
+instance    = ["kryos_defaults", "instance"]
+datasrc     = ["datasrc_defaults", "datasrc_field"]
+
+[[out]]
+group = "kryos"
+templates = ["kryos"]
+[[out]]
+group = "{clock}"
+templates = ["clock"]
+skip = ["time_const", "time_const_cal"]    # a const clock has exactly one: set by the rule calendar_const
+[[out]]
+group = "out_1D"
+templates = ["schedule"]
+[[out]]
+group = "out_2D"
+templates = ["schedule"]
+[[out]]
+group = "out_2Dsm"
+templates = ["schedule"]
+[[out]]
+group = "out_rst"
+templates = ["schedule"]
+[[out]]
+group = "{globe}"
+templates = ["globe"]
+[[out]]
+group = "{forcing}"
+role = "forcing"
+component = "forcing"
+templates = ["instance"]
+[[out]]
+group = "{geo_glob}"
+role = "geo_glob"
+component = "geo"
+templates = ["instance"]
+skip = ["isos"]
+[[out]]
+group = "{domain}"
+templates = ["domain"]
+[[out]]
+group = "{ice}"
+role = "ice"
+component = "ice"
+templates = ["instance"]
+[[out]]
+group = "{geo}"
+role = "geo"
+component = "geo"
+templates = ["instance"]
+skip = ["bsl"]
+[[out]]
+group = "{climate}"
+role = "climate"
+component = "climate"
+templates = ["instance"]
+[[out]]
+group = "{surface}"
+role = "surface"
+component = "surface"
+templates = ["instance"]
+[[out]]
+group = "{shelf}"
+role = "shelf"
+component = "shelf"
+templates = ["instance"]
+[[out]]
+group = "{geothermal}"
+role = "geothermal"
+component = "geothermal"
+templates = ["instance"]
+[[out]]
+group = "{sediments}"
+role = "sediments"
+component = "sediments"
+templates = ["instance"]
+[[out]]
+group = "{Q_geo}"
+templates = ["datasrc"]
+[[out]]
+group = "{H_sed}"
+templates = ["datasrc"]
+
+# The backend of each instance when yelmox fixes it (comps.climate and
+# comps.surface_method set the other two, [[key]] below).
+[backend]
+forcing    = "tsgen"
+geo_glob   = "fastisostasy"
+ice        = "yelmo"
+geo        = "fastisostasy"
+shelf      = "marine_shelf"
+geothermal = "data"
+sediments  = "data"
+
+[fixed]
+"kryos.domains"          = "{domain}"
+"kryos.globe"            = "{globe}"
+"kryos.clock"            = "{clock}"
+"kryos.restart_out"      = "out_rst"
+"kryos.phys_const_file"  = "input/yelmo_phys_const.nml"
+"{globe}.forcing"        = "{forcing}"
+"{globe}.geo"            = "{geo_glob}"
+"{forcing}.clock"        = "forcing"
+"{geo_glob}.clock"       = "forcing"
+"{geo_glob}.bsl"         = "barysealevel"
+"{geo}.isos"             = "isos"
+"{domain}.ice"           = "{ice}"
+"{domain}.geo"           = "{geo}"
+"{domain}.climate"       = "{climate}"
+"{domain}.surface"       = "{surface}"
+"{domain}.shelf"         = "{shelf}"
+"{domain}.geothermal"    = "{geothermal}"
+"{domain}.sediments"     = "{sediments}"
+"{ice}.yelmo"            = "yelmo"
+"{climate}.snapshots"    = "snapshots"
+"{climate}.clock"        = "forcing"
+"{surface}.surface_chion" = "surface_chion"
+"{surface}.chion"        = "chion"
+"{surface}.orbit"        = "orbit"
+"{surface}.clock"        = "forcing"
+"{shelf}.marine_shelf"   = "marine_shelf"
+"{geothermal}.dt"        = -1.0
+"{geothermal}.Q_geo"     = "{Q_geo}"
+"{sediments}.dt"         = -1.0
+"{sediments}.H_sed"      = "{H_sed}"
+
+# Output switches ([output] write_*): a switch that is True sets these keys
+# (instance role -> key = schedule group). A key the templates of the
+# instance do not declare is left out with a warning in the report.
+[[stream]]
+switch = "output.write_yelmo"
+set = [["ice", "out_2D", "out_2D"], ["ice", "out_1D", "out_1D"],
+       ["ice", "out_yelmo", "out_2D"], ["ice", "out_yelmo_sm", "out_2Dsm"], ["ice", "out_yelmo_ts", "out_1D"],
+       ["forcing", "out_1D", "out_1D"]]
+[[stream]]
+switch = "output.write_isos"
+set = [["geo", "out_2D", "out_2D"], ["geo", "out_1D", "out_1D"],
+       ["geo", "out_isos", "out_2D"], ["geo", "out_isos_ts", "out_1D"],
+       ["geo_glob", "out_1D", "out_1D"], ["geo_glob", "out_bsl_ts", "out_1D"]]
+[[stream]]
+switch = "output.write_shelf"
+set = [["shelf", "out_2D", "out_2D"]]
+[[stream]]
+switch = "output.write_surface"
+set = [["surface", "out_2D", "out_2D"]]
+[[stream]]
+switch = "output.write_clim"
+set = [["climate", "out_2D", "out_2D"]]
+[[stream]]
+switch = "output.write_htopo"
+set = [["domain", "out_2D", "out_2D"]]
+
+# yelmox groups: what happens to them. The first matching entry wins (`src` a
+# name or "re:<regex>"). Actions: keys (each key by a [[key]] row), into (every
+# key into group `dst`, same name), copy (a physics or named group of a backend,
+# unchanged), drop (with `why`). `referenced = true`: only when a key names the
+# group (else dropped as not read by yelmox). `library = true`: with
+# --keep-library a group from the library is not copied.
+[[group]]
+src = "ctrl"
+action = "keys"
+[[group]]
+src = "comps"
+action = "keys"
+[[group]]
+src = "sim"
+action = "keys"
+[[group]]
+src = "output"
+action = "keys"
+[[group]]
+src = "domain"
+action = "keys"
+[[group]]
+src = "forcing"
+action = "keys"
+[[group]]
+src = "ghf"
+action = "keys"
+[[group]]
+src = "sed"
+action = "keys"
+[[group]]
+src = "tm_1D"
+action = "into"
+dst = "out_1D"
+[[group]]
+src = "tm_2D"
+action = "into"
+dst = "out_2D"
+[[group]]
+src = "tm_2Dsm"
+action = "into"
+dst = "out_2Dsm"
+[[group]]
+src = "tm_rst"
+action = "into"
+dst = "out_rst"
+[[group]]
+src = "re:^(topo|regions|isos|barysealevel|snapshots|orbit|surface_chion|chion|chion_const|marine_shelf|yelmo|ytopo|ycalv|ydyn|ytill|yhyd|ymat|ytrc|ytherm|yelmo_masks|yelmo_init_topo|yelmo_data)$"
+action = "copy"
+[[group]]
+src = "re:^(coef|term|snapshot)_\\w+$"
+action = "copy"
+referenced = true
+library = true
+[[group]]
+src = "relax"
+action = "drop"
+why = "plugin (phase 2); [sim] relax = False"
+[[group]]
+src = "opt"
+action = "drop"
+why = "plugin (phase 2); [sim] opt = False"
+[[group]]
+src = "negis"
+action = "drop"
+why = "plugin (phase 2); [sim] use_negis = False"
+[[group]]
+src = "re:^(smbpal|smb_simple|itm)$"
+action = "drop"
+why = "unused: surface_method = chion"
+[[group]]
+src = "pico"
+action = "drop"
+why = "unused: bmb_method is not pico"
+[[group]]
+src = "re:^(taper|bias|ice_bnd)$"
+action = "drop"
+why = "inactive (active = False)"
+[[group]]
+src = "obm_forcing"
+action = "drop"
+why = "bipolar driver only"
+[[group]]
+src = "re:.*"
+action = "copy"
+referenced = true
+library = true
+
+# Keys of the copied groups that are not carried over (`group.key`, with why),
+# and the groups whose `restart` key must be "None" (restarts come from the bundle).
+[drop_keys]
+"yelmo.phys_const" = "the run passes the one phys_const record of [kryos]"
+[restart_none]
+groups = ["yelmo", "isos", "barysealevel", "marine_shelf", "chion"]
+
+# Keys of the "keys" groups. dst: kryos `group.key` (a list: the same value to
+# each). rule: a Julia rule of Convert.jl. drop: the key is not carried over.
+[[key]]
+src = "ctrl.run_step"
+drop = "[kryos] clock names the clock group (always the timeline group)"
+[[key]]
+src = "ctrl.calendar"
+drop = "selects [clock] time_const (False) or time_const_cal (True); the CF calendar of kryos is its default"
+[[key]]
+src = "ctrl.calendar_ref"
+dst = "{clock}.time_ref"
+[[key]]
+src = "ctrl.tstep_method"
+dst = "{clock}.method"
+[[key]]
+src = "ctrl.tstep_const"
+rule = "calendar_const"
+[[key]]
+src = "ctrl.time_init"
+dst = "{clock}.time_init"
+[[key]]
+src = "ctrl.time_end"
+dst = "{clock}.time_end"
+[[key]]
+src = "ctrl.dtt"
+dst = "{clock}.dtt"
+[[key]]
+src = "ctrl.restart"
+dst = "kryos.restart"
+[[key]]
+src = "ctrl.write_lossless"
+dst = "kryos.write_lossless"
+[[key]]
+src = "re:^comps\\.with_\\w+$"
+drop = "a component runs iff the domain names an instance (all present)"
+[[key]]
+src = "comps.climate"
+dst = "{climate}.backend"
+[[key]]
+src = "comps.surface_method"
+dst = "{surface}.backend"
+[[key]]
+src = "comps.dt_clim"
+dst = "{climate}.dt"
+[[key]]
+src = "comps.dt_isos"
+dst = "{geo}.dt"
+[[key]]
+src = "sim.init_method"
+rule = "equil_time"
+[[key]]
+src = "sim.init_equil_time"
+rule = "equil_time"
+[[key]]
+src = "re:^sim\\.(init_marine_H|init_kill_shelves|init_time_thrm|relax|opt|use_negis|scale_glacial_smb|lim_pd_ice)$"
+drop = "experiment or cold-start plugin (phase 2), off"
+[[key]]
+src = "re:^sim\\.recon_\\w+$"
+drop = "init_method recon (phase 2), not used"
+[[key]]
+src = "re:^output\\.write_(yelmo|isos|shelf|surface|clim|htopo)$"
+rule = "switch"
+[[key]]
+src = "re:^output\\.(write_cmip|dt_cmip)$"
+drop = "CMIP output: post-processing (write_cmip = False)"
+[[key]]
+src = "domain.name"
+dst = "kryos.domains"
+[[key]]
+src = "domain.phys_const"
+dst = "kryos.phys_const"
+[[key]]
+src = "domain.grid_hub"
+dst = "{domain}.grid_hub"
+[[key]]
+src = "domain.grid_ice"
+dst = "{ice}.grid"
+[[key]]
+src = "domain.grid_isos"
+dst = "{geo}.grid"
+[[key]]
+src = "domain.grid_clim"
+dst = "{climate}.grid"
+[[key]]
+src = "domain.grid_surface"
+dst = "{surface}.grid"
+[[key]]
+src = "domain.grid_shelf"
+dst = "{shelf}.grid"
+[[key]]
+src = "domain.basins"
+dst = "{domain}.basins"
+[[key]]
+src = "forcing.coefs"
+dst = "{forcing}.coefs"
+[[key]]
+src = "forcing.reference"
+dst = "{climate}.reference"
+[[key]]
+src = "forcing.terms"
+dst = "{climate}.terms"
+[[key]]
+src = "forcing.var_defs"
+rule = "library"
+[[key]]
+src = "re:^ghf\\.\\w+$"
+rule = "ghf_field"
+[[key]]
+src = "re:^sed\\.\\w+$"
+rule = "sed_field"
+
+[rules.ghf_field]
+ghf_min = 1e-4             # [W m-2] yelmox geothermal.f90 floor ghf_min = 0.1 mW m-2
+remap   = "bilin"          # read_ghf: fesmdata_map_init(..., "bilin")
+fill    = "nearest"        # missing values (negative) filled from the nearest valid cell
+[rules.sed_field]
+remap   = "bilin"
+fill    = "nearest"
+
+# Files whose sha256 the header records besides the ones the par file names
+# (relative to the yelmox root; missing ones are listed as absent).
+[provenance]
+always = ["input/yelmo_phys_const.nml", "input/yelmo_defaults.nml", "input/yelmox_defaults.nml",
+          "input/chion_defaults.nml", "input/forcing_db.nml", "input/clim_db.nml"]
+orbit  = ["LA2004.INSOLN.5Ma.txt", "LA2004.INSOLP.1Ma.txt"]   # in [orbit] fldr, read by method fixed_time and forcing_time
+
+# Where the kryos side validates each group it writes (first available wins;
+# `kryos` files are relative to the kryos checkout, `yelmox` ones to the
+# yelmox root). A group with no entry is not validated (a backend group
+# without a defaults file: topo, regions, isos, barysealevel, marine_shelf).
+[[validate]]
+groups = ["snapshots"]
+files = [["kryos", "input/snapshots_defaults.nml", "snapshots"]]
+[[validate]]
+pattern = "^snapshot_\\w+$"
+files = [["kryos", "input/snapshots_defaults.nml", "snapshot"]]
+[[validate]]
+pattern = "^term_\\w+$"
+files = [["kryos", "input/snapshots_defaults.nml", "term"]]
+[[validate]]
+pattern = "^coef_\\w+$"
+files = [["kryos", "input/forcing_defaults.nml", "coef"]]
+[[validate]]
+groups = ["orbit"]
+files = [["kryos", "input/kryos_defaults.nml", "orbit"], ["yelmox", "input/yelmox_defaults.nml", "orbit"]]
+[[validate]]
+groups = ["yelmo", "ytopo", "ycalv", "ydyn", "ytill", "yhyd", "ymat", "ytrc", "ytherm", "yelmo_masks", "yelmo_init_topo", "yelmo_data"]
+files = [["yelmox", "input/yelmo_defaults.nml", "="]]
+[[validate]]
+groups = ["chion", "chion_const"]
+files = [["yelmox", "input/chion_defaults.nml", "="]]
+[[validate]]
+pattern = "^itm_chion$"
+files = [["yelmox", "input/chion_defaults.nml", "itm"]]
+[[validate]]
+pattern = "^pdd_chion$"
+files = [["yelmox", "input/chion_defaults.nml", "pdd"]]
+[[validate]]
+pattern = "^bessi_chion$"
+files = [["yelmox", "input/chion_defaults.nml", "bessi"]]

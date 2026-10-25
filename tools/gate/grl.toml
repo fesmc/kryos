@@ -1,0 +1,22 @@
+# Gate grl (regression-design.md §1.1): yelmox_Greenland, 1000 yr from a cold
+# start, lossless output, every component every step.
+gate     = "grl"
+base     = "yelmox/yelmox_Greenland.nml"
+p        = ["ctrl.time_end=1000", "ctrl.write_lossless=True", "tm_2D.dt=100",
+            "tm_2Dsm.dt=10", "tm_1D.dt=10", "tm_rst.dt=500"]
+time_end = 1000.0
+chunks   = [0.0, 500.0, 1000.0]    # the chunk run: 0 -> 500, then 500 -> 1000
+restart_times = [500.0, 1000.0]    # bundles compared with --restarts
+
+# Instance names of the converted par file (placeholders of map_phase1.toml).
+[instances]
+domain     = "Greenland"
+ice        = "ice_grl"
+geo        = "geo_grl"
+climate    = "climate_grl"
+surface    = "surface_grl"
+shelf      = "shelf_grl"
+geothermal = "ghf_grl"
+sediments  = "sed_grl"
+forcing    = "forcing"
+geo_glob   = "geo_glob"

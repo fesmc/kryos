@@ -1,0 +1,68 @@
+# The gate's software stack (regression-design.md §4.1): one commit of yelmox
+# and of every library, built once with the gate flags, shared by the yelmox
+# reference runs and the kryos runs. Read by KryosTools.Gate; the stack id is
+# the first 8 hex digits of the sha256 of the canonical text of every table
+# below except [kryos] (the kryos commit is in the run directory name).
+#
+# This file records stack S2 (gate-log.md: R2 baseline, 2026-10-25), the commits
+# as the gate log lists them (short shas). `gate.sh stack` resolves them to the
+# full shas of $G/stacks/<stack>/stack.lock and refuses a checkout off its pin;
+# pin the full shas here when the stack changes (Gate.stack_problems(full=true)
+# lists the short ones).
+name = "S2"
+note = "yelmox v2.4 + topo-prep (R2); fesm-utils phase0-kryos + topo-prep; yelmo v2.4 + prepared"
+
+[yelmox]
+ref    = "topo-prep"          # branch on v2.4 (918d996): [topo] preparation keys of the gate configs
+commit = "74f3a2b"
+
+[kryos]
+ref    = "main"
+commit = ""                   # the commit under test: set by gate.sh (kx-<sha7>), not part of the stack id
+
+[libs.fesm-utils]
+ref    = "topo-prep"          # on phase0-kryos 5a31a7c
+commit = "15746a9"
+[libs.yelmo]
+ref    = "topo-prepared"      # on v2.4 (7bd4316)
+commit = "b5ab5d2c"
+[libs.FastHydrology]
+ref    = "v0.4"
+commit = "a0d5e8e"
+[libs.elsa]
+ref    = "v3.1.0"
+commit = "74d426d"
+[libs.tracer]
+ref    = "v0.2"
+commit = "208ac3a"
+[libs.FastIsostasy]
+ref    = "v0.3-fesmc"
+commit = "ce0d6ff"
+[libs.chion]
+ref    = "v0.2.0"
+commit = "0de32ba"
+[libs.insol]
+ref    = "v1.2.0"
+commit = "42b254e"
+[libs.rembo1]
+ref    = "v1.3"
+commit = "9c24c42"            # not linked: yelmox default rembo=0 (stub)
+
+[tools]
+configme = "0.16"             # kryos orchestrator; the yelmox install used 0.15.7
+runme    = "0.5.26"
+
+[build]
+machine  = "dkrz_levante"
+compiler = "ifx"
+modules  = ["intel-oneapi-compilers/2023.2.1", "netcdf-c/4.9.3", "netcdf-fortran/4.6.2"]
+# DFLAGS_NODEBUG on the make command line (reaches the recursive dependency builds)
+flags    = "-O2 -fp-model precise -march=znver3 -traceback"
+# the production flags, compared once per phase as information (regression-design.md Q3)
+flags_production = "-Ofast -march=znver3 -traceback"
+
+[run]
+omp_threads = 16
+partition   = "compute"
+account     = "ba1442"
+walltime    = "00:30:00"
