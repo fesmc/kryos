@@ -126,7 +126,9 @@ contains
         ! The whole bundle at the clock's time into `dir` (replaced if it
         ! exists): the clock and the cadences, the globe's instances, each
         ! domain's instances in RESTORE_ORDER, the manifest last (a bundle
-        ! without one is incomplete).
+        ! without one is incomplete). The folders are made with one shell
+        ! command; each folder is listed once before its first instance (a
+        ! domain folder is new and empty) and once after each backend write.
         character(len=*),       intent(in)    :: dir
         type(clock_t),          intent(in)    :: clk
         type(globe_t),  target, intent(inout) :: globe
@@ -134,15 +136,17 @@ contains
 
         type(entry_t), allocatable :: ent(:)
         class(component_t), pointer :: c
-        character(len=:), allocatable :: ddir, file
+        character(len=PATH_LEN), allocatable :: seen(:)
+        character(len=:), allocatable :: ddir, file, cmd
         real(dp) :: t
         integer  :: d, j
 
         t = clock_time(clk)
-        call shell("rm -rf '"//dir//"' && mkdir -p '"//dir//"'", "the bundle folder "//dir)
+        cmd = "rm -rf '"//dir//"' && mkdir -p '"//dir//"'"
         do d = 1, size(dom)
-            call shell("mkdir -p '"//dir//"/"//trim(dom(d)%name)//"'", "the bundle folder "//dir)
+            cmd = cmd//" '"//dir//"/"//trim(dom(d)%name)//"'"
         end do
+        call shell(cmd, "the bundle folder "//dir)
 
         ! clock and cadences
         file = dir//"/"//CLOCK_FILE
@@ -160,21 +164,23 @@ contains
 
         ! the instances
         allocate(ent(0))
+        seen = dir_list(dir)
         do j = 1, size(GLOBE_ORDER)
             c => globe_component(globe, trim(GLOBE_ORDER(j)))
             if (.not. associated(c)) cycle
             ent = [ent, entry_of(c, dir)]
-            call backend_write(ent(size(ent)), globe=globe, which=trim(GLOBE_ORDER(j)), t=t)
-            call fields_write(c, ent(size(ent)))
+            call backend_write(ent(size(ent)), seen, globe=globe, which=trim(GLOBE_ORDER(j)), t=t)
+            call fields_write(c, ent(size(ent)), seen)
         end do
         do d = 1, size(dom)
             ddir = dir//"/"//trim(dom(d)%name)
+            seen = [character(len=PATH_LEN) ::]
             do j = 1, NCOMP
                 c => domain_component(dom(d), RESTORE_ORDER(j))
                 if (.not. associated(c)) cycle
                 ent = [ent, entry_of(c, ddir)]
-                call backend_write(ent(size(ent)), dom=dom(d), k=RESTORE_ORDER(j), t=t)
-                call fields_write(c, ent(size(ent)))
+                call backend_write(ent(size(ent)), seen, dom=dom(d), k=RESTORE_ORDER(j), t=t)
+                call fields_write(c, ent(size(ent)), seen)
             end do
         end do
 
@@ -199,20 +205,22 @@ contains
         allocate(e%files(0))
     end function entry_of
 
-    subroutine backend_write(e, t, globe, which, dom, k)
+    subroutine backend_write(e, seen, t, globe, which, dom, k)
         ! The backend's restart_write of one instance (globe: `which`; domain:
-        ! component k); the files it added to the folder are recorded in e.
-        type(entry_t),    intent(inout)           :: e
-        real(dp),         intent(in)              :: t
-        type(globe_t),    intent(inout), optional :: globe
-        character(len=*), intent(in),    optional :: which
-        type(domain_t),   intent(inout), optional :: dom
-        integer,          intent(in),    optional :: k
+        ! component k); the files it added to the folder (those not in `seen`,
+        ! the folder's entries before it) are recorded in e. seen becomes the
+        ! folder's entries after it.
+        type(entry_t),                        intent(inout)           :: e
+        character(len=PATH_LEN), allocatable, intent(inout)           :: seen(:)
+        real(dp),                             intent(in)              :: t
+        type(globe_t),                        intent(inout), optional :: globe
+        character(len=*),                     intent(in),    optional :: which
+        type(domain_t),                       intent(inout), optional :: dom
+        integer,                              intent(in),    optional :: k
 
-        character(len=PATH_LEN), allocatable :: before(:), after(:)
+        character(len=PATH_LEN), allocatable :: after(:)
         integer :: i
 
-        before = dir_list(trim(e%dir))
         if (present(globe)) then
             call globe_restart_write(globe, which, trim(e%dir), t)
         else
@@ -220,19 +228,26 @@ contains
         end if
         after = dir_list(trim(e%dir))
         do i = 1, size(after)
-            if (any(before == after(i))) cycle
+            if (any(seen == after(i))) cycle
             e%files = [character(len=PATH_LEN) :: e%files, after(i)]
         end do
+        call move_alloc(after, seen)
     end subroutine backend_write
 
-    subroutine fields_write(c, e)
-        ! The imports and exports of an instance: <inst>_imports.nc, <inst>_exports.nc.
-        class(component_t), intent(in)    :: c
-        type(entry_t),      intent(inout) :: e
+    subroutine fields_write(c, e, seen)
+        ! The imports and exports of an instance: <inst>_imports.nc, <inst>_exports.nc
+        ! (added to the folder's entries `seen`).
+        class(component_t),                   intent(in)    :: c
+        type(entry_t),                        intent(inout) :: e
+        character(len=PATH_LEN), allocatable, intent(inout) :: seen(:)
 
+        character(len=PATH_LEN) :: files(2)
+
+        files = [character(len=PATH_LEN) :: trim(c%name)//"_imports.nc", trim(c%name)//"_exports.nc"]
         call fields_restart_write(c%imports, fields_file(e%dir, c%name, "imports"))
         call fields_restart_write(c%exports, fields_file(e%dir, c%name, "exports"))
-        e%files = [character(len=PATH_LEN) :: trim(c%name)//"_imports.nc", trim(c%name)//"_exports.nc", e%files]
+        e%files = [character(len=PATH_LEN) :: files, e%files]
+        seen = [seen, files]
     end subroutine fields_write
 
     function fields_file(dir, name, which) result(file)
