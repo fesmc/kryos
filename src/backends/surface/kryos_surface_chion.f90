@@ -771,12 +771,11 @@ module kryos_surface_chion
     use fesm_log,        only: LOG_INFO, log_msg, fesm_error, to_str
     use fesm_fields,     only: fields_get, fields_put
     use fesm_units,      only: units_conv
-    use phys_constants,  only: sec_year_tropical
     use ncio,            only: nc_close
     use nml,             only: nml_read, nml_has_param
     use kryos_outfile,   only: outfile_dims_2d, outfile_open, outfile_var2d
     use kryos_component, only: init_ctx_t, step_time_t, constraints_t, component_write_output, &
-                               NAME_LEN, PASS_BOUNDARY, PASS_FINAL
+                               sec_year_check, NAME_LEN, PASS_BOUNDARY, PASS_FINAL
     use kryos_surface,   only: surface_t, surface_opt_t
     use chion,           only: cwp => wp, chion_end
     use kryos_chion_host, only: surface_chion_class, surface_chion_init, surface_chion_spinup, &
@@ -846,8 +845,10 @@ contains
                             trim(self%sc%chn%par%restart)//"'")
         end select
 
-        ! pr: the climate exports kg m-2 yr-1 = mm d-1 * scale; chion takes mm d-1 (P3).
-        call units_conv("mm d-1", "kg m-2 yr-1", self%pr_scale, offset, sec_year=sec_year_tropical)
+        ! pr: the climate exports kg m-2 yr-1 = mm d-1 * scale (scale = sec_year/86400, the
+        ! year of the run calendar); chion takes mm d-1 (P3).
+        call sec_year_check(ctx, self%name)
+        call units_conv("mm d-1", "kg m-2 yr-1", self%pr_scale, offset, sec_year=ctx%sec_year)
 
         allocate(self%t2m(self%nx, self%ny, NMON), self%pr_mmd(self%nx, self%ny, NMON), &
                  self%pr_in(self%nx, self%ny, NMON))

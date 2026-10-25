@@ -16,7 +16,8 @@ module kryos_component
     use fesm_log,       only: LOG_WARN, log_msg, log_set_prefix, fesm_error, to_str
     use fesm_fields,    only: field_state_t, fields_finalize_interval, fields_get, units_equivalent, &
                               FIELD_INSTANT, FIELD_NAME_LEN, FIELD_UNITS_LEN
-    use fesm_clock,     only: cadence_t
+    use fesm_clock,     only: clock_t, cadence_t, cadence_interval, cadence_dt_years, clock_time, &
+                              clock_time_rel, clock_dtt
     use ncio,           only: nc_close, nc_write
     use variable_io,    only: var_io_type, var_io_write
     use kryos_outfile,  only: outfile_row, outfile_table_file, outfile_dims_2d, outfile_dims_ts, &
@@ -77,6 +78,7 @@ module kryos_component
         type(grid_ref_t)        :: ref          ! reference topography on this grid
         type(phys_const_class)  :: cnst
         real(dp)                :: time = 0.0_dp, time_rel = 0.0_dp, dtt = 0.0_dp   ! t0
+        real(dp)                :: sec_year = 0.0_dp   ! [s] year of the run calendar (fesm_clock year)
         type(axis_t), allocatable :: axes(:)    ! axes declared by the producers initialised so far
     end type init_ctx_t
 
@@ -130,6 +132,7 @@ module kryos_component
         end subroutine c_rst
     end interface
 
+    public :: step_time_of, sec_year_check
     public :: backend_admit, component_identity, component_close, component_enter, component_leave
     public :: component_axis, component_optional, month_axis, axis_find, axes_equal
     public :: census_count, kryos_mask
@@ -473,6 +476,47 @@ contains
             end if
         end do
     end function census_find
+
+    ! =========================================================================
+    ! Step time of an instance (core-design 3.4)
+    ! =========================================================================
+
+    function step_time_of(cadence, clk, clock_mode, init) result(st)
+        ! The step_time_t of an instance with this cadence: its interval
+        ! [last mark, now] (cadence_interval; init: t0 = t1 = now), t_eval = t1,
+        ! or the forcing time of the clock (clock_time_rel) when its `clock`
+        ! key is "forcing"; dt = the cadence step (dtt for every step, 0 off).
+        type(cadence_t),  intent(in) :: cadence
+        type(clock_t),    intent(in) :: clk
+        character(len=*), intent(in) :: clock_mode      ! model | forcing
+        logical,          intent(in), optional :: init
+        type(step_time_t) :: st
+
+        logical :: i0
+
+        i0 = .false.
+        if (present(init)) i0 = init
+        if (i0) then
+            st%t0 = clock_time(clk)
+            st%t1 = st%t0
+        else
+            call cadence_interval(cadence, clk, st%t0, st%t1)
+        end if
+        st%t_eval = st%t1
+        if (trim(clock_mode) == "forcing") st%t_eval = clock_time_rel(clk)
+        st%dt  = cadence_dt_years(cadence, clk)
+        st%dtt = clock_dtt(clk)
+    end function step_time_of
+
+    subroutine sec_year_check(ctx, instance)
+        ! A backend that converts with the year length takes the run calendar's
+        ! (ctx%sec_year, core-design 3.6 item 5); stops if the context has none.
+        type(init_ctx_t), intent(in) :: ctx
+        character(len=*), intent(in) :: instance
+        if (ctx%sec_year > 0.0_dp) return
+        call fesm_error("kryos_component::sec_year_check", "init_ctx_t%sec_year is not set", &
+                        "instance "//trim(instance)//": the core fills it from the year of the run clock")
+    end subroutine sec_year_check
 
     ! =========================================================================
     ! Wrapper helpers

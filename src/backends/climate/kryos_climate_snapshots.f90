@@ -26,9 +26,8 @@ module kryos_climate_snapshots
     use nml,                  only: nml_read, nml_has_param
     use ncio,                 only: nc_create, nc_write_dim, nc_write, nc_open, nc_close, nc_time_index
     use regions,              only: regions_select
-    use phys_constants,       only: sec_year_tropical
     use kryos_component,      only: init_ctx_t, step_time_t, constraints_t, axis_t, &
-                                    component_write_output, NAME_LEN, PATH_LEN, &
+                                    component_write_output, sec_year_check, NAME_LEN, PATH_LEN, &
                                     PASS_BOUNDARY, PASS_RESTART
     use kryos_climate,        only: climate_t
     use kryos_snap_out,       only: climate_out_class, clim_state_class, summer_mean
@@ -143,12 +142,12 @@ contains
         call coef_declarations(self)
         if (self%snap%par%with_ocn) call depth_axis(self)
 
-        ! pr [mm d-1] -> [kg m-2 yr-1]: sec_year/86400 via fesm_units, the same call as the
-        ! chion adapter (P3). Interim: init_ctx_t has no calendar year yet, so the tropical
-        ! year of the clock default is used; both adapters switch to ctx%sec_year together.
-        call units_conv("mm d-1", "kg m-2 yr-1", self%pr_scale, offset, sec_year=sec_year_tropical)
+        ! pr [mm d-1] -> [kg m-2 yr-1]: sec_year/86400 via fesm_units with the year of the
+        ! run calendar (ctx%sec_year), the same call as the chion adapter (P3).
+        call sec_year_check(ctx, self%name)
+        call units_conv("mm d-1", "kg m-2 yr-1", self%pr_scale, offset, sec_year=ctx%sec_year)
         call log_msg(LOG_INFO, "kryos_climate_snapshots", "pr [mm d-1] -> [kg m-2 yr-1]: x "//to_str(self%pr_scale)// &
-                     " (sec_year_tropical = "//to_str(sec_year_tropical)//" s / 86400 s)", "instance "//trim(self%name))
+                     " (sec_year = "//to_str(ctx%sec_year)//" s / 86400 s)", "instance "//trim(self%name))
 
         self%xc = ctx%grid%G%x
         self%yc = ctx%grid%G%y

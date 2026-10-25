@@ -52,6 +52,7 @@ program test_climate_snapshots
     ctx%grid_name = "TEST-SNAP"
     ctx%grid      = grid
     ctx%time_rel  = 0.0_dp
+    ctx%sec_year  = sec_year_tropical          ! the core passes the run calendar's year
     call regions_init(ctx%reg, nx=nx, ny=ny)
 
     call climate_create(cl, ctx, census)

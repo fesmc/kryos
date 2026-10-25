@@ -2,8 +2,9 @@ module kryos_config
     ! The par file (core-design sections 1 and 5): config_t holds the par file,
     ! the template file input/kryos_defaults.nml, the library list and the
     ! [kryos] run keys; the free procedures read a key with its template
-    ! default, find a named group in the par file or the library, and validate
-    ! a group against its templates.
+    ! default, find a named group in the par file or the library, validate
+    ! a group against its templates, and register an instance's cadence from
+    ! its keys dt, phase and clock (config_cadence, globe and domains alike).
     !
     ! Templates: one group per kind in input/kryos_defaults.nml ([kryos],
     ! [clock], [schedule], [globe], [domain], [instance]) and one per backend,
@@ -22,6 +23,7 @@ module kryos_config
     use fesm_log,  only: LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR, fesm_error, to_str
     use nml,       only: nml_read, nml_validate, nml_has_param, nml_has_group, nml_find_group, &
                          nml_group_names, nml_group_len
+    use fesm_clock, only: clock_t, cadence_t, cadence_init
 
     implicit none
 
@@ -56,7 +58,7 @@ module kryos_config
     end interface config_read
 
     public :: config_init, config_read, config_has, config_find
-    public :: config_validate, config_validate_instance
+    public :: config_validate, config_validate_instance, config_cadence
 
 contains
 
@@ -289,6 +291,46 @@ contains
         call config_validate(cfg, group, "instance", extra, stat=stat)
         if (failed(stat)) backend = ""
     end subroutine config_validate_instance
+
+    ! =========================================================================
+    ! Cadence of an instance
+    ! =========================================================================
+
+    subroutine config_cadence(cfg, group, component, backend, clk, cadence, clock_mode)
+        ! The keys dt, phase and clock of an instance group (templates
+        ! [instance] + [<component>_<backend>]): the instance's cadence on the
+        ! clock (dt = 0: every step; dt > 0: the grid phase + k*dt; dt < 0: off)
+        ! and its clock (model | forcing). Call after the instance's init and
+        ! before clock_start (the cadence registers with the clock).
+        type(config_t),   intent(in)    :: cfg
+        character(len=*), intent(in)    :: group, component, backend
+        type(clock_t),    intent(inout) :: clk
+        type(cadence_t),  intent(inout) :: cadence
+        character(len=*), intent(out)   :: clock_mode
+
+        character(len=CFG_NAME_LEN) :: extra
+        real(dp) :: dt, phase
+
+        extra = trim(component)//"_"//trim(backend)
+        dt = 0.0_dp;  phase = 0.0_dp;  clock_mode = ""
+        call config_read(cfg, group, "dt",    dt,         "instance", extra)
+        call config_read(cfg, group, "phase", phase,      "instance", extra)
+        call config_read(cfg, group, "clock", clock_mode, "instance", extra)
+
+        select case (trim(clock_mode))
+        case ("model", "forcing")
+        case default
+            call fesm_error("kryos_config::config_cadence", "instance &"//trim(group)//": clock = '"// &
+                            trim(clock_mode)//"' is not recognised", "use model or forcing; par file "// &
+                            trim(cfg%par_file))
+        end select
+
+        if (dt == 0.0_dp) then
+            call cadence_init(cadence, clk, trim(group), .true.)
+        else
+            call cadence_init(cadence, clk, trim(group), dt, phase)
+        end if
+    end subroutine config_cadence
 
     subroutine require_group(cfg, group, template, proc, stat)
         ! Instance, domain and run groups must be in the par file itself.

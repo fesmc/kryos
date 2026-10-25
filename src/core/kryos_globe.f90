@@ -30,12 +30,12 @@ module kryos_globe
     use precision,       only: dp
     use fesm_log,        only: LOG_INFO, log_msg, fesm_error, to_str
     use fesm_fields,     only: field_state_t
-    use fesm_clock,      only: clock_t, cadence_t, cadence_init, cadence_due, cadence_mark, cadence_interval, &
-                               cadence_t_last, cadence_dt_years, clock_time, clock_time_rel, clock_dtt
+    use fesm_clock,      only: clock_t, cadence_due, cadence_mark, cadence_t_last, cadence_dt_years, &
+                               clock_time, clock_time_rel, clock_dtt
     use coupler,         only: coupler_class
     use phys_constants,  only: phys_const_class
-    use kryos_config,    only: config_t, config_read, config_validate, config_validate_instance
-    use kryos_component, only: init_ctx_t, step_time_t, census_t, NAME_LEN
+    use kryos_config,    only: config_t, config_read, config_validate, config_validate_instance, config_cadence
+    use kryos_component, only: init_ctx_t, step_time_t, census_t, step_time_of, NAME_LEN
     use kryos_wiring,    only: wire_t, wire_node_t, wire_node, wire_exchange, wire_gather, wire_runs
     use kryos_forcing,   only: forcing_slot_t, forcing_create, forcing_init, forcing_init_state, &
                                forcing_update, forcing_end, forcing_present
@@ -94,7 +94,7 @@ contains
             call globe_ctx(ctx, cfg, name, "forcing", backend, clk, cnst)
             call forcing_create(globe%forcing, ctx, census)
             call forcing_init(globe%forcing, ctx)
-            call instance_cadence(cfg, name, "forcing", backend, clk, globe%forcing%c%cadence, globe%clock_forcing)
+            call config_cadence(cfg, name, "forcing", backend, clk, globe%forcing%c%cadence, globe%clock_forcing)
             call log_msg(LOG_INFO, "kryos_globe", "forcing `"//trim(name)//"` ("//trim(backend)//"), clock "// &
                          trim(globe%clock_forcing)//", "//cadence_word(cadence_dt_years(globe%forcing%c%cadence, clk)))
         end if
@@ -106,7 +106,7 @@ contains
             call globe_ctx(ctx, cfg, name, "geo", backend, clk, cnst)
             call geo_create(globe%geo, ctx, census)
             call geo_init(globe%geo, ctx)
-            call instance_cadence(cfg, name, "geo", backend, clk, globe%geo%c%cadence, globe%clock_geo)
+            call config_cadence(cfg, name, "geo", backend, clk, globe%geo%c%cadence, globe%clock_geo)
             call log_msg(LOG_INFO, "kryos_globe", "geo `"//trim(name)//"` ("//trim(backend)//", global), clock "// &
                          trim(globe%clock_geo)//", "//cadence_word(cadence_dt_years(globe%geo%c%cadence, clk)))
         end if
@@ -132,38 +132,8 @@ contains
         ctx%time      = clock_time(clk)
         ctx%time_rel  = clock_time_rel(clk)
         ctx%dtt       = clock_dtt(clk)
+        ctx%sec_year  = clk%sec_year
     end subroutine globe_ctx
-
-    subroutine instance_cadence(cfg, name, comp, backend, clk, cadence, clock_mode)
-        ! Keys dt, phase, clock of the instance group (template [instance]).
-        type(config_t),   intent(in)    :: cfg
-        character(len=*), intent(in)    :: name, comp, backend
-        type(clock_t),    intent(inout) :: clk
-        type(cadence_t),  intent(inout) :: cadence
-        character(len=*), intent(out)   :: clock_mode
-
-        character(len=NAME_LEN) :: extra
-        real(dp) :: dt, phase
-
-        extra = trim(comp)//"_"//trim(backend)
-        dt = 0.0_dp;  phase = 0.0_dp;  clock_mode = ""
-        call config_read(cfg, name, "dt",    dt,         "instance", extra)
-        call config_read(cfg, name, "phase", phase,      "instance", extra)
-        call config_read(cfg, name, "clock", clock_mode, "instance", extra)
-
-        select case (trim(clock_mode))
-        case ("model", "forcing")
-        case default
-            call fesm_error("kryos_globe::globe_init", "instance `"//trim(name)//"`: clock = '"//trim(clock_mode)// &
-                            "' is not recognised", "use model or forcing; par file "//trim(cfg%par_file))
-        end select
-
-        if (dt == 0.0_dp) then
-            call cadence_init(cadence, clk, trim(name), .true.)
-        else
-            call cadence_init(cadence, clk, trim(name), dt, phase)
-        end if
-    end subroutine instance_cadence
 
     function cadence_word(dt) result(s)
         real(dp), intent(in) :: dt
@@ -227,37 +197,16 @@ contains
         logical,          intent(in), optional :: init
         type(step_time_t) :: st
 
-        logical :: i0
-
-        i0 = .false.
-        if (present(init)) i0 = init
         select case (trim(which))
         case ("forcing")
             call require(forcing_present(globe%forcing), which)
-            call times(globe%forcing%c%cadence, globe%clock_forcing)
+            st = step_time_of(globe%forcing%c%cadence, clk, globe%clock_forcing, init)
         case ("geo")
             call require(geo_present(globe%geo), which)
-            call times(globe%geo%c%cadence, globe%clock_geo)
+            st = step_time_of(globe%geo%c%cadence, clk, globe%clock_geo, init)
         case default
             call unknown(which)
         end select
-        st%dtt = clock_dtt(clk)
-
-    contains
-
-        subroutine times(cadence, clock_mode)
-                type(cadence_t),  intent(in) :: cadence
-            character(len=*), intent(in) :: clock_mode
-            if (i0) then
-                st%t0 = clock_time(clk)
-                st%t1 = st%t0
-            else
-                call cadence_interval(cadence, clk, st%t0, st%t1)
-            end if
-            st%t_eval = st%t1
-            if (trim(clock_mode) == "forcing") st%t_eval = clock_time_rel(clk)
-            st%dt = cadence_dt_years(cadence, clk)
-        end subroutine times
 
     end function globe_time
 
