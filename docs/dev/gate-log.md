@@ -218,3 +218,27 @@ Results (all jobs COMPLETED, exit 0):
   - Through 1 kyr: `V_ice` differs by at most 0.011 (grl) and 0.084 (ant)
     [Yelmo units, 1e6 km3]; `z_bed` from t = 10 via isostasy.
 - Gate 1 is now `K == R2` (refs `$G/ref/<gate>/yx-74f3a2b/S2/`).
+
+## kryos on Levante; C6 check against R2 (2026-10-25)
+
+- `$G/kryos`: clone of kryos main (bundle), dependency slots linked to the S2
+  checkouts, configured with configme 0.16 from source
+  (`PYTHONPATH=$G/tools/configme-src/src python3 -m configme config kryos --only
+  -m dkrz_levante -c ifx`, so S2's packages are not reconfigured), built with
+  the gate flags (`tools/setup_kryos.sh`, log `stacks/kryos-build.log`). It
+  compiles cleanly against S2's yelmo (v2.4 + `prepared`).
+- C6 dump (`test_domain.x dump`, par files `bundles/dump_{grl,ant}.nml`, run dirs
+  `$G/kryos-dump/{grl,ant}`; run dirs need links `input fesmdata ice_data
+  isostasy_data fesm-utils maps`), compared with R2 (`tools/cmp_c6.py`):
+
+| field | grl | ant |
+|---|---|---|
+| refs(ice) `z_bed` vs Yelmo `z_bed_ref` (R2 restart t0) | identical | identical |
+| refs(ice) `z_bed_sd` vs Yelmo `z_bed_sd` | identical | identical |
+| refs(ice) `H_ice` vs Yelmo `H_ice_ref` | 1 cell (1.3 m) | 2 cells (0.5 m) |
+| hub `z_bed` at t0 vs R2 `htopo.nc` t0 | identical | identical |
+
+- The `H_ice` cells are where Yelmo's `mask_ice` removes reference ice (expected).
+  Hub `H_ice`, `z_srf` at t0 differ from R2's `htopo.nc` t0, which is written
+  after the cold start (the hub then follows the ice; Antarctica after its 10 yr
+  equilibration): that comparison belongs to C9.
