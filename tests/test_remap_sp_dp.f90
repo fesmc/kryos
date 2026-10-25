@@ -158,7 +158,7 @@ contains
         call remap(cpl, f%v2, src, a, dst, method=method)
         wd = real(f%v2, dp)
         call remap(cpl, wd, src, d, dst, method=method)
-        call compare(a, d, s(1))
+        call compare2(a, d, s(1))
 
         ! variant 2: explicit missing value, mask2
         x = f%v2
@@ -167,8 +167,8 @@ contains
         allocate(ma(size(a,1), size(a,2)), mb(size(a,1), size(a,2)))
         call remap(cpl, x, src, a, dst, method=method, missing_value=mv_custom, mask2=ma)
         call remap(cpl, wd, src, d, dst, method=method, missing_value=real(mv_custom, dp), mask2=mb)
-        call compare(a, d, s(2))
-        call compare_mask(ma, mb, s(2))
+        call compare2(a, d, s(2))
+        call compare_mask2(ma, mb, s(2))
 
         ! variant 3: explicit missing value, mask_pack on the target grid
         allocate(pack(size(a,1), size(a,2)))
@@ -179,7 +179,7 @@ contains
         end do
         call remap(cpl, x, src, a, dst, method=method, missing_value=mv_custom, mask_pack=pack)
         call remap(cpl, wd, src, d, dst, method=method, missing_value=real(mv_custom, dp), mask_pack=pack)
-        call compare(a, d, s(3))
+        call compare2(a, d, s(3))
         s%nfld = s%nfld + 1
     end subroutine run_field_2d
 
@@ -196,7 +196,7 @@ contains
         call remap(cpl, f%v3, src, a, dst, method=method)
         wd = real(f%v3, dp)
         call remap(cpl, wd, src, d, dst, method=method)
-        call compare(a, d, s(1))
+        call compare3(a, d, s(1))
 
         x = f%v3
         where (x == mv_sp) x = mv_custom
@@ -204,8 +204,8 @@ contains
         allocate(ma(size(a,1), size(a,2), size(a,3)), mb(size(a,1), size(a,2), size(a,3)))
         call remap(cpl, x, src, a, dst, method=method, missing_value=mv_custom, mask2=ma)
         call remap(cpl, wd, src, d, dst, method=method, missing_value=real(mv_custom, dp), mask2=mb)
-        call compare(a, d, s(2))
-        call compare_mask(ma, mb, s(2))
+        call compare3(a, d, s(2))
+        call compare_mask3(ma, mb, s(2))
 
         allocate(pack(size(a,1), size(a,2)))
         do j = 1, size(a,2)
@@ -215,7 +215,7 @@ contains
         end do
         call remap(cpl, x, src, a, dst, method=method, missing_value=mv_custom, mask_pack=pack)
         call remap(cpl, wd, src, d, dst, method=method, missing_value=real(mv_custom, dp), mask_pack=pack)
-        call compare(a, d, s(3))
+        call compare3(a, d, s(3))
         s%nfld = s%nfld + 1
     end subroutine run_field_3d
 
@@ -223,40 +223,42 @@ contains
     ! comparison: 32-bit patterns, ulp distance, how many dp results needed rounding
     ! ------------------------------------------------------------------------------
 
-    subroutine compare(a, d, s)
+    ! One routine per rank, no assumed-rank dummies: ifx 2023.2 rejects the
+    ! outer associate name inside a nested SELECT RANK (error #8793), and a
+    ! flattened copy (reshape) of a 3D field is a stack temporary beyond 8 MB.
+    ! The contiguous arrays reach compare_flat by sequence association.
+
+    subroutine compare2(a, d, s)
         ! a: the sp remap; d: the dp remap of the widened input (narrowed here).
-        real(sp), intent(in) :: a(..)
-        real(dp), intent(in) :: d(..)
+        real(sp), contiguous, intent(in) :: a(:,:)
+        real(dp), contiguous, intent(in) :: d(:,:)
         type(stat_t), intent(inout) :: s
-        select rank (a)
-        rank (2)
-            select rank (d)
-            rank (2)
-                if (any(shape(a) /= shape(d))) call shape_fail()
-                call compare_flat(reshape(a, [size(a)]), reshape(d, [size(d)]), s)
-            end select
-        rank (3)
-            select rank (d)
-            rank (3)
-                if (any(shape(a) /= shape(d))) call shape_fail()
-                call compare_flat(reshape(a, [size(a)]), reshape(d, [size(d)]), s)
-            end select
-        end select
-    end subroutine compare
+        if (any(shape(a) /= shape(d))) call shape_fail()
+        call compare_flat(size(a), a, d, s)
+    end subroutine compare2
+
+    subroutine compare3(a, d, s)
+        real(sp), contiguous, intent(in) :: a(:,:,:)
+        real(dp), contiguous, intent(in) :: d(:,:,:)
+        type(stat_t), intent(inout) :: s
+        if (any(shape(a) /= shape(d))) call shape_fail()
+        call compare_flat(size(a), a, d, s)
+    end subroutine compare3
 
     subroutine shape_fail()
         write(*,'(a)') "test_remap_sp_dp: FAILED (sp and dp results differ in shape)"
         error stop 1
     end subroutine shape_fail
 
-    subroutine compare_flat(a, d, s)
-        real(sp), intent(in) :: a(:)
-        real(dp), intent(in) :: d(:)
+    subroutine compare_flat(n, a, d, s)
+        integer,  intent(in) :: n
+        real(sp), intent(in) :: a(n)
+        real(dp), intent(in) :: d(n)
         type(stat_t), intent(inout) :: s
         real(sp) :: b
         integer :: k
         integer(int64) :: u
-        do k = 1, size(a)
+        do k = 1, n
             b = real(d(k), sp)
             s%n = s%n + 1
             if (real(b, dp) /= d(k)) s%nround = s%nround + 1
@@ -282,24 +284,19 @@ contains
         if (o < 0) o = -2147483648_int64 - o
     end function ordered
 
-    subroutine compare_mask(ma, mb, s)
-        logical, intent(in) :: ma(..), mb(..)
+    subroutine compare_mask2(ma, mb, s)
+        logical, intent(in) :: ma(:,:), mb(:,:)
         type(stat_t), intent(inout) :: s
-        select rank (ma)
-        rank (2)
-            select rank (mb)
-            rank (2)
-                s%nmask    = s%nmask + size(ma)
-                s%nmaskbad = s%nmaskbad + count(ma .neqv. mb)
-            end select
-        rank (3)
-            select rank (mb)
-            rank (3)
-                s%nmask    = s%nmask + size(ma)
-                s%nmaskbad = s%nmaskbad + count(ma .neqv. mb)
-            end select
-        end select
-    end subroutine compare_mask
+        s%nmask    = s%nmask + size(ma)
+        s%nmaskbad = s%nmaskbad + count(ma .neqv. mb)
+    end subroutine compare_mask2
+
+    subroutine compare_mask3(ma, mb, s)
+        logical, intent(in) :: ma(:,:,:), mb(:,:,:)
+        type(stat_t), intent(inout) :: s
+        s%nmask    = s%nmask + size(ma)
+        s%nmaskbad = s%nmaskbad + count(ma .neqv. mb)
+    end subroutine compare_mask3
 
     subroutine accumulate(t, s)
         type(stat_t), intent(inout) :: t
