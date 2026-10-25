@@ -242,6 +242,7 @@ contains
     procedure :: init_state => component_init_state      ! (st, pass): default nothing
     procedure(c_update), deferred :: update       ! (st): integrate st%t0 -> st%t1; put every export
     procedure(c_rst),    deferred :: restart_write, restart_read   ! (dir, t)
+    procedure :: restart_files => component_restart_files  ! () -> base names restart_write creates in `dir`
     procedure :: write_output => component_write_output  ! (file, t, stream, init): exports, core §6
     procedure :: end => component_end                    ! (): default nothing
 end type
@@ -254,6 +255,13 @@ modules: `backend_admit(c, census)` enforces `con` with named stops (decision
 `Antarctica`", "backend `rembo` runs only on grid `GRL-16KM`", wrong scope or
 domain; then counts the instance. `component_close(c, st)` =
 `fields_finalize_interval(c%exports, st%t1)`. `kryos_mask` (§8).
+
+`restart_files(self) result(files)` (`character(len=PATH_LEN)`, allocatable)
+returns the base names (no folder) of the files `restart_write` creates in the
+folder it is given; kryos_restart lists them in the manifest and checks they
+exist. Default `[<name>_restart.nc]` when `con%restart`, else none; a backend
+whose files differ overrides it (tsgen forcing, Yelmo sidecars). Called only
+by the `<comp>_restart_files(slot)` wrappers.
 
 ### 3.2 ice, in full
 
@@ -317,6 +325,7 @@ contains                                             ! wrappers: the only call s
         call component_close(ice%c, st)
     end subroutine
     ! ice_present(ice) = allocated(ice%c); ice_restart_write/read(ice, dir, t),
+    ! ice_restart_files(ice) result(files) (character(len=PATH_LEN), allocatable),
     ! ice_write_output(ice, file, t, stream, init), ice_end(ice): one line each.
 
     subroutine ice_declare(c)                        ! the vocabulary of §2.1, once for all backends

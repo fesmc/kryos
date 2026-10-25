@@ -8,7 +8,7 @@ module kryos_ice
     use precision,       only: dp
     use fesm_fields,     only: fields_init, fields_add, fields_lock, FIELD_INSTANT, FIELD_MEAN, &
                                FIELD_INTENSIVE, FIELD_EXTENSIVE
-    use kryos_component, only: component_t, init_ctx_t, step_time_t, census_t, constraints_t, &
+    use kryos_component, only: component_t, PATH_LEN, init_ctx_t, step_time_t, census_t, constraints_t, &
                                component_identity, backend_admit, component_close, &
                                component_enter, component_leave, component_optional
 
@@ -44,6 +44,7 @@ module kryos_ice
 
     public :: ice_create, ice_adopt, ice_present
     public :: ice_init, ice_init_state, ice_update, ice_restart_write, ice_restart_read
+    public :: ice_restart_files
     public :: ice_write_output, ice_end
 
 contains
@@ -120,6 +121,15 @@ contains
         call ice%c%restart_read(dir, t)
         call component_leave()
     end subroutine ice_restart_read
+
+    function ice_restart_files(ice) result(files)
+        ! The base names the backend's restart_write creates in the bundle folder.
+        type(ice_slot_t), intent(in) :: ice
+        character(len=PATH_LEN), allocatable :: files(:)
+        associate (c => ice%c)                          ! (gfortran: ICE on a call through ice%c itself)
+            files = c%restart_files()
+        end associate
+    end function ice_restart_files
 
     subroutine ice_write_output(ice, file, t, stream, init)
         type(ice_slot_t), intent(inout) :: ice

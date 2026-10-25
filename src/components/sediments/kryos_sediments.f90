@@ -8,7 +8,7 @@ module kryos_sediments
     use fesm_fields,     only: fields_init, fields_add, fields_lock, FIELD_INSTANT, FIELD_MEAN, &
                                FIELD_INTENSIVE, FIELD_EXTENSIVE, fields_get, fields_put
     use fesm_datasrc,    only: datasrc_t, datasrc_init, datasrc_update, datasrc_fill, datasrc_describe
-    use kryos_component, only: component_t, init_ctx_t, step_time_t, census_t, constraints_t, &
+    use kryos_component, only: component_t, PATH_LEN, init_ctx_t, step_time_t, census_t, constraints_t, &
                                component_identity, backend_admit, component_close, &
                                component_enter, component_leave, component_optional, component_axis, PASS_INIT
 
@@ -48,6 +48,7 @@ module kryos_sediments
 
     public :: sediments_create, sediments_adopt, sediments_present
     public :: sediments_init, sediments_init_state, sediments_update, sediments_restart_write, sediments_restart_read
+    public :: sediments_restart_files
     public :: sediments_write_output, sediments_end, data_sediments_constraints
 
 contains
@@ -124,6 +125,15 @@ contains
         call sediments%c%restart_read(dir, t)
         call component_leave()
     end subroutine sediments_restart_read
+
+    function sediments_restart_files(sediments) result(files)
+        ! The base names the backend's restart_write creates in the bundle folder.
+        type(sediments_slot_t), intent(in) :: sediments
+        character(len=PATH_LEN), allocatable :: files(:)
+        associate (c => sediments%c)                          ! (gfortran: ICE on a call through sediments%c itself)
+            files = c%restart_files()
+        end associate
+    end function sediments_restart_files
 
     subroutine sediments_write_output(sediments, file, t, stream, init)
         type(sediments_slot_t), intent(inout) :: sediments

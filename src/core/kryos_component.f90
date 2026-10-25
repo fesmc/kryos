@@ -110,6 +110,7 @@ module kryos_component
         procedure                     :: init_state => component_init_state      ! (st, pass)
         procedure(c_update), deferred :: update         ! (st): integrate t0 -> t1; put every export
         procedure(c_rst),    deferred :: restart_write, restart_read             ! (dir, t)
+        procedure                     :: restart_files => component_restart_files ! () -> base names restart_write creates
         procedure                     :: write_output => component_write_output  ! (file, t, stream, init)
         procedure                     :: end => component_end
     end type component_t
@@ -139,7 +140,7 @@ module kryos_component
     public :: backend_admit, component_identity, component_close, component_enter, component_leave
     public :: component_axis, component_optional, month_axis, axis_find, axes_equal
     public :: census_count, kryos_mask
-    public :: component_init_state, component_write_output, component_end, component_output
+    public :: component_init_state, component_restart_files, component_write_output, component_end, component_output
 
 contains
 
@@ -155,6 +156,23 @@ contains
         associate (unused => st%t1 + pass); end associate
         associate (unused => self%nx); end associate
     end subroutine component_init_state
+
+    function component_restart_files(self) result(files)
+        ! The base names (no folder) of the files restart_write creates in the
+        ! bundle folder it is given; kryos_restart lists them in the manifest
+        ! and checks they exist. Default: the one file <name>_restart.nc of a
+        ! backend with a restart file (constraints restart), none otherwise.
+        ! A backend whose files differ overrides it, in step with its
+        ! restart_write.
+        class(component_t), intent(in) :: self
+        character(len=PATH_LEN), allocatable :: files(:)
+
+        if (self%con%restart) then
+            files = [character(len=PATH_LEN) :: trim(self%name)//"_restart.nc"]
+        else
+            allocate(files(0))
+        end if
+    end function component_restart_files
 
     subroutine component_write_output(self, file, t, stream, init)
         ! Default writer (core-design section 6): the exports listed in out_vars

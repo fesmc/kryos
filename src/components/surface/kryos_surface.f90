@@ -8,7 +8,7 @@ module kryos_surface
     use fesm_log,        only: fesm_error
     use fesm_fields,     only: fields_init, fields_add, fields_lock, FIELD_INSTANT, FIELD_MEAN, &
                                FIELD_INTENSIVE, FIELD_EXTENSIVE
-    use kryos_component, only: component_t, init_ctx_t, step_time_t, census_t, constraints_t, &
+    use kryos_component, only: component_t, PATH_LEN, init_ctx_t, step_time_t, census_t, constraints_t, &
                                component_identity, backend_admit, component_close, &
                                component_enter, component_leave, component_optional, component_axis
 
@@ -40,6 +40,7 @@ module kryos_surface
 
     public :: surface_create, surface_adopt, surface_present
     public :: surface_init, surface_init_state, surface_update, surface_restart_write, surface_restart_read
+    public :: surface_restart_files
     public :: surface_write_output, surface_end
 
 contains
@@ -116,6 +117,15 @@ contains
         call surface%c%restart_read(dir, t)
         call component_leave()
     end subroutine surface_restart_read
+
+    function surface_restart_files(surface) result(files)
+        ! The base names the backend's restart_write creates in the bundle folder.
+        type(surface_slot_t), intent(in) :: surface
+        character(len=PATH_LEN), allocatable :: files(:)
+        associate (c => surface%c)                          ! (gfortran: ICE on a call through surface%c itself)
+            files = c%restart_files()
+        end associate
+    end function surface_restart_files
 
     subroutine surface_write_output(surface, file, t, stream, init)
         type(surface_slot_t), intent(inout) :: surface

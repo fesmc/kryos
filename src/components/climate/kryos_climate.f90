@@ -8,7 +8,7 @@ module kryos_climate
     use fesm_log,        only: fesm_error
     use fesm_fields,     only: fields_init, fields_add, fields_lock, FIELD_INSTANT, FIELD_MEAN, &
                                FIELD_INTENSIVE, FIELD_EXTENSIVE
-    use kryos_component, only: component_t, init_ctx_t, step_time_t, census_t, constraints_t, &
+    use kryos_component, only: component_t, PATH_LEN, init_ctx_t, step_time_t, census_t, constraints_t, &
                                component_identity, backend_admit, component_close, &
                                component_enter, component_leave, component_optional, component_axis
 
@@ -44,6 +44,7 @@ module kryos_climate
 
     public :: climate_create, climate_adopt, climate_present
     public :: climate_init, climate_init_state, climate_update, climate_restart_write, climate_restart_read
+    public :: climate_restart_files
     public :: climate_write_output, climate_end
 
 contains
@@ -120,6 +121,15 @@ contains
         call climate%c%restart_read(dir, t)
         call component_leave()
     end subroutine climate_restart_read
+
+    function climate_restart_files(climate) result(files)
+        ! The base names the backend's restart_write creates in the bundle folder.
+        type(climate_slot_t), intent(in) :: climate
+        character(len=PATH_LEN), allocatable :: files(:)
+        associate (c => climate%c)                          ! (gfortran: ICE on a call through climate%c itself)
+            files = c%restart_files()
+        end associate
+    end function climate_restart_files
 
     subroutine climate_write_output(climate, file, t, stream, init)
         type(climate_slot_t), intent(inout) :: climate

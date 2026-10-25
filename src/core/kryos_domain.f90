@@ -50,24 +50,26 @@ module kryos_domain
     use htopo,           only: htopo_class, htopo_init, htopo_update, htopo_write_init, htopo_write_step
     use phys_constants,  only: phys_const_class
     use kryos_component, only: component_t, grid_ref_t, init_ctx_t, step_time_t, census_t, axis_t, &
-                               step_time_of, axis_find, kryos_mask, NAME_LEN
+                               step_time_of, axis_find, kryos_mask, NAME_LEN, PATH_LEN
     use kryos_config,    only: config_t, config_read, config_validate, config_validate_instance, config_cadence
     use kryos_wiring,    only: wire_t, wire_node_t, wire_node, wire_node_states, wire_resolve, &
                                wire_prime, wire_exchange, wire_runs, wire_label, LAG_INIT
     use kryos_ice,       only: ice_slot_t, ice_create, ice_init, ice_init_state, ice_update, ice_end, &
-                               ice_restart_write, ice_restart_read
+                               ice_restart_write, ice_restart_read, ice_restart_files
     use kryos_geo,       only: geo_slot_t, geo_create, geo_init, geo_init_state, geo_update, geo_end, &
-                               geo_restart_write, geo_restart_read
+                               geo_restart_write, geo_restart_read, geo_restart_files
     use kryos_climate,   only: climate_slot_t, climate_create, climate_init, climate_init_state, &
-                               climate_update, climate_end, climate_restart_write, climate_restart_read
+                               climate_update, climate_end, climate_restart_write, climate_restart_read, climate_restart_files
     use kryos_surface,   only: surface_slot_t, surface_create, surface_init, surface_init_state, &
-                               surface_update, surface_end, surface_restart_write, surface_restart_read
+                               surface_update, surface_end, surface_restart_write, surface_restart_read, surface_restart_files
     use kryos_shelf,     only: shelf_slot_t, shelf_create, shelf_init, shelf_init_state, shelf_update, shelf_end, &
-                               shelf_restart_write, shelf_restart_read
+                               shelf_restart_write, shelf_restart_read, shelf_restart_files
     use kryos_geothermal, only: geothermal_slot_t, geothermal_create, geothermal_init, geothermal_init_state, &
-                               geothermal_update, geothermal_end, geothermal_restart_write, geothermal_restart_read
+                               geothermal_update, geothermal_end, geothermal_restart_write, geothermal_restart_read, &
+                               geothermal_restart_files
     use kryos_sediments, only: sediments_slot_t, sediments_create, sediments_init, sediments_init_state, &
-                               sediments_update, sediments_end, sediments_restart_write, sediments_restart_read
+                               sediments_update, sediments_end, sediments_restart_write, sediments_restart_read, &
+                               sediments_restart_files
 
     implicit none
 
@@ -143,7 +145,7 @@ module kryos_domain
     public :: domain_init, domain_create, domain_describe
     public :: domain_ref_index, domain_comp_index, domain_component, domain_present
     public :: domain_time, domain_due, domain_pass, domain_update, domain_end
-    public :: domain_restart_write, domain_restart_read
+    public :: domain_restart_write, domain_restart_read, domain_restart_files
     public :: domain_nodes, domain_wire
     public :: exchange, exchange_into, exchange_static, domain_hub_update, domain_check_reference
     public :: domain_hub_write
@@ -585,6 +587,26 @@ contains
         case (C_SEDIMENTS);  call sediments_restart_read(dom%sediments, dir, t)
         end select
     end subroutine domain_restart_read
+
+    function domain_restart_files(dom, k) result(files)
+        ! <comp>_restart_files of component k: the base names its restart_write
+        ! creates in the folder it is given. Absent: none.
+        type(domain_t), intent(in) :: dom
+        integer,        intent(in) :: k
+        character(len=PATH_LEN), allocatable :: files(:)
+
+        allocate(files(0))
+        if (.not. domain_present(dom, k)) return
+        select case (k)
+        case (C_ICE);        files = ice_restart_files(dom%ice)
+        case (C_GEO);        files = geo_restart_files(dom%geo)
+        case (C_CLIMATE);    files = climate_restart_files(dom%climate)
+        case (C_SURFACE);    files = surface_restart_files(dom%surface)
+        case (C_SHELF);      files = shelf_restart_files(dom%shelf)
+        case (C_GEOTHERMAL); files = geothermal_restart_files(dom%geothermal)
+        case (C_SEDIMENTS);  files = sediments_restart_files(dom%sediments)
+        end select
+    end function domain_restart_files
 
     subroutine domain_end(dom)
         ! <comp>_end of every instance, the ice last (Yelmo deallocates its

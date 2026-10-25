@@ -8,7 +8,7 @@ module kryos_geo
     use fesm_log,        only: fesm_error
     use fesm_fields,     only: fields_init, fields_add, fields_lock, fields_get, fields_put, &
                                FIELD_INSTANT, FIELD_INTENSIVE, FIELD_EXTENSIVE
-    use kryos_component, only: component_t, init_ctx_t, step_time_t, census_t, constraints_t, &
+    use kryos_component, only: component_t, PATH_LEN, init_ctx_t, step_time_t, census_t, constraints_t, &
                                component_identity, backend_admit, component_close, &
                                component_enter, component_leave, component_optional
 
@@ -45,6 +45,7 @@ module kryos_geo
 
     public :: geo_create, geo_adopt, geo_present
     public :: geo_init, geo_init_state, geo_update, geo_restart_write, geo_restart_read
+    public :: geo_restart_files
     public :: geo_write_output, geo_end, geo_reduce, geo_scatter
 
 contains
@@ -159,6 +160,15 @@ contains
         call geo%c%restart_read(dir, t)
         call component_leave()
     end subroutine geo_restart_read
+
+    function geo_restart_files(geo) result(files)
+        ! The base names the backend's restart_write creates in the bundle folder.
+        type(geo_slot_t), intent(in) :: geo
+        character(len=PATH_LEN), allocatable :: files(:)
+        associate (c => geo%c)                          ! (gfortran: ICE on a call through geo%c itself)
+            files = c%restart_files()
+        end associate
+    end function geo_restart_files
 
     subroutine geo_write_output(geo, file, t, stream, init)
         type(geo_slot_t), intent(inout) :: geo

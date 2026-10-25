@@ -21,7 +21,7 @@ module kryos_forcing_tsgen
     use nml,             only: nml_read, nml_validate, nml_has_param
     use ncio,            only: nc_create, nc_write_dim, nc_write, nc_open, nc_close, nc_time_index
     use tsgen,           only: tsgen_class, tsgen_init, tsgen_update, tsgen_restart_write, tsgen_restart_read
-    use kryos_component, only: init_ctx_t, step_time_t, constraints_t, NAME_LEN, PASS_INIT
+    use kryos_component, only: init_ctx_t, step_time_t, constraints_t, NAME_LEN, PATH_LEN, PASS_INIT
     use kryos_forcing,   only: forcing_t
 
     implicit none
@@ -45,6 +45,7 @@ module kryos_forcing_tsgen
         procedure :: update        => tsgen_update_
         procedure :: restart_write => tsgen_restart_write_
         procedure :: restart_read  => tsgen_restart_read_
+        procedure :: restart_files => tsgen_restart_files_
         procedure :: write_output  => tsgen_write_output_
         procedure :: kill          => tsgen_kill_
     end type tsgen_forcing_t
@@ -189,6 +190,21 @@ contains
         end do
     end subroutine tsgen_restart_write_
 
+    function tsgen_restart_files_(self) result(files)
+        ! The files tsgen_restart_write_ creates: <instance>_<coef>_restart.nc
+        ! of every coefficient that is not derived, in coefficient order.
+        class(tsgen_forcing_t), intent(in) :: self
+        character(len=PATH_LEN), allocatable :: files(:)
+
+        integer :: k
+
+        allocate(files(0))
+        do k = 1, size(self%f)
+            if (self%coef_derived(k)) cycle
+            files = [character(len=PATH_LEN) :: files, coef_restart_name(self, k)]
+        end do
+    end function tsgen_restart_files_
+
     subroutine tsgen_restart_read_(self, dir, t)
         ! coefs_restart_read: every tsgen coefficient from its file (after init).
         ! A missing file stops (no cold-start fallback, adapters-design 1.4).
@@ -294,12 +310,19 @@ contains
         gfile = nml_find_group(files, group, "&"//trim(ctx%instance)//" coefs")
     end function coef_file
 
+    function coef_restart_name(self, k) result(name)
+        class(tsgen_forcing_t), intent(in) :: self
+        integer,                intent(in) :: k
+        character(len=:), allocatable :: name
+        name = trim(self%name)//"_"//trim(self%coef_names(k))//"_restart.nc"
+    end function coef_restart_name
+
     function coef_restart_file(self, dir, k) result(file)
         class(tsgen_forcing_t), intent(in) :: self
         character(len=*),       intent(in) :: dir
         integer,                intent(in) :: k
         character(len=:), allocatable :: file
-        file = trim(dir)//"/"//trim(self%name)//"_"//trim(self%coef_names(k))//"_restart.nc"
+        file = trim(dir)//"/"//coef_restart_name(self, k)
     end function coef_restart_file
 
 end module kryos_forcing_tsgen

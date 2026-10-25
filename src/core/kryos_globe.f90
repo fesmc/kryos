@@ -38,13 +38,14 @@ module kryos_globe
     use coupler,         only: coupler_class
     use phys_constants,  only: phys_const_class
     use kryos_config,    only: config_t, config_read, config_validate, config_validate_instance, config_cadence
-    use kryos_component, only: component_t, init_ctx_t, step_time_t, census_t, step_time_of, NAME_LEN
+    use kryos_component, only: component_t, init_ctx_t, step_time_t, census_t, step_time_of, NAME_LEN, PATH_LEN
     use kryos_wiring,    only: wire_t, wire_node_t, wire_node, wire_exchange, wire_gather, wire_runs
     use kryos_forcing,   only: forcing_slot_t, forcing_create, forcing_init, forcing_init_state, &
                                forcing_update, forcing_end, forcing_present, forcing_restart_write, &
-                               forcing_restart_read
+                               forcing_restart_read, forcing_restart_files
     use kryos_geo,       only: geo_slot_t, geo_create, geo_init, geo_init_state, geo_update, &
-                               geo_reduce, geo_end, geo_present, geo_restart_write, geo_restart_read
+                               geo_reduce, geo_end, geo_present, geo_restart_write, geo_restart_read, &
+                               geo_restart_files
 
     implicit none
 
@@ -64,7 +65,7 @@ module kryos_globe
     end type gather_src_t
 
     public :: globe_init, globe_init_state, globe_update, globe_time, globe_reduce, globe_end
-    public :: globe_pass, globe_component, globe_restart_write, globe_restart_read
+    public :: globe_pass, globe_component, globe_restart_write, globe_restart_read, globe_restart_files
     public :: globe_nodes
     public :: exchange_globe, exchange_to_globe, gather_src, gather_into
 
@@ -234,6 +235,26 @@ contains
             call unknown(which)
         end select
     end subroutine globe_restart_read
+
+    function globe_restart_files(globe, which) result(files)
+        ! <comp>_restart_files of one instance: the base names its restart_write
+        ! creates in the folder it is given.
+        type(globe_t),    intent(in) :: globe
+        character(len=*), intent(in) :: which              ! "forcing" | "geo"
+        character(len=PATH_LEN), allocatable :: files(:)
+
+        select case (trim(which))
+        case ("forcing")
+            call require(forcing_present(globe%forcing), which)
+            files = forcing_restart_files(globe%forcing)
+        case ("geo")
+            call require(geo_present(globe%geo), which)
+            files = geo_restart_files(globe%geo)
+        case default
+            call unknown(which)
+            allocate(files(0))
+        end select
+    end function globe_restart_files
 
     subroutine globe_end(globe)
         ! forcing, then geo (run_end).

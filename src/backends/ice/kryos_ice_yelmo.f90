@@ -10,7 +10,7 @@ module kryos_ice_yelmo
     use fesm_fields,     only: fields_get, fields_put
     use nml,             only: nml_read, nml_has_param
     use kryos_component, only: init_ctx_t, step_time_t, constraints_t, grid_ref_t, &
-                               component_write_output, NAME_LEN, &
+                               component_write_output, NAME_LEN, PATH_LEN, &
                                PASS_INIT, PASS_GEOMETRY, PASS_STATE, PASS_RESTART
     use kryos_ice,       only: ice_t, ice_opt_t
     use yelmo,           only: yelmo_class, ytopo_input_class, yelmo_init, yelmo_init_grid, yelmo_init_state, &
@@ -46,6 +46,7 @@ module kryos_ice_yelmo
         procedure :: update        => yelmo_update_
         procedure :: restart_write => yelmo_restart_write_
         procedure :: restart_read  => yelmo_restart_read_
+        procedure :: restart_files => yelmo_restart_files_
         procedure :: write_output  => yelmo_write_output_
         procedure :: end           => yelmo_end_
     end type yelmo_ice_t
@@ -139,6 +140,26 @@ contains
         real(dp),           intent(in)    :: t
         call yelmo_restart_write(self%ylmo, restart_file(self, dir), t)
     end subroutine yelmo_restart_write_
+
+    function yelmo_restart_files_(self) result(files)
+        ! The files yelmo_restart_write creates: <instance>_restart.nc and, for
+        ! each Lagrangian tracer backend that is on and has state (ytrc_restart_write),
+        ! the sidecar <instance>_restart_elsa.nc / <instance>_restart_tracer.nc.
+        class(yelmo_ice_t), intent(in) :: self
+        character(len=PATH_LEN), allocatable :: files(:)
+
+        associate (trc => self%ylmo%trc)
+            files = [character(len=PATH_LEN) :: trim(self%name)//"_restart.nc"]
+            if (trc%par%use_elsa) then
+                if (allocated(trc%elsa%now%d_iso)) &
+                    files = [character(len=PATH_LEN) :: files, trim(self%name)//"_restart_elsa.nc"]
+            end if
+            if (trc%par%use_tracer) then
+                if (allocated(trc%trc%now%x)) &
+                    files = [character(len=PATH_LEN) :: files, trim(self%name)//"_restart_tracer.nc"]
+            end if
+        end associate
+    end function yelmo_restart_files_
 
     subroutine yelmo_restart_read_(self, dir, t)
         ! kryos_startup.f90:493-497

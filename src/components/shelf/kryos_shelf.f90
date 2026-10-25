@@ -8,7 +8,7 @@ module kryos_shelf
     use fesm_log,        only: fesm_error
     use fesm_fields,     only: fields_init, fields_add, fields_lock, FIELD_INSTANT, FIELD_MEAN, &
                                FIELD_INTENSIVE, FIELD_EXTENSIVE
-    use kryos_component, only: component_t, init_ctx_t, step_time_t, census_t, constraints_t, &
+    use kryos_component, only: component_t, PATH_LEN, init_ctx_t, step_time_t, census_t, constraints_t, &
                                component_identity, backend_admit, component_close, &
                                component_enter, component_leave, component_optional, component_axis, axis_find
 
@@ -43,6 +43,7 @@ module kryos_shelf
 
     public :: shelf_create, shelf_adopt, shelf_present
     public :: shelf_init, shelf_init_state, shelf_update, shelf_restart_write, shelf_restart_read
+    public :: shelf_restart_files
     public :: shelf_write_output, shelf_end
 
 contains
@@ -119,6 +120,15 @@ contains
         call shelf%c%restart_read(dir, t)
         call component_leave()
     end subroutine shelf_restart_read
+
+    function shelf_restart_files(shelf) result(files)
+        ! The base names the backend's restart_write creates in the bundle folder.
+        type(shelf_slot_t), intent(in) :: shelf
+        character(len=PATH_LEN), allocatable :: files(:)
+        associate (c => shelf%c)                          ! (gfortran: ICE on a call through shelf%c itself)
+            files = c%restart_files()
+        end associate
+    end function shelf_restart_files
 
     subroutine shelf_write_output(shelf, file, t, stream, init)
         type(shelf_slot_t), intent(inout) :: shelf

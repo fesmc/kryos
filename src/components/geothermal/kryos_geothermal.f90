@@ -9,7 +9,7 @@ module kryos_geothermal
                                FIELD_INTENSIVE, FIELD_EXTENSIVE, fields_get, fields_put
     use fesm_datasrc,    only: datasrc_t, datasrc_init, datasrc_update, datasrc_fill, datasrc_describe
     use nml,             only: nml_read, nml_has_param
-    use kryos_component, only: component_t, init_ctx_t, step_time_t, census_t, constraints_t, &
+    use kryos_component, only: component_t, PATH_LEN, init_ctx_t, step_time_t, census_t, constraints_t, &
                                component_identity, backend_admit, component_close, &
                                component_enter, component_leave, component_optional, component_axis, PASS_INIT
 
@@ -50,6 +50,7 @@ module kryos_geothermal
 
     public :: geothermal_create, geothermal_adopt, geothermal_present
     public :: geothermal_init, geothermal_init_state, geothermal_update, geothermal_restart_write, geothermal_restart_read
+    public :: geothermal_restart_files
     public :: geothermal_write_output, geothermal_end, data_geothermal_constraints
 
 contains
@@ -126,6 +127,15 @@ contains
         call geothermal%c%restart_read(dir, t)
         call component_leave()
     end subroutine geothermal_restart_read
+
+    function geothermal_restart_files(geothermal) result(files)
+        ! The base names the backend's restart_write creates in the bundle folder.
+        type(geothermal_slot_t), intent(in) :: geothermal
+        character(len=PATH_LEN), allocatable :: files(:)
+        associate (c => geothermal%c)                          ! (gfortran: ICE on a call through geothermal%c itself)
+            files = c%restart_files()
+        end associate
+    end function geothermal_restart_files
 
     subroutine geothermal_write_output(geothermal, file, t, stream, init)
         type(geothermal_slot_t), intent(inout) :: geothermal

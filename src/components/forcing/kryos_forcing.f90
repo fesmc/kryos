@@ -8,7 +8,7 @@ module kryos_forcing
     use fesm_log,        only: fesm_error
     use fesm_fields,     only: fields_init, fields_add, fields_lock, FIELD_INSTANT, FIELD_MEAN, &
                                FIELD_INTENSIVE, FIELD_EXTENSIVE, fields_put
-    use kryos_component, only: component_t, init_ctx_t, step_time_t, census_t, constraints_t, &
+    use kryos_component, only: component_t, PATH_LEN, init_ctx_t, step_time_t, census_t, constraints_t, &
                                component_identity, backend_admit, component_close, &
                                component_enter, component_leave, component_optional, component_axis
 
@@ -49,6 +49,7 @@ module kryos_forcing
 
     public :: forcing_create, forcing_adopt, forcing_present
     public :: forcing_init, forcing_init_state, forcing_update, forcing_restart_write, forcing_restart_read
+    public :: forcing_restart_files
     public :: forcing_write_output, forcing_end, forcing_kill, forcing_restart_due, forcing_set
 
 contains
@@ -125,6 +126,15 @@ contains
         call forcing%c%restart_read(dir, t)
         call component_leave()
     end subroutine forcing_restart_read
+
+    function forcing_restart_files(forcing) result(files)
+        ! The base names the backend's restart_write creates in the bundle folder.
+        type(forcing_slot_t), intent(in) :: forcing
+        character(len=PATH_LEN), allocatable :: files(:)
+        associate (c => forcing%c)                          ! (gfortran: ICE on a call through forcing%c itself)
+            files = c%restart_files()
+        end associate
+    end function forcing_restart_files
 
     subroutine forcing_write_output(forcing, file, t, stream, init)
         type(forcing_slot_t), intent(inout) :: forcing
