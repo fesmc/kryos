@@ -19,8 +19,9 @@ module kryos_shelf_marine_shelf
     use precision,       only: sp, dp
     use fesm_log,        only: fesm_error, to_str
     use fesm_fields,     only: fields_get, fields_put
-    use ncio,            only: nc_open, nc_close, nc_write, nc_create, nc_write_dim, nc_time_index
+    use ncio,            only: nc_close
     use nml,             only: nml_read, nml_has_param
+    use kryos_outfile,   only: outfile_dims_2d, outfile_open, outfile_var2d
     use kryos_component, only: init_ctx_t, step_time_t, constraints_t, component_write_output, &
                                axis_find, NAME_LEN, PASS_BOUNDARY
     use kryos_shelf,     only: shelf_t, shelf_opt_t
@@ -37,7 +38,6 @@ module kryos_shelf_marine_shelf
         character(len=NAME_LEN) :: group = "marine_shelf"   ! its group in the par file
         real(sp) :: dx = 0.0_sp                      ! [m] grid spacing (marshelf_update, calc_shelf_slope)
         real(sp), allocatable :: depth(:)            ! [m] depth axis of the ocean profiles
-        real(dp), allocatable :: x(:), y(:)          ! grid axes [km], for the 2D output file
         real(sp), allocatable :: H_ice(:,:), z_bed(:,:), f_grnd(:,:), z_sl(:,:), z_srf(:,:)   ! narrowed imports
         real(sp), allocatable :: to(:,:,:), so(:,:,:), dto(:,:,:)
     contains
@@ -94,8 +94,6 @@ contains
                            xc=real(ctx%grid%G%x, sp), yc=real(ctx%grid%G%y, sp), cnst=ctx%cnst)
 
         self%dx = real(ctx%grid%G%dx * ctx%grid%cs%xy_conv, sp)
-        self%x  = ctx%grid%G%x
-        self%y  = ctx%grid%G%y
 
         allocate(self%H_ice(self%nx, self%ny), self%z_bed(self%nx, self%ny), self%f_grnd(self%nx, self%ny), &
                  self%z_sl(self%nx, self%ny),  self%z_srf(self%nx, self%ny))
@@ -159,14 +157,12 @@ contains
             return
         end if
 
-        if (init) call dims_init(file, self%x, self%y, t)
-        call nc_open(file, ncid, writable=.true.)
-        n = nc_time_index(file, "time", t, ncid)
-        call nc_write(file, "time", t, dim1="time", start=[n], count=[1], ncid=ncid)
+        if (init) call outfile_dims_2d(file, self%xkm, self%ykm, t)
+        call outfile_open(file, t, ncid, n)
         associate (now => self%mshlf%now)
-            call var2D(file, "bmb_shlf", now%bmb_shlf, n, ncid, "m/yr", "Shelf basal mass balance", prec_abs=1e-4_sp)
-            call var2D(file, "T_shlf",   now%T_shlf,   n, ncid, "K",    "Shelf temperature",        prec_abs=1e-3_sp)
-            call var2D(file, "tf_shlf",  now%tf_shlf,  n, ncid, "K",    "Thermal forcing",          prec_abs=1e-3_sp)
+            call outfile_var2d(file, "bmb_shlf", now%bmb_shlf, n, ncid, "m/yr", "Shelf basal mass balance", prec_abs=1e-4_sp)
+            call outfile_var2d(file, "T_shlf",   now%T_shlf,   n, ncid, "K",    "Shelf temperature",        prec_abs=1e-3_sp)
+            call outfile_var2d(file, "tf_shlf",  now%tf_shlf,  n, ncid, "K",    "Thermal forcing",          prec_abs=1e-3_sp)
         end associate
         call nc_close(ncid)
     end subroutine marshelf_write_output_
@@ -246,26 +242,5 @@ contains
             call fields_put(self%exports, self%h_tf_shlf, now%tf_shlf, t1=st%t1)
         end associate
     end subroutine exports_put
-
-    subroutine dims_init(filename, x, y, time)
-        ! A 2D output file with xc/yc [km] and time (io_dims_init, kryos_output.f90:228-238).
-        character(len=*), intent(in) :: filename
-        real(dp),         intent(in) :: x(:), y(:), time
-        call nc_create(filename)
-        call nc_write_dim(filename, "xc", x=x, units="km")
-        call nc_write_dim(filename, "yc", x=y, units="km")
-        call nc_write_dim(filename, "time", x=time, dx=1.0_dp, nx=1, units="year", unlimited=.true.)
-    end subroutine dims_init
-
-    subroutine var2D(filename, vnm, var, n, ncid, units, long_name, prec_abs)
-        ! One 2D record (io_var2D, kryos_output.f90:240-250); precision as ncio bit rounding.
-        character(len=*), intent(in) :: filename, vnm, units, long_name
-        real(sp),         intent(in) :: var(:,:)
-        integer,          intent(in) :: n, ncid
-        real(sp),         intent(in) :: prec_abs
-        call nc_write(filename, vnm, var, dim1="xc", dim2="yc", dim3="time", &
-                      start=[1,1,n], count=[size(var,1), size(var,2), 1], ncid=ncid, &
-                      units=units, long_name=long_name, prec_abs=prec_abs)
-    end subroutine var2D
 
 end module kryos_shelf_marine_shelf

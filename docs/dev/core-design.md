@@ -553,6 +553,24 @@ per due stream; files are created on a run's first write (anew per chunk).
 The regression tool compares by a variable map (yelmox file/name → kryos
 file/name), with `write_lossless = True` on both sides.
 
+As implemented (C8, `kryos_output`, `kryos_outfile`, `component_write_output`):
+
+- Streams of an instance are the `out_<stream>` keys of its group declared by
+  `[instance]` (`2D`, `1D`) or `[<component>_<backend>]` (`yelmo`, ...) whose
+  value is not `"none"`; `out_vars` filters the exports of `2D` and `1D`. File:
+  `<out_dir>/<instance>.nc` (2D), `<instance>_ts.nc` (1D), else
+  `<instance>_<stream>.nc`; `out_dir` of `./` adds no prefix.
+- Default writer: rank 2 and 3 exports to `2D` (`xc`, `yc` [km], `time`, the
+  third axis from `component_t%axes`), 0-D exports to `1D`, written as float
+  with the precision of the table row; unpublished exports are skipped; a rank
+  2 or 3 export without a row stops, a 0-D one without a row (a coefficient
+  named by the par file) is written lossless. Units attribute = the export's;
+  a table whose units, rank or third axis differ from the export stops.
+- Producers that are not components (hub, timing; the globe's parts are
+  components) register a writer procedure with a context object
+  (`output_add_writer`, `output_add_hub`, `output_add_timing`). The timing
+  table follows the schedule group of the first `1D` stream.
+
 ## 7. Restart
 
 ```

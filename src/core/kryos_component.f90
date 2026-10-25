@@ -13,10 +13,14 @@ module kryos_component
     use coordinates,    only: grid_class
     use regions,        only: regions_class
     use phys_constants, only: phys_const_class
-    use fesm_log,       only: LOG_INFO, log_msg, log_set_prefix, fesm_error, to_str
-    use fesm_fields,    only: field_state_t, fields_finalize_interval, FIELD_INSTANT, &
-                              FIELD_NAME_LEN, FIELD_UNITS_LEN
+    use fesm_log,       only: LOG_WARN, log_msg, log_set_prefix, fesm_error, to_str
+    use fesm_fields,    only: field_state_t, fields_finalize_interval, fields_get, units_equivalent, &
+                              FIELD_INSTANT, FIELD_NAME_LEN, FIELD_UNITS_LEN
     use fesm_clock,     only: cadence_t
+    use ncio,           only: nc_close, nc_write
+    use variable_io,    only: var_io_type, var_io_write
+    use kryos_outfile,  only: outfile_row, outfile_table_file, outfile_dims_2d, outfile_dims_ts, &
+                              outfile_axis, outfile_open
 
     implicit none
 
@@ -94,6 +98,8 @@ module kryos_component
         type(field_state_t)     :: imports, exports
         type(axis_t), allocatable :: axes(:)            ! axes of the instance's rank-3 fields
         character(len=FIELD_NAME_LEN), allocatable :: opt_imports(:)   ! imports that may stay unwired
+        real(dp), allocatable :: xkm(:), ykm(:)         ! grid axes [km], from the init context (component_identity)
+        character(len=FIELD_NAME_LEN), allocatable :: out_vars(:)   ! exports the default writer writes; unset: all
     contains
         procedure(c_init),   deferred :: init           ! (ctx): read group; set prec, nx, ny, caps, opt
         procedure                     :: init_state => component_init_state      ! (st, pass)
@@ -127,7 +133,7 @@ module kryos_component
     public :: backend_admit, component_identity, component_close, component_enter, component_leave
     public :: component_axis, component_optional, month_axis, axis_find, axes_equal
     public :: census_count, kryos_mask
-    public :: component_init_state, component_write_output, component_end
+    public :: component_init_state, component_write_output, component_end, component_output
 
 contains
 
@@ -145,16 +151,195 @@ contains
     end subroutine component_init_state
 
     subroutine component_write_output(self, file, t, stream, init)
-        ! Default writer: the exports on the native grid (core-design section 6).
-        ! Logs only until the output module lands (core C8).
+        ! Default writer (core-design section 6): the exports listed in out_vars
+        ! (unset: all), unpublished ones skipped. Stream 2D: the rank-2 and rank-3
+        ! exports on the native grid (xc, yc [km], time; rank 3 also its axis),
+        ! file <instance>.nc. Stream 1D: the 0-D exports, file <instance>_ts.nc.
+        ! Values are written as float with the fixed precision of the component
+        ! kind's table input/kryos-variables-<kind>.md (lossless under
+        ! [kryos] write_lossless); the units attribute is the export's own. A
+        ! rank-2 or rank-3 export without a table row stops; a 0-D export without
+        ! one (derived coefficients, named by the par file) is written lossless
+        ! with its name as long_name. init = .true. creates the file; any other
+        ! stream is a backend's, so the backend must have handled it.
         class(component_t), intent(inout) :: self
         character(len=*),   intent(in)    :: file, stream
         real(dp),           intent(in)    :: t
         logical,            intent(in)    :: init
-        call log_msg(LOG_INFO, "kryos_component", "write_output "//trim(self%name)//": stream "// &
-                     trim(stream)//" -> "//trim(file)//" at t = "//to_str(t)//merge(" (init)", "       ", init)// &
-                     " skipped: default writer pending (core C8)")
+
+        character(len=*), parameter :: proc = "kryos_component::write_output"
+        type(var_io_type) :: row
+        integer, allocatable :: hs(:)
+        logical :: ts, found
+        integer :: i, h, ncid, n
+        real(sp), allocatable :: a2(:,:), a3(:,:,:)
+        real(sp) :: a0
+
+        select case (trim(stream))
+        case ("2D")
+            ts = .false.
+        case ("1D")
+            ts = .true.
+        case default
+            call fesm_error(proc, "stream `"//trim(stream)//"` is not served by the default writer", &
+                            "instance "//trim(self%name)//" (backend "//trim(self%backend)// &
+                            "): its write_output must handle every stream other than 2D and 1D")
+            return
+        end select
+
+        hs = selected(self, ts)
+        if (size(hs) == 0) then
+            if (init) call log_msg(LOG_WARN, proc, "instance "//trim(self%name)//": no "// &
+                                   merge("0-D    ", "2D, 3D ", ts)//"exports selected for stream "// &
+                                   trim(stream)//"; "//trim(file)//" not written")
+            return
+        end if
+
+        if (init) then
+            if (ts) then
+                call outfile_dims_ts(file, t)
+            else
+                if (.not. (allocated(self%xkm) .and. allocated(self%ykm))) then
+                    call fesm_error(proc, "instance "//trim(self%name)//" has no grid axes for "//trim(file), &
+                                    "component_identity sets them from the init context; a global instance has none")
+                end if
+                call outfile_dims_2d(file, self%xkm, self%ykm, t)
+                do i = 1, size(hs)
+                    if (self%exports%f(hs(i))%rank == 3) call axis_write(self, file, self%exports%f(hs(i))%zdim)
+                end do
+            end if
+        end if
+
+        call outfile_open(file, t, ncid, n)
+        do i = 1, size(hs)
+            h = hs(i)
+            if (.not. self%exports%f(h)%published) cycle
+            associate (f => self%exports%f(h))
+                call outfile_row(self%kind, f%name, row, found)
+                if (.not. found) then
+                    if (f%rank > 0) then
+                        call fesm_error(proc, "export `"//trim(f%name)//"` of instance "//trim(self%name)// &
+                                        " has no row in "//outfile_table_file(self%kind), &
+                                        "add it to the table (names and units: contracts-design section 2)")
+                    end if
+                    row = scalar_row(f%name, f%units)
+                end if
+                call row_check(self, row, f%rank, f%units, f%zdim, f%name)
+                row%units = f%units
+                select case (f%rank)
+                case (0)
+                    call fields_get(self%exports, h, a0)
+                    call nc_write(file, trim(row%varname), a0, dim1="time", start=[n], count=[1], ncid=ncid, &
+                                  units=trim(row%units), long_name=trim(row%long_name), &
+                                  prec_abs=real(row%prec_abs, sp), prec_rel=real(row%prec_rel, sp))
+                case (2)
+                    allocate(a2(f%nx, f%ny))
+                    call fields_get(self%exports, h, a2)
+                    call var_io_write(file, row, a2, n, ncid=ncid)
+                    deallocate(a2)
+                case (3)
+                    allocate(a3(f%nx, f%ny, f%nz))
+                    call fields_get(self%exports, h, a3)
+                    call var_io_write(file, row, a3, n, ncid=ncid)
+                    deallocate(a3)
+                end select
+            end associate
+        end do
+        call nc_close(ncid)
     end subroutine component_write_output
+
+    function selected(self, ts) result(hs)
+        ! Handles of the exports a stream writes: the 0-D ones for 1D, ranks 2
+        ! and 3 for 2D, restricted to out_vars when it is set.
+        class(component_t), intent(in) :: self
+        logical,            intent(in) :: ts
+        integer, allocatable :: hs(:)
+        integer :: h
+        logical :: pick
+
+        hs = [integer ::]
+        do h = 1, self%exports%n
+            pick = (self%exports%f(h)%rank == 0) .eqv. ts
+            if (pick .and. allocated(self%out_vars)) then
+                if (size(self%out_vars) > 0) pick = any(self%out_vars == self%exports%f(h)%name)
+            end if
+            if (pick) hs = [hs, h]
+        end do
+    end function selected
+
+    function scalar_row(name, units) result(row)
+        ! The row of a 0-D export the table does not list: lossless, no long name.
+        character(len=*), intent(in) :: name, units
+        type(var_io_type) :: row
+        row%varname   = name
+        row%long_name = name
+        row%units     = units
+        row%dimnames  = ""
+        row%ndims     = 1
+        allocate(row%dims(1))
+        row%dims(1)   = ""
+        row%prec_abs  = 0.0d0
+        row%prec_rel  = 0.0d0
+    end function scalar_row
+
+    subroutine axis_write(self, file, name)
+        ! The third axis `name` of a rank-3 export, from the instance's axes.
+        class(component_t), intent(in) :: self
+        character(len=*),   intent(in) :: file, name
+        integer :: k
+        k = 0
+        if (allocated(self%axes)) k = axis_find(self%axes, name)
+        if (k == 0) then
+            call fesm_error("kryos_component::write_output", "axis `"//trim(name)//"` of instance "// &
+                            trim(self%name)//" is not among its axes", "file "//trim(file))
+            return
+        end if
+        call outfile_axis(file, trim(name), self%axes(k)%v, trim(self%axes(k)%units))
+    end subroutine axis_write
+
+    subroutine row_check(self, row, rank, units, zdim, name)
+        ! The table row of an export agrees with the export: units, rank and,
+        ! for rank 3, the third axis.
+        class(component_t), intent(in) :: self
+        type(var_io_type),  intent(in) :: row
+        integer,            intent(in) :: rank
+        character(len=*),   intent(in) :: units, zdim, name
+
+        character(len=*), parameter :: proc = "kryos_component::write_output"
+        character(len=:), allocatable :: where
+        integer :: nd
+
+        where = "table "//outfile_table_file(self%kind)//", variable `"//trim(name)//"`, instance "//trim(self%name)
+        if (.not. units_equivalent(row%units, units)) then
+            call fesm_error(proc, "units `"//trim(row%units)//"` of the table differ from the export's `"// &
+                            trim(units)//"`", where)
+        end if
+        nd = 0
+        if (len_trim(row%dims(1)) > 0) nd = row%ndims
+        if (nd /= rank) then
+            call fesm_error(proc, "dimensions `"//trim(row%dimnames)//"` of the table do not match the export (rank "// &
+                            to_str(rank)//")", where)
+        end if
+        if (rank == 3) then
+            if (trim(row%dims(3)) /= trim(zdim)) then
+                call fesm_error(proc, "third dimension `"//trim(row%dims(3))//"` of the table, the export's is `"// &
+                                trim(zdim)//"`", where)
+            end if
+        end if
+    end subroutine row_check
+
+    subroutine component_output(c, file, t, stream, init)
+        ! The one call site of the write_output binding for a producer held as
+        ! class(component_t) (the output module); the per-component wrappers
+        ! (ice_write_output, ...) do the same for their slot.
+        class(component_t), intent(inout) :: c
+        character(len=*),   intent(in)    :: file, stream
+        real(dp),           intent(in)    :: t
+        logical,            intent(in)    :: init
+        call component_enter(c)
+        call c%write_output(file, t, stream, init)
+        call component_leave()
+    end subroutine component_output
 
     subroutine component_end(self)
         ! Default: nothing to release.
@@ -181,6 +366,10 @@ contains
         c%domain  = ctx%domain
         c%scope   = ctx%scope
         c%con     = con
+        if (allocated(ctx%grid%G%x) .and. allocated(ctx%grid%G%y)) then   ! a global instance has no grid
+            c%xkm = ctx%grid%G%x
+            c%ykm = ctx%grid%G%y
+        end if
     end subroutine component_identity
 
     subroutine backend_admit(c, census)

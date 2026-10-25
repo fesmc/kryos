@@ -772,8 +772,9 @@ module kryos_surface_chion
     use fesm_fields,     only: fields_get, fields_put
     use fesm_units,      only: units_conv
     use phys_constants,  only: sec_year_tropical
-    use ncio,            only: nc_open, nc_close, nc_write, nc_create, nc_write_dim, nc_time_index
+    use ncio,            only: nc_close
     use nml,             only: nml_read, nml_has_param
+    use kryos_outfile,   only: outfile_dims_2d, outfile_open, outfile_var2d
     use kryos_component, only: init_ctx_t, step_time_t, constraints_t, component_write_output, &
                                NAME_LEN, PASS_BOUNDARY, PASS_FINAL
     use kryos_surface,   only: surface_t, surface_opt_t
@@ -795,7 +796,6 @@ module kryos_surface_chion
         character(len=NAME_LEN) :: chion_group = "chion"           ! chion's group
         character(len=NAME_LEN) :: orbit_group = "orbit"           ! the insolation orbit
         real(dp) :: pr_scale = 1.0_dp                 ! pr [kg m-2 yr-1] = pr [mm d-1] * pr_scale
-        real(dp), allocatable :: x(:), y(:)           ! grid axes [km], for the 2D output file
         real(cwp), allocatable :: t2m(:,:,:), pr_mmd(:,:,:)        ! narrowed imports (nx,ny,12)
         real(dp),  allocatable :: pr_in(:,:,:)
         real(cwp), allocatable :: z_srf_s(:,:), z_bed_s(:,:), H_ice_s(:,:), z_sl_s(:,:)
@@ -849,8 +849,6 @@ contains
         ! pr: the climate exports kg m-2 yr-1 = mm d-1 * scale; chion takes mm d-1 (P3).
         call units_conv("mm d-1", "kg m-2 yr-1", self%pr_scale, offset, sec_year=sec_year_tropical)
 
-        self%x = ctx%grid%G%x
-        self%y = ctx%grid%G%y
         allocate(self%t2m(self%nx, self%ny, NMON), self%pr_mmd(self%nx, self%ny, NMON), &
                  self%pr_in(self%nx, self%ny, NMON))
         allocate(self%z_srf_s(self%nx, self%ny), self%z_bed_s(self%nx, self%ny), &
@@ -938,24 +936,22 @@ contains
             return
         end if
 
-        if (init) call dims_init(file, self%x, self%y, t)
-        call nc_open(file, ncid, writable=.true.)
-        n = nc_time_index(file, "time", t, ncid)
-        call nc_write(file, "time", t, dim1="time", start=[n], count=[1], ncid=ncid)
+        if (init) call outfile_dims_2d(file, self%xkm, self%ykm, t)
+        call outfile_open(file, t, ncid, n)
         associate (ann => self%sc%ann)
-            call var2D(file, "smb",    ann%smb,    n, ncid, "mm w.e./yr", "Surface mass balance (sf+rf-runoff-subl)", prec_abs=0.1_cwp)
-            call var2D(file, "tsrf",   ann%tsrf,   n, ncid, "K",          "Surface temperature", prec_abs=1e-3_cwp)
-            call var2D(file, "melt",   ann%melt,   n, ncid, "mm w.e./yr", "Melt", prec_abs=0.1_cwp)
-            call var2D(file, "runoff", ann%runoff, n, ncid, "mm w.e./yr", "Runoff", prec_abs=0.1_cwp)
-            call var2D(file, "refrz",  ann%refrz,  n, ncid, "mm w.e./yr", "Refreezing", prec_abs=0.1_cwp)
-            call var2D(file, "pr",     ann%pr,     n, ncid, "mm w.e./yr", "Precipitation", prec_rel=1e-4_cwp)
-            call var2D(file, "sf",     ann%sf,     n, ncid, "mm w.e./yr", "Snowfall", prec_rel=1e-4_cwp)
-            call var2D(file, "t2m",    ann%t2m,    n, ncid, "K",          "Near-surface air temperature", prec_abs=1e-3_cwp)
-            call var2D(file, "S",      ann%S,      n, ncid, "W m-2",      "TOA insolation", prec_rel=1e-4_cwp)
-            call var2D(file, "PDDs",   ann%PDDs,   n, ncid, "K d",        "Positive degree days", prec_rel=1e-4_cwp)
-            call var2D(file, "alb_s",  ann%alb_s,  n, ncid, "1",          "Surface albedo", prec_abs=1e-4_cwp)
-            call var2D(file, "H_snow", ann%H_snow, n, ncid, "mm w.e.",    "Snowpack thickness (end of year)", prec_abs=0.1_cwp)
-            call var2D(file, "mask",   ann%mask,   n, ncid, "1",          "chion active (land or ice)")
+            call outfile_var2d(file, "smb",    ann%smb,    n, ncid, "mm w.e./yr", "Surface mass balance (sf+rf-runoff-subl)", prec_abs=0.1_cwp)
+            call outfile_var2d(file, "tsrf",   ann%tsrf,   n, ncid, "K",          "Surface temperature", prec_abs=1e-3_cwp)
+            call outfile_var2d(file, "melt",   ann%melt,   n, ncid, "mm w.e./yr", "Melt", prec_abs=0.1_cwp)
+            call outfile_var2d(file, "runoff", ann%runoff, n, ncid, "mm w.e./yr", "Runoff", prec_abs=0.1_cwp)
+            call outfile_var2d(file, "refrz",  ann%refrz,  n, ncid, "mm w.e./yr", "Refreezing", prec_abs=0.1_cwp)
+            call outfile_var2d(file, "pr",     ann%pr,     n, ncid, "mm w.e./yr", "Precipitation", prec_rel=1e-4_cwp)
+            call outfile_var2d(file, "sf",     ann%sf,     n, ncid, "mm w.e./yr", "Snowfall", prec_rel=1e-4_cwp)
+            call outfile_var2d(file, "t2m",    ann%t2m,    n, ncid, "K",          "Near-surface air temperature", prec_abs=1e-3_cwp)
+            call outfile_var2d(file, "S",      ann%S,      n, ncid, "W m-2",      "TOA insolation", prec_rel=1e-4_cwp)
+            call outfile_var2d(file, "PDDs",   ann%PDDs,   n, ncid, "K d",        "Positive degree days", prec_rel=1e-4_cwp)
+            call outfile_var2d(file, "alb_s",  ann%alb_s,  n, ncid, "1",          "Surface albedo", prec_abs=1e-4_cwp)
+            call outfile_var2d(file, "H_snow", ann%H_snow, n, ncid, "mm w.e.",    "Snowpack thickness (end of year)", prec_abs=0.1_cwp)
+            call outfile_var2d(file, "mask",   ann%mask,   n, ncid, "1",          "chion active (land or ice)")
         end associate
         call nc_close(ncid)
     end subroutine chion_write_output_
@@ -1018,26 +1014,5 @@ contains
             call fields_put(self%exports, self%h_refrz,  ann%refrz,  t1=st%t1, t0=st%t0)
         end associate
     end subroutine exports_put
-
-    subroutine dims_init(filename, x, y, time)
-        ! A 2D output file with xc/yc [km] and time (io_dims_init, kryos_output.f90:228-238).
-        character(len=*), intent(in) :: filename
-        real(dp),         intent(in) :: x(:), y(:), time
-        call nc_create(filename)
-        call nc_write_dim(filename, "xc", x=x, units="km")
-        call nc_write_dim(filename, "yc", x=y, units="km")
-        call nc_write_dim(filename, "time", x=time, dx=1.0_dp, nx=1, units="year", unlimited=.true.)
-    end subroutine dims_init
-
-    subroutine var2D(filename, vnm, var, n, ncid, units, long_name, prec_abs, prec_rel)
-        ! One 2D record (io_var2D, kryos_output.f90:240-250); precision as ncio bit rounding.
-        character(len=*), intent(in) :: filename, vnm, units, long_name
-        real(cwp),        intent(in) :: var(:,:)
-        integer,          intent(in) :: n, ncid
-        real(cwp),       intent(in), optional :: prec_abs, prec_rel
-        call nc_write(filename, vnm, var, dim1="xc", dim2="yc", dim3="time", &
-                      start=[1,1,n], count=[size(var,1), size(var,2), 1], ncid=ncid, &
-                      units=units, long_name=long_name, prec_abs=prec_abs, prec_rel=prec_rel)
-    end subroutine var2D
 
 end module kryos_surface_chion
