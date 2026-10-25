@@ -327,8 +327,9 @@ sequence edit that swapped the order).
 
 Par file: `nml`; every group is validated with `nml_validate` against its
 template in `input/kryos_defaults.nml` (core keys) and, for an instance group,
-against `input/<backend>_defaults.nml` group `[instance]` (backend keys) as
-well; a key is valid if either declares it (question 3). Named library groups
+against the template `[<component>_<backend>]` of the same file (backend keys,
+adapters-design §1.1; `<backend>_defaults.nml` stays the library's schema); a
+key is valid if either declares it (question 3). Named library groups
 (`snapshot_*`, `coef_*`, `term_*`, data field groups) are found with
 `nml_find_group([par_file, library(:)], group)`; instance, domain and run groups
 must be in the par file. Backend library groups (`[yelmo]`, `[isos]`,
