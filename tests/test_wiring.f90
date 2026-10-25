@@ -503,7 +503,7 @@ contains
     ! =========================================================================
 
     subroutine tc_identity()
-        ! One grid: a copy; the validity interval travels; the consumer's precision rounds.
+        ! One grid: a copy, never rounded (the consumer narrows once); the validity interval travels.
         real(dp) :: x(NF,NF,1)
         type(wire_t), allocatable :: w(:)
         integer :: p
@@ -518,8 +518,8 @@ contains
             call resolve1(w, wire("ice", "H_ice", "geo", "H_ice", lag=1), dp, p)
             call put3(sx, "H_ice", x, dp, t1=10.0_dp, t0=0.0_dp)
             call wire_exchange(w(1), sx, di, cpl, t=20.0_dp, t_last=10.0_dp)
-            call check(prec_name(p)//": value is the source rounded to the consumer's precision", &
-                       all(got(di, "H_ice") == rnd(x, p)))
+            call check(prec_name(p)//": value is the source, unrounded", &
+                       all(got(di, "H_ice") == x))
             call check(prec_name(p)//": validity [0,10] forwarded", &
                        di%f(1)%t0 == 0.0_dp .and. di%f(1)%t1 == 10.0_dp .and. di%f(1)%published)
             call check(prec_name(p)//": identity row has no method", len_trim(w(1)%mres) == 0)
@@ -533,7 +533,7 @@ contains
     end function prec_name
 
     subroutine tc_remap()
-        ! Remapped rows: con conserves, the result is the coupler's remap rounded to the consumer's precision.
+        ! Remapped rows: con conserves, the result is the coupler's dp remap, unrounded.
         real(dp) :: x(NF,NF,1), yc(NC,NC,1), xi, yi
         type(wire_t), allocatable :: w(:)
         real(dp), allocatable :: y(:,:,:)
@@ -551,7 +551,7 @@ contains
             call wire_exchange(w(1), sx, di, cpl, t=0.0_dp, t_last=0.0_dp, due=.true.)
             y = rmp(sx%f(1)%v, GF, GC, "con")
             call check(prec_name(p)//": auto, fine -> coarse, resolves to con", trim(w(1)%mres) == "con")
-            call check(prec_name(p)//": = coupler con remap, rounded", all(got(di, "H_ice") == rnd(y, p)))
+            call check(prec_name(p)//": = coupler con remap, unrounded", all(got(di, "H_ice") == y))
             yc = got(di, "H_ice");  xi = sum(x)*50.0_dp**2;  yi = sum(yc)*100.0_dp**2
             call check(prec_name(p)//": con conserves the integral", abs(yi - xi) <= merge(1.0e-6_dp, 1.0e-12_dp, p == sp)*abs(xi))
         end do
@@ -562,7 +562,7 @@ contains
         call put3(sx, "T", wave(NC, 1, 250.0_dp, 10.0_dp), sp, t1=0.0_dp)
         call wire_exchange(w(1), sx, di, cpl, t=0.0_dp, t_last=0.0_dp, due=.true.)
         call check("auto, coarse -> fine, resolves to bilin", trim(w(1)%mres) == "bilin")
-        call check("bilin = coupler remap, rounded to sp", all(got(di, "T") == rnd(rmp(sx%f(1)%v, GC, GF, "bilin"), sp)))
+        call check("bilin = coupler remap, unrounded", all(got(di, "T") == rmp(sx%f(1)%v, GC, GF, "bilin")))
         call resolve1(w, wire("ice", "T", "geo", "T"), sp, sp)
         call check("method '' follows cons (intensive: bilin)", trim(w(1)%mres) == "bilin")
         call fields_init(sx, "src:exports");  call st_add(sx, "T", "K", FIELD_INSTANT, FIELD_EXTENSIVE, GC);  call fields_lock(sx)
@@ -591,7 +591,7 @@ contains
             call resolve1(w, wire("geo", "dz_bed", "ice", "z_bed", "auto", transform=T_ADD_REF, aux="z_bed"), p, p)
             call put3(sx, "dz_bed", dz, p, t1=10.0_dp)
             call wire_exchange(w(1), sx, di, cpl, t=10.0_dp, t_last=10.0_dp, ref_dst=rf, due=.true.)
-            r = rmp(sx%f(1)%v, GC, GF, "bilin");  r = rnd(r, p)
+            r = rmp(sx%f(1)%v, GC, GF, "bilin")
             if (p == sp) then
                 e = reshape(real(real(ref, sp) + real(r(:,:,1), sp), dp), [NF, NF, 1])
             else
@@ -626,7 +626,7 @@ contains
             call put3(sx, "dz_ss", dz, p, t1=10.0_dp)
             call put0(sx, "bsl", bsl, p, t1=10.0_dp)
             call wire_exchange(w(1), sx, di, cpl, t=10.0_dp, t_last=10.0_dp, due=.true.)
-            r = rnd(rmp(sx%f(1)%v, GC, GF, "bilin"), p)
+            r = rmp(sx%f(1)%v, GC, GF, "bilin")
             if (p == sp) then
                 e = real(real(sx%f(2)%v(1,1,1), sp) + real(r, sp), dp)
             else
@@ -641,7 +641,7 @@ contains
 
     subroutine tc_sub_ref()
         ! dst = remap(src - ref_src): the difference in the source's precision, then the remap
-        ! (ice fine -> hub coarse), then the consumer's rounding. All four combinations.
+        ! (ice fine -> hub coarse), unrounded. All four combinations.
         real(dp) :: x(NF,NF,1), ref(NF,NF)
         type(grid_ref_t) :: rf
         type(wire_t), allocatable :: w(:)
@@ -670,7 +670,7 @@ contains
                 else
                     pre(:,:,1) = x(:,:,1) - ref
                 end if
-                e = rnd(rmp(pre, GF, GC, "bilin"), pd)
+                e = rmp(pre, GF, GC, "bilin")
                 call check("src "//prec_name(ps)//", dst "//prec_name(pd)//": remap(src - ref) with src-precision difference", &
                            all(got(di, "dz_bed") == e))
             end do
@@ -722,11 +722,11 @@ contains
                     call put3(di, "z_srf", z, p, t1=10.0_dp)
                     call wire_exchange(w(1), sx, di, cpl, t=10.0_dp, t_last=10.0_dp, due=.true.)
 
-                    ! the reference: bilin remaps of the producer's fields as stored, rounded, then the formulas
+                    ! the reference: bilin remaps of the producer's fields as stored (unrounded), then the formulas
                     tr_ = merge_arr(tr == T_LAPSE_T, sx%f(1)%v, sx%f(2)%v)
-                    tr_ = rnd(rmp2(tr_, gs, gd), p)
-                    zc_ = rnd(rmp2(sx%f(3)%v, gs, gd), p);  bp_ = rnd(rmp2(sx%f(4)%v, gs, gd), p)
-                    lp_ = rnd(rmp2(sx%f(5)%v, gs, gd), p)
+                    tr_ = rmp2(tr_, gs, gd)
+                    zc_ = rmp2(sx%f(3)%v, gs, gd);  bp_ = rmp2(sx%f(4)%v, gs, gd)
+                    lp_ = rmp2(sx%f(5)%v, gs, gd)
                     e = tr_
                     if (p == sp) then
                         allocate(dz_sp(nd, nd))
@@ -735,7 +735,7 @@ contains
                             if (tr == T_LAPSE_T) then
                                 e(:,:,m) = real(real(tr_(:,:,m), sp) - real(lp_(:,:,m), sp)*dz_sp, dp)
                             else
-                                e(:,:,m) = real(real(tr_(:,:,m), sp)*exp(-real(bp_(:,:,1), sp)*real(lp_(:,:,m), sp)*dz_sp), dp)
+                                e(:,:,m) = tr_(:,:,m)*real(exp(-real(bp_(:,:,1), sp)*real(lp_(:,:,m), sp)*dz_sp), dp)
                             end if
                         end do
                         deallocate(dz_sp)
@@ -755,7 +755,7 @@ contains
                                all(got(di, trim(name)) == e))
                     call check(trim(name)//", "//trim(gs)//" -> "//trim(gd)//", "//prec_name(p)//": elevation changes the field", &
                                any(got(di, trim(name)) /= tr_))
-                    if (ng == 2 .and. p == dp) then          ! z = zc: the identity, exactly (dz = 0, no shortcut needed)
+                    if (ng == 2) then                        ! z = zc: the identity, exactly (dz = 0, no shortcut needed)
                         call put3(di, "z_srf", zc, p, t1=10.0_dp)
                         call wire_exchange(w(1), sx, di, cpl, t=10.0_dp, t_last=10.0_dp, due=.true.)
                         call check(trim(name)//", one grid, z = z_srf_clim: unchanged, bitwise", &
@@ -858,7 +858,7 @@ contains
         call put3(sx, "smb", x + 2.0_dp, sp, t1=20.0_dp, t0=10.0_dp)
         call fields_finalize_interval(sx, 20.0_dp)
         call wire_exchange(w(1), sx, di, cpl, t=30.0_dp, t_last=20.0_dp, due=.false.)
-        call check("window mean forwarded", all(got(di, "smb") == rnd(sx%f(1)%v, sp)))
+        call check("window mean forwarded", all(got(di, "smb") == sx%f(1)%v))
         call check("validity is the window [0,20]", di%f(1)%t0 == 0.0_dp .and. di%f(1)%t1 == 20.0_dp)
     end subroutine tc_mean_to_instant
 

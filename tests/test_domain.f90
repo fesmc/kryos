@@ -536,9 +536,10 @@ contains
             case ("z_srf");  a = d%hub%z_srf
             end select
             call remap(cpl2, a, "ANT-16KM", b, "ANT-32KM", method=trim(mres))
-            ok = ok .and. same_dp(d%surface%c%imports%f(fields_handle(d%surface%c%imports, trim(sh(k))))%v(:,:,1), real(b, dp))
+            ok = ok .and. same_dp(real(real(d%surface%c%imports%f(fields_handle(d%surface%c%imports, trim(sh(k))))%v(:,:,1), &
+                                            sp), dp), real(b, dp))
         end do
-        call check("surface imports = widened sp remap ("//trim(mres)//") of the hub exports (4 rows, bitwise)", ok)
+        call check("surface imports, narrowed = the sp remap ("//trim(mres)//") of the hub exports (4 rows, bitwise)", ok)
 
         ! a hub that was not refreshed this step is caught by the lag check
         call clock_advance(clk)

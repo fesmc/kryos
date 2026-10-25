@@ -485,7 +485,7 @@ subroutine wire_exchange(w, src, dst, cpl, t, t_last, ref_src, ref_dst)
     else                                                ! identity copy when grids are equal
         call remap(cpl, fs%v, fs%grid, w%work, fd%grid, method=w%method)
     end if
-    call round_to(w%work, w%prec_dst)                   ! = the consumer's sp remap (map_field_grid_grid_sp)
+    ! no rounding: the consumer narrows once, after its own conversion (§9)
     select case (w%transform)                           ! in the destination's precision (§9)
     case (T_ADD_REF);    call add_ref(w%work, ref_dst, w%aux, w%prec_dst)
     case (T_ADD_SCALAR); call add_scalar(w%work, src%f(w%ha)%v(1,1,1), w%prec_dst)
@@ -664,18 +664,24 @@ Phase 1 consumers:
 
 ## 9. Precision of transforms and bit identity
 
-Rule: a remapped value is rounded to the destination's `prec` (what
-`map_field_grid_grid_sp` did, so a no-op in value for plain rows), a
-`T_SUB_REF` difference is formed in the source's `prec`, and every post-remap
-transform is evaluated in the destination's `prec` with the yelmox operand
-order (`sp` and `dp` kernels; four small routines each). With `sp` operands,
+Rule (decision 2026-10-25, replacing "a remapped value is rounded to the
+destination's `prec`"): a row never rounds; the consumer narrows once, after
+its own conversion. A `T_SUB_REF` difference is formed in the source's `prec`;
+every other transform is evaluated in the destination's `prec` with the yelmox
+operand order (`sp` and `dp` kernels), an `sp` kernel narrowing its operands:
+they are `sp` values widened, or `dp` remaps of them, which narrowed are the
+coupler's `sp` remap (R1). `T_LAPSE_P` computes its factor in `sp` and applies
+it to the unnarrowed `pr` (which carries a unit conversion the consumer
+reverses; `dz = 0` is exact). Rounding every row to the consumer's `sp` broke
+the unit round trips (`pr`, `bmb_shlf`, `Q_geo`: the `dp` product was rounded
+before the consumer divided the factor back, C9 test). With `sp` operands,
 `sp` arithmetic is what yelmox did, so:
 
 | Where | yelmox | kryos | Equal because |
 |---|---|---|---|
 | geo → ice `z_bed` | `z_bed_ref + dz_bed_y` (sp) | `real(ref,sp) + real(remap(dz),sp)` | same `sp` operands and op (core R4: refs via the sp path) |
 | geo → ice `z_sl` | `isos%now%bsl + dz_ss_y` | geo `bsl` (reduced, §6) + remapped `dz_ss` | §6 |
-| ice → hub anomalies (Antarctica) | `bnd%z_bed - bnd%z_bed_ref`, sp, then sp bilin | SUB_REF in sp, dp bilin, rounded | R1 (sp remap = dp remap + one rounding) |
+| ice → hub anomalies (Antarctica) | `bnd%z_bed - bnd%z_bed_ref`, sp, then sp bilin | SUB_REF in sp, dp bilin, narrowed by `htopo_update`'s sp | R1 (sp remap = dp remap + one rounding) |
 | hub refresh | `htopo_update` in sp | same routine, sp hub | unchanged code |
 | climate → surface | copy (identical grids in both gates) | identity | — |
 | unit round trips | — | ×ρ then ÷ρ, ×360 then ÷360, ×1e-3 then ×1e3 | exact for `sp` values (regression §3.3) |

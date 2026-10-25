@@ -10,11 +10,14 @@ module kryos_wiring
     ! wire_node_t describes one side for wire_resolve (an instance or the hub).
     !
     ! Exchanged values are `dp` in the field states. Transforms are evaluated in
-    ! the consumer's declared precision with yelmox's operand order (section 9):
-    ! a remapped value is rounded to the destination's prec, a T_SUB_REF
-    ! difference is formed in the source's prec, every other transform runs in
-    ! the destination's prec (sp and dp kernels). The exchange never converts
-    ! units. Failures stop through fesm_error naming the row; the procedures that
+    ! the consumer's declared precision with yelmox's operand order (section 9,
+    ! decision 2026-10-25): a row never rounds (the consumer narrows once, after
+    ! its own conversion); a T_SUB_REF difference is formed in the source's prec;
+    ! every other transform runs in the destination's prec, an sp kernel
+    ! narrowing its operands (the remap of widened sp values, narrowed, is the
+    ! coupler's sp remap); T_LAPSE_P applies its sp factor to the value unnarrowed
+    ! (pr carries a unit conversion the consumer reverses). The exchange never
+    ! converts units. Failures stop through fesm_error naming the row; the procedures that
     ! can fail take an optional `stat` (fesm_error then returns instead).
 
     use precision,       only: sp, dp
@@ -937,7 +940,6 @@ contains
             else
                 call remap_row(w, cpl, fs%v, w%work)
             end if
-            call round_to(w%work, w%prec_dst)                   ! = the consumer's sp remap (map_field_grid_grid_sp)
 
             select case (w%transform)                           ! in the destination's precision (section 9)
             case (T_ADD_REF);    call add_ref(w%work, ref_dst, w%aux, w%prec_dst)
@@ -946,9 +948,6 @@ contains
                 call remap_row(w, cpl, src%f(w%hl(1))%v, w%zc)
                 call remap_row(w, cpl, src%f(w%hl(2))%v, w%bp)
                 call remap_row(w, cpl, src%f(w%hl(3))%v, w%lp)
-                call round_to(w%zc, w%prec_dst)
-                call round_to(w%bp, w%prec_dst)
-                call round_to(w%lp, w%prec_dst)
                 call lapse(w%work, w%zc, w%bp, w%lp, dst%f(w%hl(4))%v, w%transform == T_LAPSE_P, w%prec_dst)
             end select
 
@@ -1065,15 +1064,10 @@ contains
 
     ! =========================================================================
     ! Transform kernels, in the stated precision: an sp kernel narrows its
-    ! operands (exact: they are sp values widened, or rounded to prec), does
-    ! the arithmetic in sp in yelmox's order and widens the result exactly.
+    ! operands (sp values widened, or remaps of them: narrowed, the coupler's sp
+    ! remap), does the arithmetic in sp in yelmox's order and widens the result
+    ! exactly.
     ! =========================================================================
-
-    subroutine round_to(a, prec)
-        real(dp), intent(inout) :: a(:,:,:)
-        integer,  intent(in)    :: prec
-        if (prec == sp) a = real(real(a, sp), dp)
-    end subroutine round_to
 
     subroutine sub_ref(pre, v, ref, name, prec)
         ! pre = v - ref%<name>, formed in prec (the source's).
@@ -1153,7 +1147,7 @@ contains
         ! Re-elevate tas (or pr) from the surface it refers to (zc) to the
         ! consumer's z, per month m, in prec (the destination's):
         !   dz = z - zc;  tas = tas - lp(:,:,m)*dz;  pr = pr*exp(-bp*lp(:,:,m)*dz)
-        real(dp), intent(inout) :: work(:,:,:)            ! tas or pr, remapped and rounded
+        real(dp), intent(inout) :: work(:,:,:)            ! tas or pr, remapped (not rounded)
         real(dp), intent(in)    :: zc(:,:,:), bp(:,:,:), lp(:,:,:), z(:,:,:)
         logical,  intent(in)    :: is_pr
         integer,  intent(in)    :: prec
@@ -1168,8 +1162,8 @@ contains
                     if (prec == sp) then
                         dz_sp = real(z(i,j,1), sp) - real(zc(i,j,1), sp)
                         l_sp  = real(lp(i,j,m), sp)
-                        if (is_pr) then
-                            work(i,j,m) = real(real(work(i,j,m), sp)*exp(-real(bp(i,j,1), sp)*l_sp*dz_sp), dp)
+                        if (is_pr) then                 ! the sp factor on the dp value: dz = 0 is exact
+                            work(i,j,m) = work(i,j,m)*real(exp(-real(bp(i,j,1), sp)*l_sp*dz_sp), dp)
                         else
                             work(i,j,m) = real(real(work(i,j,m), sp) - l_sp*dz_sp, dp)
                         end if

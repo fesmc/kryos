@@ -158,8 +158,8 @@ contains
 
             ! static rows (3.6 item 1)
             a = get2(ice%imports, ice%hi_Q_geo)
-            call check(all(a == real(real(0.05_dp, sp), dp)), &
-                       "Q_geo = 0.05 W m-2 in the ice's precision (geothermal data, static row)")
+            call check(all(a == 0.05_dp), &
+                       "Q_geo = 0.05 W m-2 as the producer put it, unrounded (geothermal data, static row)")
             a = get2(ice%imports, ice%hi_H_sed)
             call check(all(a == 0.0_dp), "H_sed = 0 m (sediments data, static row)")
             a = get2(geo%imports, geo%hi_z_bed_ref)
@@ -214,12 +214,9 @@ contains
         ! The two unit conversions across the exchange (adapters-design 1.2 P3,
         ! 10): pr [mm d-1] * sec_year/86400 out of the climate, / the same factor
         ! into chion; bmb_shlf [m ie yr-1] * rho_ice out of the shelf, / rho_ice
-        ! into Yelmo. adapters-design 10 expects the backend's sp value back bit
-        ! for bit on identity grids (the yelmox gate); the wiring narrows the dp
-        ! product to the consumer's sp first (contracts-design 4.3, 9: round_to
-        ! on every row, the lapse kernel in sp), so P3 does not hold. Open
-        ! (C9 report): reported as OPEN with the count of differing cells, not
-        ! failed, until the design decides which rule gives way.
+        ! into Yelmo. On identity grids the backend's sp value comes back bit for
+        ! bit (adapters-design 10, P3): rows never round, the consumer narrows
+        ! once after its conversion (contracts-design 4.3, 9, decision 2026-10-25).
         type(run_t), target, intent(in) :: run
         integer :: npr, nbmb
 
@@ -240,9 +237,9 @@ contains
                 end select
             end select
         end associate
-        call note(npr == 0, "pr round trip climate -> chion bit for bit at t0 (values differing: "// &
+        call check(npr == 0, "pr round trip climate -> chion bit for bit at t0 (values differing: "// &
                   trim(itoa(npr))//")")
-        call note(nbmb == 0, "bmb_shlf round trip shelf -> Yelmo bit for bit at t0 (cells differing: "// &
+        call check(nbmb == 0, "bmb_shlf round trip shelf -> Yelmo bit for bit at t0 (cells differing: "// &
                   trim(itoa(nbmb))//")")
     end subroutine round_trips
 
@@ -268,9 +265,9 @@ contains
 
             ! the ice read the surface and the shelf of the previous step (lag 1)
             call check(all(get2(ice%imports, ice%hi_smb) == smb_prev), "ice smb = the surface's smb of the previous step")
-            call check(all(get2(ice%imports, ice%hi_bmb_shlf) == real(real(bmb_prev, sp), dp)) .and. &
+            call check(all(get2(ice%imports, ice%hi_bmb_shlf) == bmb_prev) .and. &
                        ice%imports%f(ice%hi_bmb_shlf)%t1 == t - 10.0_dp, &
-                       "ice bmb_shlf = the shelf's bmb_shlf of the previous step (in the ice's sp)")
+                       "ice bmb_shlf = the shelf's bmb_shlf of the previous step, unrounded")
 
             ! geo ran at t; bsl of this step's reduction in the geo exports and z_sl
             bsl = get0(geo%exports, geo%h_bsl)
