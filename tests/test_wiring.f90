@@ -34,7 +34,6 @@ program test_wiring
     type(field_state_t), target :: ice_i, ice_e, geo_i, geo_e, gg_i, gg_e, hub_i, hub_e, cl_i, cl_e
     type(field_state_t), target :: sf_i, sf_e, sh_i, sh_e, gt_e, sd_e, fo_i, fo_e, e_i, e_e
     character(len=FIELD_NAME_LEN), target :: opt_ice(3), opt_sh(7)
-    type(wire_node_t) :: nodes(10)
     integer, parameter :: I_ = FIELD_INSTANT, M_ = FIELD_MEAN, IT = FIELD_INTENSIVE, EX = FIELD_EXTENSIVE
 
     call grid_init(gf_, name=GF, mtype="cartesian", units="kilometers", x0=25.0_dp, dx=50.0_dp, nx=NF, &
@@ -272,10 +271,14 @@ contains
     subroutine tc_domain()
         ! The mirror domain: climate on the coarse grid, everything else on the fine one.
         type(wire_t), allocatable :: w(:)
+        ! The nodes are local and passed to build: ifx 2023.2 with -qopenmp gives
+        ! a main-program array of wire_node_t (pointer components initialised to
+        ! null) different storage in different internal procedures.
+        type(wire_node_t) :: nodes(10)
         integer :: i, stat
 
         write(*,"(a)") "resolution of a toy domain"
-        call build()
+        call build(nodes)
         call wire_resolve(w, nodes, cpl, stat=stat)
         call check("resolves", stat == 0)
         call check("43 of 50 rows active", count(w%active) == 43 .and. size(w) == 50)
@@ -308,7 +311,8 @@ contains
 
     end subroutine tc_domain
 
-    subroutine build()
+    subroutine build(nodes)
+        type(wire_node_t), intent(out) :: nodes(:)
         opt_ice = [character(len=FIELD_NAME_LEN) :: "T_shlf", "Q_geo", "H_sed"]
         opt_sh  = [character(len=FIELD_NAME_LEN) :: "to_ann", "so_ann", "dto_ann", "to_shlf", "so_shlf", "dto_shlf", &
                                                    "dso_shlf"]
