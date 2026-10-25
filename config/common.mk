@@ -133,6 +133,10 @@ else
 endif
 
 ifeq ($(chion), 1)
+    # The chion host (kryos_surface_chion.f90) takes its daily insolation from insol.
+    ifneq ($(insol), 1)
+        $(error chion=1 needs insol=1: the chion host uses libinsol)
+    endif
     kryos_surface_chion_obj = $(objdir)/kryos_surface_chion.o
     INC_BACKENDS   += $(INC_CHION)
     LIB_BACKENDS   += $(LIB_CHION)

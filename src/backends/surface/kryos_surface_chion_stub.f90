@@ -16,9 +16,12 @@ module kryos_surface_chion
     type, extends(surface_t) :: chion_surface_t
     contains
         procedure :: init          => chion_init_
+        procedure :: init_state    => chion_init_state_
         procedure :: update        => chion_update_
         procedure :: restart_write => chion_restart_write_
         procedure :: restart_read  => chion_restart_read_
+        procedure :: write_output  => chion_write_output_
+        procedure :: end           => chion_end_
     end type chion_surface_t
 
 contains
@@ -42,6 +45,14 @@ contains
         call unavailable(self%name, "init")
     end subroutine chion_init_
 
+    subroutine chion_init_state_(self, st, pass)
+        class(chion_surface_t), intent(inout) :: self
+        type(step_time_t), intent(in) :: st
+        integer, intent(in) :: pass
+        associate (unused => st%t1 + pass); end associate
+        call unavailable(self%name, "init_state")
+    end subroutine chion_init_state_
+
     subroutine chion_update_(self, st)
         class(chion_surface_t), intent(inout) :: self
         type(step_time_t), intent(in) :: st
@@ -64,5 +75,19 @@ contains
         associate (unused => len(dir) + t); end associate
         call unavailable(self%name, "restart_read")
     end subroutine chion_restart_read_
+
+    subroutine chion_write_output_(self, file, t, stream, init)
+        class(chion_surface_t), intent(inout) :: self
+        character(len=*), intent(in) :: file, stream
+        real(dp), intent(in) :: t
+        logical, intent(in) :: init
+        associate (unused => len(file) + len(stream) + t + merge(1, 0, init)); end associate
+        call unavailable(self%name, "write_output")
+    end subroutine chion_write_output_
+
+    subroutine chion_end_(self)
+        class(chion_surface_t), intent(inout) :: self
+        call unavailable(self%name, "end")
+    end subroutine chion_end_
 
 end module kryos_surface_chion

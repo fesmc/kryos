@@ -51,7 +51,7 @@ builds it. Use `make deps-static` (or each dependency's own make) first.
 | `pic=1` | 0 | `-fPIC`, for a later shared library or C API |
 | `debug=1\|2` | 0 | debug or profiling flags from the compiler fragment |
 | `yelmo` | 1 | ice backend `yelmo`: adapter, `INC_YELMO`/`LIB_YELMO` (+ FastHydrology, elsa, tracer, LIS, FFTW) |
-| `fastisostasy`, `chion`, `insol` | 1 | library wiring only, until their adapters exist (phase 1) |
+| `fastisostasy`, `chion`, `insol` | 1 | `chion=1` compiles the chion host (with its orbit) into the adapter and needs `insol=1`; `fastisostasy`, `insol`: library wiring only, until their adapters exist (phase 1) |
 | `cism`, `pism`, `vilma`, `rembo` | 0 | stop with the phase in which the adapter arrives |
 
 Objects are stamped with the switch settings
@@ -102,6 +102,7 @@ For backend `foo` of component `ice`:
   `libkryos/include` and fesm-utils, so a bare module name that exists in
   two libraries (`precision` in fesm-utils and FastIsostasy) resolves to
   fesm-utils. kryos' own modules are all prefixed `kryos_`.
+- The marine_shelf and pico code of yelmox is compiled in kryos (`src/backends/shelf/marine_shelf/`, modules `kryos_mshlf*`); it needs no switch. The chion host and orbit modules are inside `kryos_surface_chion.f90`.
 - The yelmo adapter compiles against `yelmo.mod` and holds a `yelmo_class`,
   but the placeholder calls nothing in libyelmo, so no libyelmo member is
   linked yet.
