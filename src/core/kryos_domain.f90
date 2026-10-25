@@ -1,0 +1,782 @@
+module kryos_domain
+    ! One domain (core-design sections 1, 2, 5; contracts-design section 5): its
+    ! groups, its grids and the default grid chain, the hub (fesm-utils htopo:
+    ! the prepared reference topography on the finest grid and the current
+    ! geometry), the coupler, the reference topography on every grid in use
+    ! (refs), the slots of the component instances, the resolved wiring rows,
+    ! and the three procedures the run sequence calls on it: exchange,
+    ! domain_hub_update and domain_check_reference.
+    !
+    ! This module stops where the instances begin. domain_init does everything
+    ! that needs no instance; the instance slots stay unallocated, and the
+    ! plug-in point for the sequence (core C9) is marked at the end of
+    ! domain_init: factories (<comp>_create), the init_ctx_t of each instance
+    ! (from dom%grid, dom%backend, refs(domain_ref_index(dom, grid)), the
+    ! domain's regions on that grid), <comp>_init, then domain_wire.
+    !
+    ! Plain types and free procedures; no OOP. Hub precision: the hub is htopo's
+    ! (kind wp, sp in phase 1); the field states hold it widened to dp.
+    !
+    ! References (core R4, contracts-design 5.1): the hub prepares the reference
+    ! once (htopo [topo] keys z_bed_f_sd, remove_lakes, H_ice_min, grad_lim_zb;
+    ! decision 2026-10-24), and every instance grid's reference is made from that
+    ! prepared hub reference, once, by the coupler's `con` map through its
+    ! hub-precision path (the remap Yelmo's topo_init/topo_pd came from in
+    ! yelmox), and stored widened to dp. The hub's own reference is the prepared
+    ! one widened. Only grids in use (an instance on them) get one.
+    !
+    ! Domain, instance and run groups are read from the par file; the hub's
+    ! groups ([topo] and [regions], named by the domain's `topo` and `regions`
+    ! keys) must be in the par file too, because htopo_init takes one file.
+    !
+    ! Errors stop through fesm_error naming the domain and key; the procedures
+    ! that can fail on a par-file or consistency error take an optional `stat`.
+
+    use precision,       only: dp, wp
+    use fesm_log,        only: LOG_INFO, log_msg, fesm_error, to_str
+    use fesm_fields,     only: field_state_t, fields_init, fields_add, fields_lock, fields_put, &
+                               fields_has, fields_handle, FIELD_INSTANT, FIELD_INTENSIVE, &
+                               FIELD_EXTENSIVE
+    use fesm_clock,      only: clock_t, clock_dtt, cadence_t_last, cadence_due, cadence_dt_years
+    use nml,             only: nml_has_group
+    use ncio,            only: nc_open, nc_close, nc_write, nc_time_index
+    use coupler,         only: coupler_class, coupler_init, coupler_prime, remap
+    use htopo,           only: htopo_class, htopo_init, htopo_update, htopo_write_init, htopo_write_step
+    use phys_constants,  only: phys_const_class
+    use kryos_component, only: component_t, grid_ref_t, kryos_mask, NAME_LEN
+    use kryos_config,    only: config_t, config_read, config_validate, config_validate_instance
+    use kryos_wiring,    only: wire_t, wire_node_t, wire_node, wire_node_states, wire_resolve, &
+                               wire_prime, wire_exchange, wire_runs, wire_label
+    use kryos_ice,       only: ice_slot_t
+    use kryos_geo,       only: geo_slot_t
+    use kryos_climate,   only: climate_slot_t
+    use kryos_surface,   only: surface_slot_t
+    use kryos_shelf,     only: shelf_slot_t
+    use kryos_geothermal, only: geothermal_slot_t
+    use kryos_sediments, only: sediments_slot_t
+
+    implicit none
+
+    private
+
+    ! The components of a domain, in the order of the keys of the [domain]
+    ! template (core-design section 2).
+    integer, parameter, public :: C_ICE = 1, C_GEO = 2, C_CLIMATE = 3, C_SURFACE = 4, C_SHELF = 5, &
+                                  C_GEOTHERMAL = 6, C_SEDIMENTS = 7, NCOMP = 7
+
+    ! Default grid chain (yelmox kryos.f90:574-578): the component whose grid a
+    ! component follows when its instance sets no `grid`; 0 = the hub.
+    integer, parameter, public :: GRID_DEFAULT(NCOMP) = [0, C_ICE, C_ICE, C_CLIMATE, 0, C_ICE, C_ICE]
+
+    ! Component names: the [domain] keys, the wiring kinds and component_t%kind.
+    character(len=16), parameter, public :: COMP_NAME(NCOMP) = &
+        [character(len=16) :: "ice", "geo", "climate", "surface", "shelf", "geothermal", "sediments"]
+
+    real(dp), parameter :: REF_TOL = 1.0_dp     ! [m] domain_check_reference: round-off only
+
+    type :: hub_handles_t                       ! handles into hub_imports / hub_exports
+        integer :: hi_z_bed = 0, hi_H_ice = 0, hi_z_srf = 0, hi_f_ice = 0, hi_f_grnd = 0, hi_z_sl = 0
+        integer :: hi_dz_bed = 0, hi_dH_ice = 0
+        integer :: h_z_bed = 0, h_H_ice = 0, h_z_srf = 0, h_f_ice = 0, h_f_grnd = 0, h_z_sl = 0
+        integer :: h_z_srf_ref = 0
+    end type hub_handles_t
+
+    type, public :: domain_t
+        character(len=NAME_LEN) :: name = ""            ! its par-file group, e.g. "Greenland" (= the FesmData domain)
+        character(len=NAME_LEN) :: grid_hub = ""
+        character(len=NAME_LEN) :: topo = "", regions = "", basins = "", out_2D = "none"   ! hub groups and schedule
+        character(len=NAME_LEN) :: inst(NCOMP) = ""     ! instance (group) name per component; "" = absent
+        character(len=NAME_LEN) :: backend(NCOMP) = ""  ! its backend, from its group
+        character(len=NAME_LEN) :: grid(NCOMP) = ""     ! resolved native grid; "" for an absent component
+        logical                 :: grid_default(NCOMP) = .true.   ! follows the chain (no `grid` in its group)
+        type(htopo_class)       :: hub                  ! sp in phase 1
+        logical                 :: hub_mirror = .false. ! grid_hub == grid(ice): the hub mirrors the ice geometry
+        type(field_state_t)     :: hub_imports          ! from the ice: mirror set, or anomaly set (finer hub)
+        type(field_state_t)     :: hub_exports          ! z_bed, H_ice, z_srf, f_ice, f_grnd, z_sl, z_srf_ref
+        type(hub_handles_t)     :: hh
+        real(dp)                :: hub_t = 0.0_dp       ! time of the last hub update (lag checks)
+        type(coupler_class)     :: cpl                  ! grids by name, map cache (maps/)
+        type(grid_ref_t), allocatable :: refs(:)        ! one per distinct grid in use, hub first
+        type(ice_slot_t)        :: ice                  ! instance slots (core C9 fills them)
+        type(geo_slot_t)        :: geo
+        type(climate_slot_t)    :: climate
+        type(surface_slot_t)    :: surface
+        type(shelf_slot_t)      :: shelf
+        type(geothermal_slot_t) :: geothermal
+        type(sediments_slot_t)  :: sediments
+        type(wire_t), allocatable :: wires(:)           ! rows resolved for this domain (domain_wire)
+    end type domain_t
+
+    public :: domain_init, domain_describe
+    public :: domain_ref_index, domain_comp_index, domain_component
+    public :: domain_nodes, domain_wire
+    public :: exchange, domain_hub_update, domain_check_reference
+    public :: domain_hub_write
+
+contains
+
+    ! =========================================================================
+    ! Init
+    ! =========================================================================
+
+    subroutine domain_init(dom, cfg, name, cnst, t0, stat)
+        ! The domain `name` (a [domain]-template group of the par file) without
+        ! its instances: groups, grids and the chain, the hub loaded and
+        ! prepared, the coupler, refs, the hub exports published at t0.
+        !   1. the group and the instance groups validated (templates);
+        !   2. the grid of every present component: its group's `grid`, else the
+        !      chain of GRID_DEFAULT;
+        !   3. htopo_init (prepared reference), coupler_init;
+        !   4. refs: hub first, then each other grid in use (con, hub path).
+        type(domain_t),         intent(out)   :: dom
+        type(config_t),         intent(in)    :: cfg
+        character(len=*),       intent(in)    :: name
+        type(phys_const_class), intent(in)    :: cnst        ! of the run (one record)
+        real(dp),               intent(in)    :: t0          ! time_init [yr]
+        integer,                intent(out), optional :: stat
+
+        character(len=*), parameter :: proc = "kryos_domain::domain_init"
+        character(len=NAME_LEN) :: explicit(NCOMP)
+        integer :: k, j, s
+
+        if (present(stat)) stat = 0
+        dom%name = name
+
+        ! --- the domain group ---
+        call config_validate(cfg, name, "domain", required=[character(len=16) :: "grid_hub"], stat=stat)
+        if (failed(stat)) return
+        call config_read(cfg, name, "grid_hub", dom%grid_hub, "domain")
+        call config_read(cfg, name, "topo",     dom%topo,     "domain")
+        call config_read(cfg, name, "regions",  dom%regions,  "domain")
+        call config_read(cfg, name, "basins",   dom%basins,   "domain")
+        call config_read(cfg, name, "out_2D",   dom%out_2D,   "domain")
+        do k = 1, NCOMP
+            call config_read(cfg, name, trim(COMP_NAME(k)), dom%inst(k), "domain")
+        end do
+        if (len_trim(dom%grid_hub) == 0) then
+            call fesm_error(proc, "domain &"//trim(name)//": grid_hub is empty", &
+                            "par file "//trim(cfg%par_file), stat)
+            return
+        end if
+
+        ! the hub's groups: htopo_init reads them all from the par file
+        if (.not. nml_has_group(trim(cfg%par_file), trim(dom%topo))) then
+            call fesm_error(proc, "domain &"//trim(name)//": group &"//trim(dom%topo)// &
+                            " (topo) is missing from the par file", &
+                            "the hub reads its topography group from the par file "//trim(cfg%par_file), stat)
+            return
+        end if
+        if (.not. nml_has_group(trim(cfg%par_file), trim(dom%regions))) then
+            call fesm_error(proc, "domain &"//trim(name)//": group &"//trim(dom%regions)// &
+                            " (regions) is missing from the par file", &
+                            "the hub reads its regions group from the par file "//trim(cfg%par_file), stat)
+            return
+        end if
+
+        ! --- instances: unique names, groups valid, grids read ---
+        explicit = ""
+        do k = 1, NCOMP
+            if (len_trim(dom%inst(k)) == 0) cycle
+            do j = 1, k - 1
+                if (trim(dom%inst(j)) /= trim(dom%inst(k))) cycle
+                call fesm_error(proc, "domain &"//trim(name)//": instance `"//trim(dom%inst(k))// &
+                                "` is named by two components", trim(COMP_NAME(j))//" and "// &
+                                trim(COMP_NAME(k))//": one group per component", stat)
+                return
+            end do
+            call config_validate_instance(cfg, dom%inst(k), trim(COMP_NAME(k)), dom%backend(k), stat=s)
+            if (s /= 0) then
+                call fesm_error(proc, "domain &"//trim(name)//": "//trim(COMP_NAME(k))//" instance `"// &
+                                trim(dom%inst(k))//"` is not a valid instance group", &
+                                "par file "//trim(cfg%par_file), stat)
+                return
+            end if
+            call config_read(cfg, dom%inst(k), "grid", explicit(k), "instance")
+        end do
+
+        ! --- the grids ---
+        call resolve_grids(dom, explicit)
+        dom%hub_mirror = (len_trim(dom%inst(C_ICE)) > 0) .and. (trim(dom%grid(C_ICE)) == trim(dom%grid_hub))
+
+        ! --- the hub and the coupler ---
+        call htopo_init(dom%hub, trim(cfg%par_file), trim(name), trim(dom%topo), trim(dom%regions), &
+                        trim(name), trim(dom%grid_hub), cnst, map_fldr=trim(cfg%map_fldr))
+        call coupler_init(dom%cpl, trim(cfg%map_fldr))
+
+        ! --- the reference on every grid in use ---
+        call make_refs(dom)
+
+        ! --- hub field states, published at t0 (the reference is the initial geometry) ---
+        call hub_declare(dom)
+        call hub_put(dom, t0, hub_f_ice(dom))
+        call fields_put(dom%hub_exports, dom%hh%h_z_srf_ref, dom%hub%ref%z_srf, t1=t0)   ! static: once
+        dom%hub_t = t0
+
+        call domain_describe(dom)
+
+        ! ---------------------------------------------------------------------
+        ! C9 plug-in point (instance creation, not in this module's scope): per
+        ! present component in the order ice, geo, geothermal, sediments,
+        ! climate, surface, shelf: fill init_ctx_t (grid_name = dom%grid(k),
+        ! backend = dom%backend(k), grid from maps/, regions on that grid, ref =
+        ! dom%refs(domain_ref_index(dom, dom%grid(k))), cnst, time), call the
+        ! factory <comp>_create(dom%<comp>, ctx, census) and <comp>_init; then
+        ! domain_wire(dom, clk, ...). Until then every slot is unallocated.
+        ! ---------------------------------------------------------------------
+    end subroutine domain_init
+
+    subroutine resolve_grids(dom, explicit)
+        ! The grid of each present component: its own `grid`, else the grid of
+        ! the component it follows (GRID_DEFAULT; the hub for 0). The chain runs
+        ! through absent components too (an absent ice still stands for the hub
+        ! grid), so a geo without an ice follows the hub.
+        type(domain_t),          intent(inout) :: dom
+        character(len=NAME_LEN), intent(in)    :: explicit(NCOMP)
+
+        character(len=NAME_LEN) :: g(NCOMP)
+        integer :: k
+
+        do k = 1, NCOMP
+            if (len_trim(explicit(k)) > 0) then
+                g(k) = explicit(k)
+            else if (GRID_DEFAULT(k) == 0) then
+                g(k) = dom%grid_hub
+            else
+                g(k) = g(GRID_DEFAULT(k))           ! parents have lower indices
+            end if
+            dom%grid_default(k) = (len_trim(explicit(k)) == 0)
+            dom%grid(k) = ""
+            if (len_trim(dom%inst(k)) > 0) dom%grid(k) = g(k)
+        end do
+    end subroutine resolve_grids
+
+    subroutine make_refs(dom)
+        ! refs(1): the prepared hub reference widened. refs(i > 1): each other
+        ! grid in use, from the hub reference by the coupler's `con` map in the
+        ! hub's precision, widened (core R4). Stored in order of first use.
+        type(domain_t), intent(inout) :: dom
+
+        character(len=NAME_LEN) :: list(NCOMP + 1)
+        integer :: n, k, i
+
+        n = 1
+        list(1) = dom%grid_hub
+        do k = 1, NCOMP
+            if (len_trim(dom%grid(k)) == 0) cycle
+            if (any(list(1:n) == dom%grid(k))) cycle
+            n = n + 1
+            list(n) = dom%grid(k)
+        end do
+
+        allocate(dom%refs(n))
+        associate (ref => dom%hub%ref)
+            dom%refs(1)%grid    = dom%grid_hub
+            dom%refs(1)%z_bed   = real(ref%z_bed,    dp)
+            dom%refs(1)%H_ice   = real(ref%H_ice,    dp)
+            dom%refs(1)%z_srf   = real(ref%z_srf,    dp)
+            dom%refs(1)%z_bed_sd = real(ref%z_bed_sd, dp)
+            do i = 2, n
+                dom%refs(i)%grid = list(i)
+                call coupler_prime(dom%cpl, trim(dom%grid_hub), trim(list(i)), method="con")
+                call ref_remap(dom, ref%z_bed,    list(i), dom%refs(i)%z_bed)
+                call ref_remap(dom, ref%H_ice,    list(i), dom%refs(i)%H_ice)
+                call ref_remap(dom, ref%z_srf,    list(i), dom%refs(i)%z_srf)
+                call ref_remap(dom, ref%z_bed_sd, list(i), dom%refs(i)%z_bed_sd)
+            end do
+        end associate
+    end subroutine make_refs
+
+    subroutine ref_remap(dom, a, grid, b)
+        ! b = widened con remap of the hub-precision field a, hub -> grid.
+        type(domain_t),        intent(inout) :: dom
+        real(wp),              intent(in)    :: a(:,:)
+        character(len=*),      intent(in)    :: grid
+        real(dp), allocatable, intent(out)   :: b(:,:)
+        real(wp), allocatable :: tmp(:,:)
+
+        call remap(dom%cpl, a, trim(dom%grid_hub), tmp, trim(grid), method="con")
+        b = real(tmp, dp)
+    end subroutine ref_remap
+
+    ! =========================================================================
+    ! Lookup
+    ! =========================================================================
+
+    integer function domain_ref_index(dom, grid) result(i)
+        ! Index of the reference on `grid` in dom%refs; 0 if no instance of the
+        ! domain is on it (and it is not the hub grid).
+        type(domain_t),   intent(in) :: dom
+        character(len=*), intent(in) :: grid
+        integer :: j
+
+        i = 0
+        if (.not. allocated(dom%refs)) return
+        do j = 1, size(dom%refs)
+            if (trim(dom%refs(j)%grid) == trim(grid)) then
+                i = j
+                return
+            end if
+        end do
+    end function domain_ref_index
+
+    integer function domain_comp_index(kind) result(k)
+        ! Component index of a kind name ("ice", ...); 0 if unknown (e.g. "hub").
+        character(len=*), intent(in) :: kind
+        integer :: j
+
+        k = 0
+        do j = 1, NCOMP
+            if (trim(COMP_NAME(j)) == trim(kind)) then
+                k = j
+                return
+            end if
+        end do
+    end function domain_comp_index
+
+    function domain_component(dom, k) result(c)
+        ! The instance of component k, or a disassociated pointer if its slot
+        ! is not allocated. The one place that names the seven slots.
+        type(domain_t), target, intent(in) :: dom
+        integer,                intent(in) :: k
+        class(component_t), pointer :: c
+
+        c => null()
+        select case (k)
+        case (C_ICE);        if (allocated(dom%ice%c))        c => dom%ice%c
+        case (C_GEO);        if (allocated(dom%geo%c))        c => dom%geo%c
+        case (C_CLIMATE);    if (allocated(dom%climate%c))    c => dom%climate%c
+        case (C_SURFACE);    if (allocated(dom%surface%c))    c => dom%surface%c
+        case (C_SHELF);      if (allocated(dom%shelf%c))      c => dom%shelf%c
+        case (C_GEOTHERMAL); if (allocated(dom%geothermal%c)) c => dom%geothermal%c
+        case (C_SEDIMENTS);  if (allocated(dom%sediments%c))  c => dom%sediments%c
+        end select
+    end function domain_component
+
+    ! =========================================================================
+    ! Describe
+    ! =========================================================================
+
+    subroutine domain_describe(dom)
+        ! Grids per component ("(default)" where the chain decided), the hub
+        ! and the references, logged once (core-design section 8).
+        type(domain_t), intent(in) :: dom
+
+        character(len=*), parameter :: who = "kryos_domain"
+        integer :: k, i
+
+        call log_msg(LOG_INFO, who, "domain "//trim(dom%name)//": hub "//trim(dom%grid_hub)// &
+                     " ("//to_str(dom%hub%nx)//" x "//to_str(dom%hub%ny)//"), basins '"//trim(dom%basins)//"'")
+        do k = 1, NCOMP
+            if (len_trim(dom%inst(k)) == 0) then
+                call log_msg(LOG_INFO, who, "  "//pad(COMP_NAME(k))//" absent")
+                cycle
+            end if
+            call log_msg(LOG_INFO, who, "  "//pad(COMP_NAME(k))//" "//pad(dom%inst(k))//" ("// &
+                         trim(dom%backend(k))//") on "//trim(dom%grid(k))// &
+                         merge(" (default)", "          ", dom%grid_default(k)))
+        end do
+        do i = 1, size(dom%refs)
+            call log_msg(LOG_INFO, who, "  reference on "//trim(dom%refs(i)%grid)// &
+                         merge(" (hub)", "      ", i == 1)//": z_bed, H_ice, z_srf, z_bed_sd, widened")
+        end do
+        if (dom%hub_mirror) then
+            call log_msg(LOG_INFO, who, "  hub mirrors the ice geometry (hub grid = ice grid)")
+        else
+            call log_msg(LOG_INFO, who, "  hub is the reference plus the ice anomalies")
+        end if
+    end subroutine domain_describe
+
+    function pad(s) result(p)
+        ! s left-justified in at least 12 characters (log alignment).
+        character(len=*), intent(in) :: s
+        character(len=:), allocatable :: p
+        p = trim(s)//repeat(" ", max(0, 12 - len_trim(s)))
+    end function pad
+
+    ! =========================================================================
+    ! The hub: field states and refresh
+    ! =========================================================================
+
+    subroutine hub_declare(dom)
+        ! hub_exports: the geometry every consumer reads (contracts-design 2.7).
+        ! hub_imports: what the ice puts in, the mirror set when the hub is on
+        ! the ice grid, else the anomaly set (empty without an ice instance).
+        type(domain_t), intent(inout) :: dom
+
+        integer :: d2(2)
+        character(len=:), allocatable :: g
+
+        d2 = [dom%hub%nx, dom%hub%ny]
+        g  = trim(dom%grid_hub)
+
+        associate (h => dom%hh)
+            call fields_init(dom%hub_exports, trim(dom%name)//":hub_exports")
+            call fields_add(dom%hub_exports, "z_bed",     "m", FIELD_INSTANT, FIELD_INTENSIVE, h%h_z_bed,     grid=g, dims=d2)
+            call fields_add(dom%hub_exports, "H_ice",     "m", FIELD_INSTANT, FIELD_EXTENSIVE, h%h_H_ice,     grid=g, dims=d2)
+            call fields_add(dom%hub_exports, "z_srf",     "m", FIELD_INSTANT, FIELD_INTENSIVE, h%h_z_srf,     grid=g, dims=d2)
+            call fields_add(dom%hub_exports, "f_ice",     "1", FIELD_INSTANT, FIELD_INTENSIVE, h%h_f_ice,     grid=g, dims=d2)
+            call fields_add(dom%hub_exports, "f_grnd",    "1", FIELD_INSTANT, FIELD_INTENSIVE, h%h_f_grnd,    grid=g, dims=d2)
+            call fields_add(dom%hub_exports, "z_sl",      "m", FIELD_INSTANT, FIELD_INTENSIVE, h%h_z_sl,      grid=g, dims=d2)
+            call fields_add(dom%hub_exports, "z_srf_ref", "m", FIELD_INSTANT, FIELD_INTENSIVE, h%h_z_srf_ref, grid=g, dims=d2)
+            call fields_lock(dom%hub_exports)
+
+            call fields_init(dom%hub_imports, trim(dom%name)//":hub_imports")
+            if (len_trim(dom%inst(C_ICE)) > 0) then
+                if (dom%hub_mirror) then
+                    call fields_add(dom%hub_imports, "z_bed",  "m", FIELD_INSTANT, FIELD_INTENSIVE, h%hi_z_bed,  grid=g, dims=d2)
+                    call fields_add(dom%hub_imports, "H_ice",  "m", FIELD_INSTANT, FIELD_EXTENSIVE, h%hi_H_ice,  grid=g, dims=d2)
+                    call fields_add(dom%hub_imports, "z_srf",  "m", FIELD_INSTANT, FIELD_INTENSIVE, h%hi_z_srf,  grid=g, dims=d2)
+                    call fields_add(dom%hub_imports, "f_ice",  "1", FIELD_INSTANT, FIELD_INTENSIVE, h%hi_f_ice,  grid=g, dims=d2)
+                    call fields_add(dom%hub_imports, "f_grnd", "1", FIELD_INSTANT, FIELD_INTENSIVE, h%hi_f_grnd, grid=g, dims=d2)
+                else
+                    call fields_add(dom%hub_imports, "dz_bed", "m", FIELD_INSTANT, FIELD_INTENSIVE, h%hi_dz_bed, grid=g, dims=d2)
+                    call fields_add(dom%hub_imports, "dH_ice", "m", FIELD_INSTANT, FIELD_EXTENSIVE, h%hi_dH_ice, grid=g, dims=d2)
+                end if
+                call fields_add(dom%hub_imports, "z_sl", "m", FIELD_INSTANT, FIELD_INTENSIVE, h%hi_z_sl, grid=g, dims=d2)
+            end if
+            call fields_lock(dom%hub_imports)
+        end associate
+    end subroutine hub_declare
+
+    function hub_f_ice(dom) result(f)
+        ! Ice-covered fraction of the hub's current geometry: each hub cell is
+        ! ice-covered or not (the hub of an ice sheet finer than the ice is
+        ! never fractional; a mirror hub takes the ice's own f_ice instead).
+        type(domain_t), intent(in) :: dom
+        real(dp) :: f(dom%hub%nx, dom%hub%ny)
+        f = merge(1.0_dp, 0.0_dp, dom%hub%H_ice > 0.0_wp)
+    end function hub_f_ice
+
+    subroutine hub_put(dom, t, f_ice)
+        ! Publish the hub's current geometry (kind wp, widened exactly) at t.
+        type(domain_t), intent(inout) :: dom
+        real(dp),       intent(in)    :: t
+        real(dp),       intent(in)    :: f_ice(:,:)
+
+        associate (h => dom%hh, e => dom%hub_exports, p => dom%hub)
+            call fields_put(e, h%h_z_bed,  p%z_bed,  t1=t)
+            call fields_put(e, h%h_H_ice,  p%H_ice,  t1=t)
+            call fields_put(e, h%h_z_srf,  p%z_srf,  t1=t)
+            call fields_put(e, h%h_f_ice,  f_ice,    t1=t)
+            call fields_put(e, h%h_f_grnd, p%f_grnd, t1=t)
+            call fields_put(e, h%h_z_sl,   p%z_sl,   t1=t)
+        end associate
+    end subroutine hub_put
+
+    subroutine domain_hub_update(dom, t, clk, init, stat)
+        ! Refresh the hub after the ice step (couple_yelmo_to_htopo, contracts-
+        ! design 5.2): the ice rows into hub_imports, then
+        !   mirror (grid_hub == grid(ice)): the hub is the ice geometry, its
+        !     fractional f_grnd and f_ice kept;
+        !   else: the hub keeps its reference and takes the ice's anomalies
+        !     (bilinear; the bed displacement against refs(ice)%z_bed, the
+        !     thickness change against refs(ice)%H_ice), and htopo_update
+        !     recomputes the grounding and the surface on the hub.
+        ! Publishes hub_exports at t and sets hub_t. Without an ice instance
+        ! the hub stays the reference and is republished.
+        type(domain_t), target, intent(inout) :: dom
+        real(dp),               intent(in)    :: t
+        type(clock_t),          intent(in)    :: clk
+        logical,                intent(in),  optional :: init    ! cold start: every row counts as lag 0
+        integer,                intent(out), optional :: stat
+
+        character(len=*), parameter :: proc = "kryos_domain::domain_hub_update"
+        real(dp), allocatable :: f_ice(:,:)
+        integer :: s
+
+        if (present(stat)) stat = 0
+
+        if (len_trim(dom%inst(C_ICE)) > 0) then
+            if (.not. allocated(dom%ice%c)) then
+                call fesm_error(proc, "domain "//trim(dom%name)//": ice instance `"//trim(dom%inst(C_ICE))// &
+                                "` is configured but not created", "create the instances first", stat)
+                return
+            end if
+            call exchange(dom, "ice", "hub", t, clk, init=init, stat=s)
+            if (s /= 0) then
+                call fesm_error(proc, "domain "//trim(dom%name)//": the ice rows into the hub failed", "", stat)
+                return
+            end if
+
+            associate (h => dom%hh, im => dom%hub_imports, p => dom%hub)
+                if (dom%hub_mirror) then
+                    p%z_bed  = real(im%f(h%hi_z_bed)%v(:,:,1),  wp)
+                    p%H_ice  = real(im%f(h%hi_H_ice)%v(:,:,1),  wp)
+                    p%z_srf  = real(im%f(h%hi_z_srf)%v(:,:,1),  wp)
+                    p%f_grnd = real(im%f(h%hi_f_grnd)%v(:,:,1), wp)
+                    p%z_sl   = real(im%f(h%hi_z_sl)%v(:,:,1),   wp)
+                    f_ice    = im%f(h%hi_f_ice)%v(:,:,1)
+                else
+                    call htopo_update(p, real(im%f(h%hi_dz_bed)%v(:,:,1), wp), &
+                                         real(im%f(h%hi_dH_ice)%v(:,:,1), wp), &
+                                         real(im%f(h%hi_z_sl)%v(:,:,1),   wp))
+                    f_ice = hub_f_ice(dom)
+                end if
+            end associate
+        else
+            f_ice = hub_f_ice(dom)
+        end if
+
+        call hub_put(dom, t, f_ice)
+        dom%hub_t = t
+    end subroutine domain_hub_update
+
+    ! =========================================================================
+    ! Reference check (decision 4, contracts-design 5.3)
+    ! =========================================================================
+
+    subroutine domain_check_reference(dom, stat)
+        ! The reference bed geo and the ice work from is the domain's: geo's
+        ! z_bed_ref export against refs(geo grid)%z_bed, and the ice's
+        ! z_bed_ref (if declared) against refs(ice grid)%z_bed. Logs the mean
+        ! and max |difference|; stops above 1 m (yelmox check_isostasy_
+        ! reference): on a restart the geo or ice restart came from another
+        ! topography. Exact at the cold start, round-off after steps.
+        type(domain_t), target, intent(inout) :: dom
+        integer,                intent(out), optional :: stat
+
+        character(len=*), parameter :: proc = "kryos_domain::domain_check_reference"
+        integer, parameter :: kinds(2) = [C_GEO, C_ICE]
+        class(component_t), pointer :: c
+        integer :: j, h, i
+        real(dp) :: dmean, dmax
+
+        if (present(stat)) stat = 0
+
+        do j = 1, size(kinds)
+            c => domain_component(dom, kinds(j))
+            if (.not. associated(c)) cycle
+            if (.not. fields_has(c%exports, "z_bed_ref")) cycle
+            h = fields_handle(c%exports, "z_bed_ref")
+            associate (f => c%exports%f(h))
+                if (.not. f%published) then
+                    call fesm_error(proc, trim(c%name)//": z_bed_ref was never published", &
+                                    "the check runs after the instance's PASS_GEOMETRY", stat)
+                    return
+                end if
+                i = domain_ref_index(dom, f%grid)
+                if (i == 0) then
+                    call fesm_error(proc, trim(c%name)//": no reference topography on grid "//trim(f%grid), &
+                                    "domain "//trim(dom%name), stat)
+                    return
+                end if
+                dmean = sum(f%v(:,:,1) - dom%refs(i)%z_bed) / real(size(dom%refs(i)%z_bed), dp)
+                dmax  = maxval(abs(f%v(:,:,1) - dom%refs(i)%z_bed))
+            end associate
+
+            call log_msg(LOG_INFO, proc, trim(c%name)//" z_bed_ref against the domain reference on "// &
+                         trim(c%grid)//" [m]: mean diff "//to_str(dmean)//", max |diff| "//to_str(dmax)// &
+                         " (tolerance "//to_str(REF_TOL)//")")
+
+            if (dmax > REF_TOL) then
+                call fesm_error(proc, trim(c%name)//": its reference bedrock does not match the domain's", &
+                    "max |diff| = "//to_str(dmax)//" m > "//to_str(REF_TOL)//" m on grid "//trim(c%grid)// &
+                    new_line("a")//"z_bed is rebuilt as z_bed_ref + displacement from the two independently, "// &
+                    "so both must describe the same bedrock."//new_line("a")//"On a restart this usually means the "// &
+                    "restart of "//trim(c%name)//" came from a run with another topography ("//trim(dom%topo)//").", &
+                    stat)
+                return
+            end if
+        end do
+    end subroutine domain_check_reference
+
+    ! =========================================================================
+    ! Wiring: nodes, resolution, exchange
+    ! =========================================================================
+
+    function domain_nodes(dom, clk) result(nodes)
+        ! The wire nodes of the domain: the hub, then every created instance
+        ! (cadence step from the clock). The nodes point into dom (target).
+        type(domain_t), target, intent(in) :: dom
+        type(clock_t),          intent(in) :: clk
+        type(wire_node_t), allocatable :: nodes(:)
+
+        class(component_t), pointer :: c
+        integer :: k
+
+        allocate(nodes(0))
+        nodes = [nodes, wire_node_states("hub", dom%name, dom%hub_imports, dom%hub_exports, wp, clock_dtt(clk))]
+        do k = 1, NCOMP
+            c => domain_component(dom, k)
+            if (.not. associated(c)) cycle
+            nodes = [nodes, wire_node(c, cadence_dt_years(c%cadence, clk))]
+        end do
+    end function domain_nodes
+
+    subroutine domain_wire(dom, clk, extra, table, check, stat)
+        ! Resolve the wiring rows of this domain (wire_resolve: gaps, links,
+        ! contracts; stops naming the row) and prime every remapped pair
+        ! (wire_prime). extra: the globe's nodes the domain's rows reach
+        ! (forcing, global geo; with check = .false.). table: the rows to resolve
+        ! (default: the phase 1 table). check = .false.: the created instances
+        ! may leave required imports unwired (tests of a partial domain; a run
+        ! never sets it). dom%wires holds all rows, active or not; exchange runs
+        ! the active ones.
+        type(domain_t), target, intent(inout) :: dom
+        type(clock_t),          intent(in)    :: clk
+        type(wire_node_t),      intent(in),  optional :: extra(:)
+        type(wire_t),           intent(in),  optional :: table(:)
+        logical,                intent(in),  optional :: check
+        integer,                intent(out), optional :: stat
+
+        type(wire_node_t), allocatable :: nodes(:)
+
+        nodes = domain_nodes(dom, clk)
+        if (present(check)) then
+            if (.not. check) nodes%check = .false.
+        end if
+        if (present(extra)) nodes = [nodes, extra]
+        call wire_resolve(dom%wires, nodes, dom%cpl, table, stat)
+        if (present(stat)) then
+            if (stat /= 0) then
+                if (allocated(dom%wires)) deallocate(dom%wires)    ! half-resolved rows must not run
+                return
+            end if
+        end if
+        call wire_prime(dom%wires, dom%cpl)
+    end subroutine domain_wire
+
+    subroutine exchange(dom, src, dst, t, clk, init, stat)
+        ! The domain's active rows src -> dst, in table order (core-design 3.4):
+        ! `src` and `dst` are component kinds ("ice", "geo", ...) or "hub" (a
+        ! source, or "hub" as the destination of the ice rows). Each row picks the
+        ! two field states, the producer's last update (hub: hub_t; instance: its
+        ! cadence) and whether it is due, and the references on the two grids,
+        ! and runs wire_exchange (which checks the lag and remaps).
+        ! init: cold start, every row counts as lag 0.
+        type(domain_t), target, intent(inout) :: dom
+        character(len=*),       intent(in)    :: src, dst
+        real(dp),               intent(in)    :: t
+        type(clock_t),          intent(in)    :: clk
+        logical,                intent(in),  optional :: init
+        integer,                intent(out), optional :: stat
+
+        character(len=*), parameter :: proc = "kryos_domain::exchange"
+        type(field_state_t), pointer :: s_exp, d_imp
+        type(grid_ref_t),    pointer :: rs, rd
+        real(dp) :: t_last
+        logical  :: due, ini
+        integer  :: i, ir, s
+
+        if (present(stat)) stat = 0
+        ini = .false.
+        if (present(init)) ini = init
+        if (.not. allocated(dom%wires)) then
+            call fesm_error(proc, "domain "//trim(dom%name)//": the wiring is not resolved (domain_wire)", &
+                            "row group "//trim(src)//" -> "//trim(dst), stat)
+            return
+        end if
+
+        do i = 1, size(dom%wires)
+            if (.not. wire_runs(dom%wires(i), src, dst)) cycle
+
+            call kind_states(dom, src, exports=s_exp)
+            call kind_states(dom, dst, imports=d_imp)
+            call producer_time(dom, src, clk, t_last, due)
+
+            rs => null();  rd => null()
+            ir = domain_ref_index(dom, dom%wires(i)%src_grid)
+            if (ir > 0) rs => dom%refs(ir)
+            ir = domain_ref_index(dom, dom%wires(i)%dst_grid)
+            if (ir > 0) rd => dom%refs(ir)
+
+            call wire_exchange(dom%wires(i), s_exp, d_imp, dom%cpl, t, t_last, ref_src=rs, ref_dst=rd, &
+                               due=due, init=ini, stat=s)
+            if (s /= 0) then
+                call fesm_error(proc, "domain "//trim(dom%name)//": row "//wire_label(dom%wires(i))//" failed", &
+                                "t = "//to_str(t), stat)
+                return
+            end if
+        end do
+    end subroutine exchange
+
+    subroutine kind_states(dom, kind, imports, exports)
+        ! The field states of a kind: the hub's, or the created instance's.
+        type(domain_t), target, intent(in) :: dom
+        character(len=*),       intent(in) :: kind
+        type(field_state_t), pointer, intent(out), optional :: imports, exports
+
+        class(component_t), pointer :: c
+
+        if (present(imports)) imports => null()
+        if (present(exports)) exports => null()
+        if (trim(kind) == "hub") then
+            if (present(imports)) imports => dom%hub_imports
+            if (present(exports)) exports => dom%hub_exports
+            return
+        end if
+        c => domain_component(dom, domain_comp_index(kind))
+        if (.not. associated(c)) &
+            call fesm_error("kryos_domain::exchange", "domain "//trim(dom%name)//": no "//trim(kind)//" instance", &
+                            "a resolved row needs it")
+        if (present(imports)) imports => c%imports
+        if (present(exports)) exports => c%exports
+    end subroutine kind_states
+
+    subroutine producer_time(dom, kind, clk, t_last, due)
+        ! The producer's last update and whether it is due at the clock's time.
+        ! The hub is refreshed every step (hub_t); an instance by its cadence.
+        type(domain_t), target, intent(in) :: dom
+        character(len=*),       intent(in) :: kind
+        type(clock_t),          intent(in) :: clk
+        real(dp),               intent(out) :: t_last
+        logical,                intent(out) :: due
+
+        class(component_t), pointer :: c
+
+        if (trim(kind) == "hub") then
+            t_last = dom%hub_t
+            due    = .true.
+            return
+        end if
+        c => domain_component(dom, domain_comp_index(kind))
+        t_last = cadence_t_last(c%cadence, clk)
+        due    = cadence_due(c%cadence, clk)
+    end subroutine producer_time
+
+    ! =========================================================================
+    ! Hub output (core-design section 6): <domain>_hub.nc
+    ! =========================================================================
+
+    subroutine domain_hub_write(dom, file, t, init)
+        ! The hub's current geometry at t: z_bed, H_ice, z_srf, f_grnd, z_sl
+        ! (htopo_write_step) plus f_ice and the four-value mask (kryos_mask on
+        ! the hub exports). init: first write, creates the file with the regions
+        ! and basins (htopo_write_init). The caller (output, core C8) owns the
+        ! schedule `dom%out_2D` and the file name.
+        type(domain_t),   intent(in) :: dom
+        character(len=*), intent(in) :: file
+        real(dp),         intent(in) :: t
+        logical,          intent(in) :: init
+
+        integer :: ncid, n, nx, ny
+        integer, allocatable :: mask(:,:)
+
+        nx = dom%hub%nx
+        ny = dom%hub%ny
+        if (init) call htopo_write_init(dom%hub, trim(file), t)
+        call htopo_write_step(dom%hub, trim(file), t)
+
+        mask = kryos_mask(dom%hub_exports%f(dom%hh%h_f_ice)%v(:,:,1), dom%hub_exports%f(dom%hh%h_f_grnd)%v(:,:,1))
+        call nc_open(trim(file), ncid, writable=.true.)
+        n = nc_time_index(trim(file), "time", t, ncid)
+        call nc_write(trim(file), "f_ice", real(dom%hub_exports%f(dom%hh%h_f_ice)%v(:,:,1), wp), &
+                      dim1="xc", dim2="yc", dim3="time", start=[1,1,n], count=[nx,ny,1], ncid=ncid, &
+                      units="1", long_name="Ice-covered fraction", prec_abs=1e-4_wp)
+        call nc_write(trim(file), "mask", mask, dim1="xc", dim2="yc", dim3="time", &
+                      start=[1,1,n], count=[nx,ny,1], ncid=ncid, units="1", &
+                      long_name="Surface type (0 ocean, 1 land, 2 grounded ice, 3 floating ice)")
+        call nc_close(ncid)
+    end subroutine domain_hub_write
+
+    ! =========================================================================
+    ! Helpers
+    ! =========================================================================
+
+    logical function failed(stat)
+        integer, intent(in), optional :: stat
+        failed = .false.
+        if (present(stat)) failed = stat /= 0
+    end function failed
+
+end module kryos_domain
