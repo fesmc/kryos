@@ -43,7 +43,7 @@ program test_geo_fastisostasy
     call geo_init(reg,  ctxr)
     call geo_init_state(glob, st(0.0_dp, 0.0_dp), PASS_INIT)
     call geo_init_state(reg,  st(0.0_dp, 0.0_dp), PASS_INIT)
-    call to_regional(glob, reg, 0.0_dp, with_H=.false.)
+    call to_regional(glob, reg, 0.0_dp)
     call put_ice_exports(reg, 0.0_dp)
     call geo_init_state(reg, st(0.0_dp, 0.0_dp), PASS_GEOMETRY)
     ! isos_init_state moves the shared bsl when the initial ice differs from the
@@ -67,7 +67,7 @@ program test_geo_fastisostasy
         H = H0 * (1.0_sp + 0.5_sp * real(n, sp))
         call bsl_update(bsl, t)
         call bsl_update_global(glob, t)
-        call to_regional(glob, reg, t, with_H=.false.)
+        call to_regional(glob, reg, t)
         call put_H(reg, H, t - DTT)
         call geo_update(reg, st(t - DTT, t))
         call isos_update(isos, H, t, bsl)
@@ -87,7 +87,7 @@ program test_geo_fastisostasy
     call geo_init(reg2,  ctxr)
     call geo_restart_read(glob2, RST, t)
     call geo_init_state(glob2, st(t, t), PASS_RESTART)
-    call to_regional(glob2, reg2, t, with_H=.false.)
+    call to_regional(glob2, reg2, t)
     call put_H(reg2, H, t)
     call geo_restart_read(reg2, RST, t)
     call geo_init_state(reg2, st(t, t), PASS_RESTART)
@@ -132,7 +132,7 @@ contains
         real(sp),         intent(in)    :: H(:,:)
         real(dp),         intent(in)    :: t
         call bsl_update_global(glob, t)
-        call to_regional(glob, reg, t, with_H=.false.)
+        call to_regional(glob, reg, t)
         call put_H(reg, H, t - DTT)
         call geo_update(reg, st(t - DTT, t))
         call reduce(glob, reg, t)
@@ -145,17 +145,15 @@ contains
         call geo_update(glob, st(t - DTT, t))
     end subroutine bsl_update_global
 
-    subroutine to_regional(glob, reg, t, with_H)
+    subroutine to_regional(glob, reg, t)
         ! exchange_globe: bsl and A_ocn into the regional imports.
         type(geo_slot_t), intent(inout) :: glob, reg
         real(dp),         intent(in)    :: t
-        logical,          intent(in)    :: with_H
         real(dp) :: v
         call fields_get(glob%c%exports, glob%c%h_bsl, v)
         call fields_put(reg%c%imports, reg%c%hi_bsl, v, t1=t)
         call fields_get(glob%c%exports, glob%c%h_A_ocn, v)
         call fields_put(reg%c%imports, reg%c%hi_A_ocn, v, t1=t)
-        if (with_H) call put_H(reg, H0, t)
     end subroutine to_regional
 
     subroutine put_ice_exports(reg, t)
