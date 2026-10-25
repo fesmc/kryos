@@ -131,7 +131,7 @@ ifeq ($(fastisostasy), 1)
     need_lis_fftw   = 1
 else
     kryos_geo_fastisostasy_obj = $(objdir)/kryos_geo_fastisostasy_stub.o
-    test_skip += $(testdir)/test_geo_fastisostasy.f90
+    test_skip += $(testdir)/test_geo_fastisostasy.f90 $(testdir)/test_globe.f90
 endif
 
 ifeq ($(chion), 1)
