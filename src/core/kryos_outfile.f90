@@ -114,37 +114,40 @@ contains
 
     subroutine load(kind, k, stat)
         ! Load the table of `kind` into the cache; k = its index (0 on failure).
+        ! The cache grows by moving its tables (move_alloc), never by copying
+        ! them: ifx stops on intrinsic copies of these nested allocatables.
         character(len=*), intent(in)            :: kind
         integer,          intent(out)           :: k
         integer,          intent(out), optional :: stat
 
         character(len=*), parameter :: proc = "kryos_outfile::load"
-        type(table_t) :: t
+        character(len=PATH_LEN) :: file
         type(table_t), allocatable :: tmp(:)
         logical :: exists
-        integer :: i
+        integer :: i, n
 
         k = 0
-        t%kind = kind
-        t%file = outfile_table_file(kind)
-        inquire(file=trim(t%file), exist=exists)
+        file = outfile_table_file(kind)
+        inquire(file=trim(file), exist=exists)
         if (.not. exists) then
-            call fesm_error(proc, "variable table not found: "//trim(t%file), &
+            call fesm_error(proc, "variable table not found: "//trim(file), &
                             "component kind `"//trim(kind)//"` needs input/kryos-variables-"//trim(kind)//".md", stat)
             return
         end if
-        call load_var_io_table(t%v, trim(t%file))
 
-        ! Grow by one, element by element (ifx stops on an array-section copy of
-        ! a derived type with allocatable components from a zero-size array).
-        if (.not. allocated(cache)) allocate(cache(0))
-        allocate(tmp(size(cache) + 1))
-        do i = 1, size(cache)
-            tmp(i) = cache(i)
+        n = 0
+        if (allocated(cache)) n = size(cache)
+        allocate(tmp(n + 1))
+        do i = 1, n
+            tmp(i)%kind = cache(i)%kind
+            tmp(i)%file = cache(i)%file
+            call move_alloc(cache(i)%v, tmp(i)%v)
         end do
-        tmp(size(tmp)) = t
+        tmp(n + 1)%kind = kind
+        tmp(n + 1)%file = file
+        call load_var_io_table(tmp(n + 1)%v, trim(file))
         call move_alloc(tmp, cache)
-        k = size(cache)
+        k = n + 1
     end subroutine load
 
     ! =========================================================================
