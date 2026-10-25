@@ -1186,14 +1186,17 @@ contains
     subroutine lapse(work, zc, bp, lp, z, is_pr, prec)
         ! Re-elevate tas (or pr) from the surface it refers to (zc) to the
         ! consumer's z, per month m, in prec (the destination's):
-        !   dz = z - zc;  tas = tas - lp(:,:,m)*dz;  pr = pr*exp(-bp*lp(:,:,m)*dz)
+        !   dz = z - zc;  tas = tas - lp(:,:,m)*dz;  pr = pr*exp(e),  e = -bp*lp(:,:,m)*dz
+        ! A cell with e = 0 (+0 or -0) keeps pr without evaluating exp: exp(e)
+        ! is exactly 1 there and pr*1 is pr, bit for bit (the common case of a
+        ! consumer on the producer's surface, dz = 0).
         real(dp), intent(inout) :: work(:,:,:)            ! tas or pr, remapped (not rounded)
         real(dp), intent(in)    :: zc(:,:,:), bp(:,:,:), lp(:,:,:), z(:,:,:)
         logical,  intent(in)    :: is_pr
         integer,  intent(in)    :: prec
 
-        real(sp) :: dz_sp, l_sp
-        real(dp) :: dz_dp
+        real(sp) :: dz_sp, l_sp, e_sp
+        real(dp) :: dz_dp, e_dp
         integer  :: i, j, m
 
         do m = 1, size(work, 3)
@@ -1202,15 +1205,17 @@ contains
                     if (prec == sp) then
                         dz_sp = real(z(i,j,1), sp) - real(zc(i,j,1), sp)
                         l_sp  = real(lp(i,j,m), sp)
-                        if (is_pr) then                 ! the sp factor on the dp value: dz = 0 is exact
-                            work(i,j,m) = work(i,j,m)*real(exp(-real(bp(i,j,1), sp)*l_sp*dz_sp), dp)
+                        if (is_pr) then                 ! the sp factor on the dp value
+                            e_sp = -real(bp(i,j,1), sp)*l_sp*dz_sp
+                            if (e_sp /= 0.0_sp) work(i,j,m) = work(i,j,m)*real(exp(e_sp), dp)
                         else
                             work(i,j,m) = real(real(work(i,j,m), sp) - l_sp*dz_sp, dp)
                         end if
                     else
                         dz_dp = z(i,j,1) - zc(i,j,1)
                         if (is_pr) then
-                            work(i,j,m) = work(i,j,m)*exp(-bp(i,j,1)*lp(i,j,m)*dz_dp)
+                            e_dp = -bp(i,j,1)*lp(i,j,m)*dz_dp
+                            if (e_dp /= 0.0_dp) work(i,j,m) = work(i,j,m)*exp(e_dp)
                         else
                             work(i,j,m) = work(i,j,m) - lp(i,j,m)*dz_dp
                         end if
