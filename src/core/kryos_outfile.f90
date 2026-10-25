@@ -122,6 +122,7 @@ contains
         type(table_t) :: t
         type(table_t), allocatable :: tmp(:)
         logical :: exists
+        integer :: i
 
         k = 0
         t%kind = kind
@@ -134,9 +135,13 @@ contains
         end if
         call load_var_io_table(t%v, trim(t%file))
 
+        ! Grow by one, element by element (ifx stops on an array-section copy of
+        ! a derived type with allocatable components from a zero-size array).
         if (.not. allocated(cache)) allocate(cache(0))
         allocate(tmp(size(cache) + 1))
-        tmp(1:size(cache)) = cache
+        do i = 1, size(cache)
+            tmp(i) = cache(i)
+        end do
         tmp(size(tmp)) = t
         call move_alloc(tmp, cache)
         k = size(cache)
