@@ -1,0 +1,220 @@
+# Phase 0 sign-off on Levante: gate log (R0, R1)
+
+Status 2026-10-24 18:25 CEST: **Gate 0 passes (R1 == R0 bit for bit, both
+gates)**, and `cont2 == cont` holds on both stacks. `chunk` vs `cont` is equal
+in every prognostic field and in the 1 kyr restart. It differs only in
+diagnostics at the restart time t = 500. Decision (Alex): the restart-time
+record, and the bundle a chunk writes at its own start, are not compared
+(regression-design §1.2, `Compare.compare_chunks`). Under that rule
+`chunk == cont` passes. `$G/ref` was made read-only at 18:25.
+
+## Setup
+
+- Remote: `ssh levante` (user a271116). Successive ssh calls land on different
+  login nodes, so `pgrep` over ssh is unreliable. Check the logs, not the processes.
+- `$G = /work/ba1442/robinson/kryos-gate` (created): `stacks/`, `tools/`, `reports/`.
+- configme 0.15.7 and runme 0.5.26 are already in `~/.local/bin`.
+- Modules (login profile): intel-oneapi-compilers/2023.2.1, netcdf-c/4.9.3 and
+  netcdf-fortran/4.6.2 (openmpi-5.0.8, intel-2021.5.0), python3/2023.01.
+
+## Stack v24 (R0)
+
+```
+configme install yelmox:v2.4 -m dkrz_levante -c ifx --dir $G/stacks/v24/yelmox   # log: stacks/v24/install.log
+```
+
+| package | ref | commit |
+|---|---|---|
+| yelmox | v2.4 | 918d996 |
+| fesm-utils | v1.4 | d994f08 |
+| yelmo | v2.4 | 7bd4316 |
+| FastHydrology | v0.4 | a0d5e8e |
+| elsa | v3.1.0 | 74d426d |
+| tracer | v0.2 | 208ac3a |
+| FastIsostasy | v0.3-fesmc | ce0d6ff |
+| chion | v0.2.0 | 0de32ba |
+| insol | v1.2.0 | 42b254e |
+| rembo1 | v1.3 | 9c24c42 (not linked: yelmox default `rembo=0`, stub) |
+
+`$G/stacks/<stack>/stack.lock` (read-only, written 18:05) holds the full commit of
+each checkout, all of them clean, plus the sha256 of `yelmox.x`. Over ssh, run
+git as `bash -lc` (it comes from a module; the non-login `.bashrc` fails on `module`).
+
+## Stack S (R1)
+
+- The `configme install yelmox:v2.4+fesm-utils:phase0-kryos` form is a literal
+  list (only yelmox and fesm-utils, no expansion; see `configme install --help`).
+  So the stack was installed like v24 (log: `stacks/S/install.log`), and then
+  inside `$G/stacks/S/yelmox/fesm-utils` the following ran:
+  `git checkout -- SHTns; git fetch origin; git checkout -b phase0-kryos --track origin/phase0-kryos; configme config fesm-utils -m dkrz_levante -c ifx`.
+- fesm-utils commit **5a31a7c** (`5a31a7cc893d67da49da8a4a42f7db13b963ec31`) is
+  the tip at 17:1x. It is newer than 78f79fe by 38e0067 (public `coupler_method`)
+  and 5a31a7c (multi-template `nml_validate`; its message says "17 quoted units
+  keys differ vs v1.4, metadata only"). It is 29 commits ahead of v1.4.
+- The vendored fftw/lis/SHTns are unchanged between v1.4 and phase0-kryos.
+- All other packages are at the v24 commits above.
+
+## Gate build
+
+- Variable check: `DFLAGS_NODEBUG` is right for every Fortran build. The machine
+  fragment sets `-Ofast -march=znver3 -traceback`, and the command-line value
+  overrides it and passes through `$(MAKE) -C` to fesm-utils, yelmo, FastIsostasy,
+  chion and insol.
+- The fesm-utils external libraries do **not** use `DFLAGS_NODEBUG`. Their flags
+  are `CFLAGS_LIB`/`FFLAGS_LIB` (`config/libs.mk`, hard-coded `-Ofast -march=znver3
+  -traceback -fPIC`). They were rebuilt with those variables overridden.
+  - LIS prepends `-O3 -fomit-frame-pointer` (last `-O2` wins).
+  - SHTns keeps its own scheme and is not linked by yelmox.
+  - Only the omp variant was rebuilt. The serial externals are still the -Ofast
+    builds from the install.
+- Script: `$G/tools/build_stack.sh <stackdir>` (`SKIP_LIBS=1` skips the
+  externals). It runs:
+  1. `make -j16 fftw|lis openmp=1 CFLAGS_LIB=... FFLAGS_LIB=...`
+  2. `make clean` in every package
+  3. `make yelmox openmp=1 DFLAGS_NODEBUG="-O2 -fp-model precise -march=znver3 -traceback"`
+- v24:
+  - The first build finished at 17:19 (`stacks/v24/build-gate.log`).
+  - Because of the node issue above, a second `make yelmox` was started in the
+    same tree by mistake and ran at the same time (`build-gate-2.log`).
+  - So a clean Fortran rebuild (`SKIP_LIBS=1`, `build-gate-fortran.log`) was
+    started and was still compiling.
+  - Externals: fftw and lis built OK (17:14), before the overlap.
+- S: `stacks/S/build-gate.log` was still compiling (past the externals and the cleans).
+- Every checked compile line carries `-O2 -fp-model precise -march=znver3 -traceback`.
+- Outcome:
+  - v24: `build-gate-fortran.log` finished at 17:24 with no errors, and all
+    168 compile lines carry the gate flags. `yelmox.x` sha256 c0b49bf….
+  - S: `make yelmox` finished at 17:22 ("yelmox.x is ready"). After that the
+    log ends in `line 29: lean: command not found` / syntax errors. Cause:
+    `build_stack.sh` was edited at 17:19:38 while this run was in `make yelmox`,
+    and bash then resumed reading the file at the old byte offset. Everything up
+    to and including `make yelmox` ran from the old script, so the binary is
+    valid; only the final `ls`/`done` lines were lost. 245 of the 247 compile
+    lines carry the gate flags; the other 2 are LIS test programs (`test2f`,
+    `test6f`, not linked). `yelmox.x` sha256 9350f7f….
+  - Lesson: never edit a script on Levante while a run of it is still going.
+
+## Data links and runme
+
+- In each stack root: `ice_data -> /work/ba1442/ice_data`,
+  `fesmdata -> /work/ba1442/fesmdata`, `isostasy_data -> /work/ba1442/isostasy_data`.
+- `.runme/config.toml` (gitignored) had `account = "CHANGEME"`. It was set to `ba1442`.
+
+## Maps
+
+- yelmox reads `maps/` in the run folder, which runme links to the stack's `maps/`.
+  Only `grid_*.txt` are tracked there.
+- Plan: copy `v24/yelmox/maps` to `$G/maps/S`, then run one short R0 `mapgen` run
+  per gate (`submit_ref.sh v24 <gate> mapgen`, time_end 10, maps -> `$G/maps/S`)
+  so that fesm-utils v1.4 generates the maps. Then `chmod -R a-w $G/maps/S`, then
+  submit everything with maps -> the frozen folder.
+- Done: `$G/maps/S` was seeded from `v24/yelmox/maps` (grid descriptions,
+  `genmap.sh`, `remap.sh`). mapgen jobs 28398532 (grl) and 28398535 (ant) ran
+  on v24 and COMPLETED with empty `out.err`. They generated `scrip-bilin_GLOBAL-1DEG_GRL-16KM`
+  and the ANT-16KM<->ANT-32KM `bilin`/`con`/`nn` maps. `chmod -R a-w` was applied at 18:12.
+  If any later run needs a map that does not exist yet, it fails on write instead
+  of generating that map silently.
+- Existing Levante caches with ANT-16KM<->ANT-32KM maps: `yelmox-v24-test/maps`
+  and `yelmox-chion-*`, both of unknown generator version.
+
+## Tools on Levante
+
+- `$G/tools/submit_ref.sh <stack> <gate> cont|cont2|chunk|mapgen [MAPS]`
+  - Stages with `runme -s -q compute -w 00:30:00 --omp 16 -e yelmox -n <base> -o <dir> -p ...`.
+  - Repoints `<dir>/maps`, then runs `sbatch --parsable`.
+  - chunk: c00 runs 0–500; c01 runs 500–1000 with `ctrl.restart=c00/restart-0.500-kyr` and afterok, as in `scripts/run_chunks.sh`.
+  - Output goes to `$G/ref/<gate>/yx-918d996/<stack>/<run>`.
+- `$G/tools/ncbitcmp.py A B [--tmin T] [--tmax T] [--files GLOB]`
+  - Compares each `.nc` recursively, bit for bit (uint view).
+  - Labels value-equal but bit-different results as `bits`.
+  - Aligns records on common times; reports the first differing time, nrec and max abs diff.
+  - Tested on synthetic files.
+
+## Runs (submitted 18:12)
+
+| gate | stack | cont | cont2 | chunk c00, c01 |
+|---|---|---|---|---|
+| grl | v24 | 28398583 | 28398586 | 28398587, 28398588 |
+| grl | S | 28398590 | 28398591 | 28398592, 28398593 |
+| ant | v24 | 28398595 | 28398596 | 28398597, 28398598 |
+| ant | S | 28398599 | 28398600 | 28398601, 28398602 |
+
+All 16 jobs COMPLETED with exit code 0 (cont about 2.5 min, chunk about 2 min each).
+
+## Results
+
+`$G/tools/compare_R0R1.sh` writes to `$G/reports/R0R1/` (one `.txt` per pair, plus `summary.txt`).
+
+| pair | grl | ant |
+|---|---|---|
+| R1 vs R0, cont | IDENTICAL (27 files, 1301 vars) | IDENTICAL (27 files, 1395 vars) |
+| R1 vs R0, chunk (c00 + c01) | IDENTICAL (42 files) | IDENTICAL (44 files) |
+| cont2 vs cont, v24 and S | IDENTICAL | IDENTICAL |
+| c00 vs cont, t ≤ 500 | all vars equal | all vars equal |
+| c01 vs cont, t ≥ 500 | 35 vars differ, all at t = 500 | 34 vars differ, all at t = 500 |
+
+- The "files missing" in the chunk pairs are restart folders that exist only
+  on one side (`restart-0.000-kyr` and `restart-1.000-kyr`). This is expected.
+- c01 vs cont: the results are identical in v24 and S, so this is not caused by fesm-utils. The
+  differences are:
+  - `restart-0.500-kyr/yelmo_restart.nc`: 33 diagnostic variables (`pc_tau*`,
+    `visc_bar`, `z_bed_filt`, `bmb_ref`, `cmb_flt_*`, `calv_rate_*`, `uz_*`,
+    `T_prime`, `bc_b`, …; 9 of them sign-of-zero only). This is the restart that c01 writes
+    at its own start, before the first step, so those fields are not yet recomputed.
+  - `yelmo.nc`: `visc_bar` at t = 500 only (1 of 6 records).
+  - `yelmo_ts*.nc`: `mb_clip_tot` at t = 500 only (1 of 51 records).
+  - Every record after t = 500, and `restart-1.000-kyr`, are bit-identical.
+- So yelmox v2.4 is restart-exact in its prognostic state. The record at the
+  restart time differs in diagnostics that are not restored.
+- `compare_chunks(cont, chunk; gate)` run locally on copies of the v24 runs:
+  grl PASS (1104 vars), ant PASS (1364 vars). Negative checks on grl: a change
+  at t = 500 in c01 still passes, a change at t = 700 fails with first
+  divergence 700 `c01/yelmo.nc:H_ice`, and a missing c01 bundle at 1000 is an error.
+  The S chunk runs are bit-identical to the v24 ones (R1 vs R0, chunk).
+
+## Stack S2 and baseline R2 (2026-10-25)
+
+Decision (Alex, 2026-10-24): Yelmo is fed a prepared topography from the hub
+(regression-design §1.3 item 4). Commits, brought to Levante as git bundles
+(`$G/bundles`, nothing pushed):
+
+| repo | branch | commit | base |
+|---|---|---|---|
+| fesm-utils | `topo-prep` | 15746a9 | 5a31a7c (`phase0-kryos`) |
+| yelmo | `topo-prepared` | b5ab5d2c | v2.4 (7bd4316) |
+| yelmox | `topo-prep` | 74f3a2b | v2.4 (918d996) |
+
+- `$G/stacks/S2` is a copy of S with these checked out (fesm-utils reconfigured),
+  built with `SKIP_LIBS=1` (S's gate-built fftw/lis). Scripts: `tools/setup_S2.sh`
+  (its submissions failed: `$G/ref` was read-only; parent folders reopened),
+  `tools/submit_S2.sh`, `tools/compare_S2.sh` (reports in `$G/reports/S2/`).
+- Over ssh, start long scripts as `setsid nohup bash -l <absolute path> ... < /dev/null &`:
+  a plain `nohup ... &` dies with the session, and `bash -l` starts in `$HOME`.
+
+Results (all jobs COMPLETED, exit 0):
+
+| pair | grl | ant |
+|---|---|---|
+| R1(S2) vs R0, cont (yelmox v2.4 on S2: new code off) | IDENTICAL | IDENTICAL |
+| R2 cont2 vs cont | IDENTICAL | IDENTICAL |
+| R2 c00 vs cont (t ≤ 500) | equal | equal |
+| R2 c01 vs cont (t ≥ 500) | differs only at t = 500 (same diagnostics as R0) | same |
+| R2 vs R0, cont | 788 of 1301 vars differ | 943 of 1395 vars differ |
+
+- So the new fesm-utils and yelmo code is neutral when off; R2 is deterministic
+  and restart-exact under the chunk rule: R2 is a valid baseline. Refs frozen.
+- The hub preparation in R2 (`out.out`): lakes removed; ice < 1 m removed (grl
+  225 cells, ant 293 on the 16 km hubs); `grad_lim_zb = 0.5` needed 0 passes;
+  Yelmo logs "prepared ... cleaning skipped" on both paths.
+- R2 vs R0 at t = 0 (`yelmo.nc`, after the cold start):
+  - grl: `H_ice_ref` identical (the hub's preparation equals Yelmo's
+    present-day path on the same grid); initial `H_ice` differs in 636 cells,
+    21 by > 10 m, max 356 m: R0 started from Yelmo's other (initial-state)
+    path (thin ice 0.1–10 m set to 10 m; lakes with `bnd%z_sl`), R2 from the
+    reference.
+  - ant: `H_ice_ref` differs in 2456 cells, 657 by > 10 m, max 272 m: the
+    preparation runs on the 16 km hub and is then remapped (`con`) to 32 km,
+    where R0's Yelmo prepared on 32 km (D3, accepted).
+  - Through 1 kyr: `V_ice` differs by at most 0.011 (grl) and 0.084 (ant)
+    [Yelmo units, 1e6 km3]; `z_bed` from t = 10 via isostasy.
+- Gate 1 is now `K == R2` (refs `$G/ref/<gate>/yx-74f3a2b/S2/`).
