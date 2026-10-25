@@ -286,6 +286,37 @@ today (§10 R5).
 `<comp>_end` for every instance (Yelmo last, after the last access),
 `timer_print_totals`, final log line. No output (already written).
 
+### 3.6 Requirements from the phase 1 adapters (2026-10-25)
+
+Raised by the adapters as written (wave 1); the sequence of §3.2-3.4 must
+include them:
+
+1. **Static rows after `PASS_INIT`**: ice `z_bed_ref`, `H_ice_ref` → geo
+   (contracts §4.2), with the geothermal/sediments → ice rows. Geo's
+   `PASS_GEOMETRY` stops if they (or the ice `H_ice`) are unpublished.
+2. **Cold start, after every domain's geo `PASS_GEOMETRY`**: `gather_into`
+   (`dV_bsl`), `geo_reduce(globe%geo)`, `exchange_globe` (`bsl`),
+   `geo_scatter(dom%geo)`, before the geo → ice exchange. yelmox's
+   `isos_init_state` changes the shared `bsl` when the initial load differs
+   from the reference; without the reduction `bsl` is not bitwise equal at
+   the first step.
+3. **Climate → forcing at `t0`**: the row (`forcing_set(..., "dTo", ...)`)
+   also runs after the climate's `PASS_BOUNDARY`, so step 1 sees the initial
+   derived coefficient.
+4. **Restore order**: geo's `restart_read` needs its `H_ice` and `bsl`
+   imports, from the restored ice exports and global part: restore ice and the
+   globe geo first, then `exchange(ice → geo)` and `exchange_globe(bsl)`,
+   then geo's `restart_read` (this replaces "no exchange runs" of §3.3 for
+   these two rows). The climate's `PASS_RESTART` needs its imports
+   (`z_srf`, `coef_*`) restored first.
+5. **`init_ctx_t`**: `sec_year` of the run calendar (chion and snapshots
+   convert `pr` with `sec_year/86400`; both use `sec_year_tropical` until the
+   core passes it, and switch together); `reg`, `library`, `time_rel` filled
+   for every instance.
+6. **`domain_check_reference`**: geo's `z_bed_ref` export is exact at the cold
+   start and round-off after steps: the 1 m tolerance stays.
+7. **`forcing_kill`** is called by `run_step` (yelmox `with_kill`).
+
 ## 4. Timing, cadences, lags
 
 | Instance | Cadence (phase 1 configs) | `clock` | yelmox source |
