@@ -646,13 +646,22 @@ contains
                     w%mres = w%method
                 end select
             end if
-            allocate(w%work(fd%nx, fd%ny, fd%nz))
+            ! Workspaces: the remapped or transformed value (none on one grid
+            ! without a destination transform: the value is put as it is), the
+            ! anomaly before the remap, the remapped lapse fields.
+            if (len_trim(w%mres) > 0 .or. dst_transform(w)) allocate(w%work(fd%nx, fd%ny, fd%nz))
             if (w%transform == T_SUB_REF) allocate(w%pre(fs%nx, fs%ny, fs%nz))
-            if (w%transform == T_LAPSE_T .or. w%transform == T_LAPSE_P) then
+            if ((w%transform == T_LAPSE_T .or. w%transform == T_LAPSE_P) .and. len_trim(w%mres) > 0) then
                 allocate(w%zc(fd%nx, fd%ny, 1), w%bp(fd%nx, fd%ny, 1), w%lp(fd%nx, fd%ny, fd%nz))
             end if
         end associate
     end subroutine finish_row
+
+    logical function dst_transform(w)
+        ! The row transforms the value on the destination side (after the remap).
+        type(wire_t), intent(in) :: w
+        dst_transform = any(w%transform == [T_ADD_REF, T_ADD_SCALAR, T_LAPSE_T, T_LAPSE_P])
+    end function dst_transform
 
     subroutine wire_prime(w, cpl)
         ! coupler_prime for every remapped pair of the active rows (the maps are
@@ -934,8 +943,22 @@ contains
                 return
             end if
 
-            if (w%transform == T_SUB_REF) then                  ! anomaly in the source's precision
+            if (w%transform == T_SUB_REF) &                     ! anomaly in the source's precision
                 call sub_ref(w%pre, fs%v, ref_src, w%aux, w%prec_src)
+
+            ! One grid and no transform on the destination side: the value is
+            ! published as it is, without a copy into the workspace.
+            if (len_trim(w%mres) == 0 .and. .not. dst_transform(w)) then
+                if (w%transform == T_SUB_REF) then
+                    call put(w%pre)
+                else
+                    call put(fs%v)
+                end if
+                w%done = .true.
+                return
+            end if
+
+            if (w%transform == T_SUB_REF) then
                 call remap_row(w, cpl, w%pre, w%work)
             else
                 call remap_row(w, cpl, fs%v, w%work)
@@ -945,19 +968,36 @@ contains
             case (T_ADD_REF);    call add_ref(w%work, ref_dst, w%aux, w%prec_dst)
             case (T_ADD_SCALAR); call add_scalar(w%work, src%f(w%ha)%v(1,1,1), w%prec_dst)
             case (T_LAPSE_T, T_LAPSE_P)
-                call remap_row(w, cpl, src%f(w%hl(1))%v, w%zc)
-                call remap_row(w, cpl, src%f(w%hl(2))%v, w%bp)
-                call remap_row(w, cpl, src%f(w%hl(3))%v, w%lp)
-                call lapse(w%work, w%zc, w%bp, w%lp, dst%f(w%hl(4))%v, w%transform == T_LAPSE_P, w%prec_dst)
+                if (len_trim(w%mres) == 0) then                 ! one grid: the producer's fields
+                    call lapse(w%work, src%f(w%hl(1))%v, src%f(w%hl(2))%v, src%f(w%hl(3))%v, &
+                               dst%f(w%hl(4))%v, w%transform == T_LAPSE_P, w%prec_dst)
+                else
+                    call remap_row(w, cpl, src%f(w%hl(1))%v, w%zc)
+                    call remap_row(w, cpl, src%f(w%hl(2))%v, w%bp)
+                    call remap_row(w, cpl, src%f(w%hl(3))%v, w%lp)
+                    call lapse(w%work, w%zc, w%bp, w%lp, dst%f(w%hl(4))%v, w%transform == T_LAPSE_P, w%prec_dst)
+                end if
             end select
 
-            if (fd%masked) then                                 ! one grid (checked at resolution)
-                call fields_put(dst, w%hd, w%work, t0=fs%t0, t1=fs%t1, valid=fs%valid)
-            else
-                call fields_put(dst, w%hd, w%work, t0=fs%t0, t1=fs%t1)
-            end if
+            call put(w%work)
             w%done = .true.
         end associate
+
+    contains
+
+        subroutine put(v)
+            ! The row's value into the destination, with the source's interval
+            ! and, for a masked field (one grid, checked at resolution), its mask.
+            real(dp), intent(in) :: v(:,:,:)
+            associate (fs => src%f(w%hs))
+                if (dst%f(w%hd)%masked) then
+                    call fields_put(dst, w%hd, v, t0=fs%t0, t1=fs%t1, valid=fs%valid)
+                else
+                    call fields_put(dst, w%hd, v, t0=fs%t0, t1=fs%t1)
+                end if
+            end associate
+        end subroutine put
+
     end subroutine wire_exchange
 
     subroutine remap_row(w, cpl, a, b)
