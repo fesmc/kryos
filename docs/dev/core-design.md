@@ -345,7 +345,64 @@ include them:
   (`step_time_of`), `domain_due`, `domain_present`, `domain_end` (ice last).
   `config_cadence` (keys `dt`, `phase`, `clock`) serves globe and domains.
 - Restore with instances stops in `run_restore` (C10); a bundle holds the
-  clock only (C10 plugs in at the marked points).
+  clock only (C10 plugs in at the marked points). Done in C10 (§3.8).
+
+### 3.8 As implemented (C10)
+
+- `kryos_restart` (bundle names, `restart_write`, the manifest, the clock
+  and cadence restore, the restore of one instance); the restore order is
+  `run_restore` in `kryos_run_sequence`, next to the cold start. Slot
+  dispatchers `domain_restart_write/read` (domain) and `globe_restart_write/read`,
+  `globe_pass`, `globe_component` (globe); `RESTORE_ORDER` = ice, geo,
+  climate, surface, shelf, geothermal, sediments.
+- `run_restore`: (1) `clock_restart_read`, then `cadence_restart_read` of
+  every instance that steps; a branch (bundle time ≠ `time_init`) with
+  instances stops (their field times would have to move: not implemented);
+  (2) the manifest check; (3) globe: forcing, geo global; (4) per domain in
+  `RESTORE_ORDER`, before geo the rows ice → geo and the global bsl → geo
+  (`init`: they count as lag 0, as at the cold start); (5) per domain
+  `domain_check_reference`, `domain_hub_update`. One instance:
+  `<comp>_restart_read`, `fields_restart_read` of its imports and exports,
+  then `PASS_RESTART`. No other row runs; the static (`LAG_INIT`) rows stay
+  done from `run_pass_init`, their imports restored as received.
+- `PASS_RESTART` puts no export (adapters-design A5): the exports are the
+  bundle's, bit for bit, so what a consumer reads at the first step after a
+  restore is what it read in the continuous run. Yelmo: diagnostics and
+  regions on the restored state (no `exports_all`); FastIsostasy (regional and
+  global): nothing (the state is rebuilt by `restart_read`); snapshots: the
+  internal climate re-derived, checked against the restored exports.
+- Fields: `fesm_fields_restart_write` writes one state per file, so an
+  instance has `<inst>_imports.nc` and `<inst>_exports.nc` (not one
+  `<inst>_fields.nc`).
+- Write: the folder is replaced; clock and cadences, the globe, the domains
+  (write order = restore order), `manifest.nml` last (a bundle without it is
+  incomplete). An off cadence (static instance) is not stored: it never
+  marks, and its mark would be the `time_init` of the run that wrote the
+  bundle. A run ended by the kill switch off a cadence grid writes no bundle
+  (`clock_restart_allowed`) and logs why.
+- Manifest: `[bundle]` adds `fesm_utils_git`; an instance group adds `domain`
+  and lists in `files` its two field files and the files its backend's
+  `restart_write` added to the folder. The check compares scope, domain,
+  component, backend and grid both ways (an instance of the run missing in
+  the bundle, or of the bundle missing in the run, stops). Versions:
+  `kryos_build_info` (generated each build by `config/build_info.sh`, `git
+  describe --always --dirty`); `git` of an instance is its build switch's
+  library (yelmo, fastisostasy, chion), else kryos.
+- Chunks: chunk k is the same par file with `[clock] time_init`,
+  `time_end` and `[kryos] restart` overridden, e.g. with runme `-p
+  clock.time_init=500 clock.time_end=1000 kryos.restart=<run dir of chunk
+  k-1>/restart-500` (`Gate.chunk_overrides(gate, :kryos, k; prev_dir)`; the
+  clock group is the one `[kryos] clock` names). `[kryos] restart` is a folder
+  relative to the run directory, or absolute; bundles are written to
+  `<out_dir>/restart-<time>`.
+- Verified (`test_run_sequence`, Greenland GRL-16KM, every backend, one
+  thread): 0 → 80 against 0 → 40 + restore + 40 → 80, `kryos-compare
+  --chunks`: 1240 variables equal (every record after 40, the bundles at 40
+  and 80) except Yelmo's `pc_tau_max` in the bundle at 80 (the maximum over
+  its last 50 internal steps, a diagnostic whose window a restart does not
+  hold; refilled in a 500-yr chunk). With Yelmo's default `vm-m16` calving a
+  restart is not exact (the run diverges in the first step); the gate
+  configurations use `equil`.
 
 ## 4. Timing, cadences, lags
 
@@ -603,16 +660,23 @@ As implemented (C8, `kryos_output`, `kryos_outfile`, `component_write_output`):
 
 ## 7. Restart
 
+As written (C10, §3.8; the design had one `<instance>_fields.nc`):
+
 ```
 restart-15000/                     <time> = clock time in years, shortest exact decimal
-  manifest.nml                     [bundle] + one group per instance
-  clock_restart.nc                 clock_restart_write + cadence_restart_write of every instance
-  forcing_restart.nc               tsgen states and derived values ; forcing_fields.nc
-  geo_glob_restart.nc              bsl_now, A_ocean_now ; geo_glob_fields.nc
+  clock_restart.nc                 clock_restart_write + cadence_restart_write of every instance that steps
+  forcing_<coef>_restart.nc        tsgen state of each tsgen coefficient (derived ones: the field states)
+  forcing_imports.nc  forcing_exports.nc
+  geo_glob_restart.nc              bsl_now, A_ocean_now
+  geo_glob_imports.nc  geo_glob_exports.nc
   Greenland/
-    ice_grl_restart.nc  (+ Yelmo sidecars)   ice_grl_fields.nc
-    geo_grl_restart.nc  geo_grl_fields.nc    surface_grl_restart.nc  surface_grl_fields.nc
-    shelf_grl_restart.nc  shelf_grl_fields.nc   climate_grl_fields.nc   ghf_grl_fields.nc  sed_grl_fields.nc
+    ice_grl_restart.nc (+ Yelmo sidecars)  ice_grl_imports.nc  ice_grl_exports.nc
+    geo_grl_restart.nc                     geo_grl_imports.nc  geo_grl_exports.nc
+    climate_grl_imports.nc  climate_grl_exports.nc            (stateless: no backend file)
+    surface_grl_restart.nc                 surface_grl_imports.nc  surface_grl_exports.nc
+    shelf_grl_restart.nc                   shelf_grl_imports.nc  shelf_grl_exports.nc
+    ghf_grl_imports.nc  ghf_grl_exports.nc  sed_grl_imports.nc  sed_grl_exports.nc
+  manifest.nml                     [bundle] + one group per instance; written last
 ```
 
 `manifest.nml` (read back with `nml_read`): group `[bundle]` (`time`,
@@ -631,7 +695,8 @@ named as in the par file (`scope`, `component`, `backend`, `grid`, `files`,
   the same component, backend and grid, or stop naming the instance (a
   changed `dt` is allowed, logged by fesm_clock).
 - Chunks: chunk k sets `[clock] time_init` = previous `time_end` and
-  `[kryos] restart = "restart-<time_end>"`; names are known at submission.
+  `[kryos] restart = "restart-<time_end>"`; names are known at submission
+  (staging: §3.8).
   Continuation keeps `n_origin`, so `time_elapsed` runs on across chunks
   (yelmox restarts it per chunk: relax/opt windows differ, documented).
 - Deferred: forcing-increment bundles (`restart_every_df`, 0 in both
