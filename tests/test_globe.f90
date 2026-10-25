@@ -102,6 +102,10 @@ program test_globe
     type(census_t)         :: census
     type(globe_t), target  :: globe
     type(toy_dom_t), target :: dom(ND)
+    ! srcs is filled through an argument of build_srcs, not by host association:
+    ! ifx 2023.2 with -qopenmp gives a main-program array of gather_src_t
+    ! (pointer components initialised to null) different storage in the main
+    ! program and in its internal procedures.
     type(gather_src_t)     :: srcs(ND)
     type(coupler_class)    :: cpl
     type(tsgen_class)      :: ts_a, ts_b
@@ -153,7 +157,7 @@ program test_globe
 
     ! cold start reduction (core 3.6 item 2): the geo PASS_GEOMETRY changed bsl
     call put_dV(1, 3.0e11_dp, 0.0_dp);  call put_dV(2, -1.0e11_dp, 0.0_dp)
-    call build_srcs("geo")
+    call build_srcs("geo", srcs)
     call gather_into(globe, "geo", srcs, 0.0_dp)
     call globe_reduce(globe, clk)
     bsl%bsl_now = bsl%bsl_now - (real(3.0e11_dp, sp) + real(-1.0e11_dp, sp)) / bsl%A_ocean_now
@@ -177,7 +181,7 @@ program test_globe
         tprev = t - DTT
 
         ! start of the step: lag 1 rows (M_ice of the domains, the derived coefficient), then the globe
-        call build_srcs("forcing")
+        call build_srcs("forcing", srcs)
         call gather_into(globe, "forcing", srcs, tprev)
         call exchange_to_globe(globe, dom(1)%w, "climate", dom(1)%clim_e, tprev, "forcing", clk)
         call globe_update(globe, "geo", clk)
@@ -209,7 +213,7 @@ program test_globe
         if (.not. stale) call put_dV(2, dV_val(2, n), t)
         dvsum = real(dV_val(1, n), sp)
         if (.not. stale) dvsum = dvsum + real(dV_val(2, n), sp)
-        call build_srcs("geo")
+        call build_srcs("geo", srcs)
         call gather_into(globe, "geo", srcs, t)
         call globe_reduce(globe, clk)
         bsl%bsl_now = bsl%bsl_now - dvsum / bsl%A_ocean_now
@@ -281,9 +285,10 @@ contains
         call fields_get(st, h, x)
     end subroutine get
 
-    subroutine build_srcs(dst_kind)
+    subroutine build_srcs(dst_kind, srcs)
         ! Per-domain gather contributions, domain order.
-        character(len=*), intent(in) :: dst_kind
+        character(len=*),   intent(in)  :: dst_kind
+        type(gather_src_t), intent(out) :: srcs(:)
         integer :: k
         do k = 1, ND
             if (dst_kind == "forcing") then
