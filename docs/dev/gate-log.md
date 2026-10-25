@@ -306,3 +306,16 @@ Results (all jobs COMPLETED, exit 0):
 - Found on the way (C10, local test): with Yelmo's default `vm-m16` calving a
   Yelmo restart is not exact (diverges in the first step after a restore);
   the gate configs do not use it. Yelmo issue, not kryos.
+
+## Base length: 15 kyr (2026-10-25)
+
+- R2 (yelmox `74f3a2b`) and K (kryos `a2cf248`) on stack S2, the gate `-p`
+  with `ctrl.time_end=15000` (`submit_ref.sh S2 <gate> base`, `run_kryos.sh
+  <gate> base`, 2 h limit): grl R2 19:10, K 22:34; ant R2 34:24, K 38:08.
+- Compare with `--restarts` (bundles every 500 yr): **grl PASS, 924 variables;
+  ant PASS, 1036 variables**; first divergence none in both
+  (`docs/dev/gate-reports/*-15kyr.md`). 1500 coupling steps bit for bit.
+- The Antarctica comparison ran on Levante: KryosTools with juliaup Julia 1.13
+  (`JULIA_DEPOT_PATH=$G/julia-depot`, FesmUtils.jl cloned to `$G/FesmUtils.jl`
+  so the tools' relative source path resolves); Greenland locally on copies.
+- Phase 1 regression gate: complete (1 kyr cont, restarts, chunks, 15 kyr).
