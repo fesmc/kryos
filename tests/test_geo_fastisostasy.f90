@@ -44,7 +44,13 @@ program test_geo_fastisostasy
     call geo_init_state(glob, st(0.0_dp, 0.0_dp), PASS_INIT)
     call geo_init_state(reg,  st(0.0_dp, 0.0_dp), PASS_INIT)
     call to_regional(glob, reg, 0.0_dp, with_H=.false.)
+    call put_ice_exports(reg, 0.0_dp)
     call geo_init_state(reg, st(0.0_dp, 0.0_dp), PASS_GEOMETRY)
+    ! isos_init_state moves the shared bsl when the initial ice differs from the
+    ! reference (yelmox mutates its shared bsl there): the core reduces once after
+    ! every PASS_GEOMETRY.
+    call reduce(glob, reg, 0.0_dp)
+    call geo_scatter(reg, st(0.0_dp, 0.0_dp))
 
     ! ---- direct: yelmox order ---------------------------------------------------
     call bsl_init(bsl, PAR, 0.0_dp)
@@ -53,7 +59,7 @@ program test_geo_fastisostasy
     z_bed = real(ctxr%ref%z_bed, sp)
     H0    = real(ctxr%ref%H_ice, sp)
     call isos_init_ref(isos, z_bed, H0)
-    call isos_init_state(isos, z_bed, H0, 0.0_dp, bsl)
+    call isos_init_state(isos, z_bed, 0.9_sp*H0, 0.0_dp, bsl)
     call compare_regional(reg, isos, bsl, "cold start")
 
     do n = 1, 3
@@ -151,6 +157,16 @@ contains
         call fields_put(reg%c%imports, reg%c%hi_A_ocn, v, t1=t)
         if (with_H) call put_H(reg, H0, t)
     end subroutine to_regional
+
+    subroutine put_ice_exports(reg, t)
+        ! The ice exports the core exchanges before PASS_GEOMETRY (Yelmo's reference
+        ! and initial geometry; here the test's topography, sp-valued).
+        type(geo_slot_t), intent(inout) :: reg
+        real(dp),         intent(in)    :: t
+        call fields_put(reg%c%imports, reg%c%hi_z_bed_ref, ctxr%ref%z_bed, t1=t)
+        call fields_put(reg%c%imports, reg%c%hi_H_ice_ref, ctxr%ref%H_ice, t1=t)
+        call fields_put(reg%c%imports, reg%c%hi_H_ice,     real(0.9_sp*real(ctxr%ref%H_ice, sp), dp), t1=t)   ! current /= reference
+    end subroutine put_ice_exports
 
     subroutine put_H(reg, H, t)
         type(geo_slot_t), intent(inout) :: reg

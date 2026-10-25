@@ -5,9 +5,10 @@ module kryos_geo_fastisostasy
     ! FastIsostasy and barysealevel compute in sp and the exchange is dp: imports
     ! are narrowed once, exports are the library's sp values widened (no dp
     ! arithmetic first), in the operand order of yelmox (kryos_coupling.f90,
-    ! kryos_startup.f90). Decision of 2026-10-24: the regional instance is
-    ! initialised from the core's reference on its grid (ctx%ref), not from the
-    ! ice exports.
+    ! kryos_startup.f90). The regional instance is initialised from the ice
+    ! exports (Yelmo's processed reference and current state, as yelmox
+    ! domain_init_isostasy does): the imports z_bed_ref, H_ice_ref and H_ice,
+    ! exchanged by the core before PASS_GEOMETRY; ctx%ref is not used.
 
     use precision,       only: sp, dp
     use fesm_log,        only: LOG_INFO, log_msg, fesm_error, to_str
@@ -34,7 +35,6 @@ module kryos_geo_fastisostasy
         type(bsl_class)  :: bsl_loc                    ! copy of the global bsl state (method, bsl_now, A_ocean_now)
         character(len=NAME_LEN) :: group = "isos"      ! FastIsostasy's group in the par file
         real(sp) :: dx = 0.0_sp                        ! [m] cell size handed to isos_init
-        real(sp), allocatable :: z_bed_ref_g(:,:), H_ice_ref_g(:,:)   ! ctx%ref on the geo grid, narrowed
         real(dp), allocatable :: xc(:), yc(:)          ! [km] axes of the output files
     contains
         procedure :: init          => fastiso_geo_init_
@@ -88,7 +88,7 @@ contains
         self%prec = sp
         self%nx   = ctx%grid%G%nx
         self%ny   = ctx%grid%G%ny
-        self%opt  = geo_opt_t(A_ocn=.true., dV_bsl=.true., dz_bed_dt=.true., ref=.false.)
+        self%opt  = geo_opt_t(A_ocn=.true., dV_bsl=.true., dz_bed_dt=.true., ref=.true.)
 
         self%dx = real(ctx%grid%G%dx * ctx%grid%cs%xy_conv, sp)
         dy      = real(ctx%grid%G%dy * ctx%grid%cs%xy_conv, sp)
@@ -109,7 +109,6 @@ contains
         end if
 
         call bsl_loc_init(self, ctx)
-        call reference_narrow(self, ctx)
         self%xc = ctx%grid%G%x
         self%yc = ctx%grid%G%y
     end subroutine fastiso_geo_init_
@@ -123,9 +122,7 @@ contains
         select case (pass)
         case (PASS_INIT)                                ! nothing to put: the state needs the global bsl
         case (PASS_GEOMETRY)                            ! domain_init_isostasy (kryos_startup.f90:236-241)
-            call bsl_from_imports(self)
-            call isos_init_ref(self%isos, self%z_bed_ref_g, self%H_ice_ref_g)
-            call isos_init_state(self%isos, self%z_bed_ref_g, self%H_ice_ref_g, st%t1, self%bsl_loc)
+            call state_from_ice(self, st%t1)
             call exports_state(self, st%t1)
             call exports_volume(self, st%t1)
         case (PASS_RESTART)                             ! the state restart_read rebuilt
@@ -166,7 +163,7 @@ contains
         real(dp),             intent(in)    :: t
 
         character(len=:), allocatable :: file
-        real(sp), allocatable :: H_ice(:,:)
+        real(sp), allocatable :: H_ice(:,:), z_bed(:,:)
 
         file = restart_file(self%name, dir)
         if (len(file) > len(self%isos%par%restart)) then
@@ -176,13 +173,13 @@ contains
         call require_published(self, self%hi_H_ice, "H_ice", "restart_read")
         call require_published(self, self%hi_bsl,   "bsl",   "restart_read")
 
-        allocate(H_ice(self%nx, self%ny))
+        allocate(H_ice(self%nx, self%ny), z_bed(self%nx, self%ny))
         call fields_get(self%imports, self%hi_H_ice, H_ice)
         call bsl_from_imports(self)
         self%isos%par%use_restart = .true.
         self%isos%par%restart     = file
-        ! z_bed is not used on a restart: isos_init_state keeps the restored z_bed.
-        call isos_init_state(self%isos, self%z_bed_ref_g, H_ice, t, self%bsl_loc)
+        z_bed = 0.0_sp          ! unused on a restart: isos_init_state keeps the restored z_bed
+        call isos_init_state(self%isos, z_bed, H_ice, t, self%bsl_loc)
     end subroutine fastiso_geo_restart_read_
 
     subroutine fastiso_geo_write_output_(self, file, t, stream, init)
@@ -238,23 +235,26 @@ contains
         self%bsl_loc%time         = ctx%time_rel
     end subroutine bsl_loc_init
 
-    subroutine reference_narrow(self, ctx)
-        ! The core's reference on the geo grid, narrowed once (sp).
+    subroutine state_from_ice(self, t)
+        ! Cold start: reference and state from the ice exports, narrowed once.
+        ! Geo has no current-bed import: at cold start Yelmo's bnd%z_bed equals
+        ! its z_bed_ref, so the narrowed z_bed_ref serves as the current bed.
         class(fastiso_geo_t), intent(inout) :: self
-        type(init_ctx_t),     intent(in)    :: ctx
+        real(dp),             intent(in)    :: t
 
-        if (.not. (allocated(ctx%ref%z_bed) .and. allocated(ctx%ref%H_ice))) then
-            call fesm_error("kryos_geo_fastisostasy::init", "reference topography incomplete", &
-                            "instance "//trim(self%name)//": z_bed and H_ice are needed on grid `"// &
-                            trim(self%grid)//"`")
-        end if
-        if (any(shape(ctx%ref%z_bed) /= [self%nx, self%ny]) .or. any(shape(ctx%ref%H_ice) /= [self%nx, self%ny])) then
-            call fesm_error("kryos_geo_fastisostasy::init", "reference topography has the wrong shape", &
-                            "instance "//trim(self%name)//": expected "//to_str(self%nx)//" x "//to_str(self%ny))
-        end if
-        self%z_bed_ref_g = real(ctx%ref%z_bed, sp)
-        self%H_ice_ref_g = real(ctx%ref%H_ice, sp)
-    end subroutine reference_narrow
+        real(sp), allocatable :: z_bed_ref(:,:), H_ice_ref(:,:), H_ice(:,:)
+
+        call require_published(self, self%hi_z_bed_ref, "z_bed_ref", "init_state")
+        call require_published(self, self%hi_H_ice_ref, "H_ice_ref", "init_state")
+        call require_published(self, self%hi_H_ice,     "H_ice",     "init_state")
+        allocate(z_bed_ref(self%nx, self%ny), H_ice_ref(self%nx, self%ny), H_ice(self%nx, self%ny))
+        call fields_get(self%imports, self%hi_z_bed_ref, z_bed_ref)
+        call fields_get(self%imports, self%hi_H_ice_ref, H_ice_ref)
+        call fields_get(self%imports, self%hi_H_ice,     H_ice)
+        call bsl_from_imports(self)
+        call isos_init_ref(self%isos, z_bed_ref, H_ice_ref)
+        call isos_init_state(self%isos, z_bed_ref, H_ice, t, self%bsl_loc)
+    end subroutine state_from_ice
 
     subroutine bsl_from_imports(self)
         ! The global part's bsl (and ocean area) as the local bsl_class sees it.
@@ -275,8 +275,8 @@ contains
         character(len=*),     intent(in) :: name, what
         if (.not. wired(self, h)) then
             call fesm_error("kryos_geo_fastisostasy::"//what, "import "//name//" has not been published", &
-                            "instance "//trim(self%name)//": the core exchanges it (restored ice, global part) "// &
-                            "before the restart read")
+                            "instance "//trim(self%name)//": the core exchanges it (ice, global part) "// &
+                            "before this call")
         end if
     end subroutine require_published
 
