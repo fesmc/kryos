@@ -58,6 +58,24 @@ include config/deps.mk
 
 kryos_objs = $(deps_objs)
 
+# Build info (core-design 7, 11): the module kryos_build_info, written on every
+# build by config/build_info.sh (the file changes only when a version does)
+# and compiled into the library; kryos_restart uses it for the restart
+# manifest. configme deps does not see a generated source: explicit rules.
+build_info_src = $(objdir)/kryos_build_info.f90
+build_info_obj = $(objdir)/kryos_build_info.o
+kryos_objs    += $(build_info_obj)
+
+$(build_info_src): build-info | $(objdir)
+	@sh config/build_info.sh $@ $(CURDIR) $(build_info_libs)
+
+$(build_info_obj): $(build_info_src)
+	$(FC) $(DFLAGS) $(FFLAGS) -c -o $@ $<
+
+$(objdir)/kryos_restart.o: $(build_info_obj)
+
+build-info:
+
 # One compile rule for every object; vpath (deps.mk) finds the source.
 $(objdir)/%.o: %.f90
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_FESMUTILS) $(INC_BACKENDS) -c -o $@ $<
@@ -201,7 +219,7 @@ check: $(test_exes)
 	if [ $$failed -ne 0 ]; then exit 1; fi; \
 	echo " "; echo "    make check: all tests passed."; echo " "
 
-.PHONY : usage kryos-static kryos check clean cleanall depend deps-check deps-static \
+.PHONY : build-info usage kryos-static kryos check clean cleanall depend deps-check deps-static \
          fesmutils-static yelmo-static isostasy-static chion-static insol-static
 usage:
 	@echo ""
@@ -224,7 +242,7 @@ usage:
 
 clean:
 	rm -f $(bindir)/*.x
-	rm -f *.x gmon.out $(objdir)/*.o $(objdir)/*.mod $(objdir)/*.smod $(objdir)/*.a $(objdir)/*.so $(objdir)/.build-*
+	rm -f *.x gmon.out $(build_info_src) $(objdir)/*.o $(objdir)/*.mod $(objdir)/*.smod $(objdir)/*.a $(objdir)/*.so $(objdir)/.build-*
 	rm -rf *.x.dSYM $(bindir)/*.x.dSYM
 
 # Cleans fesm-utils and the enabled backend libraries.

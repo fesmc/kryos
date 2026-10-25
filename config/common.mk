@@ -109,12 +109,17 @@ backend_static =
 test_skip      =
 need_lis_fftw  = 0
 
+# The libraries whose version the build records (kryos_build_info, for the
+# restart manifest): <name>:<root>, named as the build switch.
+build_info_libs = fesm-utils:$(FESMUTILSROOT)
+
 ifeq ($(yelmo), 1)
     kryos_ice_yelmo_obj = $(objdir)/kryos_ice_yelmo.o
     INC_BACKENDS   += $(INC_YELMO)
     LIB_BACKENDS   += $(LIB_YELMO) $(LIB_FASTHYDRO) $(LIB_ELSA) $(LIB_TRACER)
     dep_archives   += $(YELMO_ARCHIVE)
     backend_roots  += $(YELMOROOT)
+    build_info_libs += yelmo:$(YELMOROOT)
     backend_static += yelmo-static
     need_lis_fftw   = 1
 else
@@ -128,6 +133,7 @@ ifeq ($(fastisostasy), 1)
     LIB_BACKENDS   += $(LIB_ISOSTASY)
     dep_archives   += $(ISOSTASY_ARCHIVE)
     backend_roots  += $(ISOSTASYROOT)
+    build_info_libs += fastisostasy:$(ISOSTASYROOT)
     backend_static += isostasy-static
     need_lis_fftw   = 1
 else
@@ -145,6 +151,7 @@ ifeq ($(chion), 1)
     LIB_BACKENDS   += $(LIB_CHION)
     dep_archives   += $(CHION_ARCHIVE)
     backend_roots  += $(CHIONROOT)
+    build_info_libs += chion:$(CHIONROOT)
     backend_static += chion-static
 else
     kryos_surface_chion_obj = $(objdir)/kryos_surface_chion_stub.o
@@ -156,6 +163,7 @@ ifeq ($(insol), 1)
     LIB_BACKENDS   += $(LIB_INSOL)
     dep_archives   += $(INSOL_ARCHIVE)
     backend_roots  += $(INSOLROOT)
+    build_info_libs += insol:$(INSOLROOT)
     backend_static += insol-static
 endif
 
