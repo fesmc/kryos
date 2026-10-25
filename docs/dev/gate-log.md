@@ -319,3 +319,22 @@ Results (all jobs COMPLETED, exit 0):
   (`JULIA_DEPOT_PATH=$G/julia-depot`, FesmUtils.jl cloned to `$G/FesmUtils.jl`
   so the tools' relative source path resolves); Greenland locally on copies.
 - Phase 1 regression gate: complete (1 kyr cont, restarts, chunks, 15 kyr).
+
+## Performance: stack S3 (2026-10-25)
+
+- fesm-utils `phase0-kryos` `bb39f2f`: ncio attribute routines take an
+  `ncid`; `fields_restart_write`/`read` and the clock/cadence restart writers
+  open each file once; `put_copy` tests finiteness with `abs(x) <= huge(x)`.
+  kryos `af8f1b9`: one-grid rows put without a copy, lapse skips `exp` where the
+  exponent is zero, backends declare their restart files (no `ls`).
+- Stack S3 = S2 with that fesm-utils, every Fortran package rebuilt (an ncio
+  interface change needs all dependents recompiled: a stale yelmo/fastisostasy
+  build segfaulted in `nc_exists_var` locally). `tools/setup_S3.sh`; kryos's
+  dependency links and `run_kryos.sh` now point at S3.
+- Identity checks (`--restarts`, all PASS): R1(S3) vs R0 (grl 1274, ant 1368
+  vars), R2(S3) vs R2 (same), K(S3) vs K(S2) 1 kyr (grl 1249, ant 1341) and
+  15 kyr grl (15641). Reports in `$G/reports/S3/`.
+- 15 kyr grl wall time (timers, s): kryos 1125 (was 1256), yelmox 1066:
+  output 220 (178), geo 310 (309), ice 469 (463), climate 13.5 (9.5),
+  surface 96 (93), shelf 15 (13). The remaining output difference is the extra
+  kryos files (`_ts` every 10 yr, default-writer 2D every 100 yr): their opens.
