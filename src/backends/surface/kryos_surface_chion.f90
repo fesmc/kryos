@@ -974,8 +974,8 @@ contains
         class(chion_surface_t), intent(inout) :: self
         type(init_ctx_t),       intent(in)    :: ctx
 
-        if (nml_has_param(ctx%par_file, ctx%instance, "host")) &
-            call nml_read(ctx%par_file, ctx%instance, "host", self%host_group)
+        if (nml_has_param(ctx%par_file, ctx%instance, "surface_chion")) &
+            call nml_read(ctx%par_file, ctx%instance, "surface_chion", self%host_group)
         if (nml_has_param(ctx%par_file, ctx%instance, "chion")) &
             call nml_read(ctx%par_file, ctx%instance, "chion", self%chion_group)
         if (nml_has_param(ctx%par_file, ctx%instance, "orbit")) &
