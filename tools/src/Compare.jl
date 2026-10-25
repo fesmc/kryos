@@ -633,7 +633,9 @@ function compare_rows!(rep::Report, rows::Vector{Row}, refdir, rundir, inst, dev
                                   units=row.units, comp=row.comp)
                     push!(get!(() -> (push!(porder, run_rel); VarResult[]), pairs, run_rel), r)
                 end
-                if row.class != "A" && !haskey(pairs, run_rel)
+                # a whole-file row always pairs the files (coordinates, time axis); a row
+                # naming variables pairs them only if one of its variables exists
+                if row.class != "A" && row.vars == ["*"] && !haskey(pairs, run_rel)
                     pairs[run_rel] = VarResult[]; push!(porder, run_rel)
                 end
             end

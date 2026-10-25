@@ -265,3 +265,22 @@ Results (all jobs COMPLETED, exit 0):
     fields and units (class E), the default writer writes exports as float
     (C rows wrapped in `Float32`).
 - Not yet: restart bundles (C10), chunk vs cont, Antarctica (C11).
+
+## Gate 1, Antarctica: K == R2 (2026-10-25)
+
+- Run: kryos `2461747` (= `a8666f2` + the converter fix below) on stack S2,
+  job 28411639, `$G/runs/ant/kx-2461747/S2/cont`, 1000 yr in 3:23.
+- Compare: **PASS**, 350 variables, 0 failing, first divergence none
+  (`docs/dev/gate-reports/ant-K-2461747-vs-R2.md`). This is the first run with
+  hub (ANT-16KM) and ice (ANT-32KM) on different grids, the 10 yr
+  `init_equil_time`, the region files (APIS, EAIS, WAIS), the ocean profiles to
+  the shelf (bilin 32 -> 16 km) and `bmb_shlf` back to the ice (con 16 -> 32
+  km): the predicted rare tie differences of `bmb_shlf` (adapters 1.2) did not
+  occur.
+- Fixes on the way: the converter forced `remap = "bilin"` on the geothermal
+  and sediment fields, so datasrc asked for an ANT-32KM -> ANT-32KM map (into the
+  read-only maps folder); now `auto` (a copy on the instance grid, as yelmox's
+  short-circuited bilin). `Compare.jl`: a row naming variables pairs the files
+  only if one of them exists (the Antarctica gate has no forcing coefficients).
+- Gate 1 (continuous runs) passes for both gates. Open: restart bundles and
+  chunk vs cont (C10, in progress).
