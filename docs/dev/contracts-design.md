@@ -434,7 +434,8 @@ run this step; 1: from the previous step; I: once at init.
 | src | field | dst | field | method | lag | transform | yelmox |
 |---|---|---|---|---|---|---|---|
 | ice | `H_ice` | geo | `H_ice` | auto | 1 | | coupling:146 |
-| ice | `dz_bed_dt_corr` | geo | `dz_bed_dt_corr` | auto | 1 | | coupling:147 |
+| ice | `z_bed_ref` | geo | `z_bed_ref` | auto | I | | kryos_startup.f90:236 (`isos_init_ref`) |
+| ice | `H_ice_ref` | geo | `H_ice_ref` | auto | I | | kryos_startup.f90:238 |
 | globe geo | `bsl`, `A_ocn` | geo | `bsl`, `A_ocn` | — | 0 | | `bsl_update` before `isos_update` |
 | geo | `dV_bsl` | globe geo | `dV_bsl` | — | 0 | gather Σ | fastisostasy.f90:839 |
 | geo | `dz_bed` | ice | `z_bed` | auto | 0 | ADD_REF `z_bed` | coupling:222,225 |
