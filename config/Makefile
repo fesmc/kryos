@@ -184,12 +184,13 @@ kryos: $(objdir)/libkryos.a | $(bindir)
 	@echo " "
 
 # Tests: every tests/test_*.f90 is a program linked against libkryos that
-# exits non-zero on failure. `make check` builds and runs them all.
-test_srcs = $(wildcard $(testdir)/test_*.f90)
+# exits non-zero on failure. `make check` builds and runs them all, except the
+# tests that need a backend library switched off (test_skip, config/common.mk).
+test_srcs = $(filter-out $(test_skip),$(wildcard $(testdir)/test_*.f90))
 test_exes = $(patsubst $(testdir)/%.f90,$(bindir)/%.x,$(test_srcs))
 
 $(bindir)/%.x: $(testdir)/%.f90 $(objdir)/libkryos.a | $(bindir)
-	$(FC) $(DFLAGS) $(FFLAGS) $(INC_FESMUTILS) -o $@ $< \
+	$(FC) $(DFLAGS) $(FFLAGS) $(INC_FESMUTILS) $(INC_BACKENDS) -o $@ $< \
 		-L${CURDIR}/$(objdir) -lkryos $(LFLAGS)
 
 check: $(test_exes)

@@ -106,6 +106,7 @@ LIB_BACKENDS   =
 dep_archives   = $(FESMUTILS_ARCHIVE)
 backend_roots  =
 backend_static =
+test_skip      =
 need_lis_fftw  = 0
 
 ifeq ($(yelmo), 1)
@@ -130,6 +131,7 @@ ifeq ($(fastisostasy), 1)
     need_lis_fftw   = 1
 else
     kryos_geo_fastisostasy_obj = $(objdir)/kryos_geo_fastisostasy_stub.o
+    test_skip += $(testdir)/test_geo_fastisostasy.f90
 endif
 
 ifeq ($(chion), 1)

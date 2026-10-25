@@ -51,7 +51,8 @@ builds it. Use `make deps-static` (or each dependency's own make) first.
 | `pic=1` | 0 | `-fPIC`, for a later shared library or C API |
 | `debug=1\|2` | 0 | debug or profiling flags from the compiler fragment |
 | `yelmo` | 1 | ice backend `yelmo`: adapter, `INC_YELMO`/`LIB_YELMO` (+ FastHydrology, elsa, tracer, LIS, FFTW) |
-| `fastisostasy`, `chion`, `insol` | 1 | `chion=1` compiles the chion host (with its orbit) into the adapter and needs `insol=1`; `fastisostasy`, `insol`: library wiring only, until their adapters exist (phase 1) |
+| `fastisostasy` | 1 | geo backend `fastisostasy` (regional and global part): adapter, `INC_ISOSTASY`/`LIB_ISOSTASY` (+ LIS, FFTW); off: stub, and `tests/test_geo_fastisostasy.f90` is not built (`test_skip`) |
+| `chion`, `insol` | 1 | surface backend `chion`: `chion=1` compiles the chion host (with its orbit) into the adapter and needs `insol=1`; off: stub |
 | `cism`, `pism`, `vilma`, `rembo` | 0 | stop with the phase in which the adapter arrives |
 
 Objects are stamped with the switch settings
