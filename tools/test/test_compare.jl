@@ -79,3 +79,11 @@ end
     @test !isempty(m.rows) && !isempty(m.restart_rows)
     @test isempty(load_deviations(joinpath(@__DIR__, "..", "gate", "deviations.toml")))
 end
+
+@testset "Compare: bundle folder names of both models" begin
+    @test Compare.bundle_time("restart-{time}", "restart-500") == 500.0
+    @test Compare.bundle_time("restart-{time}", "restart-0.5") == 0.5
+    @test Compare.bundle_time("restart-{kyr}-kyr", "restart-0.500-kyr") == 500.0
+    @test Compare.bundle_time("restart-{time}", "restart-0.500-kyr") === nothing
+    @test Compare.bundle_time("restart-{kyr}-kyr", "restart-500") === nothing
+end

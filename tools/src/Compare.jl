@@ -705,7 +705,7 @@ bundle_regex(pat) = Regex("^" * replace(escape_re(pat), "\\{kyr\\}" => "(?<kyr>[
 function bundle_time(pat, d)
     m = match(bundle_regex(pat), d)
     m === nothing && return nothing
-    return m[:kyr] !== nothing ? parse(Float64, m[:kyr]) * 1000 : parse(Float64, m[:time])
+    return occursin("{kyr}", pat) ? parse(Float64, m[:kyr]) * 1000 : parse(Float64, m[:time])
 end
 
 bundle_times(refdir, pat) =
