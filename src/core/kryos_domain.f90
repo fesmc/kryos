@@ -54,17 +54,20 @@ module kryos_domain
     use kryos_config,    only: config_t, config_read, config_validate, config_validate_instance, config_cadence
     use kryos_wiring,    only: wire_t, wire_node_t, wire_node, wire_node_states, wire_resolve, &
                                wire_prime, wire_exchange, wire_runs, wire_label, LAG_INIT
-    use kryos_ice,       only: ice_slot_t, ice_create, ice_init, ice_init_state, ice_update, ice_end
-    use kryos_geo,       only: geo_slot_t, geo_create, geo_init, geo_init_state, geo_update, geo_end
+    use kryos_ice,       only: ice_slot_t, ice_create, ice_init, ice_init_state, ice_update, ice_end, &
+                               ice_restart_write, ice_restart_read
+    use kryos_geo,       only: geo_slot_t, geo_create, geo_init, geo_init_state, geo_update, geo_end, &
+                               geo_restart_write, geo_restart_read
     use kryos_climate,   only: climate_slot_t, climate_create, climate_init, climate_init_state, &
-                               climate_update, climate_end
+                               climate_update, climate_end, climate_restart_write, climate_restart_read
     use kryos_surface,   only: surface_slot_t, surface_create, surface_init, surface_init_state, &
-                               surface_update, surface_end
-    use kryos_shelf,     only: shelf_slot_t, shelf_create, shelf_init, shelf_init_state, shelf_update, shelf_end
+                               surface_update, surface_end, surface_restart_write, surface_restart_read
+    use kryos_shelf,     only: shelf_slot_t, shelf_create, shelf_init, shelf_init_state, shelf_update, shelf_end, &
+                               shelf_restart_write, shelf_restart_read
     use kryos_geothermal, only: geothermal_slot_t, geothermal_create, geothermal_init, geothermal_init_state, &
-                               geothermal_update, geothermal_end
+                               geothermal_update, geothermal_end, geothermal_restart_write, geothermal_restart_read
     use kryos_sediments, only: sediments_slot_t, sediments_create, sediments_init, sediments_init_state, &
-                               sediments_update, sediments_end
+                               sediments_update, sediments_end, sediments_restart_write, sediments_restart_read
 
     implicit none
 
@@ -88,6 +91,12 @@ module kryos_domain
     ! before its consumers (surface, shelf).
     integer, parameter, public :: INIT_ORDER(NCOMP) = [C_ICE, C_GEO, C_GEOTHERMAL, C_SEDIMENTS, &
                                                        C_CLIMATE, C_SURFACE, C_SHELF]
+
+    ! The order the instances are written to a restart bundle and restored from
+    ! it (core-design 3.3, 7): the ice before geo (FastIsostasy's restore takes
+    ! the restored ice geometry), the climate before surface and shelf.
+    integer, parameter, public :: RESTORE_ORDER(NCOMP) = [C_ICE, C_GEO, C_CLIMATE, C_SURFACE, C_SHELF, &
+                                                          C_GEOTHERMAL, C_SEDIMENTS]
 
     ! exchange_into: the sources of the rows into one consumer, in this order
     ! (yelmox couple_to_yelmo: isostasy, surface, shelf, climate; then the
@@ -134,6 +143,7 @@ module kryos_domain
     public :: domain_init, domain_create, domain_describe
     public :: domain_ref_index, domain_comp_index, domain_component, domain_present
     public :: domain_time, domain_due, domain_pass, domain_update, domain_end
+    public :: domain_restart_write, domain_restart_read
     public :: domain_nodes, domain_wire
     public :: exchange, exchange_into, exchange_static, domain_hub_update, domain_check_reference
     public :: domain_hub_write
@@ -533,6 +543,48 @@ contains
         case (C_SEDIMENTS);  call sediments_update(dom%sediments, st);   call cadence_mark(dom%sediments%c%cadence, clk)
         end select
     end subroutine domain_update
+
+    subroutine domain_restart_write(dom, k, dir, t)
+        ! <comp>_restart_write of component k: the backend's own state into the
+        ! folder `dir` at time t (nothing for a backend without a restart file,
+        ! constraints restart = .false.). Absent: nothing. The field states are
+        ! the core's (kryos_restart).
+        type(domain_t),   intent(inout) :: dom
+        integer,          intent(in)    :: k
+        character(len=*), intent(in)    :: dir
+        real(dp),         intent(in)    :: t
+
+        if (.not. domain_present(dom, k)) return
+        select case (k)
+        case (C_ICE);        call ice_restart_write(dom%ice, dir, t)
+        case (C_GEO);        call geo_restart_write(dom%geo, dir, t)
+        case (C_CLIMATE);    call climate_restart_write(dom%climate, dir, t)
+        case (C_SURFACE);    call surface_restart_write(dom%surface, dir, t)
+        case (C_SHELF);      call shelf_restart_write(dom%shelf, dir, t)
+        case (C_GEOTHERMAL); call geothermal_restart_write(dom%geothermal, dir, t)
+        case (C_SEDIMENTS);  call sediments_restart_write(dom%sediments, dir, t)
+        end select
+    end subroutine domain_restart_write
+
+    subroutine domain_restart_read(dom, k, dir, t)
+        ! <comp>_restart_read of component k from the folder `dir` (the
+        ! counterpart of domain_restart_write). Absent: nothing.
+        type(domain_t),   intent(inout) :: dom
+        integer,          intent(in)    :: k
+        character(len=*), intent(in)    :: dir
+        real(dp),         intent(in)    :: t
+
+        if (.not. domain_present(dom, k)) return
+        select case (k)
+        case (C_ICE);        call ice_restart_read(dom%ice, dir, t)
+        case (C_GEO);        call geo_restart_read(dom%geo, dir, t)
+        case (C_CLIMATE);    call climate_restart_read(dom%climate, dir, t)
+        case (C_SURFACE);    call surface_restart_read(dom%surface, dir, t)
+        case (C_SHELF);      call shelf_restart_read(dom%shelf, dir, t)
+        case (C_GEOTHERMAL); call geothermal_restart_read(dom%geothermal, dir, t)
+        case (C_SEDIMENTS);  call sediments_restart_read(dom%sediments, dir, t)
+        end select
+    end subroutine domain_restart_read
 
     subroutine domain_end(dom)
         ! <comp>_end of every instance, the ice last (Yelmo deallocates its

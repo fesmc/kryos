@@ -19,7 +19,10 @@ module kryos_globe
     !
     ! plus the globe's own step: globe_update (bsl_update, coefs_update on the
     ! instance's cadence and clock), globe_reduce (geo_reduce at the time of
-    ! the last update) and globe_init / globe_init_state / globe_end. The
+    ! the last update) and globe_init / globe_init_state / globe_end; for the
+    ! restart bundles (kryos_restart) one instance's init_state (globe_pass),
+    ! its restart files (globe_restart_write/read) and its component
+    ! (globe_component). The
     ! wrappers of the components (geo_reduce, geo_scatter, forcing_set,
     ! forcing_kill) stay the call sites of the bindings; geo_scatter acts on a
     ! domain's geo slot and is called by the domain sequence.
@@ -35,12 +38,13 @@ module kryos_globe
     use coupler,         only: coupler_class
     use phys_constants,  only: phys_const_class
     use kryos_config,    only: config_t, config_read, config_validate, config_validate_instance, config_cadence
-    use kryos_component, only: init_ctx_t, step_time_t, census_t, step_time_of, NAME_LEN
+    use kryos_component, only: component_t, init_ctx_t, step_time_t, census_t, step_time_of, NAME_LEN
     use kryos_wiring,    only: wire_t, wire_node_t, wire_node, wire_exchange, wire_gather, wire_runs
     use kryos_forcing,   only: forcing_slot_t, forcing_create, forcing_init, forcing_init_state, &
-                               forcing_update, forcing_end, forcing_present
+                               forcing_update, forcing_end, forcing_present, forcing_restart_write, &
+                               forcing_restart_read
     use kryos_geo,       only: geo_slot_t, geo_create, geo_init, geo_init_state, geo_update, &
-                               geo_reduce, geo_end, geo_present
+                               geo_reduce, geo_end, geo_present, geo_restart_write, geo_restart_read
 
     implicit none
 
@@ -60,6 +64,7 @@ module kryos_globe
     end type gather_src_t
 
     public :: globe_init, globe_init_state, globe_update, globe_time, globe_reduce, globe_end
+    public :: globe_pass, globe_component, globe_restart_write, globe_restart_read
     public :: globe_nodes
     public :: exchange_globe, exchange_to_globe, gather_src, gather_into
 
@@ -147,17 +152,88 @@ contains
 
     subroutine globe_init_state(globe, clk, pass)
         ! init_state of every present instance, forcing then geo (core-design
-        ! 3.1 step 6): the exports as initialised at t0 (PASS_INIT), or after a
-        ! restore (PASS_RESTART).
+        ! 3.1 step 6): the exports as initialised at t0 (PASS_INIT).
         type(globe_t), intent(inout) :: globe
         type(clock_t), intent(in)    :: clk
         integer,       intent(in)    :: pass
 
-        if (forcing_present(globe%forcing)) &
-            call forcing_init_state(globe%forcing, globe_time(globe, "forcing", clk, init=.true.), pass)
-        if (geo_present(globe%geo)) &
-            call geo_init_state(globe%geo, globe_time(globe, "geo", clk, init=.true.), pass)
+        if (forcing_present(globe%forcing)) call globe_pass(globe, "forcing", clk, pass)
+        if (geo_present(globe%geo))         call globe_pass(globe, "geo", clk, pass)
     end subroutine globe_init_state
+
+    subroutine globe_pass(globe, which, clk, pass)
+        ! init_state of one instance at the clock's time (t0 = t1 = now):
+        ! PASS_INIT, or PASS_RESTART after its restore (kryos_restart).
+        type(globe_t),    intent(inout) :: globe
+        character(len=*), intent(in)    :: which           ! "forcing" | "geo"
+        type(clock_t),    intent(in)    :: clk
+        integer,          intent(in)    :: pass
+
+        select case (trim(which))
+        case ("forcing")
+            call require(forcing_present(globe%forcing), which)
+            call forcing_init_state(globe%forcing, globe_time(globe, which, clk, init=.true.), pass)
+        case ("geo")
+            call require(geo_present(globe%geo), which)
+            call geo_init_state(globe%geo, globe_time(globe, which, clk, init=.true.), pass)
+        case default
+            call unknown(which)
+        end select
+    end subroutine globe_pass
+
+    function globe_component(globe, which) result(c)
+        ! The instance `which` ("forcing" | "geo") as a component, or a
+        ! disassociated pointer when the globe has none.
+        type(globe_t), target, intent(in) :: globe
+        character(len=*),      intent(in) :: which
+        class(component_t), pointer :: c
+
+        c => null()
+        select case (trim(which))
+        case ("forcing");  if (forcing_present(globe%forcing)) c => globe%forcing%c
+        case ("geo");      if (geo_present(globe%geo))         c => globe%geo%c
+        case default;      call unknown(which)
+        end select
+    end function globe_component
+
+    subroutine globe_restart_write(globe, which, dir, t)
+        ! <comp>_restart_write of one instance into the folder `dir` at t (the
+        ! backend's state; the field states are the core's, kryos_restart).
+        type(globe_t),    intent(inout) :: globe
+        character(len=*), intent(in)    :: which           ! "forcing" | "geo"
+        character(len=*), intent(in)    :: dir
+        real(dp),         intent(in)    :: t
+
+        select case (trim(which))
+        case ("forcing")
+            call require(forcing_present(globe%forcing), which)
+            call forcing_restart_write(globe%forcing, dir, t)
+        case ("geo")
+            call require(geo_present(globe%geo), which)
+            call geo_restart_write(globe%geo, dir, t)
+        case default
+            call unknown(which)
+        end select
+    end subroutine globe_restart_write
+
+    subroutine globe_restart_read(globe, which, dir, t)
+        ! <comp>_restart_read of one instance from the folder `dir`.
+        type(globe_t),    intent(inout) :: globe
+        character(len=*), intent(in)    :: which           ! "forcing" | "geo"
+        character(len=*), intent(in)    :: dir
+        real(dp),         intent(in)    :: t
+
+        select case (trim(which))
+        case ("forcing")
+            call require(forcing_present(globe%forcing), which)
+            call forcing_restart_read(globe%forcing, dir, t)
+        case ("geo")
+            call require(geo_present(globe%geo), which)
+            call geo_restart_read(globe%geo, dir, t)
+        case default
+            call unknown(which)
+        end select
+    end subroutine globe_restart_read
 
     subroutine globe_end(globe)
         ! forcing, then geo (run_end).

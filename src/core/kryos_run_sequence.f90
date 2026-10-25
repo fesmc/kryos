@@ -1,10 +1,12 @@
 submodule (kryos_run) kryos_run_sequence
-    ! The coupling sequence of the run (core-design 3.2, 3.4, 3.6): the cold
-    ! start (yelmox kryos_startup.f90 domain_init_state, 131-195) and one step
-    ! (yelmox.f90 main loop, 176-208), for N domains. The order is the
-    ! bit-identity contract with yelmox; each block names the yelmox call it
-    ! stands for. Presence is tested (domain_present, *_present), never a
-    ! backend name; the wiring rows check every lag (kryos_wiring).
+    ! The coupling sequence of the run (core-design 3.2-3.4, 3.6): the cold
+    ! start (yelmox kryos_startup.f90 domain_init_state, 131-195), the restore
+    ! from a bundle (domain_startup / domain_restart_read, 95-103, 470-530)
+    ! and one step (yelmox.f90 main loop, 176-208), for N domains. The order
+    ! is the bit-identity contract with yelmox (and, for the restore, with the
+    ! continuous run); each block names the yelmox call it stands for.
+    ! Presence is tested (domain_present, *_present), never a backend name;
+    ! the wiring rows check every lag (kryos_wiring).
     !
     ! Globe <-> domain traffic in one place each:
     !   bsl:     globe geo -> every geo (exchange_globe), the dV_bsl of the
@@ -22,7 +24,9 @@ submodule (kryos_run) kryos_run_sequence
                                exchange_globe, exchange_to_globe
     use kryos_domain,    only: domain_present, domain_due, domain_update, domain_time, exchange, exchange_into, &
                                domain_hub_update, domain_check_reference, &
-                               C_ICE, C_GEO, C_CLIMATE, C_SURFACE, C_SHELF
+                               C_ICE, C_GEO, C_CLIMATE, C_SURFACE, C_SHELF, RESTORE_ORDER
+    use kryos_restart,   only: GLOBE_ORDER, restart_read_clock, restart_check_manifest, restart_read_global, &
+                               restart_read_instance
 
     implicit none
 
@@ -99,6 +103,104 @@ contains
             end associate
         end do
     end subroutine run_cold_start
+
+    ! =========================================================================
+    ! Restore (core-design 3.3, 3.6 item 4)
+    ! =========================================================================
+
+    module subroutine run_restore(run)
+        ! After PASS_INIT and the static rows (run_pass_init), instead of the
+        ! cold start; restore, never step. The bundle is [kryos] restart
+        ! (relative to the run directory, or absolute).
+        !
+        !   1. the clock, then every instance's cadence (continuation: the
+        !      bundle time is time_init; a branch, another time, restores the
+        !      clock only: a run with instances stops);
+        !   2. the manifest against the run's instances;
+        !   3. the globe: forcing, then geo global (bsl_now, A_ocean_now);
+        !   4. per domain, in RESTORE_ORDER: ice; then the ice -> geo rows and
+        !      the global bsl into geo (FastIsostasy rebuilds its state from the
+        !      restored H_ice and bsl, yelmox domain_restart_read); geo, climate,
+        !      surface, shelf, geothermal, sediments. Each instance: its
+        !      restart_read, its imports and exports as the bundle holds them,
+        !      PASS_RESTART (kryos_restart). The rows into the other instances
+        !      do not run: their imports are restored as received, and the
+        !      static (LAG_INIT) rows stay done from run_pass_init;
+        !   5. per domain, domain_check_reference (the restored references
+        !      against the domain's) and the hub (derived, never stored) from
+        !      the restored ice.
+        type(run_t), target, intent(inout) :: run
+
+        character(len=:), allocatable :: dir
+        real(dp) :: t
+        integer  :: d, j, k
+
+        dir = strip_slash(run%restart)
+
+        ! 1. clock and cadences
+        call restart_read_clock(dir, run%clk, run%globe, run%dom)
+        if (run%clk%branched .and. run_has_instances(run)) then
+            call fesm_error("kryos_run::run_restore", "a branch from a restart bundle restores the clock only", &
+                            "[kryos] restart = "//trim(run%restart)//": the bundle time is not [clock] time_init = "// &
+                            year_label(clock_time(run%clk))//" yr. Set time_init to the bundle time to continue "// &
+                            "the run; a branch of the instances (their field times moved to time_init) is not "// &
+                            "implemented")
+        end if
+        t = clock_time(run%clk)
+
+        ! 2. the manifest
+        call restart_check_manifest(dir, run%globe, run%dom)
+
+        ! 3. the globe (yelmox bsl_startup, coefs_restart_read)
+        do j = 1, size(GLOBE_ORDER)
+            call restart_read_global(dir, run%globe, trim(GLOBE_ORDER(j)), run%clk)
+        end do
+
+        ! 4. the domains (domain_restart_read)
+        do d = 1, run%n_dom
+            associate (dom => run%dom(d))
+                do j = 1, size(RESTORE_ORDER)
+                    k = RESTORE_ORDER(j)
+                    if (.not. domain_present(dom, k)) cycle
+                    if (k == C_GEO) then                                      ! geo rebuilds on the restored ice, bsl
+                        call exchange(dom, "ice", "geo", t, run%clk, init=.true.)
+                        call bsl_to_geo(run, d, init=.true.)
+                    end if
+                    call restart_read_instance(dir, dom, k, run%clk)
+                end do
+
+                ! 5. reference check (check_isostasy_reference), hub (couple_yelmo_to_htopo)
+                call domain_check_reference(dom)
+                call domain_hub_update(dom, t, run%clk)
+            end associate
+        end do
+
+        call log_msg(LOG_INFO, "kryos_run", "restored from "//dir//" at time = "//year_label(t)//" yr")
+    end subroutine run_restore
+
+    logical function run_has_instances(run)
+        ! Does the run have any instance (globe or domain)?
+        type(run_t), target, intent(in) :: run
+        integer :: d, k
+
+        run_has_instances = forcing_present(run%globe%forcing) .or. geo_present(run%globe%geo)
+        do d = 1, run%n_dom
+            do k = 1, NCOMP
+                if (associated(domain_component(run%dom(d), k))) run_has_instances = .true.
+            end do
+        end do
+    end function run_has_instances
+
+    function strip_slash(dir) result(s)
+        ! A folder name without trailing slashes ("restart-500/" -> "restart-500").
+        character(len=*), intent(in) :: dir
+        character(len=:), allocatable :: s
+        s = trim(dir)
+        do while (len(s) > 1)
+            if (s(len(s):len(s)) /= "/") exit
+            s = s(1:len(s)-1)
+        end do
+    end function strip_slash
 
     ! =========================================================================
     ! One step (core-design 3.4; yelmox.f90:176-208)

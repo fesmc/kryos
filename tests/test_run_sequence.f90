@@ -26,20 +26,40 @@ program test_run_sequence
     ! reduction in the geo exports and in z_sl, the mirror hub at t, the
     ! climate's cadence (not run at t = 10, run at t = 20), every export at t;
     ! the output files of every stream, the timing table, the restart bundle
-    ! (clock only, C10); and that a restore with instances stops (C10).
+    ! (clock, manifest, every instance's field states and backend files).
     !
-    ! The run executes in tmp/test_run_sequence/ (its own input/ assembled from
-    ! links: kryos input/, the yelmo and chion defaults, fesm-utils
-    ! datasrc_defaults.nml, insol's orbital tables; maps/), in a child process
-    ! of this executable:
-    !     test_run_sequence.x run <par file>          (from the run directory)
+    ! C10, the restart round trip (core-design 3.3, 7; regression-design 1.2):
+    ! the same configuration run continuously 0 -> 80 (cont/, bundles at 40
+    ! and 80) and in two chunks, 0 -> 40 (chunk/c00/) and 40 -> 80 restored
+    ! from ../c00/restart-40 (chunk/c01/, [kryos] restart relative to the run
+    ! directory), as the gate stages a chunk run: every output record after 40
+    ! and the bundle at 80 must equal the continuous run bit for bit. Checked
+    ! with the comparison tool (tools/bin/kryos-compare.jl --chunks, Julia
+    ! project $KRYOS_TOOLS, default <repo>/tools; reported OPEN when Julia or
+    ! the project is not available) and, without it, on the ice, sea-level and
+    ! surface fields of the bundles and of the last output record. Yelmo's
+    ! pc_tau_max in the bundle at 80 (its maximum over the last 50 internal
+    ! steps, a window a restart does not hold) is reported OPEN, any other
+    ! difference fails; Yelmo calves with "equil" as the gate configurations
+    ! (with its default vm-m16 calving a Yelmo restart is not exact). A bundle
+    ! whose manifest does not match the run stops the restore (an instance
+    ! renamed in the par file, a backend changed in the manifest).
+    !
+    ! The runs execute in tmp/test_run_sequence/ (each run directory with its
+    ! own input/ assembled from links: kryos input/, the yelmo and chion
+    ! defaults, fesm-utils datasrc_defaults.nml, insol's orbital tables;
+    ! maps/), in child processes of this executable (one thread):
+    !     test_run_sequence.x run <par file>          cold start + checks
+    !     test_run_sequence.x plain <par file>        the run as the driver does it
+    !     test_run_sequence.x restored <par file>     a restored chunk + checks
     ! Built only with yelmo=1 fastisostasy=1 chion=1 (config/common.mk).
 
     use precision,       only: sp, dp
-    use ncio,            only: nc_create, nc_write_dim, nc_write, nc_read, nc_exists_var
+    use ncio,            only: nc_create, nc_write_dim, nc_write, nc_read, nc_exists_var, nc_size
+    use nml,             only: nml_has_group, nml_read
     use coords,          only: grid_class, grid_cdo_read_desc
     use fesm_fields,     only: field_state_t, fields_get
-    use fesm_clock,      only: clock_time, cadence_t_last
+    use fesm_clock,      only: clock_time, clock_time_elapsed, cadence_t_last
     use kryos_component, only: component_t
     use kryos_domain,    only: domain_component, NCOMP
     use kryos_run,       only: run_t, run_init, run_step, run_done, run_end
@@ -53,15 +73,28 @@ program test_run_sequence
     character(len=*), parameter :: DIR = "tmp/test_run_sequence/", PAR = "par.nml", DATA = "clim_grl.nc"
     integer, parameter :: NX = 106, NY = 181, NZ = 5
 
-    character(len=512) :: arg, root, repo
+    ! The restart round trip: cont 0 -> T_END, chunks 0 -> T_MID -> T_END.
+    real(dp), parameter :: T_MID = 40.0_dp, T_END = 80.0_dp
+    character(len=*), parameter :: CONT = "cont/", C00 = "chunk/c00/", C01 = "chunk/c01/", CMM = "chunk/mm/"
+
+    ! The instances of the par file (manifest groups, bundle files).
+    character(len=16), parameter :: INSTANCES(9) = [character(len=16) :: "forcing", "geo_glob", "ice_grl", &
+        "geo_grl", "climate_grl", "surface_grl", "shelf_grl", "ghf_grl", "sed_grl"]
+
+    character(len=512) :: arg, par_arg, root, repo
     integer :: nfail = 0
 
     call get_command_argument(1, arg)
-    if (trim(arg) == "run") then
-        call get_command_argument(2, arg)
-        call run_child(trim(arg))
+    select case (trim(arg))
+    case ("run", "plain", "restored")
+        call get_command_argument(2, par_arg)
+        select case (trim(arg))
+        case ("run");      call run_child(trim(par_arg))
+        case ("plain");    call plain_child(trim(par_arg))
+        case ("restored"); call restored_child(trim(par_arg))
+        end select
         stop 0
-    end if
+    end select
 
     call get_environment_variable("PWD", repo)
     call get_environment_variable("KRYOS_ICE_DATA", root)
@@ -72,13 +105,15 @@ program test_run_sequence
         stop 0
     end if
 
-    call setup_run_dir()
-    call check(child("run "//PAR, "run.log"), &
+    call sh("rm -rf '"//trim(repo)//"/"//DIR//"'")
+    call setup_run_dir("")
+    call write_par(trim(repo)//"/"//DIR//PAR, "None", 0.0_dp, 20.0_dp, 20.0_dp)
+    call check(child("", "run "//PAR, "run.log"), &
                "cold start + 2 steps + end with every phase 1 backend (child run, log "//DIR//"run.log)")
     call sh("grep -E '^  (ok|FAIL|OPEN)|^---' '"//trim(repo)//"/"//DIR//"run.log'")
-    call check(.not. child("run par_restore.nml", "restore.log", quiet=.true.) .and. &
-               in_file(trim(repo)//"/"//DIR//"restore.log", "milestone C10"), &
-               "[kryos] restart with instances stops in run_restore (restore of the instances is C10)")
+
+    call round_trip()
+    call manifest_mismatch()
 
     if (nfail > 0) then
         write(*,'(a,i0,a)') "test_run_sequence: FAILED (", nfail, " checks)"
@@ -126,6 +161,298 @@ contains
         end if
         write(*,'(a)') "test_run_sequence (run): OK"
     end subroutine run_child
+
+    subroutine plain_child(par_file)
+        ! The run as the driver does it (a continuous run, the first chunk).
+        character(len=*), intent(in) :: par_file
+        type(run_t), target :: run
+
+        call run_init(run, par_file)
+        do while (.not. run_done(run))
+            call run_step(run)
+        end do
+        call run_end(run)
+        write(*,'(a)') "test_run_sequence (plain): OK"
+    end subroutine plain_child
+
+    subroutine restored_child(par_file)
+        ! A chunk restored from a bundle at T_MID: the clock continues, the
+        ! instances' imports and exports are the bundle's, the rows that run
+        ! at the restore (ice -> geo, bsl -> geo, ice -> hub) ran; then the
+        ! chunk as the driver runs it.
+        character(len=*), intent(in) :: par_file
+
+        type(run_t), target :: run
+        integer :: n
+
+        call run_init(run, par_file)
+        write(*,'(a)') "--- after run_init (restored, t = 40)"
+        call check(run%clk%continued .and. clock_time(run%clk) == T_MID .and. clock_time_elapsed(run%clk) == T_MID, &
+                   "continuation at 40: the clock and the elapsed time run on")
+        associate (dom => run%dom(1), ice => run%dom(1)%ice%c, geo => run%dom(1)%geo%c, &
+                   cl => run%dom(1)%climate%c, sf => run%dom(1)%surface%c, fr => run%globe%forcing%c)
+            call check(cadence_t_last(ice%cadence, run%clk) == T_MID .and. cadence_t_last(cl%cadence, run%clk) == T_MID, &
+                       "cadences restored: every instance last ran at 40")
+            call check(published_at(ice%exports, ice%h_H_ice, T_MID) .and. ice%exports%f(ice%h_smb)%t0 == T_MID - 10.0_dp, &
+                       "ice exports as the bundle holds them (H_ice at 40, smb MEAN over [30, 40])")
+            call check(published_at(ice%imports, ice%hi_smb, T_MID - 10.0_dp) .and. &
+                       published_at(ice%imports, ice%hi_z_bed, T_MID), &
+                       "ice imports as received in the step to 40 (smb of 30, lag 1; z_bed of 40, lag 0)")
+            call check(get0(geo%imports, geo%hi_bsl) == get0(run%globe%geo%c%exports, run%globe%geo%c%h_bsl), &
+                       "geo bsl import = the restored global bsl")
+            call check(published_at(cl%exports, cl%h_tas, T_MID) .and. published_at(sf%exports, sf%h_smb, T_MID), &
+                       "climate and surface exports restored at 40")
+            call check(published_at(fr%imports, fr%hi_M_ice, T_MID - 10.0_dp), "forcing M_ice import restored (lag 1)")
+            call check(dom%hub_t == T_MID .and. all(get2(dom%hub_exports, dom%hh%h_H_ice) == get2(ice%exports, ice%h_H_ice)), &
+                       "hub rebuilt from the restored ice at 40")
+        end associate
+
+        n = 0
+        do while (.not. run_done(run))
+            call run_step(run)
+            n = n + 1
+        end do
+        call check(n == 4 .and. clock_time(run%clk) == T_END, "four steps to 80")
+        call run_end(run)
+        if (nfail > 0) then
+            write(*,'(a,i0,a)') "test_run_sequence (restored): FAILED (", nfail, " checks)"
+            error stop 1
+        end if
+        write(*,'(a)') "test_run_sequence (restored): OK"
+    end subroutine restored_child
+
+    ! =========================================================================
+    ! C10: restart round trip, manifest checks
+    ! =========================================================================
+
+    subroutine round_trip()
+        ! cont: 0 -> 80, bundles at 40, 80; chunk c00: 0 -> 40; chunk c01:
+        ! 40 -> 80 from ../c00/restart-40. Every record after 40 and the
+        ! bundle at 80 equal bit for bit.
+        character(len=:), allocatable :: d
+        logical :: ok
+
+        write(*,'(a)') "--- restart round trip: cont 0 -> 80 against chunks 0 -> 40 -> 80"
+        d = trim(repo)//"/"//DIR
+        call setup_run_dir(CONT)
+        call setup_run_dir(C00)
+        call setup_run_dir(C01)
+        call write_par(d//CONT//PAR, "None", 0.0_dp, T_END, T_MID)
+        call write_par(d//C00//PAR,  "None", 0.0_dp, T_MID, T_MID)
+        call write_par(d//C01//PAR,  "../c00/restart-40", T_MID, T_END, T_MID)
+
+        call check(child(CONT, "plain "//PAR, "run.log"), "continuous run 0 -> 80 ("//DIR//CONT//"run.log)")
+        call check(child(C00, "plain "//PAR, "run.log"), "chunk 0 -> 40 ("//DIR//C00//"run.log)")
+        ok = child(C01, "restored "//PAR, "run.log")
+        call sh("grep -E '^  (ok|FAIL|OPEN)|^---' '"//d//C01//"run.log'")
+        call check(ok, "chunk 40 -> 80 restored from ../c00/restart-40 ("//DIR//C01//"run.log)")
+        if (nfail > 0) return
+
+        call check_bundle(CONT//"restart-40")
+        call check_bundle(C01//"restart-80")
+
+        ! without the comparison tool: the state that carries the run
+        call same_2d(CONT//"restart-80/Greenland/ice_grl_exports.nc", C01//"restart-80/Greenland/ice_grl_exports.nc", &
+                     "H_ice", "bundle at 80: ice H_ice export")
+        call same_2d(CONT//"restart-80/Greenland/ice_grl_exports.nc", C01//"restart-80/Greenland/ice_grl_exports.nc", &
+                     "z_srf", "bundle at 80: ice z_srf export")
+        call same_2d(CONT//"restart-80/Greenland/surface_grl_exports.nc", &
+                     C01//"restart-80/Greenland/surface_grl_exports.nc", "smb", "bundle at 80: surface smb export")
+        call same_2d(CONT//"restart-80/Greenland/geo_grl_exports.nc", C01//"restart-80/Greenland/geo_grl_exports.nc", &
+                     "dz_bed", "bundle at 80: geo dz_bed export")
+        call same_0d(CONT//"restart-80/geo_glob_exports.nc", C01//"restart-80/geo_glob_exports.nc", "bsl", &
+                     "bundle at 80: global bsl")
+        call same_0d(CONT//"restart-80/forcing_exports.nc", C01//"restart-80/forcing_exports.nc", "beta", &
+                     "bundle at 80: coefficient beta (ice-mass feedback)")
+        call same_record(CONT//"ice_grl.nc", C01//"ice_grl.nc", "H_ice", T_END, "output ice_grl.nc H_ice at 80")
+        call same_record(CONT//"surface_grl.nc", C01//"surface_grl.nc", "smb", T_END, "output surface_grl.nc smb at 80")
+
+        call compare_tool()
+    end subroutine round_trip
+
+    subroutine compare_tool()
+        ! tools/bin/kryos-compare.jl --chunks: every file of cont against the
+        ! chunk folders c00, c01 (records after their start) and the bundles
+        ! at 40 and 80, class E. Julia project: $KRYOS_TOOLS, else <repo>/tools.
+        character(len=512) :: tools
+        character(len=:), allocatable :: d, cmd
+        integer :: u, es, es2
+        character(len=*), parameter :: PC_TAU_MAX = "c01/restart-80/Greenland/ice_grl_restart.nc:pc_tau_max"
+
+        d = trim(repo)//"/"//DIR
+        call get_environment_variable("KRYOS_TOOLS", tools)
+        if (len_trim(tools) == 0) tools = trim(repo)//"/tools"
+        call execute_command_line("julia --project='"//trim(tools)//"' -e 'using KryosTools' > /dev/null 2>&1", &
+                                  exitstat=es)
+        if (es /= 0) then
+            call note(.false., "comparison tool not run: Julia or the project "//trim(tools)// &
+                      " is not available (set KRYOS_TOOLS to a tools/ with an instantiated project)")
+            return
+        end if
+
+        open(newunit=u, file=d//"gate.toml", status="replace", action="write")
+        write(u,'(a)') 'gate = "test_run_sequence"', 'chunks = [0.0, 40.0, 80.0]', 'restart_times = [40.0, 80.0]', &
+                       '[instances]', 'domain = "Greenland"', 'ice = "ice_grl"', 'geo = "geo_grl"', &
+                       'climate = "climate_grl"', 'surface = "surface_grl"', 'shelf = "shelf_grl"', &
+                       'geothermal = "ghf_grl"', 'sediments = "sed_grl"', 'forcing = "forcing"', 'geo_glob = "geo_glob"'
+        close(u)
+        cmd = "cd '"//d//"' && julia --project='"//trim(tools)//"' '"//trim(repo)//"/tools/bin/kryos-compare.jl' "// &
+              "cont chunk --chunks --gate gate.toml --md compare.md > compare.log 2>&1"
+        call execute_command_line(cmd, exitstat=es)
+        if (es == 1) then
+            ! Yelmo's pc_tau_max is the maximum over its last 50 internal steps,
+            ! a diagnostic whose window the restart does not hold: refilled after
+            ! 50 steps (the gate's 500-yr chunk), not in this test's 40 yr. A
+            ! failure of any other variable fails the check.
+            call execute_command_line("grep '| fail |' '"//d//"compare.md' | grep -v '"//PC_TAU_MAX//"' | grep -q .", &
+                                      exitstat=es2)
+            if (es2 /= 0) then
+                call note(.false., "kryos-compare --chunks: only "//PC_TAU_MAX//" differs (Yelmo's running "// &
+                          "maximum over 50 internal steps, not restored; refilled in a 500-yr chunk)")
+                es = 0
+            end if
+        end if
+        if (es /= 0) call sh("grep -E '^# |^- |^## |\| fail \|' '"//d//"compare.md' | head -n 60; "// &
+                             "tail -n 20 '"//d//"compare.log'")
+        call check(es == 0, "kryos-compare --chunks: every record after 40 and the bundles at 40, 80 equal to cont "// &
+                   "(report "//DIR//"compare.md)")
+    end subroutine compare_tool
+
+    subroutine manifest_mismatch()
+        ! A restore whose bundle does not match the run stops, naming the
+        ! instance: (1) the run's sediments instance renamed (not in the
+        ! bundle); (2) the bundle's manifest with another backend for ghf_grl.
+        character(len=:), allocatable :: d
+
+        write(*,'(a)') "--- manifest checks"
+        d = trim(repo)//"/"//DIR
+        call setup_run_dir(CMM)
+        call sh("cp -R '"//d//C00//"restart-40' '"//d//CMM//"bad-40'")
+        call manifest_edit(d//CMM//"bad-40/manifest.nml", "ghf_grl", "backend", "other")
+
+        call write_par(d//CMM//"rename.nml", "../c00/restart-40", T_MID, T_END, T_MID, sed="sed2_grl")
+        call check(.not. child(CMM, "plain rename.nml", "rename.log", quiet=.true.) .and. &
+                   in_file(d//CMM//"rename.log", "sed2_grl") .and. in_file(d//CMM//"rename.log", "not in the restart bundle"), &
+                   "restore stops: instance sed2_grl of the run is not in the bundle ("//DIR//CMM//"rename.log)")
+
+        call write_par(d//CMM//"backend.nml", "bad-40", T_MID, T_END, T_MID)
+        call check(.not. child(CMM, "plain backend.nml", "backend.log", quiet=.true.) .and. &
+                   in_file(d//CMM//"backend.log", "ghf_grl") .and. in_file(d//CMM//"backend.log", "backend `data` in the run"), &
+                   "restore stops: ghf_grl has backend `other` in the bundle ("//DIR//CMM//"backend.log)")
+    end subroutine manifest_mismatch
+
+    subroutine manifest_edit(file, group, key, value)
+        ! Set `key` of `group` in a manifest to `value` (the line is replaced).
+        character(len=*), intent(in) :: file, group, key, value
+
+        character(len=1000), allocatable :: lines(:)
+        character(len=1000) :: line
+        logical :: inside
+        integer :: u, ios, i
+
+        allocate(lines(0))
+        open(newunit=u, file=file, status="old", action="read")
+        do
+            read(u, '(a)', iostat=ios) line
+            if (ios /= 0) exit
+            lines = [character(len=1000) :: lines, line]
+        end do
+        close(u)
+        inside = .false.
+        do i = 1, size(lines)
+            if (trim(adjustl(lines(i))) == "&"//group) inside = .true.
+            if (trim(adjustl(lines(i))) == "/") inside = .false.
+            if (inside .and. index(adjustl(lines(i)), key//" ") == 1) lines(i) = "    "//key//" = '"//value//"'"
+        end do
+        open(newunit=u, file=file, status="replace", action="write")
+        do i = 1, size(lines)
+            write(u, '(a)') trim(lines(i))
+        end do
+        close(u)
+    end subroutine manifest_edit
+
+    subroutine check_bundle(bundle)
+        ! A bundle (path relative to tmp/test_run_sequence/, or to the current
+        ! run directory in a child): clock file, manifest with every instance,
+        ! the field states of every instance, the backend files of the
+        ! stateful ones (and none for the stateless climate and data).
+        character(len=*), intent(in) :: bundle
+
+        character(len=:), allocatable :: b, sub
+        character(len=64) :: val
+        integer :: i
+        logical :: ok
+
+        b = bundle
+        if (.not. exists(b//"/manifest.nml")) b = trim(repo)//"/"//DIR//bundle
+        call check(exists(b//"/clock_restart.nc") .and. exists(b//"/manifest.nml"), bundle//": clock file and manifest")
+        if (.not. exists(b//"/manifest.nml")) return
+
+        ok = nml_has_group(b//"/manifest.nml", "bundle")
+        do i = 1, size(INSTANCES)
+            ok = ok .and. nml_has_group(b//"/manifest.nml", trim(INSTANCES(i)))
+            sub = "/Greenland/"
+            if (i <= 2) sub = "/"
+            ok = ok .and. exists(b//sub//trim(INSTANCES(i))//"_imports.nc") .and. &
+                 exists(b//sub//trim(INSTANCES(i))//"_exports.nc")
+        end do
+        call check(ok, bundle//": manifest groups and field states of the 9 instances")
+        val = ""
+        call nml_read(b//"/manifest.nml", "ice_grl", "backend", val)
+        call check(trim(val) == "yelmo", bundle//": manifest ice_grl backend = yelmo")
+        ok = exists(b//"/forcing_alpha_restart.nc") .and. exists(b//"/forcing_beta_restart.nc") .and. &
+             .not. exists(b//"/forcing_dTo_restart.nc") .and. exists(b//"/geo_glob_restart.nc")
+        do i = 3, size(INSTANCES)
+            if (any(INSTANCES(i) == [character(len=16) :: "climate_grl", "ghf_grl", "sed_grl"])) then
+                ok = ok .and. .not. exists(b//"/Greenland/"//trim(INSTANCES(i))//"_restart.nc")
+            else
+                ok = ok .and. exists(b//"/Greenland/"//trim(INSTANCES(i))//"_restart.nc")
+            end if
+        end do
+        call check(ok, bundle//": backend restart files of the stateful instances only")
+    end subroutine check_bundle
+
+    subroutine same_2d(fa, fb, var, what)
+        ! A 2D field of two fields restart files, bitwise.
+        character(len=*), intent(in) :: fa, fb, var, what
+        real(dp) :: a(NX,NY), b(NX,NY)
+        call nc_read(trim(repo)//"/"//DIR//fa, var, a)
+        call nc_read(trim(repo)//"/"//DIR//fb, var, b)
+        call check(all(a == b), what//": chunk = cont bitwise ("//trim(itoa(count(a /= b)))//" cells differ)")
+    end subroutine same_2d
+
+    subroutine same_0d(fa, fb, var, what)
+        ! A 0-D field of two fields restart files, bitwise.
+        character(len=*), intent(in) :: fa, fb, var, what
+        real(dp) :: a(1), b(1)
+        call nc_read(trim(repo)//"/"//DIR//fa, var, a)
+        call nc_read(trim(repo)//"/"//DIR//fb, var, b)
+        call check(a(1) == b(1), what//": chunk = cont bitwise")
+    end subroutine same_0d
+
+    subroutine same_record(fa, fb, var, t, what)
+        ! The record at time t of a 2D output variable in two files, bitwise.
+        character(len=*), intent(in) :: fa, fb, var, what
+        real(dp),         intent(in) :: t
+        real(sp) :: a(NX,NY,1), b(NX,NY,1)
+        call nc_read(trim(repo)//"/"//DIR//fa, var, a, start=[1,1,record(fa, t)], count=[NX,NY,1])
+        call nc_read(trim(repo)//"/"//DIR//fb, var, b, start=[1,1,record(fb, t)], count=[NX,NY,1])
+        call check(all(a == b), what//": chunk = cont bitwise ("//trim(itoa(count(a /= b)))//" cells differ)")
+    end subroutine same_record
+
+    integer function record(f, t) result(n)
+        ! The record of time t in an output file (0 if absent).
+        character(len=*), intent(in) :: f
+        real(dp),         intent(in) :: t
+        real(dp), allocatable :: tt(:)
+        integer :: i
+        allocate(tt(nc_size(trim(repo)//"/"//DIR//f, "time")))
+        call nc_read(trim(repo)//"/"//DIR//f, "time", tt)
+        n = 0
+        do i = 1, size(tt)
+            if (tt(i) == t) n = i
+        end do
+    end function record
 
     subroutine check_init(run)
         ! After run_init: instances, rows, the hub and the imports at t0, the
@@ -316,7 +643,7 @@ contains
         do i = 1, size(files)
             call check(exists(trim(files(i))), "output "//trim(files(i)))
         end do
-        call check(exists("restart-20/clock_restart.nc"), "restart bundle restart-20 (clock only until C10)")
+        call check_bundle("restart-20")
         call nc_read("Greenland_hub.nc", "time", tt)
         call check(all(tt == [0.0_dp, 10.0_dp, 20.0_dp]), "hub file at t = 0, 10, 20 (output at the end of each step)")
         call check(nc_exists_var("forcing_ts.nc", "coef_dTo") .and. nc_exists_var("ice_grl_ts.nc", "M_ice"), &
@@ -327,12 +654,16 @@ contains
     ! Run directory, par files, data
     ! =========================================================================
 
-    subroutine setup_run_dir()
-        ! tmp/test_run_sequence/: input/ (links), maps, the climate data, par files.
+    subroutine setup_run_dir(sub)
+        ! A run directory tmp/test_run_sequence/<sub>: input/ (links), maps,
+        ! the climate data (written once, in tmp/test_run_sequence/, linked
+        ! from the others). The par files are written by the caller.
+        character(len=*), intent(in) :: sub
+
         character(len=:), allocatable :: d
 
-        d = trim(repo)//"/"//DIR
-        call sh("rm -rf '"//d//"' && mkdir -p '"//d//"input'")
+        d = trim(repo)//"/"//DIR//sub
+        call sh("mkdir -p '"//d//"input'")
         call sh("ln -s '"//trim(repo)//"/maps' '"//d//"maps'")
         call sh("for f in '"//trim(repo)//"'/input/*; do ln -s ""$f"" '"//d//"input/'; done")
         call sh("for f in '"//trim(repo)//"'/yelmo/input/*.nml '"//trim(repo)//"'/yelmo/input/*.md; do "// &
@@ -340,9 +671,11 @@ contains
         call sh("ln -sf '"//trim(repo)//"/chion/input/chion_defaults.nml' '"//d//"input/'")
         call sh("ln -sf '"//trim(repo)//"/fesm-utils/par/datasrc_defaults.nml' '"//d//"input/'")
         call sh("for f in '"//trim(repo)//"'/insol/input/LA2004.*.txt; do ln -sf ""$f"" '"//d//"input/'; done")
-        call write_data(d//DATA)
-        call write_par(d//PAR, "None")
-        call write_par(d//"par_restore.nml", "restart-20")
+        if (len(sub) == 0) then
+            call write_data(d//DATA)
+        else
+            call sh("ln -s '"//trim(repo)//"/"//DIR//DATA//"' '"//d//DATA//"'")
+        end if
     end subroutine setup_run_dir
 
     subroutine write_data(file)
@@ -385,27 +718,33 @@ contains
         call nc_write(file, "so",    s,                dim1="xc", dim2="yc", dim3="depth")
     end subroutine write_data
 
-    subroutine write_par(file, restart)
+    subroutine write_par(file, restart, time_init, time_end, dt_rst, sed)
         ! The Greenland par file of the run: kryos groups (core-design 5), the
         ! hub's groups (ice_data), and the backend groups (yelmox_Greenland.nml
-        ! values where they matter; library defaults otherwise).
+        ! values where they matter; library defaults otherwise). The clock
+        ! runs time_init -> time_end with restart bundles every dt_rst (and at
+        ! time_end); `sed` renames the sediments instance (default sed_grl).
         character(len=*), intent(in) :: file, restart
+        real(dp),         intent(in) :: time_init, time_end, dt_rst
+        character(len=*), intent(in), optional :: sed
 
-        character(len=:), allocatable :: topo, basins
+        character(len=:), allocatable :: topo, basins, sed_name
         integer :: u
 
         topo   = trim(root)//"/{domain}/{grid_name}/{grid_name}_TOPO-M17-v5.nc"
         basins = trim(root)//"/{domain}/{grid_name}/{grid_name}_BASINS-nasa.nc"
+        sed_name = "sed_grl"
+        if (present(sed)) sed_name = sed
 
         open(newunit=u, file=file, status="replace", action="write")
         call w(u, [character(len=400) :: &
             "&kryos", "  domains = 'Greenland'", "  restart = '"//restart//"'", "  restart_out = 'out_rst'", &
             "  write_lossless = True", "  log_level = 'info'", "/", &
-            "&clock", "  method = 'const'", "  time_const = 0.0", "  time_init = 0.0", "  time_end = 20.0", &
-            "  dtt = 10.0", "/", &
+            "&clock", "  method = 'const'", "  time_const = 0.0", "  time_init = "//ftoa(time_init), &
+            "  time_end = "//ftoa(time_end), "  dtt = 10.0", "/", &
             "&out_2D", "  method = 'const'", "  dt = 10.0", "/", &
             "&out_1D", "  method = 'const'", "  dt = 10.0", "/", &
-            "&out_rst", "  method = 'const'", "  dt = 20.0", "/", &
+            "&out_rst", "  method = 'const'", "  dt = "//ftoa(dt_rst), "/", &
             "&globe", "  forcing = 'forcing'", "  geo = 'geo_glob'", "/", &
             "&forcing", "  backend = 'tsgen'", "  clock = 'forcing'", "  coefs = 'alpha' 'dTo' 'beta'", &
             "  out_1D = 'out_1D'", "/", &
@@ -414,7 +753,7 @@ contains
             "&Greenland", "  grid_hub = 'GRL-16KM'", "  topo = 'topo_grl'", "  regions = 'regions_grl'", &
             "  basins = 'basin'", "  out_2D = 'out_2D'", "  ice = 'ice_grl'", "  geo = 'geo_grl'", &
             "  climate = 'climate_grl'", "  surface = 'surface_grl'", "  shelf = 'shelf_grl'", &
-            "  geothermal = 'ghf_grl'", "  sediments = 'sed_grl'", "/", &
+            "  geothermal = 'ghf_grl'", "  sediments = '"//sed_name//"'", "/", &
             "&topo_grl", "  path = '"//topo//"'", "  remove_lakes = True", "  H_ice_min = 1.0", &
             "  grad_lim_zb = 0.5", "/", &
             "&regions_grl", "  layers = 'basin'", "  path_basin = '"//basins//"'", "/", &
@@ -428,7 +767,7 @@ contains
             "&shelf_grl", "  backend = 'marine_shelf'", "  marine_shelf = 'marine_shelf'", "  out_2D = 'out_2D'", "/", &
             "&ghf_grl", "  backend = 'data'", "  dt = -1.0", "  Q_geo = 'ghf_const'", "  out_2D = 'out_2D'", "/", &
             "&ghf_const", "  mode = 'const'", "  value = 0.05", "/", &
-            "&sed_grl", "  backend = 'data'", "  dt = -1.0", "  H_sed = 'sed_none'", "/", &
+            "&"//sed_name, "  backend = 'data'", "  dt = -1.0", "  H_sed = 'sed_none'", "/", &
             "&sed_none", "  mode = 'const'", "  value = 0.0", "/"])
         ! forcing coefficients
         call w(u, [character(len=400) :: &
@@ -449,9 +788,12 @@ contains
         call field(u, "v_t_alt", "t_alt", "K"); call field(u, "v_p_alt", "p_alt", "K")
         call field(u, "v_zs", "zs", "m");       call field(u, "v_to", "to", "K")
         call field(u, "v_so", "so", "psu")
-        ! Yelmo: library defaults, the reference data loads off, masks without named regions
+        ! Yelmo: library defaults, the reference data loads off, masks without named regions;
+        ! calving "equil" as yelmox_Greenland (with the default vm-m16 calving a Yelmo restart is
+        ! not exact: the run diverges in the first step after the restore)
         call w(u, [character(len=400) :: &
-            "&yelmo", "  nz_aa = 6", "/", "&ytopo", "/", "&ycalv", "/", "&ydyn", "  solver = 'diva'", "/", &
+            "&yelmo", "  nz_aa = 6", "/", "&ytopo", "/", &
+            "&ycalv", "  calv_flt_method = 'equil'", "  calv_grnd_method = 'equil'", "/", "&ydyn", "  solver = 'diva'", "/", &
             "&ytill", "/", "&yhyd", "/", "&ymat", "/", "&ytrc", "/", "&ytherm", "/", &
             "&yelmo_masks", "  basins = 'None'", "  mask_ice_dynamic = 'all'", "  mask_rmse = 'all'", "/", &
             "&yelmo_init_topo", "/", &
@@ -521,23 +863,26 @@ contains
     ! Helpers
     ! =========================================================================
 
-    logical function child(args, log, quiet)
-        ! This executable with `args`, run in the run directory; .true. on exit 0.
-        ! A failure shows the end of the log unless quiet.
-        character(len=*), intent(in) :: args, log
+    logical function child(sub, args, log, quiet)
+        ! This executable with `args`, run in the run directory
+        ! tmp/test_run_sequence/<sub> on one thread (bitwise comparable runs);
+        ! .true. on exit 0. A failure shows the end of the log unless quiet.
+        character(len=*), intent(in) :: sub, args, log
         logical,          intent(in), optional :: quiet
         character(len=512) :: exe
+        character(len=:), allocatable :: d
         integer :: es
         logical :: q
 
         call get_command_argument(0, exe)
         if (exe(1:1) /= "/") exe = trim(repo)//"/"//trim(exe)
-        call execute_command_line("cd '"//trim(repo)//"/"//DIR//"' && '"//trim(exe)//"' "//args//" > "//log//" 2>&1", &
-                                  exitstat=es)
+        d = trim(repo)//"/"//DIR//sub
+        call execute_command_line("cd '"//d//"' && OMP_NUM_THREADS=1 '"//trim(exe)//"' "//args//" > "//log// &
+                                  " 2>&1", exitstat=es)
         child = es == 0
         q = .false.
         if (present(quiet)) q = quiet
-        if (.not. (child .or. q)) call sh("tail -n 30 '"//trim(repo)//"/"//DIR//log//"'")
+        if (.not. (child .or. q)) call sh("tail -n 30 '"//d//log//"'")
     end function child
 
     logical function in_file(file, text)
@@ -580,6 +925,13 @@ contains
         character(len=*), intent(in) :: file
         inquire(file=file, exist=exists)
     end function exists
+
+    function ftoa(x) result(s)
+        ! A time [yr] for a par file: 40.0
+        real(dp), intent(in) :: x
+        character(len=24) :: s
+        write(s, '(f0.1)') x
+    end function ftoa
 
     function itoa(i) result(s)
         integer, intent(in) :: i

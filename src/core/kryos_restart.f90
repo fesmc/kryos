@@ -1,0 +1,552 @@
+module kryos_restart
+    ! Restart bundles (core-design sections 3.3, 7): the folder of one restart
+    ! time, its files and its manifest. The run writes a bundle when its
+    ! restart schedule is due (always at time_end) and restores from one when
+    ! [kryos] restart names it; the order of the restore, with the exchanges
+    ! between the instances, is the run sequence's (kryos_run_sequence).
+    !
+    !     restart-<time>/                     <time>: year_label, e.g. restart-500
+    !       clock_restart.nc                  the clock and the cadence of every instance that steps
+    !       <inst>_imports.nc  <inst>_exports.nc      every global instance: its field states
+    !       <inst>_*restart*.nc                         a global instance's backend files (stateful backends)
+    !       <domain>/
+    !         <inst>_imports.nc  <inst>_exports.nc    every instance of the domain
+    !         <inst>_*restart*.nc                       its backend files (stateful backends)
+    !       manifest.nml                      [bundle] + one group per instance; written last
+    !
+    ! The field states (fesm_fields_restart_write/read, one file per state)
+    ! are the core's: a published import or export survives the restart
+    ! without the adapter (adapters-design A5); the backend files are the
+    ! adapter's (restart_write/read through the component wrappers, nothing for
+    ! a backend without state). The hub is not stored: it is derived from the
+    ! restored ice. Write order = restore order: the globe (forcing, geo),
+    ! then each domain's instances in RESTORE_ORDER (ice, geo, climate,
+    ! surface, shelf, geothermal, sediments).
+    !
+    ! Restore of one instance (restart_read_instance, restart_read_global):
+    ! <comp>_restart_read, then its imports and exports from the bundle, then
+    ! <comp>_init_state(PASS_RESTART), which re-derives the backend's internal
+    ! state from the restored state and puts no export (the exports are the
+    ! ones the bundle holds, bit for bit).
+    !
+    ! manifest.nml (read back with nml): group [bundle] (time, ticks,
+    ! ticks_per_year, kryos_git, fesm_utils_git, domains) and one group per
+    ! instance, named as the instance (scope, domain, component, backend,
+    ! grid, files, git). A restore checks the run's instances against it:
+    ! the same instances, each with the same scope, domain, component,
+    ! backend and grid, or it stops naming the instance (a changed cadence is
+    ! allowed and logged by fesm_clock).
+    !
+    ! Folders are made and listed with the shell (mkdir -p, ls), as yelmox.
+
+    use precision,        only: dp
+    use iso_fortran_env,  only: int64
+    use fesm_log,         only: LOG_INFO, log_msg, fesm_error, to_str
+    use fesm_fields,      only: fields_restart_write, fields_restart_read
+    use fesm_clock,       only: clock_t, clock_time, clock_restart_write, clock_restart_read, &
+                                cadence_restart_write, cadence_restart_read, cadence_dt_years
+    use nml,              only: nml_read, nml_has_group, nml_group_names, nml_group_len
+    use kryos_component,  only: component_t, PASS_RESTART, NAME_LEN, PATH_LEN
+    use kryos_globe,      only: globe_t, globe_component, globe_pass, globe_restart_write, globe_restart_read
+    use kryos_domain,     only: domain_t, domain_component, domain_pass, domain_restart_write, &
+                                domain_restart_read, RESTORE_ORDER, NCOMP
+    use kryos_build_info, only: GIT_KRYOS, LIB_NAME, LIB_GIT
+
+    implicit none
+
+    private
+    public :: GLOBE_ORDER, year_label, restart_dir
+    public :: restart_write, restart_read_clock, restart_check_manifest
+    public :: restart_read_global, restart_read_instance
+
+    character(len=*), parameter :: CLOCK_FILE    = "clock_restart.nc"
+    character(len=*), parameter :: MANIFEST_FILE = "manifest.nml"
+    character(len=*), parameter :: BUNDLE_GROUP  = "bundle"
+    character(len=*), parameter :: LS_FILE       = ".kryos_ls"      ! scratch listing, removed after use
+
+    ! The global instances in write and restore order (core-design 3.3).
+    character(len=8), parameter :: GLOBE_ORDER(2) = [character(len=8) :: "forcing", "geo"]
+
+    ! The keys of an instance group the restore checks, in this order.
+    character(len=9), parameter :: CHECK_KEYS(5) = [character(len=9) :: "scope", "domain", "component", &
+                                                    "backend", "grid"]
+
+    type :: entry_t                                 ! one instance of the run, as the manifest lists it
+        character(len=NAME_LEN) :: name = "", scope = "", domain = "", component = "", backend = "", grid = ""
+        character(len=PATH_LEN) :: dir = ""         ! its folder in the bundle (the bundle, or <domain>/)
+        character(len=64)       :: git = ""
+        character(len=PATH_LEN), allocatable :: files(:)
+    end type entry_t
+
+contains
+
+    ! =========================================================================
+    ! Names
+    ! =========================================================================
+
+    function year_label(t) result(s)
+        ! `t` [yr] as the shortest decimal that reads back to the same value:
+        ! 15000, 0.5, -21000 (restart-<time> folder names, log lines).
+        real(dp), intent(in) :: t
+        character(len=:), allocatable :: s
+
+        character(len=64) :: buf, fmt
+        real(dp) :: x
+        integer  :: nd
+
+        buf = ""
+        do nd = 0, 17
+            write(fmt, '(a,i0,a)') "(f0.", nd, ")"
+            write(buf, fmt) t
+            read(buf, *) x
+            if (x == t) exit
+        end do
+        s = trim(adjustl(buf))
+        if (s(1:1) == ".") s = "0"//s                      ! gfortran f0.d drops the leading zero
+        if (len(s) > 1) then
+            if (s(1:2) == "-.") s = "-0"//s(2:)
+        end if
+        if (s(len(s):len(s)) == ".") s = s(1:len(s)-1)
+        if (s == "-0") s = "0"
+    end function year_label
+
+    function restart_dir(out_dir, t) result(dir)
+        ! The bundle folder of time t under out_dir ("./" or ending in "/").
+        character(len=*), intent(in) :: out_dir
+        real(dp),         intent(in) :: t
+        character(len=:), allocatable :: dir
+        dir = trim(out_dir)//"restart-"//year_label(t)
+    end function restart_dir
+
+    ! =========================================================================
+    ! Write
+    ! =========================================================================
+
+    subroutine restart_write(dir, clk, globe, dom)
+        ! The whole bundle at the clock's time into `dir` (replaced if it
+        ! exists): the clock and the cadences, the globe's instances, each
+        ! domain's instances in RESTORE_ORDER, the manifest last (a bundle
+        ! without one is incomplete).
+        character(len=*),       intent(in)    :: dir
+        type(clock_t),          intent(in)    :: clk
+        type(globe_t),  target, intent(inout) :: globe
+        type(domain_t), target, intent(inout) :: dom(:)
+
+        type(entry_t), allocatable :: ent(:)
+        class(component_t), pointer :: c
+        character(len=:), allocatable :: ddir, file
+        real(dp) :: t
+        integer  :: d, j
+
+        t = clock_time(clk)
+        call shell("rm -rf '"//dir//"' && mkdir -p '"//dir//"'", "the bundle folder "//dir)
+        do d = 1, size(dom)
+            call shell("mkdir -p '"//dir//"/"//trim(dom(d)%name)//"'", "the bundle folder "//dir)
+        end do
+
+        ! clock and cadences
+        file = dir//"/"//CLOCK_FILE
+        call clock_restart_write(clk, file)
+        do j = 1, size(GLOBE_ORDER)
+            c => globe_component(globe, trim(GLOBE_ORDER(j)))
+            if (cadenced(c, clk)) call cadence_restart_write(c%cadence, file)
+        end do
+        do d = 1, size(dom)
+            do j = 1, NCOMP
+                c => domain_component(dom(d), RESTORE_ORDER(j))
+                if (cadenced(c, clk)) call cadence_restart_write(c%cadence, file)
+            end do
+        end do
+
+        ! the instances
+        allocate(ent(0))
+        do j = 1, size(GLOBE_ORDER)
+            c => globe_component(globe, trim(GLOBE_ORDER(j)))
+            if (.not. associated(c)) cycle
+            ent = [ent, entry_of(c, dir)]
+            call backend_write(ent(size(ent)), globe=globe, which=trim(GLOBE_ORDER(j)), t=t)
+            call fields_write(c, ent(size(ent)))
+        end do
+        do d = 1, size(dom)
+            ddir = dir//"/"//trim(dom(d)%name)
+            do j = 1, NCOMP
+                c => domain_component(dom(d), RESTORE_ORDER(j))
+                if (.not. associated(c)) cycle
+                ent = [ent, entry_of(c, ddir)]
+                call backend_write(ent(size(ent)), dom=dom(d), k=RESTORE_ORDER(j), t=t)
+                call fields_write(c, ent(size(ent)))
+            end do
+        end do
+
+        call manifest_write(dir, clk, dom, ent)
+        call log_msg(LOG_INFO, "kryos_restart", "restart bundle "//dir//": "//to_str(size(ent))//" instances")
+    end subroutine restart_write
+
+    function entry_of(c, dir) result(e)
+        ! The manifest entry of an instance written into the folder `dir`.
+        class(component_t), intent(in) :: c
+        character(len=*),   intent(in) :: dir
+        type(entry_t) :: e
+
+        e%name      = c%name
+        e%scope     = c%scope
+        e%domain    = c%domain
+        e%component = c%kind
+        e%backend   = c%backend
+        e%grid      = c%grid
+        e%dir       = dir
+        e%git       = backend_git(c)
+        allocate(e%files(0))
+    end function entry_of
+
+    subroutine backend_write(e, t, globe, which, dom, k)
+        ! The backend's restart_write of one instance (globe: `which`; domain:
+        ! component k); the files it added to the folder are recorded in e.
+        type(entry_t),    intent(inout)           :: e
+        real(dp),         intent(in)              :: t
+        type(globe_t),    intent(inout), optional :: globe
+        character(len=*), intent(in),    optional :: which
+        type(domain_t),   intent(inout), optional :: dom
+        integer,          intent(in),    optional :: k
+
+        character(len=PATH_LEN), allocatable :: before(:), after(:)
+        integer :: i
+
+        before = dir_list(trim(e%dir))
+        if (present(globe)) then
+            call globe_restart_write(globe, which, trim(e%dir), t)
+        else
+            call domain_restart_write(dom, k, trim(e%dir), t)
+        end if
+        after = dir_list(trim(e%dir))
+        do i = 1, size(after)
+            if (any(before == after(i))) cycle
+            e%files = [character(len=PATH_LEN) :: e%files, after(i)]
+        end do
+    end subroutine backend_write
+
+    subroutine fields_write(c, e)
+        ! The imports and exports of an instance: <inst>_imports.nc, <inst>_exports.nc.
+        class(component_t), intent(in)    :: c
+        type(entry_t),      intent(inout) :: e
+
+        call fields_restart_write(c%imports, fields_file(e%dir, c%name, "imports"))
+        call fields_restart_write(c%exports, fields_file(e%dir, c%name, "exports"))
+        e%files = [character(len=PATH_LEN) :: trim(c%name)//"_imports.nc", trim(c%name)//"_exports.nc", e%files]
+    end subroutine fields_write
+
+    function fields_file(dir, name, which) result(file)
+        character(len=*), intent(in) :: dir, name, which
+        character(len=:), allocatable :: file
+        file = trim(dir)//"/"//trim(name)//"_"//which//".nc"
+    end function fields_file
+
+    subroutine manifest_write(dir, clk, dom, ent)
+        ! manifest.nml: [bundle], then one group per instance in write order.
+        character(len=*), intent(in) :: dir
+        type(clock_t),    intent(in) :: clk
+        type(domain_t),   intent(in) :: dom(:)
+        type(entry_t),    intent(in) :: ent(:)
+
+        character(len=:), allocatable :: s
+        integer :: u, i, d
+
+        open(newunit=u, file=dir//"/"//MANIFEST_FILE, status="replace", action="write")
+        write(u, '(a)') "! kryos restart bundle (core-design 7): written by kryos_restart, read back at a restore"
+        write(u, '(a)') "&"//BUNDLE_GROUP
+        call kv(u, "time",           year_label(clock_time(clk)), quote=.false.)
+        call kv(u, "ticks",          int_str(clk%n),              quote=.false.)
+        call kv(u, "ticks_per_year", int_str(clk%tpy),            quote=.false.)
+        call kv(u, "kryos_git",      GIT_KRYOS)
+        call kv(u, "fesm_utils_git", lib_version("fesm-utils"))
+        s = ""
+        do d = 1, size(dom)
+            s = s//' "'//trim(dom(d)%name)//'"'
+        end do
+        if (size(dom) == 0) s = ' ""'
+        call kv(u, "domains", s(2:), quote=.false.)
+        write(u, '(a)') "/"
+        do i = 1, size(ent)
+            write(u, '(a)') ""
+            write(u, '(a)') "&"//trim(ent(i)%name)
+            call kv(u, "scope",     ent(i)%scope)
+            call kv(u, "domain",    ent(i)%domain)
+            call kv(u, "component", ent(i)%component)
+            call kv(u, "backend",   ent(i)%backend)
+            call kv(u, "grid",      ent(i)%grid)
+            s = ""
+            do d = 1, size(ent(i)%files)
+                s = s//' "'//trim(ent(i)%files(d))//'"'
+            end do
+            call kv(u, "files",     s(2:), quote=.false.)
+            call kv(u, "git",       ent(i)%git)
+            write(u, '(a)') "/"
+        end do
+        close(u)
+
+    contains
+
+        subroutine kv(u, key, val, quote)
+            integer,          intent(in) :: u
+            character(len=*), intent(in) :: key, val
+            logical,          intent(in), optional :: quote
+            logical :: q
+            q = .true.
+            if (present(quote)) q = quote
+            if (q) then
+                write(u, '(a)') "    "//key//repeat(" ", max(0, 14 - len(key)))//' = "'//trim(val)//'"'
+            else
+                write(u, '(a)') "    "//key//repeat(" ", max(0, 14 - len(key)))//" = "//trim(val)
+            end if
+        end subroutine kv
+
+    end subroutine manifest_write
+
+    ! =========================================================================
+    ! Restore
+    ! =========================================================================
+
+    subroutine restart_read_clock(dir, clk, globe, dom)
+        ! The clock from the bundle (continuation if the bundle time is
+        ! time_init, else a logged branch: fesm_clock), then the cadence of
+        ! every instance that steps (continuation: each must have fired at the bundle
+        ! time). Before clock_start.
+        character(len=*),       intent(in)    :: dir
+        type(clock_t),          intent(inout) :: clk
+        type(globe_t),  target, intent(inout) :: globe
+        type(domain_t), target, intent(inout) :: dom(:)
+
+        class(component_t), pointer :: c
+        character(len=:), allocatable :: file
+        integer :: d, j
+
+        file = dir//"/"//CLOCK_FILE
+        if (.not. exists(file)) then
+            call fesm_error("kryos_restart::restart_read_clock", "restart bundle has no "//CLOCK_FILE, &
+                            "[kryos] restart = "//dir//"; looked for "//file)
+        end if
+        call clock_restart_read(clk, file)
+
+        do j = 1, size(GLOBE_ORDER)
+            c => globe_component(globe, trim(GLOBE_ORDER(j)))
+            if (cadenced(c, clk)) call cadence_restart_read(c%cadence, clk, file)
+        end do
+        do d = 1, size(dom)
+            do j = 1, NCOMP
+                c => domain_component(dom(d), RESTORE_ORDER(j))
+                if (cadenced(c, clk)) call cadence_restart_read(c%cadence, clk, file)
+            end do
+        end do
+    end subroutine restart_read_clock
+
+    subroutine restart_check_manifest(dir, globe, dom)
+        ! The run's instances against the bundle's manifest: every instance of
+        ! the run is in the bundle with the same scope, domain, component,
+        ! backend and grid, and the bundle holds no other instance; else stop
+        ! naming the instance. Logs the bundle's time and versions.
+        character(len=*),       intent(in) :: dir
+        type(globe_t),  target, intent(in) :: globe
+        type(domain_t), target, intent(in) :: dom(:)
+
+        character(len=*), parameter :: proc = "kryos_restart::restart_check_manifest"
+        character(len=nml_group_len), allocatable :: groups(:)
+        type(entry_t), allocatable :: ent(:)
+        class(component_t), pointer :: c
+        character(len=:), allocatable :: file, hint
+        character(len=PATH_LEN) :: val, kgit, ftime
+        integer :: d, j, i, q
+
+        file = dir//"/"//MANIFEST_FILE
+        if (.not. exists(file)) then
+            call fesm_error(proc, "restart bundle has no "//MANIFEST_FILE//" (an incomplete bundle)", &
+                            "[kryos] restart = "//dir//"; looked for "//file)
+        end if
+        if (.not. nml_has_group(file, BUNDLE_GROUP)) then
+            call fesm_error(proc, MANIFEST_FILE//" has no group &"//BUNDLE_GROUP, "file "//file)
+        end if
+        hint = "the bundle "//dir//" was written by a run with other instances; restore it with the par file "// &
+               "of that run (a changed cadence is allowed)"
+
+        ! the run's instances
+        allocate(ent(0))
+        do j = 1, size(GLOBE_ORDER)
+            c => globe_component(globe, trim(GLOBE_ORDER(j)))
+            if (associated(c)) ent = [ent, entry_of(c, dir)]
+        end do
+        do d = 1, size(dom)
+            do j = 1, NCOMP
+                c => domain_component(dom(d), RESTORE_ORDER(j))
+                if (associated(c)) ent = [ent, entry_of(c, dir//"/"//trim(dom(d)%name))]
+            end do
+        end do
+
+        do i = 1, size(ent)
+            if (.not. nml_has_group(file, trim(ent(i)%name))) then
+                call fesm_error(proc, "instance `"//trim(ent(i)%name)//"` ("//trim(ent(i)%component)//", "// &
+                                trim(ent(i)%backend)//") is not in the restart bundle", hint)
+            end if
+            do q = 1, size(CHECK_KEYS)
+                val = ""
+                call nml_read(file, trim(ent(i)%name), trim(CHECK_KEYS(q)), val)
+                if (trim(val) == trim(entry_value(ent(i), q))) cycle
+                call fesm_error(proc, "instance `"//trim(ent(i)%name)//"`: "//trim(CHECK_KEYS(q))//" `"// &
+                                trim(entry_value(ent(i), q))//"` in the run, `"//trim(val)//"` in the restart bundle", &
+                                hint)
+            end do
+        end do
+
+        ! the bundle's instances
+        groups = nml_group_names(file)
+        do i = 1, size(groups)
+            if (trim(groups(i)) == BUNDLE_GROUP) cycle
+            if (any(ent%name == groups(i))) cycle
+            call fesm_error(proc, "instance `"//trim(groups(i))//"` of the restart bundle is not in the run", hint)
+        end do
+
+        ftime = "";  kgit = ""
+        call nml_read(file, BUNDLE_GROUP, "time", ftime)
+        call nml_read(file, BUNDLE_GROUP, "kryos_git", kgit)
+        call log_msg(LOG_INFO, "kryos_restart", "restart bundle "//dir//": time "//trim(ftime)//" yr, "// &
+                     to_str(size(ent))//" instances as in the run", "written by kryos "//trim(kgit)// &
+                     "; this build "//GIT_KRYOS)
+    end subroutine restart_check_manifest
+
+    function entry_value(e, q) result(s)
+        ! The value of CHECK_KEYS(q) of an entry.
+        type(entry_t), intent(in) :: e
+        integer,       intent(in) :: q
+        character(len=NAME_LEN) :: s
+        select case (q)
+        case (1); s = e%scope
+        case (2); s = e%domain
+        case (3); s = e%component
+        case (4); s = e%backend
+        case (5); s = e%grid
+        end select
+    end function entry_value
+
+    subroutine restart_read_global(dir, globe, which, clk)
+        ! Restore of the global instance `which` from the bundle folder:
+        ! restart_read, its imports and exports, PASS_RESTART.
+        character(len=*),      intent(in)    :: dir
+        type(globe_t), target, intent(inout) :: globe
+        character(len=*),      intent(in)    :: which
+        type(clock_t),         intent(in)    :: clk
+
+        class(component_t), pointer :: c
+
+        c => globe_component(globe, which)
+        if (.not. associated(c)) return
+        call globe_restart_read(globe, which, dir, clock_time(clk))
+        call fields_read(c, dir)
+        call globe_pass(globe, which, clk, PASS_RESTART)
+    end subroutine restart_read_global
+
+    subroutine restart_read_instance(dir, dom, k, clk)
+        ! Restore of component k of a domain from the bundle (its folder
+        ! dir/<domain>): restart_read, its imports and exports, PASS_RESTART.
+        character(len=*),       intent(in)    :: dir
+        type(domain_t), target, intent(inout) :: dom
+        integer,                intent(in)    :: k
+        type(clock_t),          intent(in)    :: clk
+
+        class(component_t), pointer :: c
+        character(len=:), allocatable :: ddir
+
+        c => domain_component(dom, k)
+        if (.not. associated(c)) return
+        ddir = dir//"/"//trim(dom%name)
+        call domain_restart_read(dom, k, ddir, clock_time(clk))
+        call fields_read(c, ddir)
+        call domain_pass(dom, k, clk, PASS_RESTART)
+    end subroutine restart_read_instance
+
+    subroutine fields_read(c, dir)
+        ! The imports and exports of an instance as the bundle holds them.
+        class(component_t), intent(inout) :: c
+        character(len=*),   intent(in)    :: dir
+        call fields_restart_read(c%imports, fields_file(dir, c%name, "imports"))
+        call fields_restart_read(c%exports, fields_file(dir, c%name, "exports"))
+    end subroutine fields_read
+
+    ! =========================================================================
+    ! Helpers
+    ! =========================================================================
+
+    logical function cadenced(c, clk)
+        ! An instance whose cadence steps (not off): its last mark is state
+        ! the bundle carries. An off cadence (a static instance) never marks;
+        ! it is neither written nor read (its mark stays at time_init).
+        class(component_t), pointer, intent(in) :: c
+        type(clock_t),               intent(in) :: clk
+        cadenced = associated(c)
+        if (cadenced) cadenced = cadence_dt_years(c%cadence, clk) > 0.0_dp
+    end function cadenced
+
+    function backend_git(c) result(git)
+        ! The version of the code a backend runs: the library of its build
+        ! switch (constraints build_flag "yelmo=1" -> yelmo), else kryos (the
+        ! adapters and backends compiled into kryos).
+        class(component_t), intent(in) :: c
+        character(len=64) :: git
+        integer :: p
+        git = GIT_KRYOS
+        p = index(c%con%build_flag, "=")
+        if (p > 1) git = lib_version(c%con%build_flag(1:p-1))
+    end function backend_git
+
+    function lib_version(name) result(v)
+        ! The build's version of the library `name` (kryos_build_info).
+        character(len=*), intent(in) :: name
+        character(len=64) :: v
+        integer :: i
+        v = "unknown"
+        do i = 1, size(LIB_NAME)
+            if (trim(LIB_NAME(i)) == trim(name)) v = LIB_GIT(i)
+        end do
+    end function lib_version
+
+    function dir_list(dir) result(names)
+        ! The entries of a folder (ls -1A), without the scratch listing.
+        character(len=*), intent(in) :: dir
+        character(len=PATH_LEN), allocatable :: names(:)
+
+        character(len=PATH_LEN) :: line
+        integer :: u, ios
+
+        call shell("ls -1A '"//dir//"' > '"//dir//"/"//LS_FILE//"'", "the listing of "//dir)
+        allocate(names(0))
+        open(newunit=u, file=dir//"/"//LS_FILE, status="old", action="read")
+        do
+            read(u, '(a)', iostat=ios) line
+            if (ios /= 0) exit
+            if (trim(line) == LS_FILE .or. len_trim(line) == 0) cycle
+            names = [character(len=PATH_LEN) :: names, line]
+        end do
+        close(u, status="delete")
+    end function dir_list
+
+    subroutine shell(cmd, what)
+        ! A shell command that must succeed.
+        character(len=*), intent(in) :: cmd, what
+        integer :: es, cs
+        call execute_command_line(cmd, exitstat=es, cmdstat=cs)
+        if (cs /= 0 .or. es /= 0) then
+            call fesm_error("kryos_restart", "shell command failed for "//what, cmd)
+        end if
+    end subroutine shell
+
+    logical function exists(file)
+        character(len=*), intent(in) :: file
+        inquire(file=file, exist=exists)
+    end function exists
+
+    function int_str(n) result(s)
+        integer(int64), intent(in) :: n
+        character(len=:), allocatable :: s
+        character(len=24) :: buf
+        write(buf, '(i0)') n
+        s = trim(buf)
+    end function int_str
+
+end module kryos_restart

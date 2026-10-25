@@ -6,11 +6,12 @@ module kryos_run
     ! hosts call the same sequence.
     !
     ! This module holds the lifecycle and its setup; the sequence itself (the
-    ! cold start of core-design 3.2 and the step of 3.4, in yelmox order) is
-    ! the submodule kryos_run_sequence. Milestone C10 (kryos_restart) plugs in
-    ! where marked "C10": the restore of the instances (run_restore) and the
-    ! bundle contents of the instances (run_restart_write). Until then a
-    ! bundle holds the clock only, and a restore with instances stops.
+    ! cold start of core-design 3.2, the restore of 3.3 and the step of 3.4,
+    ! in yelmox order) is the submodule kryos_run_sequence. The restart
+    ! bundles (their files and manifest) are kryos_restart's: the run writes
+    ! one when its restart schedule is due, and restores from the bundle that
+    ! [kryos] restart names (a folder relative to the run directory, or an
+    ! absolute path).
     !
     ! Style: run_t is a plain type with public components; every procedure is
     ! free. Errors stop through fesm_error (core-design section 8). The output
@@ -24,8 +25,8 @@ module kryos_run
     use timer,            only: timer_class, timer_init, timer_step, timer_print_totals
     use phys_constants,   only: phys_const_class, phys_const_load, phys_const_require, phys_const_log
     use fesm_clock,       only: clock_t, schedule_t, clock_init, clock_start, clock_advance, clock_finish, &
-                                clock_finished, clock_time, clock_step_index, clock_restart_read, &
-                                clock_restart_write, schedule_init, schedule_due
+                                clock_finished, clock_time, clock_step_index, clock_restart_allowed, &
+                                schedule_init, schedule_due
     use kryos_config,     only: config_t, config_init, config_read, config_has, config_validate, &
                                 CFG_NAME_LEN, CFG_PATH_LEN
     use kryos_component,  only: component_t, census_t, PASS_INIT, NAME_LEN
@@ -38,6 +39,7 @@ module kryos_run
                                 NCOMP, INIT_ORDER
     use kryos_output,     only: output_t, output_init, output_add_component, output_add_hub, &
                                 output_add_timing, output_write, output_describe
+    use kryos_restart,    only: year_label, restart_dir, restart_write
 
     implicit none
 
@@ -46,7 +48,6 @@ module kryos_run
 
     character(len=*), parameter :: NO_RESTART = "None"      ! [kryos] restart: no bundle
     character(len=*), parameter :: NO_GROUP   = "none"      ! [kryos] restart_out: no restart schedule
-    character(len=*), parameter :: CLOCK_FILE = "clock_restart.nc"
 
     ! Stages of the timer (yelmox timer table; timing.txt).
     integer, parameter :: TT_OUTPUT = 1, TT_FORCING = 2, TT_GEO = 3, TT_COUPLE_ICE = 4, TT_ICE = 5, &
@@ -81,6 +82,12 @@ module kryos_run
             ! core-design 3.2 (with 3.6 items 1-3): every domain's initial state.
             type(run_t), target, intent(inout) :: run
         end subroutine run_cold_start
+
+        module subroutine run_restore(run)
+            ! core-design 3.3 (with 3.6 item 4): every instance from the bundle
+            ! [kryos] restart names; restore, never step.
+            type(run_t), target, intent(inout) :: run
+        end subroutine run_restore
 
         module subroutine run_sequence(run)
             ! core-design 3.4 steps 1-4 at the clock's (advanced) time.
@@ -457,59 +464,21 @@ contains
     end subroutine run_describe
 
     ! =========================================================================
-    ! Restore (C10)
-    ! =========================================================================
-
-    subroutine run_restore(run)
-        ! core-design section 3.3 (with 3.6 item 4): restore, never step. This
-        ! milestone restores the clock only; a run with instances stops here.
-        type(run_t), intent(inout) :: run
-
-        character(len=CFG_PATH_LEN) :: file
-        logical :: found
-
-        if (run%n_dom > 0 .or. forcing_present(run%globe%forcing) .or. geo_present(run%globe%geo)) then
-            ! C10 plug-in point: clock_restart_read, cadence_restart_read of every
-            ! instance, the manifest check, then the globe (forcing, geo global),
-            ! per domain ice, then exchange(ice -> geo) and exchange_globe(bsl),
-            ! geo, climate (PASS_RESTART after its imports), surface, shelf,
-            ! geothermal, sediments, each <comp>_restart_read and
-            ! fields_restart_read of its imports and exports; then
-            ! domain_check_reference and domain_hub_update.
-            call fesm_error("kryos_run::run_restore", "restoring the instances from a bundle is not in this build", &
-                            "[kryos] restart = "//trim(run%restart)//": the restore of the instances is milestone "// &
-                            "C10 (core-design 3.3); start cold with restart = ""None""")
-        end if
-
-        file = trim(strip_slash(run%restart))//"/"//CLOCK_FILE
-        inquire(file=trim(file), exist=found)
-        if (.not. found) then
-            call fesm_error("kryos_run::run_restore", "restart bundle has no "//CLOCK_FILE, &
-                            "[kryos] restart = "//trim(run%restart)//"; looked for "//trim(file))
-        end if
-
-        ! continuation if the bundle time = time_init, else a logged branch (fesm_clock)
-        call clock_restart_read(run%clk, trim(file))
-    end subroutine run_restore
-
-    ! =========================================================================
     ! Restart bundle
     ! =========================================================================
 
     subroutine run_restart_write(run)
-        ! core-design section 7: <out_dir>/restart-<time>/clock_restart.nc.
-        type(run_t), intent(in) :: run
+        ! core-design section 7: the bundle <out_dir>/restart-<time>/ (kryos_restart).
+        ! A run ended by the kill switch off the cadence grids writes none
+        ! (fesm_clock clock_restart_allowed) and says why.
+        type(run_t), intent(inout), target :: run
 
-        character(len=CFG_PATH_LEN) :: dir
-
-        dir = trim(run%out_dir)//"restart-"//year_label(clock_time(run%clk))
-        call execute_command_line("mkdir -p '"//trim(dir)//"'")
-        call clock_restart_write(run%clk, trim(dir)//"/"//CLOCK_FILE)
-        ! C10 plug-in point: cadence_restart_write of every instance into the same
-        ! file, manifest.nml, then the globe and per domain the instances, each
-        ! <comp>_restart_write and fields_restart_write (write order = restore order).
-
-        call log_msg(LOG_INFO, "kryos_run", "restart bundle "//trim(dir)//" (clock only until C10)")
+        if (.not. clock_restart_allowed(run%clk)) then
+            call log_msg(LOG_INFO, "kryos_run", "no restart bundle at time = "//year_label(clock_time(run%clk))// &
+                         " yr: the time is not on the grid of every cadence (the run was killed between them)")
+            return
+        end if
+        call restart_write(restart_dir(run%out_dir, clock_time(run%clk)), run%clk, run%globe, run%dom)
     end subroutine run_restart_write
 
     ! =========================================================================
@@ -539,32 +508,6 @@ contains
         end do
     end function name_order
 
-    function year_label(t) result(s)
-        ! `t` [yr] as the shortest decimal that reads back to the same value:
-        ! 15000, 0.5, -21000 (restart-<time> folder names, log lines).
-        real(dp), intent(in) :: t
-        character(len=:), allocatable :: s
-
-        character(len=64) :: buf, fmt
-        real(dp) :: x
-        integer  :: nd
-
-        buf = ""
-        do nd = 0, 17
-            write(fmt, '(a,i0,a)') "(f0.", nd, ")"
-            write(buf, fmt) t
-            read(buf, *) x
-            if (x == t) exit
-        end do
-        s = trim(adjustl(buf))
-        if (s(1:1) == ".") s = "0"//s                      ! gfortran f0.d drops the leading zero
-        if (len(s) > 1) then
-            if (s(1:2) == "-.") s = "-0"//s(2:)
-        end if
-        if (s(len(s):len(s)) == ".") s = s(1:len(s)-1)
-        if (s == "-0") s = "0"
-    end function year_label
-
     function with_slash(dir) result(s)
         character(len=*), intent(in) :: dir
         character(len=:), allocatable :: s
@@ -575,15 +518,5 @@ contains
             s = s//"/"
         end if
     end function with_slash
-
-    function strip_slash(dir) result(s)
-        character(len=*), intent(in) :: dir
-        character(len=:), allocatable :: s
-        s = trim(dir)
-        do while (len(s) > 1)
-            if (s(len(s):len(s)) /= "/") exit
-            s = s(1:len(s)-1)
-        end do
-    end function strip_slash
 
 end module kryos_run
