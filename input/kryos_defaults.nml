@@ -86,8 +86,11 @@
 /
 
 &geo_fastisostasy
-    isos = "isos"                              ! regional instance: the isos group
-    bsl  = "barysealevel"                      ! global instance: the barysealevel group
+    isos        = "isos"                       ! regional instance: the isos group
+    bsl         = "barysealevel"               ! global instance: the barysealevel group
+    out_isos    = "none"                       ! schedule of <instance>_isos.nc (z_bed, z_ss, w, we)
+    out_isos_ts = "none"                       ! schedule of <instance>_isos_ts.nc (bsl, z_bed and w statistics)
+    out_bsl_ts  = "none"                       ! global instance: schedule of <instance>_bsl_ts.nc
 /
 
 &ice_yelmo
@@ -121,4 +124,17 @@
 
 &sediments_data
     H_sed = ""                                 ! field group of H_sed [m]
+/
+
+! The orbit of the chion host (yelmox orbit_forcing, template copied from yelmox v2.4
+! input/yelmox_defaults.nml)
+&orbit
+    ! The orbital elements of the insolation of the surface models (chion
+    ! itm/bessi, smbpal itm; fesmc/insol, Laskar et al. 2004 tables).
+    method = "fixed_time"   ! forcing_time: at the forcing time time_rel; fixed_time: at time; fixed_orbit: ecc, obl, per
+    time   = 0.0        ! [yr] model time of the orbit (fixed_time; relative to 1950, past < 0)
+    ecc    = 0.016702   ! [1]   eccentricity (fixed_orbit; these: the tables at 1950)
+    obl    = 23.4393    ! [deg] obliquity (fixed_orbit)
+    per    = 102.918    ! [deg] longitude of perihelion (fixed_orbit)
+    fldr   = "input"    ! folder of the orbital tables (LA2004.INSOLN.5Ma.txt, LA2004.INSOLP.1Ma.txt)
 /

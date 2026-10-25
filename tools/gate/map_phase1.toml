@@ -114,7 +114,7 @@ comp = "hub"
 [[row]]
 ref = "isos.nc"
 vars = ["z_bed", "z_ss"]
-run = "{geo}_fastisostasy.nc"
+run = "{geo}_isos.nc"
 class = "E"
 comp = "geo"
 
@@ -130,15 +130,8 @@ comp = "geo"
 
 [[row]]
 ref = "isos_ts.nc"
-vars = ["bsl"]
-run = "{geo}_ts.nc"
+run = "{geo}_isos_ts.nc"          # the adapter's isos_ts stream (bsl, z_bed and w statistics)
 class = "E"
-comp = "geo"
-
-[[row]]
-ref = "isos_ts.nc"
-vars = ["z_bed_mean", "z_bed_min", "z_bed_max", "w_mean", "we_mean"]
-class = "A"                       # framework diagnostics, shed (design §11)
 comp = "geo"
 
 # ===== Surface (chion) =====

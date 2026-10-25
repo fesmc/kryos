@@ -220,10 +220,10 @@ Core keys (every `[kryos]`, `[clock]`, schedule, `[globe]`, domain, instance and
 | `&out_rst` | 4 | 0 | 0 |
 | `&globe` | 0 | 2 | 0 |
 | `&forcing` | 2 | 2 | 5 |
-| `&geo_glob` | 1 | 3 | 5 |
+| `&geo_glob` | 2 | 3 | 7 |
 | `&Greenland` | 3 | 7 | 2 |
 | `&ice_grl` | 7 | 2 | 4 |
-| `&geo_grl` | 4 | 2 | 3 |
+| `&geo_grl` | 6 | 2 | 4 |
 | `&climate_grl` | 6 | 2 | 3 |
 | `&surface_grl` | 3 | 4 | 4 |
 | `&shelf_grl` | 2 | 2 | 5 |
@@ -283,9 +283,7 @@ Physics groups copied unchanged (fully expanded from the yelmox defaults files):
 
 ## Warnings
 
-- output output.write_isos: key `out_isos` of &geo_grl is not declared by the templates (kryos_defaults:instance, kryos_defaults:geo_fastisostasy): the stream (schedule `out_2D`) is not written
-- output output.write_isos: key `out_isos_ts` of &geo_grl is not declared by the templates (kryos_defaults:instance, kryos_defaults:geo_fastisostasy): the stream (schedule `out_1D`) is not written
-- output output.write_isos: key `out_bsl_ts` of &geo_glob is not declared by the templates (kryos_defaults:instance, kryos_defaults:geo_fastisostasy): the stream (schedule `out_1D`) is not written
+None.
 
 ## Checks
 
@@ -299,10 +297,10 @@ Physics groups copied unchanged (fully expanded from the yelmox defaults files):
 - &out_rst: 4 keys against kryos_defaults&schedule
 - &globe: 2 keys against kryos_defaults&globe
 - &forcing: 9 keys against kryos_defaults&instance + kryos_defaults&forcing_tsgen
-- &geo_glob: 9 keys against kryos_defaults&instance + kryos_defaults&geo_fastisostasy
+- &geo_glob: 12 keys against kryos_defaults&instance + kryos_defaults&geo_fastisostasy
 - &Greenland: 12 keys against kryos_defaults&domain
 - &ice_grl: 13 keys against kryos_defaults&instance + kryos_defaults&ice_yelmo
-- &geo_grl: 9 keys against kryos_defaults&instance + kryos_defaults&geo_fastisostasy
+- &geo_grl: 12 keys against kryos_defaults&instance + kryos_defaults&geo_fastisostasy
 - &climate_grl: 11 keys against kryos_defaults&instance + kryos_defaults&climate_snapshots
 - &surface_grl: 11 keys against kryos_defaults&instance + kryos_defaults&surface_chion
 - &shelf_grl: 9 keys against kryos_defaults&instance + kryos_defaults&shelf_marine_shelf
@@ -315,7 +313,7 @@ Physics groups copied unchanged (fully expanded from the yelmox defaults files):
 - &isos: no schema file (not validated)
 - &barysealevel: no schema file (not validated)
 - &snapshots: 4 keys against snapshots_defaults&snapshots
-- &orbit: 6 keys against yelmox input/yelmox_defaults.nml&orbit (kryos_defaults.nml has no &orbit template yet: yelmox's schema)
+- &orbit: 6 keys against kryos_defaults&orbit
 - &surface_chion: no schema file (not validated)
 - &chion: 8 keys against yelmox input/chion_defaults.nml&chion
 - &chion_const: 70 keys against yelmox input/chion_defaults.nml&chion_const
@@ -351,7 +349,7 @@ Physics groups copied unchanged (fully expanded from the yelmox defaults files):
 - &pmip3_mean_pr_ann: no schema file (not validated)
 - &pmip3_mean_zs: no schema file (not validated)
 - all 43 validated groups: every key declared; required keys set; schedules on the clock ticks; named groups present
-- round trip: 855 keys of 59 groups read back equal (type and value), mapped keys equal the resolved yelmox value
+- round trip: 861 keys of 59 groups read back equal (type and value), mapped keys equal the resolved yelmox value
 
 ## Files a run directory needs
 

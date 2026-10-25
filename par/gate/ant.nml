@@ -88,15 +88,18 @@
 /
 
 &geo_glob
-    backend  = "fastisostasy"
-    grid     = ""
-    dt       = 0.0
-    phase    = 0.0
-    clock    = "forcing"
-    out_2D   = "none"
-    out_1D   = "out_1D"   ! yelmox output.write_isos
-    out_vars = ""
-    bsl      = "barysealevel"
+    backend     = "fastisostasy"
+    grid        = ""
+    dt          = 0.0
+    phase       = 0.0
+    clock       = "forcing"
+    out_2D      = "none"
+    out_1D      = "out_1D"   ! yelmox output.write_isos
+    out_vars    = ""
+    bsl         = "barysealevel"
+    out_isos    = "none"
+    out_isos_ts = "none"
+    out_bsl_ts  = "out_1D"   ! yelmox output.write_isos
 /
 
 &Antarctica
@@ -131,15 +134,18 @@
 /
 
 &geo_ant
-    backend  = "fastisostasy"
-    grid     = "ANT-32KM"   ! yelmox domain.grid_isos
-    dt       = 10.0         ! yelmox comps.dt_isos
-    phase    = 0.0
-    clock    = "model"
-    out_2D   = "out_2D"     ! yelmox output.write_isos
-    out_1D   = "out_1D"     ! yelmox output.write_isos
-    out_vars = ""
-    isos     = "isos"
+    backend     = "fastisostasy"
+    grid        = "ANT-32KM"   ! yelmox domain.grid_isos
+    dt          = 10.0         ! yelmox comps.dt_isos
+    phase       = 0.0
+    clock       = "model"
+    out_2D      = "out_2D"     ! yelmox output.write_isos
+    out_1D      = "out_1D"     ! yelmox output.write_isos
+    out_vars    = ""
+    isos        = "isos"
+    out_isos    = "out_2D"     ! yelmox output.write_isos
+    out_isos_ts = "out_1D"     ! yelmox output.write_isos
+    out_bsl_ts  = "none"
 /
 
 &climate_ant
