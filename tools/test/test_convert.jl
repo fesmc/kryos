@@ -34,7 +34,7 @@ kvg(G, g) = Dict(k.name => NL.parse_value(k.raw) for k in G[g].keys)
         @test kv(G, "kryos")["restart"] == "None"
         @test kv(G, "kryos")["write_lossless"] === true
         @test kv(G, "kryos")["library"] == ""
-        @test kv(G, "kryos")["phys_const_file"] == "input/yelmo_phys_const.nml"
+        @test kv(G, "kryos")["phys_const_file"] == "input/phys_const.nml"
         c = kv(G, "clock")
         @test c["time_end"] === 1000.0 && c["dtt"] === 10.0 && c["method"] == "const"
         @test haskey(c, "time_const") && !haskey(c, "time_const_cal")

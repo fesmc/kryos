@@ -230,7 +230,7 @@ Keys set by the converter, not from a yelmox key (fixed by the schema or by a ru
 - `kryos.globe` = "globe"
 - `kryos.clock` = "clock"
 - `kryos.restart_out` = "out_rst"
-- `kryos.phys_const_file` = "input/yelmo_phys_const.nml"
+- `kryos.phys_const_file` = "input/phys_const.nml"
 - `globe.forcing` = "forcing"
 - `globe.geo` = "geo_glob"
 - `forcing.backend` = "tsgen"

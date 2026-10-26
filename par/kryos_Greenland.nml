@@ -25,7 +25,7 @@
     out_dir         = "./"
     map_fldr        = "maps"
     phys_const      = "Earth"       ! yelmox domain.phys_const
-    phys_const_file = "input/yelmo_phys_const.nml"
+    phys_const_file = "input/phys_const.nml"
     library         = ""
     write_lossless  = False         ! yelmox ctrl.write_lossless
     log_level       = "info"
