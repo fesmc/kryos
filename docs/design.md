@@ -23,7 +23,7 @@ reused: the two are never linked into one executable; phase 1 review.)
 | Noun | Meaning |
 |---|---|
 | **component** | A role with a fixed, canonical set of import and export fields: `ice`, `geo` (solid earth + sea level, after CLIMBER-X), `climate`, `surface` (SMB + surface temperature), `shelf` (sub-shelf melt), `ocean`, `geothermal`, `sediments`, `forcing` (run-level scalars). |
-| **backend** | One implementation of a component, chosen at runtime by name: a prognostic model (`yelmo`, `cism`, `pism`, `fastisostasy`, `vilma2`, `chion`, `smbpal`, `rembo`, `marine_shelf`, `obm`), a parametrisation (`smb_simple`), or `data`. Optional libraries sit behind same-interface stubs. |
+| **backend** | One implementation of a component, chosen at runtime by name: a prognostic model (`yelmo`, `cism`, `pism`, `fastisostasy`, `vilma2`, `chion`, `rembo`, `marine_shelf`, `obm`), a parametrisation (`smb_simple`), or `data`. Optional libraries sit behind same-interface stubs. |
 | **instance** | A component with a backend, a grid and a scope. Named in the par file; the name is its namelist group, output file prefix and restart file name. |
 | **domain** | A regional scope: a named hub grid, the hi-res geometry hub, per-component grids, its regional instances, its own map cache, and its footprint on every global grid. |
 | **globe** | The one global scope: global grids, the global geometry (reference topography + merged ice from the domains + background ice outside them), and the global instances (`vilma2`, `obm`, the barystatic sea level, the forcing scalars). |
@@ -46,7 +46,7 @@ run
  │    ├─ ice                 yelmo | cism | pism | data
  │    ├─ geo      (regional) fastisostasy | data        (its global part: bsl reduction)
  │    ├─ climate             snapshots | esm | rembo | data
- │    ├─ surface             chion | smbpal | smb_simple | climate | data
+ │    ├─ surface             chion | smb_simple | climate | data
  │    ├─ shelf               marine_shelf | pico | data   (owns ocean → shelf-base interpolation)
  │    ├─ geothermal, sediments   data
  │    └─ experiments         opt, relax, negis, ... (plugins; backend-specific)
@@ -168,7 +168,7 @@ backend, not on the component:
 | ice | yelmo, cism, pism, data | data (e.g. ICE-6G as the background) | a global prognostic ice model is not planned but fits |
 | geo | fastisostasy, data | vilma2, data | fastisostasy per domain + a global reduction for `bsl` |
 | climate | rembo, snapshots, esm, data | data (global products read once, split to domains) | snapshots/esm today read global files per domain; either works |
-| surface | chion, smbpal, smb_simple, data | — | column physics; grid is the domain's |
+| surface | chion, smb_simple, data | — | column physics; grid is the domain's |
 | shelf | marine_shelf, pico, data | — | |
 | ocean | data | obm, data | |
 | geothermal, sediments | data | data | |
@@ -209,7 +209,7 @@ for most components.
 - One **forcing time** `time_rel` (yelmox's), with the two named exceptions
   (fixed orbit; calendar-driven ESM periods).
 - Each instance has a **cadence** (`dt`, phase, `t_last`) and is called with
-  `update(t_target)`; adapters loop fixed-step backends (CISM, chion, smbpal)
+  `update(t_target)`; adapters loop fixed-step backends (CISM, chion)
   and compute `dt` for advance-by-dt backends (VILMA2, obm). `update` is
   idempotent at `dt = 0`.
 - **Lag is declared** in the wiring table, not implied by call order. Default:
@@ -326,7 +326,7 @@ kryos/
                    ice/  geo/  climate/  surface/  shelf/  ocean/  geothermal/  sediments/  forcing/
   src/backends/    <component>/<backend>.f90 and <backend>_stub.f90
                    ice/yelmo, ice/cism, ice/pism (C shim), geo/fastisostasy,
-                   geo/vilma2, surface/chion, surface/smbpal, surface/smb_simple, climate/snapshots,
+                   geo/vilma2, surface/chion, surface/smb_simple, climate/snapshots,
                    climate/esm, climate/rembo, shelf/marine_shelf, ocean/obm
   src/experiments/ opt_cb_ref, relax, negis, glacial_smb, marine_ice_start, recon_start
   drivers/kryos.f90
@@ -352,8 +352,9 @@ on the Levante test cases.
    yelmox's operand order. The lapse-rate transform applies whenever the
    climate's reference surface differs from the consumer's (no identical-grid
    shortcut; zero in the gate configurations). Details: `docs/dev/*-design.md`.
-2. `data` backends for every component; esm and rembo climate; smbpal and
-   smb_simple; experiments plugins. Target: all yelmox base configs.
+2. `data` backends for every component; esm and rembo climate;
+   smb_simple; experiments plugins (smbpal dropped: deprecated, chion is its
+   successor). Target: all yelmox base configs.
 3. Globe: `forcing`, N domains, `ocean = obm`. Target: `yelmox_bipolar`.
 4. `geo = vilma2` (VILMA2's own gaps: export `u` and `N` separately,
    barystatic definition, `libvilma.a`, FesmData viscosity format).
@@ -543,7 +544,7 @@ displacements are long-wavelength and survive
     `geo`, `climate`, `surface` (not `smb`: it exports `T_srf` and may be a
     snowpack), `shelf`, `ocean`, `geothermal`, `sediments`, `forcing`.
     Backends carry their library's name (`yelmo`, `cism`, `pism`,
-    `fastisostasy`, `vilma2`, `chion`, `smbpal`, `smb_simple`, `rembo`,
+    `fastisostasy`, `vilma2`, `chion`, `smb_simple`, `rembo`,
     `snapshots`, `esm`, `marine_shelf`, `pico`, `obm`, `data`). Module
     prefixes `kryos_` and `fesm_`, with the old bare fesm-utils names kept as
     deprecated aliases. The yelmox modules named `kryos_*` are not a constraint
