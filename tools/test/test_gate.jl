@@ -67,26 +67,25 @@ end
 
 @testset "Gate: input overlay" begin
     d = mktempdir()
-    yx = joinpath(d, "yx"); kr = joinpath(d, "kr"); fu = joinpath(kr, "fesm-utils", "par")
-    mkpath(joinpath(yx, "input", "esm")); mkpath(joinpath(kr, "input")); mkpath(fu)
+    yx = joinpath(d, "yx"); kr = joinpath(d, "kr")
+    mkpath(joinpath(yx, "input", "esm")); mkpath(joinpath(kr, "input"))
     write(joinpath(yx, "input", "yelmo_defaults.nml"), "y")
     write(joinpath(yx, "input", "shared.nml"), "yelmox")
     write(joinpath(kr, "input", "kryos_defaults.nml"), "k")
     write(joinpath(kr, "input", "shared.nml"), "kryos")
-    write(joinpath(fu, "datasrc_defaults.nml"), "d")
     dest = joinpath(d, "run", "input")
     links = input_overlay(dest; kryos=kr, yelmox=yx)
-    @test Set(keys(links)) == Set(["yelmo_defaults.nml", "shared.nml", "esm", "kryos_defaults.nml", "datasrc_defaults.nml"])
+    @test Set(keys(links)) == Set(["yelmo_defaults.nml", "shared.nml", "esm", "kryos_defaults.nml"])
     @test read(joinpath(dest, "shared.nml"), String) == "kryos"          # kryos wins
-    @test read(joinpath(dest, "datasrc_defaults.nml"), String) == "d"
     @test islink(joinpath(dest, "esm")) && isdir(joinpath(dest, "esm"))
     # again: links are replaced, not duplicated
     @test input_overlay(dest; kryos=kr, yelmox=yx) == links
     # a real file in the way is an error
     write(joinpath(dest, "alien.nml"), "x")
     @test isfile(joinpath(dest, "alien.nml"))
-    # the kryos input of this checkout has its templates
+    # the kryos input of this checkout has its templates and the datasrc defaults
     @test isfile(joinpath(KRYOS_ROOT, "input", "kryos_defaults.nml"))
+    @test isfile(joinpath(KRYOS_ROOT, "input", "datasrc_defaults.nml"))
 end
 
 @testset "Gate: instances against a par file" begin

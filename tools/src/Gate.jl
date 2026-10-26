@@ -247,20 +247,18 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    input_overlay(dest; kryos, yelmox, extra=[]) -> Dict{String,String}
+    input_overlay(dest; kryos, yelmox) -> Dict{String,String}
 
 Make the folder `dest` (the `input` link target of a kryos run directory) of
 symbolic links to every entry of `yelmox/input` and then of `kryos/input`
-(kryos wins a name that both have), and to the `extra` files (by default
-`kryos/fesm-utils/par/datasrc_defaults.nml`, until the kryos `input/` has its
-synchronised copy). kryos reads its templates (`kryos_defaults.nml`,
-`forcing_defaults.nml`, `snapshots_defaults.nml`, `datasrc_defaults.nml`,
-`kryos-variables-*.md`) and Yelmo and chion their defaults (`yelmo_defaults.nml`,
-`chion_defaults.nml`), the phys_const file and the series from `input/`.
+(kryos wins a name that both have). kryos reads its templates
+(`kryos_defaults.nml`, `forcing_defaults.nml`, `snapshots_defaults.nml`,
+`kryos-variables-*.md`), the synchronised library copies (`datasrc_defaults.nml`,
+`yelmo_defaults.nml`, `chion_defaults.nml`, ...; `input/sync.txt`), the
+phys_const file and the series from `input/`.
 Returns name => link target. An existing `dest` is emptied of links first.
 """
-function input_overlay(dest::AbstractString; kryos::AbstractString, yelmox::AbstractString, extra=nothing)
-    ex = extra === nothing ? [joinpath(kryos, "fesm-utils", "par", "datasrc_defaults.nml")] : String.(extra)
+function input_overlay(dest::AbstractString; kryos::AbstractString, yelmox::AbstractString)
     mkpath(dest)
     for f in readdir(dest; join=true)
         islink(f) && rm(f)
@@ -279,10 +277,6 @@ function input_overlay(dest::AbstractString; kryos::AbstractString, yelmox::Abst
         for n in sort(readdir(root))
             link(joinpath(root, n))
         end
-    end
-    for f in ex
-        haskey(out, basename(f)) && continue
-        isfile(f) && link(f)
     end
     return out
 end
