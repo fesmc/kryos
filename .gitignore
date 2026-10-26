@@ -25,8 +25,11 @@ libkryos/
 /cism
 /pism
 
-# Data links (ice_data is read by tests/test_remap_sp_dp.f90 or $KRYOS_ICE_DATA)
+# Data links (runme links them into a run directory; ice_data is also read by
+# tests/test_remap_sp_dp.f90 or $KRYOS_ICE_DATA)
 /ice_data
+/fesmdata
+/isostasy_data
 
 # configme / runme local state
 .configme/config.toml

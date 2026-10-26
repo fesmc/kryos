@@ -1,0 +1,35 @@
+{
+
+    "exe_default" : "kryos",
+
+    "par_path_as_argument" : true,
+
+    "exe_aliases" :
+        {   "kryos"            : "libkryos/bin/kryos.x"
+        },
+
+    "grp_aliases" :
+        {
+            "bsl" : "barysealevel"
+        },
+
+    "par_paths" :
+        {
+            "kryos"        : "par/kryos_Greenland.nml"
+        },
+
+    "files" : [],
+
+    "par_defaults" : ["input/kryos_defaults.nml"],
+
+    "par_library"  : [],
+
+    "dir-special" :
+    {
+        "None" : "target_dir_name"
+    },
+
+    "links" :
+        ["input","ice_data","fesmdata","isostasy_data","maps"]
+
+}
