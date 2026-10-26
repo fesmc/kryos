@@ -211,7 +211,7 @@ $(bindir)/%.x: $(testdir)/%.f90 $(objdir)/libkryos.a | $(bindir)
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_FESMUTILS) $(INC_BACKENDS) -o $@ $< \
 		-L${CURDIR}/$(objdir) -lkryos $(LFLAGS)
 
-check: $(test_exes)
+check: input-check $(test_exes)
 	@failed=0; for t in $(test_exes); do \
 	  echo "--- $$t"; \
 	  ./$$t || { echo "*** FAILED: $$t"; failed=1; }; \
@@ -219,15 +219,25 @@ check: $(test_exes)
 	if [ $$failed -ne 0 ]; then exit 1; fi; \
 	echo " "; echo "    make check: all tests passed."; echo " "
 
+# The synchronised copies of input/ (input/sync.txt): sync-input copies each
+# source over its copy; input-check (run first by check) fails on a stale copy.
+sync-input:
+	@sh config/sync_input.sh sync input/sync.txt $(input_roots)
+
+input-check:
+	@sh config/sync_input.sh check input/sync.txt $(input_roots)
+
 .PHONY : build-info usage kryos-static kryos check clean cleanall depend deps-check deps-static \
-         fesmutils-static yelmo-static isostasy-static chion-static insol-static
+         fesmutils-static yelmo-static isostasy-static chion-static insol-static sync-input input-check
 usage:
 	@echo ""
 	@echo "    * USAGE * "
 	@echo ""
 	@echo " make kryos-static : $(objdir)/libkryos.a and the .mod files in $(objdir)"
 	@echo " make kryos        : $(bindir)/kryos.x, the driver"
-	@echo " make check        : builds and runs every tests/test_*.f90"
+	@echo " make check        : input-check, then builds and runs every tests/test_*.f90"
+	@echo " make sync-input   : copies the library sources over the input/ copies (input/sync.txt)"
+	@echo " make input-check  : fails if an input/ copy differs from its source"
 	@echo " make deps-check   : fails with instructions if a dependency is not built"
 	@echo " make deps-static  : builds fesm-utils and the enabled backend libraries"
 	@echo " make depend       : regenerates config/deps.mk (configme deps .)"

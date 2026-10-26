@@ -78,6 +78,15 @@ INC_INSOL = -I${INSOLROOT}/libinsol/include
 LIB_INSOL = -L${INSOLROOT}/libinsol/include -linsol
 INSOL_ARCHIVE = $(INSOLROOT)/libinsol/include/libinsol.a
 
+# yelmox: not linked. The source of the input/ copies that have no library
+# source (input/sync.txt); a sibling checkout or symlink like the others.
+YELMOXROOT = yelmox
+
+# The roots of the input/ copies (input/sync.txt), for make sync-input and the
+# staleness check of make check.
+input_roots = FESMUTILSROOT=$(FESMUTILSROOT) YELMOROOT=$(YELMOROOT) CHIONROOT=$(CHIONROOT) \
+              INSOLROOT=$(INSOLROOT) YELMOXROOT=$(YELMOXROOT)
+
 REMBOROOT = rembo1
 INC_REMBO = -I${REMBOROOT}/librembo/include
 LIB_REMBO = -L${REMBOROOT}/librembo/include -lrembo
