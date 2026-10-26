@@ -1,7 +1,7 @@
 #!/bin/sh
 # The synchronised copies of input/ (docs/running.md): the library defaults and
-# tables a run reads, each a copy of a source file in a dependency checkout (or
-# in yelmox), listed in input/sync.txt as <copy> <root variable> <source>.
+# tables a run reads, each a copy of a source file in a dependency checkout,
+# listed in input/sync.txt as <copy> <root variable> <source>.
 #
 #     sh config/sync_input.sh check <manifest> <ROOT>=<dir> ...   (make check)
 #     sh config/sync_input.sh sync  <manifest> <ROOT>=<dir> ...   (make sync-input)
@@ -61,7 +61,7 @@ done < "$manifest"
 
 if [ -n "$missing" ]; then
     echo ""
-    echo "*** ERROR: source files missing (set the root on the make command line, e.g. YELMOXROOT=../yelmox):$missing"
+    echo "*** ERROR: source files missing (link the dependency or set its root on the make command line, e.g. YELMOROOT=../yelmo):$missing"
     echo ""
     exit 1
 fi

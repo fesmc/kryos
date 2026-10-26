@@ -5,7 +5,6 @@
 # copy                              root           source
 yelmo_defaults.nml                  YELMOROOT      input/yelmo_defaults.nml
 yelmo_phys_const.nml                YELMOROOT      input/yelmo_phys_const.nml
-phys_const.nml                      YELMOROOT      input/yelmo_phys_const.nml
 yelmo-variables-ybound.md           YELMOROOT      input/yelmo-variables-ybound.md
 yelmo-variables-ydata.md            YELMOROOT      input/yelmo-variables-ydata.md
 yelmo-variables-ydyn.md             YELMOROOT      input/yelmo-variables-ydyn.md
@@ -20,9 +19,3 @@ chion_defaults.nml                  CHIONROOT      input/chion_defaults.nml
 datasrc_defaults.nml                FESMUTILSROOT  par/datasrc_defaults.nml
 LA2004.INSOLN.5Ma.txt               INSOLROOT      input/LA2004.INSOLN.5Ma.txt
 LA2004.INSOLP.1Ma.txt               INSOLROOT      input/LA2004.INSOLP.1Ma.txt
-# No library source: these live only in yelmox.
-forcing_db.nml                      YELMOXROOT     input/forcing_db.nml
-clim_db.nml                         YELMOXROOT     input/clim_db.nml
-sl_deglaciation.dat                 YELMOXROOT     input/sl_deglaciation.dat
-alpha_orbital_r2020.dat             YELMOXROOT     input/alpha_orbital_r2020.dat
-alpha_combined_125kyr_interp.dat    YELMOXROOT     input/alpha_combined_125kyr_interp.dat

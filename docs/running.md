@@ -36,7 +36,8 @@ Groups and defaults:
   template: set every key the library reads.
 - Named library groups (`snapshot_*`, `term_*`, `coef_*`, data field groups)
   are looked up in the par file, then in the files of `[kryos] library`
-  (e.g. `"input/clim_db.nml" "input/forcing_db.nml"`).
+  (namelist files of such groups; kryos ships none, the converted par files
+  hold their groups).
 
 So a par file may list only what differs from these defaults and libraries.
 The converted files are fully expanded instead: every key of every group is
@@ -47,26 +48,36 @@ against).
 ## input/
 
 The run directory's `input/` is the repository's `input/` (runme links it).
-It holds kryos' own files (`kryos_defaults.nml`, `forcing_defaults.nml`,
-`snapshots_defaults.nml`, `phys_const.nml`, `kryos-variables-<component>.md`)
-and synchronised copies of the files the libraries and the configurations
-read, listed in `input/sync.txt` with their source:
+It holds kryos' own files and synchronised copies of the files the libraries
+read.
+
+kryos' own: `kryos_defaults.nml`, `forcing_defaults.nml`,
+`snapshots_defaults.nml`, `kryos-variables-<component>.md`, `phys_const.nml`
+(the `[kryos] phys_const_file` default, read by `phys_const_load`; the run's
+one set of constants, passed to every backend), and the series of the
+configurations: `sl_deglaciation.dat` (Greenland `[barysealevel] sl_path`),
+`alpha_orbital_r2020.dat` (Greenland `[coef_alpha]`),
+`alpha_combined_125kyr_interp.dat` (the yelmox default glacial index).
+
+Synchronised copies, listed in `input/sync.txt` with their source:
 
 | Copies | Source |
 |---|---|
 | `yelmo_defaults.nml`, `yelmo_phys_const.nml`, `yelmo-variables-*.md` | `$(YELMOROOT)/input/` |
-| `elsa_defaults.nml`, `tracer_defaults.nml` | `$(YELMOROOT)/elsa/input/`, `$(YELMOROOT)/tracer/input/` |
-| `phys_const.nml` | `$(YELMOROOT)/input/yelmo_phys_const.nml` |
+| `elsa_defaults.nml`, `tracer_defaults.nml` | `$(YELMOROOT)/elsa/input/`, `$(YELMOROOT)/tracer/input/` (read when Yelmo's tracers are on) |
 | `chion_defaults.nml` | `$(CHIONROOT)/input/` |
 | `datasrc_defaults.nml` | `$(FESMUTILSROOT)/par/` |
-| `LA2004.INSOLN.5Ma.txt`, `LA2004.INSOLP.1Ma.txt` | `$(INSOLROOT)/input/` |
-| `forcing_db.nml`, `clim_db.nml`, `sl_deglaciation.dat`, `alpha_orbital_r2020.dat`, `alpha_combined_125kyr_interp.dat` | `$(YELMOXROOT)/input/` (no library source) |
+| `LA2004.INSOLN.5Ma.txt`, `LA2004.INSOLP.1Ma.txt` | `$(INSOLROOT)/input/` (`[orbit] fldr`) |
 
-`YELMOXROOT` defaults to a `yelmox` link at the repository root, like the
-dependencies. `make sync-input` copies every source over its copy;
-`make check` first runs `make input-check`, which fails naming each copy that
-differs from its source (or a missing source). Update a library, then
-`make sync-input` and commit the copies.
+Yelmo reads `sec_year` from `input/yelmo_phys_const.nml`
+(`ybound_define_physical_constants`) even though kryos passes it the run's
+constants, so the file must be present (its constants are currently identical to
+`phys_const.nml`).
+
+`make sync-input` copies every source over its copy; `make check` first runs
+`make input-check`, which fails naming each copy that differs from its source
+(or a missing source). Update a library, then `make sync-input` and commit the
+copies.
 
 ## Run
 

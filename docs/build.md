@@ -12,9 +12,6 @@ Dependencies are sibling checkouts or symlinks at the repo root:
 `fesm-utils`, `yelmo`, `FastIsostasy`, `chion`, `insol` (pinned in
 `.configme/manifest.toml`; gitignored). `configme install kryos` clones them;
 for existing checkouts, symlink them (`ln -s ../fesm-utils fesm-utils`).
-`yelmox` (a link to a yelmox checkout, not built) is the source of the
-`input/` copies that have no library source; `make check` compares them
-([running.md](running.md)).
 
 ```bash
 configme config kryos --only -m macbook -c gfortran
