@@ -5,6 +5,8 @@ system and source skeleton in place; components are placeholders.
 
 - [build.md](build.md): configure, targets, switches, generated dependencies,
   adding a backend with a stub.
+- [running.md](running.md): par files and defaults, the synchronised `input/`,
+  running with runme, output files, restart bundles.
 - [design.md](design.md): the proposal — vocabulary, architecture, component
   contract, exchange, regional vs global, time, data backends, what is kept
   from yelmox and CLIMBER-X and why, what is shed and why, additions to

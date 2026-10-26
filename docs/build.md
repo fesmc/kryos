@@ -12,6 +12,9 @@ Dependencies are sibling checkouts or symlinks at the repo root:
 `fesm-utils`, `yelmo`, `FastIsostasy`, `chion`, `insol` (pinned in
 `.configme/manifest.toml`; gitignored). `configme install kryos` clones them;
 for existing checkouts, symlink them (`ln -s ../fesm-utils fesm-utils`).
+`yelmox` (a link to a yelmox checkout, not built) is the source of the
+`input/` copies that have no library source; `make check` compares them
+([running.md](running.md)).
 
 ```bash
 configme config kryos --only -m macbook -c gfortran
@@ -27,7 +30,9 @@ dependencies' own Makefiles alone.
 |---|---|
 | `make kryos-static` | `libkryos/include/libkryos.a` and the `.mod`/`.smod` files in `libkryos/include` |
 | `make kryos` | `libkryos/bin/kryos.x`, the driver (`drivers/kryos.f90`) |
-| `make check` | every `tests/test_*.f90`, linked against libkryos, then runs them; fails if one exits non-zero |
+| `make check` | `make input-check`, then every `tests/test_*.f90`, linked against libkryos, then runs them; fails if one exits non-zero |
+| `make sync-input` | copies the library sources over the synchronised copies in `input/` (`input/sync.txt`; [running.md](running.md)) |
+| `make input-check` | fails naming every copy in `input/` that differs from its source |
 | `make deps-check` | fails with instructions if a dependency archive is missing |
 | `make deps-static` | builds fesm-utils and the enabled backend libraries in their own trees |
 | `make depend` | regenerates `config/deps.mk` (`configme deps .`) |
