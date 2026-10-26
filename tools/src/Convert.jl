@@ -1233,7 +1233,8 @@ function inputs_needed(c::Conversion)
     for k in sort(comps)
         push!(rows, ("kryos `input/kryos-variables-$k.md`", "variable table of the $k component (default writer)"))
     end
-    push!(rows, ("fesm-utils `par/phys_const_earth.nml`", "defaults of phys_const_load (link `fesm-utils` in the run directory)"))
+    push!(rows, ("kryos `input/phys_const.nml`", "`[kryos] phys_const_file`: the run's constants (phys_const_load, no defaults file)"))
+    push!(rows, ("kryos `input/yelmo_phys_const.nml`", "synchronised copy of yelmo's; Yelmo reads `sec_year` from it"))
     return rows
 end
 

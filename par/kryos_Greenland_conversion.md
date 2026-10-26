@@ -382,7 +382,8 @@ Run directory layout: the par file, and links `input`, `fesmdata`, `ice_data`, `
 | kryos `input/kryos-variables-sediments.md` | variable table of the sediments component (default writer) |
 | kryos `input/kryos-variables-shelf.md` | variable table of the shelf component (default writer) |
 | kryos `input/kryos-variables-surface.md` | variable table of the surface component (default writer) |
-| fesm-utils `par/phys_const_earth.nml` | defaults of phys_const_load (link `fesm-utils` in the run directory) |
+| kryos `input/phys_const.nml` | `[kryos] phys_const_file`: the run's constants (phys_const_load, no defaults file) |
+| kryos `input/yelmo_phys_const.nml` | synchronised copy of yelmo's; Yelmo reads `sec_year` from it |
 
 Grid descriptions in `maps/`: `grid_GRL-16KM.txt`; the cached maps between them (frozen map cache of the gate).
 
