@@ -111,3 +111,54 @@ Comparisons (`tools/levante/compare_wp0.sh base nor`, KryosTools on Julia 1.13; 
 - `SRG-16KM -> SRG-250M` bilin map not generated (probably unused).
 - The Julia compare needs `julia +1.13` (the depot is for 1.13; the default channel is 1.12).
 - Phase 1 refs (`$G/ref/{grl,ant}`) and S/S2/S3/v24 untouched; new directories only.
+
+## 7. NOR: why `H_ice_ref` and initial `H_ice` differ at t = 0 (R2' vs R0)
+
+Read-only analysis of the R0/R2' `out.out` and outputs, and of the code (yelmox `topo-prep`, Yelmo `topo-prepared`
+ea90fee7). Scripts `tools/levante/wp0_nor_why.py` (run as `$G/tools/nor_why.py`; a second small script printed the
+largest `H_ice_ref` differences). No job was submitted.
+
+**Ruled out** (identical in R0 and R2', from the par file and the logs):
+- the Yelmo cleaning keys of the North base equal the `[topo]` values of 5ac89c8: `grad_lim_zb` 0.5 (0 smoothing
+  passes), `z_bed_f_sd` 0, `smooth_H_ice` = `smooth_z_bed` = 0; `z_bed` is identical at t = 0 (0 cells);
+- `remove_lakes`: both remove lakes with sea level 0 (R0 in `ydata_load` / `yelmo_init_topo`, R2' in the hub);
+- the 1 m threshold on the present-day reference: Yelmo's PD path does `where (H_ice < 1) H_ice = 0`
+  (`yelmo_data.f90`, `ydata_load`), equal to the hub's `H_ice_min = 1`. So for the PD reference
+  (`dta%pd%H_ice`) the two paths agree, as for grl.
+
+**Cause for `H_ice_ref` (5436 cells, max 50.3 m).** NOR has `init_method = "recon"`. `domain_init_recon`
+(`libs/kryos_startup.f90`) overwrites `bnd%H_ice_ref` first with the ICE-6G_C slice, then, after the 1 yr fixed-topography
+equilibration and the removal of floating ice thinner than 50 m, with `tpo%now%H_ice`
+("Store the clean thickness as the reference state"). The `H_ice_ref` written at t = 0 is therefore the initial
+ice after the recon recipe, not the prepared PD reference, and it inherits the initial-state path of Yelmo
+(`yelmo_init_topo`), which is the one that differs:
+- R0 (cleaning applied): `0.1 <= H_ice < 10 m` is raised to **10 m** (`yelmo_ice.f90`, `yelmo_init_topo`; ice < 0.1 m removed).
+- R2' (`prepared`, cleaning skipped): the hub's field as prepared: ice < 1 m removed, ice in 1 to 10 m kept as is.
+  (Same split as the grl "initial H_ice" difference, gate-log: 636 cells.)
+- Outside the recon region (or where the bed is below -500 m) the initial ice is this field; inside it the recon
+  ice is the same in both, but `smooth_gauss_2D(H_ice, f_sigma = 2)` over the whole field spreads the 10 m steps
+  over a few cells. Numbers: of the 5436 differing cells 5425 differ by at most 10 m; 5300 have R0 > R2'
+  (thin ice raised); 3560 lie within 6 cells of a source cell with 0.1 <= H < 1 m (the hub field before
+  preparation has 8385 cells with 0 < H < 1 m according to the hub log).
+- The two largest differences (50.3 and 47.8 m) are cells where R2' has 0 and R0 has 50.3 / 47.8 m: the 10 m shift
+  moves the smoothed thickness across the 50 m threshold of the floating-ice removal (`mask_bed == 5 and H < 50 -> 0`).
+  The next largest are 13 to 15 m (smoothing of neighbouring raised cells). Only 11 cells differ by more than 10 m.
+- grl/ant differ because there `init_method` is `none`/`equil`: `H_ice_ref` stays the prepared PD reference and is
+  identical when hub and ice grid agree.
+
+**Cause for the initial `H_ice` (21419 cells, 118 by > 10 m, max 234.7 m).** The `H_ice` written at t = 0
+is after the whole recon recipe, which ends with 200 yr of dynamics with free topography
+(`yelmo_update_equil`, `beta_min = 100`). It starts from the initial ice that differs as above (R0 thin ice at
+10 m, R2' removed or thinner; total volume 3.5263e7 vs 3.5261e7 in the output units), and the hub/surface/climate are
+refreshed from it, so the differences grow and spread:
+- 4242 of the 21419 cells are within 6 cells of a differing `H_ice_ref` cell, 7010 within 30 cells; the rest is
+  dynamic spread over the 200 yr (and the isostasy reference follows: `isos.nc:z_ss` differs by 0.76 m at t = 0,
+  `bsl` by 0.017 m);
+- 21340 of the cells have ice in both runs (35 / 44 only in R0 / R2'), i.e. margin and thickness changes, not new ice
+  patches. The few large differences (118 cells > 10 m, max 234.7 m) are individual dynamic cells.
+This chain was not isolated cell by cell; doing so needs a run that dumps `H_ice` before the smoothing in both
+variants. It is not needed for the baseline (R2' is deterministic, restart-exact, and documented).
+
+**Consequence for the NOR gate:** K == R2' (WP4, recon) must reproduce the recon recipe exactly, including the
+Yelmo initial-state path being skipped (`prepared`): the hub's prepared field is the initial ice outside the recon
+region and the smoothing runs on it; the R0-style 10 m raise does not apply in R2'.
