@@ -1,0 +1,9 @@
+# WP0 baseline gate nor (phase2-plan §3.1): identity comparisons of the yelmox baselines R0, R1, R2'.
+# Only what the identity compare needs (chunks, restart times); the kryos gate file (instances) comes with its WP.
+gate     = "nor"
+base     = "yelmox/yelmox_North.nml"
+p        = ["ctrl.time_end=1000", "ctrl.write_lossless=True", "tm_2D.dt=100", "tm_2Dsm.dt=10", "tm_1D.dt=10", "tm_rst.dt=500"]
+time_init = 0.0
+time_end = 1000.0
+chunks   = [0.0, 500.0, 1000.0]
+restart_times = [500.0, 1000.0]
