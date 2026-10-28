@@ -352,12 +352,21 @@ on the Levante test cases.
    yelmox's operand order. The lapse-rate transform applies whenever the
    climate's reference surface differs from the consumer's (no identical-grid
    shortcut; zero in the gate configurations). Details: `docs/dev/*-design.md`.
-2. `data` backends for every component; esm and rembo climate;
-   smb_simple; experiments plugins (smbpal dropped: deprecated, chion is its
-   successor). Target: all yelmox base configs.
+2. Experiments plugins (relax, opt, recon). Target: shipped
+   `yelmox_Antarctica` and `yelmox_North` (NH-32KM). Narrowed 2026-10-29 to
+   the science case (VILMA2 global + NH and ANT domains); the other yelmox
+   bases (GRP, LIS, PYR, SRG, esm, rembo), `data` backends beyond what the
+   coupling needs, smb_simple and the `dp` hub are deferred
+   (`docs/dev/phase2-plan.md`; smbpal dropped: deprecated, chion is its
+   successor).
 3. Globe: `forcing`, N domains, `ocean = obm`. Target: `yelmox_bipolar`.
 4. `geo = vilma2` (VILMA2's own gaps: export `u` and `N` separately,
-   barystatic definition, `libvilma.a`, FesmData viscosity format).
+   barystatic definition, `libvilma.a`, FesmData viscosity format; global
+   present-day topography in FesmData). Target: VILMA2 global + NH-32KM +
+   ANT with obm and the bipolar forcing (the science case). Global GIA is
+   built in kryos only; yelmox gets none (its VILMA2 plan,
+   `yelmox/docs/_vilma2-backend-plan.md`, is superseded except for the
+   VILMA2 and FesmData changes).
 5. `ice = cism` (serial), then `pism` (C shim).
 6. yelmox frozen; CLIMBER-X may adopt `ice` + `geo` later.
 

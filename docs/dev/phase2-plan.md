@@ -1,11 +1,27 @@
 # kryos phase 2 — plan
 
-Status: reviewed 2026-10-26; all open questions (§5) decided. No code yet. Phase 1 is done: K == R2 bit for
+Status: reviewed 2026-10-26; all open questions (§5) decided; scope narrowed 2026-10-29 (below). No code yet. Phase 1 is done: K == R2 bit for
 bit, grl and ant, 1 kyr + chunks + 15 kyr (`gate-log.md`).
 
 Phase 2 (`design.md` §14): "`data` backends for every component; esm and rembo
 climate; smbpal and smb_simple; experiments plugins. Target: all yelmox base
 configs." smbpal is dropped (Q14: deprecated, chion is its successor).
+
+**Scope narrowed 2026-10-29 (Alex).** The science case is VILMA2 global +
+two Yelmo domains, NH (`yelmox_North`, NH-32KM, snapshots + chion) and ANT,
+with obm and the bipolar forcing (`design.md` §14 phases 3-4). Global GIA is
+built in kryos only (yelmox gets none). Phase 2 keeps:
+
+- WP0: stack S4, its identity checks (grl, ant); maps and R0/R1/R2'
+  baselines for NOR only (`topo-prep` 5ac89c8 has the `[topo]` keys of all 8
+  bases; data check in `gate-reports/wp0-data-check.md`).
+- WP1 plugin mechanism, WP2 + WP3 relax/opt: gate `ant-full`.
+- WP4 recon (NOR cold start): gate `nor`.
+
+Deferred (no gate in phase 2): GRP, LIS, PYR, SRG, eANT, eGRL, rGRL and their
+packages WP4 rest (recon_ref, marine_H, kill_shelves), WP5, WP6 (except what
+the globe needs in phase 3-4), WP7, WP8, WP9, WP10, WP12, WP13, WP14. The
+sections below keep the full plan as the record; §4 has the new order.
 
 Refs: `yx` = yelmox `topo-prep` (`~/models/yelmox/.claude/worktrees/topo-prep`,
 74f3a2b = v2.4 + R2 commit). `contracts`, `core`, `adapters`, `regression` =
@@ -412,6 +428,22 @@ all gates re-baselined to kryos at the WP14 commit (`regression` §3.5).
 
 ## 4. Order (critical path first)
 
+Narrowed 2026-10-29 (§ top). In parallel, outside kryos: VILMA2 changes 1-4
+and 6-8 and the FesmData global topography product (for phase 4).
+
+| # | Package | Size | Unblocks |
+|---|---|---|---|
+| 1 | WP0 S4, NOR maps and baselines (parallel with 2) | M | `nor`, `ant-full` |
+| 2 | WP1 plugin mechanism | M | 3, 4 |
+| 3 | WP2 + WP3 relax, opt | S + S | **`ant-full`** |
+| 4 | WP4 recon | M | `nor` |
+
+Sign-off: `grl`, `ant`, `ant-full`, `nor` green in `docs/gate.md`; then
+phase 3 (globe, N domains, obm: `yelmox_bipolar`) and phase 4 (`geo =
+vilma2`: VILMA2 global + NH-32KM + ANT).
+
+The original order (all bases), kept for the deferred packages:
+
 | # | Package | Size | Unblocks |
 |---|---|---|---|
 | 1 | WP0 baselines, maps, data check (parallel with 2) | M | every gate |
@@ -424,8 +456,6 @@ all gates re-baselined to kryos at the WP14 commit (`regression` §3.5).
 | 8 | WP9 esm (+ WP13 branch restore) | L | `eant`, `egrl` |
 | 9 | WP5 rest, WP6 rest (ice/climate/surface data) | M each | feature and replay gates |
 | 10 | WP14 `dp` hub + clock-year unification, rebaseline | S/M | phase 2 sign-off |
-
-Sign-off: one `docs/gate.md` row per gate of §3.1 green, plus the §3.3 gates.
 
 ## 5. Open questions for Alex
 
