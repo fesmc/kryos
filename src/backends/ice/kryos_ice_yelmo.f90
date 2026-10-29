@@ -5,6 +5,7 @@ module kryos_ice_yelmo
     ! are narrowed once, exports widened from Yelmo's sp values (P1-P5), in
     ! the operand order of yelmox (kryos_coupling.f90, kryos_startup.f90).
 
+    use, intrinsic :: iso_fortran_env, only: int64
     use precision,       only: sp, dp
     use fesm_log,        only: LOG_INFO, log_msg, fesm_error, to_str
     use fesm_fields,     only: fields_get, fields_put
@@ -41,9 +42,11 @@ module kryos_ice_yelmo
         real(sp) :: init_equil_time = 0.0_sp              ! [yr] cold start: yelmo_update_equil, 0 = none
         real(sp) :: init_time_thrm  = 0.0_sp              ! [yr] then equilibrate with topography fixed, 0 = none
         real(dp) :: t_Q_geo = -huge(1.0_dp), t_H_sed = -huge(1.0_dp)   ! publication times last copied
+        integer(int64) :: tick_prepared = -1                  ! clock tick (st%tick) of the last prepare
     contains
         procedure :: init          => yelmo_init_
         procedure :: init_state    => yelmo_init_state_
+        procedure :: prepare       => yelmo_prepare_
         procedure :: update        => yelmo_update_
         procedure :: restart_write => yelmo_restart_write_
         procedure :: restart_read  => yelmo_restart_read_
@@ -107,8 +110,7 @@ contains
             call bnd_geometry(self)
             call topo_diagnostic(self)
             call exports_geometry(self, st%t1)
-        case (PASS_STATE)                               ! kryos_startup.f90:178-179
-            call bnd_from_imports(self)
+        case (PASS_STATE)                               ! kryos_startup.f90:178-179 (bnd: prepare)
             call yelmo_print_bound(self%ylmo%bnd)
             call yelmo_init_state(self%ylmo, time=st%t1, thrm_method="robin-cold")
         case (PASS_SPINUP)                              ! domain_init_ice 252-287, the experiment hook before it
@@ -126,12 +128,27 @@ contains
         end select
     end subroutine yelmo_init_state_
 
-    subroutine yelmo_update_(self, st)
-        ! step_icesheet (kryos_coupling.f90:386-396) on the imports of the step.
+    subroutine yelmo_prepare_(self, st)
+        ! The imports of the step into Yelmo's boundary (couple_to_yelmo), where
+        ! an experiment hook may change them before update or, at the cold
+        ! start, PASS_STATE. The tick is recorded for the check in update.
         class(yelmo_ice_t), intent(inout) :: self
         type(step_time_t),  intent(in)    :: st
 
         call bnd_from_imports(self)
+        self%tick_prepared = st%tick
+    end subroutine yelmo_prepare_
+
+    subroutine yelmo_update_(self, st)
+        ! step_icesheet (kryos_coupling.f90:386-396) on the boundary prepared for the step.
+        class(yelmo_ice_t), intent(inout) :: self
+        type(step_time_t),  intent(in)    :: st
+
+        if (st%tick /= self%tick_prepared) then
+            call fesm_error("kryos_ice_yelmo::update", "the boundary was not prepared for this step", &
+                            "instance "//trim(self%name)//": clock tick "//to_str(st%tick)//", last prepared at tick "// &
+                            to_str(self%tick_prepared)//"; the run sequence must call domain_prepare before the update")
+        end if
         call yelmo_update(self%ylmo, st%t1)
         call exports_geometry(self, st%t1)
         call exports_mass(self, st%t1)

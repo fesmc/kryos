@@ -22,7 +22,7 @@ submodule (kryos_run) kryos_run_sequence
     use kryos_geo,       only: geo_scatter
     use kryos_globe,     only: gather_src_t, gather_src, gather_into, globe_update, globe_reduce, &
                                exchange_globe, exchange_to_globe
-    use kryos_domain,    only: domain_present, domain_due, domain_update, domain_time, exchange, exchange_into, &
+    use kryos_domain,    only: domain_present, domain_due, domain_prepare, domain_update, domain_time, exchange, exchange_into, &
                                domain_hub_update, domain_check_reference, &
                                C_ICE, C_GEO, C_CLIMATE, C_SURFACE, C_SHELF, RESTORE_ORDER
     use kryos_restart,   only: GLOBE_ORDER, restart_read_clock, restart_check_manifest, restart_read_global, &
@@ -89,6 +89,7 @@ contains
                     call domain_pass(dom, C_SHELF, run%clk, PASS_BOUNDARY)
                 end if
                 call exchange_into(dom, "ice", t0, run%clk, init=.true.)          ! couple_to_yelmo
+                call domain_prepare(dom, C_ICE, run%clk, init=.true.)             ! imports -> Yelmo's bnd
 
                 ! c) the ice state: yelmo_init_state (robin-cold), then domain_init_ice
                 call domain_pass(dom, C_ICE, run%clk, PASS_STATE)
@@ -214,6 +215,7 @@ contains
 
         real(dp) :: t
         logical, allocatable :: ran(:)
+        logical :: ice_due
         integer :: d
 
         t = clock_time(run%clk)
@@ -252,8 +254,10 @@ contains
         do d = 1, run%n_dom
             associate (dom => run%dom(d))
                 call exchange_into(dom, "ice", t, run%clk)                        ! couple_to_yelmo
+                ice_due = domain_due(dom, C_ICE, run%clk)
+                if (ice_due) call domain_prepare(dom, C_ICE, run%clk)             ! imports -> Yelmo's bnd
                 call timer_step(run%tmr, TT_COUPLE_ICE)
-                if (domain_due(dom, C_ICE, run%clk)) call domain_update(dom, C_ICE, run%clk)   ! step_icesheet
+                if (ice_due) call domain_update(dom, C_ICE, run%clk)              ! step_icesheet
                 call timer_step(run%tmr, TT_ICE)
                 call domain_hub_update(dom, t, run%clk)                            ! couple_yelmo_to_htopo
                 call timer_step(run%tmr, TT_HUB)
