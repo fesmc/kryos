@@ -1,10 +1,10 @@
 # configme manifest for kryos.
-# Pins: stable (== main) for every dependency, except fesm-utils at dev while
-# the fesm-utils additions kryos needs (design section 12) are developed; a
-# tagged release pins the dependency tags.
+# Pins: stable (== main) for every dependency, except fesm-utils at
+# phase0-kryos (the fesm-utils additions kryos needs, design section 12, not
+# yet merged to dev); a tagged release pins the dependency tags.
 package = "kryos"
 deps = [
-    "fesm-utils:dev",
+    "fesm-utils:phase0-kryos",
     "yelmo:stable",
     "FastIsostasy:stable",
     "chion:stable",
