@@ -4,7 +4,8 @@ submodule (kryos_experiment) kryos_experiment_factory
     ! phase 2, one `case` each (the module of a plugin is its yelmo=1 module or
     ! its stub, config/common.mk).
 
-    use kryos_exp_relax, only: relax_exp_t
+    use kryos_exp_relax,      only: relax_exp_t
+    use kryos_exp_opt_cb_ref, only: opt_cb_ref_exp_t
 
     implicit none
 
@@ -32,9 +33,12 @@ contains
         case ("relax")
             allocate(relax_exp_t :: slot%c)
             call experiment_identity(slot, ctx)
+        case ("opt_cb_ref")
+            allocate(opt_cb_ref_exp_t :: slot%c)
+            call experiment_identity(slot, ctx)
         case default
             call fesm_error("kryos_experiment::experiment_create", "unknown experiment kind '"//trim(ctx%kind)//"'", &
-                            "experiment "//trim(ctx%instance)//"; known: host, relax")
+                            "experiment "//trim(ctx%instance)//"; known: host, relax, opt_cb_ref")
         end select
     end subroutine experiment_create
 

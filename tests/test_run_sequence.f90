@@ -239,6 +239,7 @@ program test_run_sequence
     use kryos_ice_yelmo, only: yelmo_ice_t
     use yelmo_defs,      only: MASK_ICE_NONE
     use kryos_exp_relax, only: relax_exp_t
+    use kryos_exp_opt_cb_ref, only: opt_cb_ref_exp_t
     use kryos_climate_snapshots,  only: snapshots_climate_t
     use kryos_surface_chion,      only: chion_surface_t
     use kryos_shelf_marine_shelf, only: marshelf_shelf_t
@@ -257,7 +258,7 @@ program test_run_sequence
     character(len=16), parameter :: INSTANCES(9) = [character(len=16) :: "forcing", "geo_glob", "ice_grl", &
         "geo_grl", "climate_grl", "surface_grl", "shelf_grl", "ghf_grl", "sed_grl"]
 
-    character(len=512) :: arg, par_arg, file_arg, root, repo
+    character(len=512) :: arg, par_arg, file_arg, root, repo, only
     character(len=PATH_LEN) :: files_arg(1)
     integer :: nfail = 0
 
@@ -287,6 +288,16 @@ program test_run_sequence
     if (root(1:1) /= "/") root = trim(repo)//"/"//trim(root)
     if (.not. exists(trim(root)//"/Greenland/GRL-16KM/GRL-16KM_TOPO-M17-v5.nc")) then
         write(*,'(a)') "test_run_sequence: ice_data topography not found under "//trim(root)//": skipped"
+        stop 0
+    end if
+
+    call get_environment_variable("KRYOS_TEST_ONLY", only)
+    if (trim(only) == "exp") then                   ! development: the plugin experiments only (after a full run)
+        if (.not. exists(trim(repo)//"/"//DIR//DATA)) call setup_run_dir("")
+        call sh("rm -rf '"//trim(repo)//"/"//DIR//"xr'")
+        call exp_round_trip()
+        if (nfail > 0) error stop 1
+        write(*,'(a)') "test_run_sequence (experiments only): OK"
         stop 0
     end if
 
@@ -539,51 +550,98 @@ contains
 
     subroutine xexp_child(par_file)
         ! A run (cold start, or restored from a bundle) with the plugin experiments
-        ! of the xr/ set (relax; core-design 3.9): after every step the topography
+        ! of the xr/ set (core-design 3.9). relax: after every step the topography
         ! relaxation of Yelmo is what relax_update gives for the elapsed time of the
         ! clock (continuous across chunks), then the par-file values after time2.
+        ! opt_cb_ref: Yelmo takes cb_ref from outside (till_method = -1); the cold
+        ! start sets cf_init everywhere; cb_ref changes in the window (elapsed time
+        ! 0-60) and is then left alone (method none: never changes).
         character(len=*), intent(in) :: par_file
 
         type(run_t), target :: run
-        integer :: n, topo_rel0
+        real(sp), allocatable :: cb0(:,:), cb60(:,:)
+        integer :: n, i, irel, icf, topo_rel0
         real(dp) :: t
-        logical :: ok
+        logical :: ok, ok_cb, none_cf
 
         call run_init(run, par_file, protos=host_protos())
-        write(*,'(a)') "--- plugin experiments (relax)"
-        select type (x => run%exps(1)%s(1)%c)
-        type is (relax_exp_t)
-            call check(x%topo_rel0 == 0 .and. x%topo_rel_tau0 == 10.0_sp, "relax: the par-file ytopo values recorded at init")
-            call check(x%wants(HOOK_STEP_BEGIN) .and. count(x%wants) == 1, "relax: wants STEP_BEGIN only")
-        class default
-            call check(.false., "the first experiment is relax")
-        end select
-        select type (c => run%dom(1)%ice%c)
-        type is (yelmo_ice_t)
-            if (.not. run%clk%continued) call check(c%ylmo%tpo%par%topo_rel == 0, "cold start: no relaxation before the first step")
-        end select
+        write(*,'(a)') "--- plugin experiments"
+        irel = 0;  icf = 0;  none_cf = .false.
+        do i = 1, size(run%exps(1)%s)
+            select type (x => run%exps(1)%s(i)%c)
+            type is (relax_exp_t)
+                irel = i
+                call check(x%topo_rel0 == 0 .and. x%topo_rel_tau0 == 10.0_sp, "relax: the par-file ytopo values recorded at init")
+                call check(x%wants(HOOK_STEP_BEGIN) .and. count(x%wants) == 1, "relax: wants STEP_BEGIN only")
+            type is (opt_cb_ref_exp_t)
+                icf = i
+                none_cf = trim(x%method) == "none"
+                call check(x%wants(HOOK_COLD_PRE_STATE) .and. (x%wants(HOOK_STEP_BEGIN) .neqv. none_cf) .and. &
+                           count(x%wants) == merge(1, 2, none_cf), "opt_cb_ref: the cold-start hook, STEP_BEGIN unless method = none")
+            end select
+        end do
+        if (irel > 0 .and. .not. run%clk%continued) then
+            select type (c => run%dom(1)%ice%c)
+            type is (yelmo_ice_t)
+                call check(c%ylmo%tpo%par%topo_rel == 0, "cold start: no relaxation before the first step")
+            end select
+        end if
+        if (icf > 0) then
+            select type (x => run%exps(1)%s(icf)%c)
+            type is (opt_cb_ref_exp_t)
+                select type (c => run%dom(1)%ice%c)
+                type is (yelmo_ice_t)
+                    call check(c%ylmo%dyn%par%till_method == -1, "opt_cb_ref: Yelmo's till_method = -1 (cb_ref from outside), also in a restore")
+                    call check(all(x%cf_min == c%ylmo%dyn%par%till_cf_min) .and. all(x%cf_max == c%ylmo%dyn%par%till_cf_ref), &
+                               "opt_cb_ref: the bounds cf_min, cf_max from ytill")
+                    if (.not. run%clk%continued) call check(all(c%ylmo%dyn%now%cb_ref == 1.0e-2_sp), &
+                               "cold start: cb_ref = cf_init (1e-2) everywhere")
+                    cb0 = c%ylmo%dyn%now%cb_ref
+                end select
+            end select
+        end if
 
         n = 0
         ok = .true.
+        ok_cb = .true.
         do while (.not. run_done(run))
             call run_step(run)
             n = n + 1
             t = clock_time_elapsed(run%clk)
             select type (c => run%dom(1)%ice%c)
             type is (yelmo_ice_t)
-                topo_rel0 = c%ylmo%tpo%par%topo_rel
-                if (t <= 60.0_dp) then
-                    ok = ok .and. topo_rel0 == 3 .and. &
-                         abs(c%ylmo%tpo%par%topo_rel_tau - real(tau_expected(t), sp)) <= 1e-5_sp*real(tau_expected(t), sp)
-                else
-                    ok = ok .and. topo_rel0 == 0 .and. c%ylmo%tpo%par%topo_rel_tau == 10.0_sp
+                if (irel > 0) then
+                    topo_rel0 = c%ylmo%tpo%par%topo_rel
+                    if (t <= 60.0_dp) then
+                        ok = ok .and. topo_rel0 == 3 .and. &
+                             abs(c%ylmo%tpo%par%topo_rel_tau - real(tau_expected(t), sp)) <= 1e-5_sp*real(tau_expected(t), sp)
+                    else
+                        ok = ok .and. topo_rel0 == 0 .and. c%ylmo%tpo%par%topo_rel_tau == 10.0_sp
+                    end if
+                    if (.not. ok) write(*,'(a,f8.1,a,i0,a,es12.4)') "  at elapsed ", t, ": topo_rel = ", topo_rel0, &
+                                                                     ", tau = ", c%ylmo%tpo%par%topo_rel_tau
                 end if
-                if (.not. ok) write(*,'(a,f8.1,a,i0,a,es12.4)') "  at elapsed ", t, ": topo_rel = ", topo_rel0, &
-                                                                 ", tau = ", c%ylmo%tpo%par%topo_rel_tau
+                if (icf > 0 .and. .not. none_cf) then
+                    if (t == 60.0_dp) then
+                        cb60 = c%ylmo%dyn%now%cb_ref
+                        call check(any(cb60 /= cb0), "opt_cb_ref: cb_ref has changed from its value at the start of the run, "// &
+                                   "at elapsed 60 ("//trim(itoa(count(cb60 /= cb0)))//" cells)")
+                    else if (t > 60.0_dp) then
+                        ok_cb = ok_cb .and. all(c%ylmo%dyn%now%cb_ref == cb60)
+                    end if
+                end if
             end select
         end do
-        call check(ok, "relax: topo_rel = 3 and the tau ramp (100 -> 2000, 20 -> 60 yr, m = 2) of the elapsed time, "// &
-                   "the par-file values after 60 ("//trim(itoa(n))//" steps)")
+        if (irel > 0) call check(ok, "relax: topo_rel = 3 and the tau ramp (100 -> 2000, 20 -> 60 yr, m = 2) of the elapsed time, "// &
+                                 "the par-file values after 60 ("//trim(itoa(n))//" steps)")
+        if (icf > 0 .and. .not. none_cf .and. clock_time_elapsed(run%clk) > 60.0_dp) &
+            call check(ok_cb, "opt_cb_ref: cb_ref unchanged after the window (elapsed 60)")
+        if (icf > 0 .and. none_cf) then
+            select type (c => run%dom(1)%ice%c)
+            type is (yelmo_ice_t)
+                call check(all(c%ylmo%dyn%now%cb_ref == cb0), "opt_cb_ref method = none: cb_ref never changes")
+            end select
+        end if
         call run_end(run)
         if (nfail > 0) then
             write(*,'(a,i0,a)') "test_run_sequence (xexp): FAILED (", nfail, " checks)"
@@ -688,34 +746,69 @@ contains
 
     subroutine exp_round_trip()
         ! The plugin experiments (xr/ set): the same restart round trip as above,
-        ! cont 0 -> 80 against chunks 0 -> 40 -> 80, with relax active (window time
-        ! 20-60 yr: the ramp straddles the restart). Each run checks its own state
-        ! (xexp_child); the comparison tool checks chunk = cont bit for bit.
-        character(len=:), allocatable :: d
-        character(len=*), parameter :: X = "xr/", XC = "xr/cont/", X0 = "xr/chunk/c00/", X1 = "xr/chunk/c01/"
-        character(len=24) :: names(1)
-        logical :: ok
+        ! cont 0 -> 80 against chunks 0 -> 40 -> 80, with relax and opt_cb_ref active
+        ! (window 20-60 and 0-60 yr of the elapsed time: both straddle the restart; the
+        ! optimisation only when the present-day velocity file is there). Each run checks
+        ! its own state (xexp_child); the comparison tool checks chunk = cont bit for bit.
+        ! Then method = none (a short run) and the stop without the present-day velocity.
+        character(len=:), allocatable :: d, vel
+        character(len=*), parameter :: X = "xr/", XC = "xr/cont/", X0 = "xr/chunk/c00/", X1 = "xr/chunk/c01/", &
+                                       XN = "xr/none/", XV = "xr/novel/"
+        character(len=24), allocatable :: names(:)
+        logical :: ok, has_vel
 
-        write(*,'(a)') "--- plugin experiments: restart round trip with relax"
+        write(*,'(a)') "--- plugin experiments: restart round trip with relax and opt_cb_ref"
         d = trim(repo)//"/"//DIR
-        names = [character(len=24) :: "exp_relax"]
+        vel = trim(root)//"/Greenland/GRL-16KM/GRL-16KM_VEL-J18.nc"
+        has_vel = exists(vel)
+        if (has_vel) then
+            names = [character(len=24) :: "exp_relax", "exp_cf"]
+        else
+            names = [character(len=24) :: "exp_relax"]
+            call note(.false., "opt_cb_ref not run: no present-day velocity "//vel)
+        end if
         call setup_run_dir(XC)
         call setup_run_dir(X0)
         call setup_run_dir(X1)
-        call write_par(d//XC//PAR, "None", 0.0_dp, T_END, T_MID, explist=names, xlines=exp_lines(names))
-        call write_par(d//X0//PAR, "None", 0.0_dp, T_MID, T_MID, explist=names, xlines=exp_lines(names))
-        call write_par(d//X1//PAR, "../c00/restart-40", T_MID, T_END, T_MID, explist=names, xlines=exp_lines(names))
+        call write_par(d//XC//PAR, "None", 0.0_dp, T_END, T_MID, explist=names, xlines=exp_lines(names), vel=vel_arg(has_vel, vel))
+        call write_par(d//X0//PAR, "None", 0.0_dp, T_MID, T_MID, explist=names, xlines=exp_lines(names), vel=vel_arg(has_vel, vel))
+        call write_par(d//X1//PAR, "../c00/restart-40", T_MID, T_END, T_MID, explist=names, xlines=exp_lines(names), &
+                       vel=vel_arg(has_vel, vel))
         ok = child(XC, "xexp "//PAR, "run.log")
         call sh("grep -E '^  (ok|FAIL|OPEN)|^---' '"//d//XC//"run.log'")
-        call check(ok, "continuous run 0 -> 80 with relax ("//DIR//XC//"run.log)")
+        call check(ok, "continuous run 0 -> 80 with the experiments ("//DIR//XC//"run.log)")
         ok = child(X0, "xexp "//PAR, "run.log")
-        call check(ok, "chunk 0 -> 40 with relax ("//DIR//X0//"run.log)")
+        call check(ok, "chunk 0 -> 40 with the experiments ("//DIR//X0//"run.log)")
         ok = child(X1, "xexp "//PAR, "run.log")
         call sh("grep -E '^  (ok|FAIL|OPEN)|^---' '"//d//X1//"run.log'")
-        call check(ok, "chunk 40 -> 80 with relax: the ramp continues on the elapsed time ("//DIR//X1//"run.log)")
+        call check(ok, "chunk 40 -> 80: the windows continue on the elapsed time ("//DIR//X1//"run.log)")
         if (nfail > 0) return
         call compare_tool(X)
+
+        ! method = none: external cb_ref = cf_init, never optimised (needs no velocity)
+        call setup_run_dir(XN)
+        names = [character(len=24) :: "exp_cf0"]
+        call write_par(d//XN//PAR, "None", 0.0_dp, 20.0_dp, 20.0_dp, explist=names, xlines=exp_lines(names))
+        ok = child(XN, "xexp "//PAR, "run.log")
+        call sh("grep -E '^  (ok|FAIL|OPEN)|^---' '"//d//XN//"run.log'")
+        call check(ok, "opt_cb_ref method = none: till_method = -1, cb_ref = cf_init and unchanged ("//DIR//XN//"run.log)")
+        ! L21 without the present-day velocity stops at init, naming the key
+        call setup_run_dir(XV)
+        names = [character(len=24) :: "exp_cf"]
+        call write_par(d//XV//PAR, "None", 0.0_dp, 20.0_dp, 20.0_dp, explist=names, xlines=exp_lines(names))
+        call check(.not. child(XV, "plain "//PAR, "run.log", quiet=.true.) .and. in_file(d//XV//"run.log", "needs the present-day velocity") &
+                   .and. in_file(d//XV//"run.log", "pd_vel_load"), &
+                   "opt_cb_ref L21 stops without Yelmo's present-day velocity ("//DIR//XV//"run.log)")
     end subroutine exp_round_trip
+
+    function vel_arg(has, vel) result(v)
+        ! Optional argument stand-in: the file when there is one, else "" (write_par: no velocity data).
+        logical,          intent(in) :: has
+        character(len=*), intent(in) :: vel
+        character(len=:), allocatable :: v
+        v = ""
+        if (has) v = vel
+    end function vel_arg
 
     function exp_lines(names) result(lines)
         ! The par-file groups of the plugin experiments named in `names` (test values: relax
@@ -730,6 +823,11 @@ contains
             case ("exp_relax")
                 lines = [character(len=400) :: lines, "&exp_relax", "  kind = 'relax'", "  topo_rel = 3", "  tau1 = 100.0", &
                          "  tau2 = 2000.0", "  time1 = 20.0", "  time2 = 60.0", "  m = 2.0", "/"]
+            case ("exp_cf")
+                lines = [character(len=400) :: lines, "&exp_cf", "  kind = 'opt_cb_ref'", "  method = 'L21'", &
+                         "  cf_time_init = 0.0", "  cf_time_end = 60.0", "  tau_c = 50.0", "/"]
+            case ("exp_cf0")
+                lines = [character(len=400) :: lines, "&exp_cf0", "  kind = 'opt_cb_ref'", "  method = 'none'", "/"]
             end select
         end do
     end function exp_lines
@@ -1354,8 +1452,10 @@ contains
         vel_load = "  pd_vel_load = False"
         vel_path = ""
         if (present(vel)) then
-            vel_load = "  pd_vel_load = True"
-            vel_path = "  pd_vel_path = '"//vel//"'"
+            if (len(vel) > 0) then
+                vel_load = "  pd_vel_load = True"
+                vel_path = "  pd_vel_path = '"//vel//"'"
+            end if
         end if
 
         open(newunit=u, file=file, status="replace", action="write")
