@@ -789,6 +789,9 @@ module kryos_surface_chion
 
     integer, parameter :: NMON = 12
 
+    ! Precisions of the 2D stream (input/kryos-variables-<TABLE>.md)
+    character(len=*), parameter :: TABLE = "surface-chion"
+
     type, extends(surface_t) :: chion_surface_t
         type(surface_chion_class) :: sc               ! chion + its yelmox host
         character(len=NAME_LEN) :: host_group  = "surface_chion"   ! host parameters ([surface_chion])
@@ -940,19 +943,19 @@ contains
         if (init) call outfile_dims_2d(file, self%xkm, self%ykm, t)
         call outfile_open(file, t, ncid, n)
         associate (ann => self%sc%ann)
-            call outfile_var2d(file, "smb",    ann%smb,    n, ncid, "mm w.e./yr", "Surface mass balance (sf+rf-runoff-subl)", prec_abs=0.1_cwp)
-            call outfile_var2d(file, "tsrf",   ann%tsrf,   n, ncid, "K",          "Surface temperature", prec_abs=1e-3_cwp)
-            call outfile_var2d(file, "melt",   ann%melt,   n, ncid, "mm w.e./yr", "Melt", prec_abs=0.1_cwp)
-            call outfile_var2d(file, "runoff", ann%runoff, n, ncid, "mm w.e./yr", "Runoff", prec_abs=0.1_cwp)
-            call outfile_var2d(file, "refrz",  ann%refrz,  n, ncid, "mm w.e./yr", "Refreezing", prec_abs=0.1_cwp)
-            call outfile_var2d(file, "pr",     ann%pr,     n, ncid, "mm w.e./yr", "Precipitation", prec_rel=1e-4_cwp)
-            call outfile_var2d(file, "sf",     ann%sf,     n, ncid, "mm w.e./yr", "Snowfall", prec_rel=1e-4_cwp)
-            call outfile_var2d(file, "t2m",    ann%t2m,    n, ncid, "K",          "Near-surface air temperature", prec_abs=1e-3_cwp)
-            call outfile_var2d(file, "S",      ann%S,      n, ncid, "W m-2",      "TOA insolation", prec_rel=1e-4_cwp)
-            call outfile_var2d(file, "PDDs",   ann%PDDs,   n, ncid, "K d",        "Positive degree days", prec_rel=1e-4_cwp)
-            call outfile_var2d(file, "alb_s",  ann%alb_s,  n, ncid, "1",          "Surface albedo", prec_abs=1e-4_cwp)
-            call outfile_var2d(file, "H_snow", ann%H_snow, n, ncid, "mm w.e.",    "Snowpack thickness (end of year)", prec_abs=0.1_cwp)
-            call outfile_var2d(file, "mask",   ann%mask,   n, ncid, "1",          "chion active (land or ice)")
+            call outfile_var2d(file, "smb",    ann%smb,    n, ncid, "mm w.e./yr", "Surface mass balance (sf+rf-runoff-subl)", table=TABLE)
+            call outfile_var2d(file, "tsrf",   ann%tsrf,   n, ncid, "K",          "Surface temperature", table=TABLE)
+            call outfile_var2d(file, "melt",   ann%melt,   n, ncid, "mm w.e./yr", "Melt", table=TABLE)
+            call outfile_var2d(file, "runoff", ann%runoff, n, ncid, "mm w.e./yr", "Runoff", table=TABLE)
+            call outfile_var2d(file, "refrz",  ann%refrz,  n, ncid, "mm w.e./yr", "Refreezing", table=TABLE)
+            call outfile_var2d(file, "pr",     ann%pr,     n, ncid, "mm w.e./yr", "Precipitation", table=TABLE)
+            call outfile_var2d(file, "sf",     ann%sf,     n, ncid, "mm w.e./yr", "Snowfall", table=TABLE)
+            call outfile_var2d(file, "t2m",    ann%t2m,    n, ncid, "K",          "Near-surface air temperature", table=TABLE)
+            call outfile_var2d(file, "S",      ann%S,      n, ncid, "W m-2",      "TOA insolation", table=TABLE)
+            call outfile_var2d(file, "PDDs",   ann%PDDs,   n, ncid, "K d",        "Positive degree days", table=TABLE)
+            call outfile_var2d(file, "alb_s",  ann%alb_s,  n, ncid, "1",          "Surface albedo", table=TABLE)
+            call outfile_var2d(file, "H_snow", ann%H_snow, n, ncid, "mm w.e.",    "Snowpack thickness (end of year)", table=TABLE)
+            call outfile_var2d(file, "mask",   ann%mask,   n, ncid, "1",          "chion active (land or ice)", table=TABLE)
         end associate
         call nc_close(ncid)
     end subroutine chion_write_output_

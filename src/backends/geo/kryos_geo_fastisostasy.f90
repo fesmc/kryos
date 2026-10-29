@@ -15,6 +15,7 @@ module kryos_geo_fastisostasy
     use fesm_fields,     only: fields_get, fields_put
     use nml,             only: nml_read, nml_has_param
     use ncio,            only: nc_create, nc_write_dim, nc_write, nc_open, nc_close, nc_time_index
+    use kryos_outfile,   only: outfile_var2d
     use kryos_component, only: init_ctx_t, step_time_t, constraints_t, component_write_output, NAME_LEN, &
                                PASS_INIT, PASS_GEOMETRY
     use kryos_geo,       only: geo_t, geo_opt_t
@@ -29,6 +30,7 @@ module kryos_geo_fastisostasy
     public :: fastiso_geo_t, fastiso_bsl_t, fastiso_geo_constraints, fastiso_bsl_constraints
 
     character(len=*), parameter :: BSL_GROUP = "barysealevel"   ! fixed in bsl_init (barysealevel.f90:59-61)
+    character(len=*), parameter :: TABLE = "geo-fastisostasy"    ! precisions of the 2D stream (input/kryos-variables-<TABLE>.md)
 
     type, extends(geo_t) :: fastiso_geo_t
         type(isos_class) :: isos                       ! the domain's FastIsostasy state
@@ -367,12 +369,11 @@ contains
     end subroutine isos_write_2D
 
     subroutine var_2D(file, vnm, var, n, ncid, units, long_name)
+        ! One 2D record; the precision of the row of input/kryos-variables-geo-fastisostasy.md.
         character(len=*), intent(in) :: file, vnm, units, long_name
         real(sp),         intent(in) :: var(:,:)
         integer,          intent(in) :: n, ncid
-        call nc_write(file, vnm, var, dim1="xc", dim2="yc", dim3="time", &
-                      start=[1,1,n], count=[size(var,1), size(var,2), 1], ncid=ncid, &
-                      units=units, long_name=long_name, prec_abs=1e-3_sp)
+        call outfile_var2d(file, vnm, var, n, ncid, units, long_name, table=TABLE)
     end subroutine var_2D
 
     subroutine isos_write_1D(isos, file, t)

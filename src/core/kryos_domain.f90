@@ -46,6 +46,7 @@ module kryos_domain
     use regions,         only: regions_class, regions_init_nml
     use nml,             only: nml_has_group
     use ncio,            only: nc_open, nc_close, nc_write, nc_time_index
+    use kryos_outfile,   only: outfile_var2d
     use coupler,         only: coupler_class, coupler_init, coupler_prime, remap
     use htopo,           only: htopo_class, htopo_init, htopo_update, htopo_write_init, htopo_write_step
     use phys_constants,  only: phys_const_class
@@ -1235,9 +1236,8 @@ contains
         mask = kryos_mask(dom%hub_exports%f(dom%hh%h_f_ice)%v(:,:,1), dom%hub_exports%f(dom%hh%h_f_grnd)%v(:,:,1))
         call nc_open(trim(file), ncid, writable=.true.)
         n = nc_time_index(trim(file), "time", t, ncid)
-        call nc_write(trim(file), "f_ice", real(dom%hub_exports%f(dom%hh%h_f_ice)%v(:,:,1), wp), &
-                      dim1="xc", dim2="yc", dim3="time", start=[1,1,n], count=[nx,ny,1], ncid=ncid, &
-                      units="1", long_name="Ice-covered fraction", prec_abs=1e-4_wp)
+        call outfile_var2d(trim(file), "f_ice", real(dom%hub_exports%f(dom%hh%h_f_ice)%v(:,:,1), wp), n, ncid, &
+                           "1", "Ice-covered fraction", table="hub")
         call nc_write(trim(file), "mask", mask, dim1="xc", dim2="yc", dim3="time", &
                       start=[1,1,n], count=[nx,ny,1], ncid=ncid, units="1", &
                       long_name="Surface type (0 ocean, 1 land, 2 grounded ice, 3 floating ice)")

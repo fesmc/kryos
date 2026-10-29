@@ -28,6 +28,7 @@ module kryos_snap_mods
     use fesm_log,         only: LOG_INFO, log_msg, fesm_error, to_str
     use nml,              only: nml_read, nml_validate
     use ncio,             only: nc_write
+    use kryos_outfile,    only: outfile_var2d
     use coordinates,      only: grid_class
     use varslice,         only: varslice_class, varslice_init_nml, varslice_update, varslice_end
     use kryos_snap_out,   only: climate_out_class
@@ -151,11 +152,9 @@ contains
 
         if (mods%bias%active .and. mods%bias%tdep) then
             associate (b => mods%bias)
-            call nc_write(filename, "bias_dtas_ann_now", b%f_tas*sum(b%dtas, dim=3)/12.0_wp, &
-                          dim1="xc", dim2="yc", dim3="time", start=[1,1,n], &
-                          count=[size(b%dtas,1),size(b%dtas,2),1], ncid=ncid, units="K", &
-                          long_name="Bias correction of the air temperature at the forcing time (ann)", &
-                          prec_abs=1e-3_wp)
+            call outfile_var2d(filename, "bias_dtas_ann_now", b%f_tas*sum(b%dtas, dim=3)/12.0_wp, n, ncid, &
+                               "K", "Bias correction of the air temperature at the forcing time (ann)", &
+                               table="climate-snapshots")
             end associate
         end if
 

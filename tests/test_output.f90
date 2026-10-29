@@ -184,20 +184,30 @@ program test_output
     ! a backend stream routed to the backend's write_output, init versus later
     ! records, a writer producer (hub) and the timing table, the registration
     ! errors, [kryos] write_lossless, and the variable tables against the
-    ! vocabulary of contracts-design section 2.
+    ! vocabulary of contracts-design section 2. Output precision (phase 3, WP3):
+    ! every row of every table round-trips within its tolerance (instance tables
+    ! through the variable_io writer, backend tables through the backend helpers),
+    ! the moved hard-coded precisions give the values the literals gave, a variable
+    ! a backend table does not list is lossless, write_lossless gives exact
+    ! values, time series are lossless, the restart state of a rounded run is a
+    ! lossless run's, and a bad prec entry, a row without a unit and a unit that
+    ! differs from the data's stop (child processes of this executable).
     !
     ! Files go to tmp/test_output/ (run from the repo root, as make check does).
     ! Abort paths take `stat` (fesm_error returns instead of stopping).
 
     use precision,        only: sp, dp
     use coordinates,      only: grid_init
-    use ncio,             only: nc_read, nc_size, nc_exists_var, nc_read_attr
-    use variable_io,      only: var_io_type
+    use ncio,             only: nc_read, nc_size, nc_exists_var, nc_read_attr, nc_create, nc_write_dim, nc_write, &
+                                nc_close, nc_set_lossless
+    use variable_io,      only: var_io_type, var_io_write
+    use fesm_fields,      only: fields_restart_write
     use timer,            only: timer_class, timer_init, timer_step
     use fesm_clock,       only: clock_t, clock_init, clock_start, clock_advance, clock_finished, clock_time
     use kryos_component,  only: init_ctx_t
     use kryos_config,     only: config_t, config_init
-    use kryos_outfile,    only: outfile_load, outfile_set_table_dir, outfile_path
+    use kryos_outfile,    only: outfile_load, outfile_set_table_dir, outfile_path, outfile_row, outfile_open, &
+                                outfile_var2d, outfile_var3d, outfile_dims_2d, outfile_axis
     use kryos_output
     use test_output_toys
 
@@ -206,6 +216,7 @@ program test_output
     character(len=*), parameter :: dir = "tmp/test_output/", rundir = "tmp/test_output/run/"
     character(len=*), parameter :: par = dir//"par.nml"
     integer :: nfail = 0
+    character(len=64) :: arg
 
     type :: hub_ctx_t                           ! context of the toy hub writer
         integer :: ncall = 0
@@ -214,6 +225,12 @@ program test_output
         character(len=256) :: file = ""
     end type hub_ctx_t
 
+    call get_command_argument(1, arg)
+    if (len_trim(arg) > 0) then                 ! child process: one abort case
+        call abort_case(trim(arg))
+        stop 0
+    end if
+
     call execute_command_line("rm -rf "//dir//" && mkdir -p "//dir)
     call write_par(par, rundir, lossless=.false.)
 
@@ -221,6 +238,7 @@ program test_output
     call test_run()
     call test_errors()
     call test_lossless()
+    call test_precision()
 
     if (nfail > 0) then
         write(*,'(a,i0,a)') "test_output: FAILED (", nfail, " checks)"
@@ -735,5 +753,442 @@ contains
         call check(all([((a(i, j) == real(toy_field(0.0_dp, i, j, 0), sp), i = 1, NX), j = 1, NY)]), &
                    "lossless: values equal the float of the export, table precision ignored")
     end subroutine test_lossless
+
+    ! -------------------------------------------------------------------------
+    ! output precision (phase 3, WP3)
+    ! -------------------------------------------------------------------------
+
+    subroutine test_precision()
+        character(len=*), parameter :: pdir = dir//"prec/"
+        character(len=16), parameter :: KINDS(8) = [character(len=16) :: "ice", "geo", "climate", "surface", "shelf", &
+                                                    "geothermal", "sediments", "forcing"]
+        character(len=24), parameter :: BACKENDS(5) = [character(len=24) :: "geo-fastisostasy", "climate-snapshots", &
+                                                       "surface-chion", "shelf-marine_shelf", "hub"]
+        integer :: i
+
+        call execute_command_line("rm -rf "//pdir//" && mkdir -p "//pdir)
+        call outfile_set_table_dir("input")
+        call nc_set_lossless(.false.)
+
+        do i = 1, size(KINDS)
+            call table_roundtrip(pdir, trim(KINDS(i)), .false.)
+        end do
+        do i = 1, size(BACKENDS)
+            call table_roundtrip(pdir, trim(BACKENDS(i)), .true.)
+        end do
+        call moved_literals(pdir)
+        call unlisted_lossless(pdir)
+        call lossless_switch(pdir)
+        call restart_state(pdir)
+        call test_stops(pdir)
+    end subroutine test_precision
+
+    function sample(nx, ny, nz, salt) result(a)
+        ! Deterministic values of both signs over magnitudes 1e-2 .. 1e4 (and the odd zero).
+        integer, intent(in) :: nx, ny, nz, salt
+        real(sp) :: a(nx, ny, nz)
+        integer :: i, j, k
+        real(dp) :: u, mag
+        do k = 1, nz
+            do j = 1, ny
+                do i = 1, nx
+                    u = sin(12.9898_dp*real(i + salt, dp) + 78.233_dp*real(j, dp) + 37.719_dp*real(k, dp))*43758.5453_dp
+                    u = u - floor(u)
+                    mag = 10.0_dp**(real(mod(i + 3*j + k, 7), dp) - 2.0_dp)
+                    a(i, j, k) = real((2.0_dp*u - 1.0_dp)*mag, sp)
+                end do
+            end do
+        end do
+        a(1, 1, 1) = 0.0_sp
+    end function sample
+
+    subroutine make_file(file, dim3, nz)
+        ! A 2D file (xc, yc, time) with a third axis `dim3` of nz levels when given.
+        character(len=*), intent(in) :: file, dim3
+        integer,          intent(in) :: nz
+        integer :: i
+        call outfile_dims_2d(file, 50.0_dp*real([(i, i = 1, 20)], dp), 50.0_dp*real([(i, i = 1, 15)], dp), 0.0_dp)
+        if (len_trim(dim3) > 0) call outfile_axis(file, trim(dim3), real([(i, i = 1, nz)], dp), "1")
+    end subroutine make_file
+
+    logical function within(dat, got, abs_p, rel_p)
+        ! |got - dat| <= abs_p, or <= rel_p*|dat| (both set: the larger of the two bounds, as ncio).
+        real(sp), intent(in) :: dat(:), got(:)
+        real(dp), intent(in) :: abs_p, rel_p
+        real(dp) :: err, tol
+        integer :: i
+        within = .true.
+        do i = 1, size(dat)
+            err = abs(real(got(i), dp) - real(dat(i), dp))
+            tol = max(abs_p, rel_p*abs(real(dat(i), dp)))
+            if (abs_p <= 0.0_dp .and. rel_p <= 0.0_dp) tol = 0.0_dp
+            if (err > tol*1.0001_dp) within = .false.
+        end do
+    end function within
+
+    subroutine table_roundtrip(pdir, table, backend)
+        ! Every row of `table` (the writer's way: variable_io for an instance
+        ! table, the backend helpers for a backend table) round-trips within the
+        ! row's tolerance, exact when it has none and under nc_set_lossless.
+        character(len=*), intent(in) :: pdir, table
+        logical,          intent(in) :: backend
+
+        type(var_io_type), allocatable :: tab(:)
+        type(var_io_type) :: row
+        character(len=:), allocatable :: file
+        character(len=32) :: dim3
+        real(sp), allocatable :: dat(:,:,:), got(:,:,:)
+        integer :: i, ncid, n, rank, nz, nbad, nlossy
+        logical :: ok_r, ok_l
+
+        call outfile_load(table, tab)
+        call check(size(tab) > 0 .or. trim(table) == "forcing", "precision: table "//table//" has rows")
+        nbad = 0; nlossy = 0
+        do i = 1, size(tab)
+            row = tab(i)
+            rank = row%ndims
+            if (len_trim(row%dims(1)) == 0) rank = 0
+            if (rank == 0) then
+                cycle
+            end if
+            nz = 1
+            dim3 = ""
+            if (rank == 3) then
+                nz = 3
+                dim3 = row%dims(3)
+            end if
+            dat = sample(20, 15, nz, i)
+            file = pdir//"rt_"//table//".nc"
+            call make_file(file, trim(dim3), nz)
+            call outfile_open(file, 0.0_dp, ncid, n)
+            call write_one(file, row, dat, n, ncid, backend, table, dim3)
+            call nc_close(ncid)
+            allocate(got(20, 15, nz))
+            call read_var(file, trim(row%varname), got, rank)
+            ok_r = within(reshape(dat, [size(dat)]), reshape(got, [size(got)]), row%prec_abs, row%prec_rel)
+            if (.not. ok_r) then
+                nbad = nbad + 1
+                write(*,'(a)') "  FAIL  precision: "//table//" `"//trim(row%varname)//"` outside its tolerance"
+            end if
+            if (row%prec_abs > 0.0_dp .or. row%prec_rel > 0.0_dp) then
+                if (any(got /= dat)) nlossy = nlossy + 1
+            else
+                if (any(got /= dat)) then
+                    nbad = nbad + 1
+                    write(*,'(a)') "  FAIL  precision: "//table//" `"//trim(row%varname)//"` has no prec but is not exact"
+                end if
+            end if
+            deallocate(got)
+
+            ! the same under nc_set_lossless: exact
+            call nc_set_lossless(.true.)
+            call make_file(file, trim(dim3), nz)
+            call outfile_open(file, 0.0_dp, ncid, n)
+            call write_one(file, row, dat, n, ncid, backend, table, dim3)
+            call nc_close(ncid)
+            allocate(got(20, 15, nz))
+            call read_var(file, trim(row%varname), got, rank)
+            ok_l = all(got == dat)
+            call nc_set_lossless(.false.)
+            deallocate(got)
+            if (.not. ok_l) then
+                nbad = nbad + 1
+                write(*,'(a)') "  FAIL  precision: "//table//" `"//trim(row%varname)//"` is not exact under write_lossless"
+            end if
+        end do
+        call check(nbad == 0, "precision: "//table//": every row within its tolerance, exact without prec and under write_lossless")
+        call check(nlossy > 0 .or. all(tab%prec_abs == 0.0_dp .and. tab%prec_rel == 0.0_dp), &
+                   "precision: "//table//": the rounding rows do round the sample")
+    end subroutine table_roundtrip
+
+    subroutine write_one(file, row, dat, n, ncid, backend, table, dim3)
+        character(len=*),  intent(in) :: file, table, dim3
+        type(var_io_type), intent(in) :: row
+        real(sp),          intent(in) :: dat(:,:,:)
+        integer,           intent(in) :: n, ncid
+        logical,           intent(in) :: backend
+
+        if (backend) then
+            if (len_trim(dim3) == 0) then
+                call outfile_var2d(file, trim(row%varname), dat(:,:,1), n, ncid, trim(row%units), "long", table=table)
+            else
+                call outfile_var3d(file, trim(row%varname), dat, trim(dim3), n, ncid, trim(row%units), "long", table=table)
+            end if
+        else
+            if (len_trim(dim3) == 0) then
+                call var_io_write(file, row, dat(:,:,1), n, ncid=ncid)
+            else
+                call var_io_write(file, row, dat, n, ncid=ncid)
+            end if
+        end if
+    end subroutine write_one
+
+    subroutine read_var(file, name, got, rank)
+        character(len=*), intent(in)  :: file, name
+        real(sp),         intent(out) :: got(:,:,:)
+        integer,          intent(in)  :: rank
+        real(sp), allocatable :: b2(:,:,:), b3(:,:,:,:)
+        if (rank == 3) then
+            allocate(b3(size(got,1), size(got,2), size(got,3), 1))
+            call nc_read(file, name, b3, start=[1, 1, 1, 1], count=[size(got,1), size(got,2), size(got,3), 1])
+            got = b3(:,:,:,1)
+        else
+            allocate(b2(size(got,1), size(got,2), 1))
+            call nc_read(file, name, b2, start=[1, 1, 1], count=[size(got,1), size(got,2), 1])
+            got = b2
+        end if
+    end subroutine read_var
+
+    subroutine moved_literals(pdir)
+        ! The precisions that were hard-coded at the call sites (the literals below, as
+        ! they were written there) and the table rows give the same file values.
+        character(len=*), intent(in) :: pdir
+
+        type :: lit_t
+            character(len=24) :: table
+            character(len=24) :: name
+            real(sp) :: pa, pr
+        end type lit_t
+        type(lit_t), parameter :: LIT(28) = [ &
+            lit_t("geo-fastisostasy", "z_bed", 1e-3_sp, 0.0_sp), lit_t("geo-fastisostasy", "z_ss", 1e-3_sp, 0.0_sp), &
+            lit_t("geo-fastisostasy", "w", 1e-3_sp, 0.0_sp), lit_t("geo-fastisostasy", "we", 1e-3_sp, 0.0_sp), &
+            lit_t("climate-snapshots", "t2m_ann", 1e-3_sp, 0.0_sp), lit_t("climate-snapshots", "t2m_sum", 1e-3_sp, 0.0_sp), &
+            lit_t("climate-snapshots", "pr_ann", 0.0_sp, 1e-4_sp), lit_t("climate-snapshots", "to_ann", 1e-3_sp, 0.0_sp), &
+            lit_t("climate-snapshots", "so_ann", 0.0_sp, 1e-4_sp), lit_t("climate-snapshots", "tas", 1e-3_sp, 0.0_sp), &
+            lit_t("climate-snapshots", "pr", 0.0_sp, 1e-4_sp), lit_t("climate-snapshots", "tsl_ann", 1e-3_sp, 0.0_sp), &
+            lit_t("climate-snapshots", "z_srf", 1e-3_sp, 0.0_sp), lit_t("climate-snapshots", "bias_dtas_ann_now", 1e-3_sp, 0.0_sp), &
+            lit_t("surface-chion", "smb", 0.1_sp, 0.0_sp), lit_t("surface-chion", "tsrf", 1e-3_sp, 0.0_sp), &
+            lit_t("surface-chion", "melt", 0.1_sp, 0.0_sp), lit_t("surface-chion", "runoff", 0.1_sp, 0.0_sp), &
+            lit_t("surface-chion", "refrz", 0.1_sp, 0.0_sp), lit_t("surface-chion", "pr", 0.0_sp, 1e-4_sp), &
+            lit_t("surface-chion", "sf", 0.0_sp, 1e-4_sp), lit_t("surface-chion", "t2m", 1e-3_sp, 0.0_sp), &
+            lit_t("surface-chion", "S", 0.0_sp, 1e-4_sp), lit_t("surface-chion", "PDDs", 0.0_sp, 1e-4_sp), &
+            lit_t("surface-chion", "alb_s", 1e-4_sp, 0.0_sp), lit_t("surface-chion", "H_snow", 0.1_sp, 0.0_sp), &
+            lit_t("shelf-marine_shelf", "bmb_shlf", 1e-4_sp, 0.0_sp), lit_t("hub", "f_ice", 1e-4_sp, 0.0_sp)]
+
+        type(var_io_type) :: row
+        character(len=:), allocatable :: f1, f2
+        real(sp), allocatable :: dat(:,:,:), g1(:,:,:), g2(:,:,:)
+        integer :: i, ncid, n, nz, rank, nbad
+        logical :: found
+        character(len=32) :: dim3
+
+        nbad = 0
+        do i = 1, size(LIT)
+            call outfile_row(trim(LIT(i)%table), trim(LIT(i)%name), row, found)
+            if (.not. found) then
+                nbad = nbad + 1
+                write(*,'(a)') "  FAIL  moved literals: "//trim(LIT(i)%table)//" lists no `"//trim(LIT(i)%name)//"`"
+                cycle
+            end if
+            rank = row%ndims
+            nz = 1; dim3 = ""
+            if (rank == 3) then
+                nz = 3; dim3 = row%dims(3)
+            end if
+            dat = sample(20, 15, nz, 100 + i)
+            f1 = pdir//"lit_table.nc";  f2 = pdir//"lit_literal.nc"
+            ! the table
+            call make_file(f1, trim(dim3), nz)
+            call outfile_open(f1, 0.0_dp, ncid, n)
+            call write_one(f1, row, dat, n, ncid, .true., trim(LIT(i)%table), dim3)
+            call nc_close(ncid)
+            ! the literal, as the call sites wrote it
+            call make_file(f2, trim(dim3), nz)
+            call outfile_open(f2, 0.0_dp, ncid, n)
+            if (rank == 3) then
+                if (LIT(i)%pa > 0.0_sp) then
+                    call nc_write(f2, trim(row%varname), dat, dim1="xc", dim2="yc", dim3=trim(dim3), dim4="time", &
+                                  start=[1,1,1,n], count=[20,15,nz,1], ncid=ncid, units=trim(row%units), &
+                                  long_name="long", prec_abs=LIT(i)%pa)
+                else
+                    call nc_write(f2, trim(row%varname), dat, dim1="xc", dim2="yc", dim3=trim(dim3), dim4="time", &
+                                  start=[1,1,1,n], count=[20,15,nz,1], ncid=ncid, units=trim(row%units), &
+                                  long_name="long", prec_rel=LIT(i)%pr)
+                end if
+            else
+                if (LIT(i)%pa > 0.0_sp) then
+                    call outfile_var2d(f2, trim(row%varname), dat(:,:,1), n, ncid, trim(row%units), "long", prec_abs=LIT(i)%pa)
+                else
+                    call outfile_var2d(f2, trim(row%varname), dat(:,:,1), n, ncid, trim(row%units), "long", prec_rel=LIT(i)%pr)
+                end if
+            end if
+            call nc_close(ncid)
+            allocate(g1(20, 15, nz), g2(20, 15, nz))
+            call read_var(f1, trim(row%varname), g1, rank)
+            call read_var(f2, trim(row%varname), g2, rank)
+            if (any(g1 /= g2)) then
+                nbad = nbad + 1
+                write(*,'(a)') "  FAIL  moved literals: "//trim(LIT(i)%table)//" `"//trim(LIT(i)%name)//"` differs from its literal"
+            end if
+            deallocate(g1, g2)
+        end do
+        call check(nbad == 0, "precision: the 28 moved literals and their table rows give identical rounded values")
+    end subroutine moved_literals
+
+    subroutine unlisted_lossless(pdir)
+        ! A backend variable the table does not list is written lossless, with the long_name given.
+        character(len=*), intent(in) :: pdir
+        character(len=:), allocatable :: f
+        real(sp), allocatable :: dat(:,:,:), got(:,:,:)
+        integer :: ncid, n
+
+        f = pdir//"unlisted.nc"
+        dat = sample(20, 15, 1, 7)
+        call make_file(f, "", 0)
+        call outfile_open(f, 0.0_dp, ncid, n)
+        call outfile_var2d(f, "not_in_the_table", dat(:,:,1), n, ncid, "m", "An unlisted variable", table="geo-fastisostasy")
+        call outfile_var2d(f, "w", dat(:,:,1), n, ncid, "m", "Not the table's long name", table="geo-fastisostasy")
+        call nc_close(ncid)
+        allocate(got(20, 15, 1))
+        call read_var(f, "not_in_the_table", got, 2)
+        call check(all(got == dat), "precision: a backend variable the table does not list is lossless")
+        call check(attr(f, "not_in_the_table", "long_name") == "An unlisted variable", &
+                   "precision: an unlisted variable keeps the long_name of the writer")
+        call check(attr(f, "w", "long_name") == "Viscous displacement", "precision: a listed variable takes the table's long_name")
+        call read_var(f, "w", got, 2)
+        call check(any(got /= dat) .and. within(reshape(dat, [size(dat)]), reshape(got, [size(got)]), 1.0d-3, 0.0d0), &
+                   "precision: a listed variable is rounded to its row")
+    end subroutine unlisted_lossless
+
+    subroutine lossless_switch(pdir)
+        ! write_lossless (nc_set_lossless): exact values from a rounding row of the default
+        ! writer's table and of a backend table; a rounded 0-D time series row is exact too.
+        character(len=*), intent(in) :: pdir
+        character(len=:), allocatable :: f
+        real(sp), allocatable :: dat(:,:,:), got(:,:,:)
+        type(var_io_type) :: row
+        logical :: found
+        integer :: ncid, n
+
+        dat = sample(20, 15, 1, 11)
+        call nc_set_lossless(.true.)
+        f = pdir//"lossless_default.nc"
+        call outfile_row("ice", "H_ice", row, found)
+        call make_file(f, "", 0)
+        call outfile_open(f, 0.0_dp, ncid, n)
+        call var_io_write(f, row, dat(:,:,1), n, ncid=ncid)
+        call outfile_var2d(f, "z_bed", dat(:,:,1), n, ncid, "m", "x", table="geo-fastisostasy")
+        call nc_close(ncid)
+        allocate(got(20, 15, 1))
+        call read_var(f, "H_ice", got, 2)
+        call check(found .and. all(got == dat), "precision: write_lossless: a rounding row of an instance table is exact")
+        call read_var(f, "z_bed", got, 2)
+        call check(all(got == dat), "precision: write_lossless: a rounding row of a backend table is exact")
+        call nc_set_lossless(.false.)
+    end subroutine lossless_switch
+
+    subroutine restart_state(pdir)
+        ! The restart state of a rounded run is a lossless run's: the exports' state file
+        ! (fesm_fields restart, double precision) is the same file whatever the switch.
+        character(len=*), intent(in) :: pdir
+        type(toy_t), target :: ice_r, ice_l
+        character(len=*), parameter :: nm = "ice_toy"
+        integer :: es
+
+        call make(ice_r, nm, "ice", "yelmo", .true.)
+        call make(ice_l, nm, "ice", "yelmo", .true.)
+        call toy_publish(ice_r, 30.0_dp)
+        call toy_publish(ice_l, 30.0_dp)
+        call nc_set_lossless(.false.)
+        call fields_restart_write(ice_r%exports, pdir//"state_rounded.nc")
+        call nc_set_lossless(.true.)
+        call fields_restart_write(ice_l%exports, pdir//"state_lossless.nc")
+        call nc_set_lossless(.false.)
+        call execute_command_line("cmp -s "//pdir//"state_rounded.nc "//pdir//"state_lossless.nc", exitstat=es)
+        call check(es == 0, "precision: the restart state of a rounded run equals that of a lossless run")
+    end subroutine restart_state
+
+    ! -------------------------------------------------------------------------
+    ! stops: a bad prec entry, a row without a unit, a unit that differs from the data's
+    ! -------------------------------------------------------------------------
+
+    subroutine test_stops(pdir)
+        character(len=*), intent(in) :: pdir
+        character(len=*), parameter :: hdr = "| id | variable | dimensions | units | long_name | prec |"
+        integer :: u
+
+        call execute_command_line("mkdir -p "//pdir//"tabs")
+        open(newunit=u, file=pdir//"tabs/kryos-variables-badprec.md", status="replace", action="write")
+        write(u,'(a)') "# bad prec"
+        write(u,'(a)') hdr
+        write(u,'(a)') "|----|----------|------------|-------|-----------|------|"
+        write(u,'(a)') "|  1 | a        | xc, yc     | m     | A         | 1e-3x |"
+        close(u)
+        open(newunit=u, file=pdir//"tabs/kryos-variables-nounit.md", status="replace", action="write")
+        write(u,'(a)') "# no unit"
+        write(u,'(a)') hdr
+        write(u,'(a)') "|----|----------|------------|-------|-----------|------|"
+        write(u,'(a)') "|  1 | a        | xc, yc     | m     | A         | 1e-3 |"
+        write(u,'(a)') "|  2 | b        | xc, yc     |       | B         | 1e-3 |"
+        close(u)
+        open(newunit=u, file=pdir//"tabs/kryos-variables-unitclash.md", status="replace", action="write")
+        write(u,'(a)') "# unit clash"
+        write(u,'(a)') hdr
+        write(u,'(a)') "|----|----------|------------|-------|-----------|------|"
+        write(u,'(a)') "|  1 | a        | xc, yc     | m     | A         | 1e-3 |"
+        close(u)
+
+        call expect_stop("bad_prec", "bad prec entry", .true.)
+        call expect_stop("no_unit", "has no unit", .false.)
+        call expect_stop("unit_clash", "differ from the data", .false.)
+        call expect_stop("no_table", "variable table not found", .false.)
+    end subroutine test_stops
+
+    subroutine expect_stop(case_name, text, plain_stop)
+        ! Run this program as a child on one case: it must print `text` on stderr and not
+        ! reach its last line. plain_stop: the stop is variable_io's (a bare `stop`, exit
+        ! status 0); otherwise kryos' fesm_error (exit status 1).
+        character(len=*), intent(in) :: case_name, text
+        logical,          intent(in) :: plain_stop
+
+        character(len=512) :: exe, line
+        character(len=:), allocatable :: err, out
+        integer :: es, u, ios
+
+        call get_command_argument(0, exe)
+        call execute_command_line(trim(exe)//" "//case_name//" > "//dir//"child.out 2> "//dir//"child.err", exitstat=es)
+        err = ""; out = ""
+        open(newunit=u, file=dir//"child.err", status="old", action="read", iostat=ios)
+        do while (ios == 0)
+            read(u, "(a)", iostat=ios) line
+            if (ios == 0) err = err//trim(line)//" "
+        end do
+        close(u)
+        open(newunit=u, file=dir//"child.out", status="old", action="read", iostat=ios)
+        do while (ios == 0)
+            read(u, "(a)", iostat=ios) line
+            if (ios == 0) out = out//trim(line)//" "
+        end do
+        close(u)
+        call check(index(err, text) > 0 .and. index(out, "SURVIVED") == 0 .and. (plain_stop .or. es == 1), &
+                   "stops: "//case_name//" ('"//text//"')")
+    end subroutine expect_stop
+
+    subroutine abort_case(name)
+        ! Child: the situation of one case, without `stat`.
+        character(len=*), intent(in) :: name
+        character(len=*), parameter :: pdir = dir//"prec/"
+        type(var_io_type), allocatable :: tab(:)
+        real(sp) :: a(NX, NY)
+        integer :: ncid, n
+
+        call outfile_set_table_dir(pdir//"tabs")
+        select case (name)
+        case ("bad_prec")
+            call outfile_load("badprec", tab)
+        case ("no_unit")
+            call outfile_load("nounit", tab)
+        case ("no_table")
+            call outfile_load("no_such_backend_table", tab)
+        case ("unit_clash")                     ! the data are in K, the row says m
+            a = 1.0_sp
+            call execute_command_line("mkdir -p "//pdir)
+            call outfile_dims_2d(pdir//"clash.nc", 50.0_dp*real([(n, n = 1, NX)], dp), 50.0_dp*real([(n, n = 1, NY)], dp), 0.0_dp)
+            call outfile_open(pdir//"clash.nc", 0.0_dp, ncid, n)
+            call outfile_var2d(pdir//"clash.nc", "a", a, n, ncid, "K", "A", table="unitclash")
+            call nc_close(ncid)
+        end select
+        write(*,'(a)') "SURVIVED"
+    end subroutine abort_case
 
 end program test_output

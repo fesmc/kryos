@@ -25,6 +25,7 @@ module kryos_climate_snapshots
     use fesm_units,           only: units_conv
     use nml,                  only: nml_read, nml_has_param
     use ncio,                 only: nc_create, nc_write_dim, nc_write, nc_open, nc_close, nc_time_index
+    use kryos_outfile,        only: outfile_var2d, outfile_var3d
     use regions,              only: regions_select
     use kryos_component,      only: init_ctx_t, step_time_t, constraints_t, axis_t, &
                                     component_write_output, sec_year_check, NAME_LEN, PATH_LEN, &
@@ -47,6 +48,9 @@ module kryos_climate_snapshots
     public :: snapshots_climate_t, snapshots_climate_constraints
 
     integer, parameter :: TERMS_MAX = 32
+
+    ! Precisions of the 2D stream (input/kryos-variables-<TABLE>.md)
+    character(len=*), parameter :: TABLE = "climate-snapshots"
 
     ! Copy of the fields a state supplies (allocated) into the climate record.
     interface copy_allocated
@@ -509,28 +513,21 @@ contains
 
         associate (out => self%out)
 
-        call write2D("t2m_ann", out%now%ta_ann, "K", "Near-surface air temperature (ann)", &
-                     prec_abs=1e-3_wp)
+        call write2D("t2m_ann", out%now%ta_ann, "K", "Near-surface air temperature (ann)")
         if (allocated(out%now%tas)) &
             call write2D("t2m_sum", summer_mean(out%now%tas, self%south), "K", &
-                         "Near-surface air temperature (sum)", prec_abs=1e-3_wp)
+                         "Near-surface air temperature (sum)")
         if (allocated(out%now%pr_ann)) &
-            call write2D("pr_ann", out%now%pr_ann, "mm/a", "Precipitation (ann)", &
-                         prec_rel=1e-4_wp)
+            call write2D("pr_ann", out%now%pr_ann, "mm/a", "Precipitation (ann)")
         if (allocated(out%now%to_ann)) &
-            call write3D("to_ann", out%now%to_ann, "depth", "K", "Ocean temperature (ann)", &
-                         prec_abs=1e-3_wp)
+            call write3D("to_ann", out%now%to_ann, "depth", "K", "Ocean temperature (ann)")
         if (allocated(out%now%so_ann)) &
-            call write3D("so_ann", out%now%so_ann, "depth", "PSU", "Ocean salinity (ann)", &
-                         prec_rel=1e-4_wp)
+            call write3D("so_ann", out%now%so_ann, "depth", "PSU", "Ocean salinity (ann)")
 
         ! The monthly atmosphere, then the snapshots' own state.
-        call write3D("tas",     out%now%tas,     "month", "K",    "Near-surface air temperature", &
-                     prec_abs=1e-3_wp)
-        call write3D("pr",      out%now%pr,      "month", "mm/d", "Precipitation", &
-                     prec_rel=1e-4_wp)
-        call write2D("tsl_ann", out%now%tsl_ann, "K", "Sea-level air temperature (ann)", &
-                     prec_abs=1e-3_wp)
+        call write3D("tas",     out%now%tas,     "month", "K",    "Near-surface air temperature")
+        call write3D("pr",      out%now%pr,      "month", "mm/d", "Precipitation")
+        call write2D("tsl_ann", out%now%tsl_ann, "K", "Sea-level air temperature (ann)")
         call snapshots_write_step(self%snap, filename, ncid, n)
 
         end associate
@@ -540,24 +537,18 @@ contains
 
     contains
 
-        ! prec_abs/prec_rel: precision of the written values (ncio bit
-        ! rounding), absent for lossless.
-        subroutine write2D(vnm, var, units, long_name, prec_abs, prec_rel)
+        ! The precision of each variable is its row of
+        ! input/kryos-variables-climate-snapshots.md (lossless when unlisted).
+        subroutine write2D(vnm, var, units, long_name)
             character(len=*), intent(in) :: vnm, units, long_name
             real(wp),         intent(in) :: var(:,:)
-            real(wp),         intent(in), optional :: prec_abs, prec_rel
-            call nc_write(filename, vnm, var, dim1="xc", dim2="yc", dim3="time", &
-                          start=[1,1,n], count=[size(var,1),size(var,2),1], ncid=ncid, &
-                          units=units, long_name=long_name, prec_abs=prec_abs, prec_rel=prec_rel)
+            call outfile_var2d(filename, vnm, var, n, ncid, units, long_name, table=TABLE)
         end subroutine write2D
 
-        subroutine write3D(vnm, var, dim3, units, long_name, prec_abs, prec_rel)
+        subroutine write3D(vnm, var, dim3, units, long_name)
             character(len=*), intent(in) :: vnm, dim3, units, long_name
             real(wp),         intent(in) :: var(:,:,:)
-            real(wp),         intent(in), optional :: prec_abs, prec_rel
-            call nc_write(filename, vnm, var, dim1="xc", dim2="yc", dim3=dim3, dim4="time", &
-                          start=[1,1,1,n], count=[size(var,1),size(var,2),size(var,3),1], &
-                          ncid=ncid, units=units, long_name=long_name, prec_abs=prec_abs, prec_rel=prec_rel)
+            call outfile_var3d(filename, vnm, var, dim3, n, ncid, units, long_name, table=TABLE)
         end subroutine write3D
 
     end subroutine write_2D

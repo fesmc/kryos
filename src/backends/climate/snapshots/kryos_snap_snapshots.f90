@@ -39,6 +39,7 @@ module kryos_snap_snapshots
 
     use precision, only : wp, sp, dp
     use ncio
+    use kryos_outfile, only : outfile_var2d
     use nml
     use varslice, only : varslice_class, varslice_init_nml, varslice_update, varslice_end
     use kryos_snap_terms, only : terms_class
@@ -490,24 +491,10 @@ contains
         integer,               intent(IN) :: ncid, n
 
         associate(now => sc%now)
-        if (allocated(now%z_srf))   call write2D("z_srf",   now%z_srf,   "m",    "Surface elevation", &
-                                                 prec_abs=1e-3_wp)
+        if (allocated(now%z_srf)) &
+            call outfile_var2d(filename, "z_srf", now%z_srf, n, ncid, "m", "Surface elevation", &
+                               table="climate-snapshots")
         end associate
-
-        return
-
-    contains
-
-        subroutine write2D(vnm, var, units, long_name, prec_abs, prec_rel)
-            ! prec_abs/prec_rel: precision of the written values (ncio bit
-            ! rounding), absent for lossless.
-            character(len=*), intent(IN) :: vnm, units, long_name
-            real(wp),         intent(IN) :: var(:,:)
-            real(wp),         intent(IN), optional :: prec_abs, prec_rel
-            call nc_write(filename, vnm, var, dim1="xc", dim2="yc", dim3="time", &
-                          start=[1,1,n], count=[size(var,1),size(var,2),1], ncid=ncid, &
-                          units=units, long_name=long_name, prec_abs=prec_abs, prec_rel=prec_rel)
-        end subroutine write2D
 
     end subroutine snapshots_write_step
 

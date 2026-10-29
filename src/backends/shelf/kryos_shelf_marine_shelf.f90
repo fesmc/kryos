@@ -33,6 +33,9 @@ module kryos_shelf_marine_shelf
     private
     public :: marshelf_shelf_t, marshelf_shelf_constraints
 
+    ! Precisions of the 2D stream (input/kryos-variables-<TABLE>.md)
+    character(len=*), parameter :: TABLE = "shelf-marine_shelf"
+
     type, extends(shelf_t) :: marshelf_shelf_t
         type(marshelf_class) :: mshlf                ! the backend object (with pico)
         character(len=NAME_LEN) :: group = "marine_shelf"   ! its group in the par file
@@ -145,7 +148,7 @@ contains
 
     subroutine marshelf_write_output_(self, file, t, stream, init)
         ! Stream 2D: bmb_shlf [m/yr], T_shlf, tf_shlf of mshlf%now (mshlf_write_step,
-        ! kryos_output.f90:279-294), same units and precision. Others: default.
+        ! kryos_output.f90:279-294), same units; precisions from the table. Others: default.
         class(marshelf_shelf_t), intent(inout) :: self
         character(len=*),        intent(in)    :: file, stream
         real(dp),                intent(in)    :: t
@@ -161,9 +164,9 @@ contains
         if (init) call outfile_dims_2d(file, self%xkm, self%ykm, t)
         call outfile_open(file, t, ncid, n)
         associate (now => self%mshlf%now)
-            call outfile_var2d(file, "bmb_shlf", now%bmb_shlf, n, ncid, "m/yr", "Shelf basal mass balance", prec_abs=1e-4_sp)
-            call outfile_var2d(file, "T_shlf",   now%T_shlf,   n, ncid, "K",    "Shelf temperature",        prec_abs=1e-3_sp)
-            call outfile_var2d(file, "tf_shlf",  now%tf_shlf,  n, ncid, "K",    "Thermal forcing",          prec_abs=1e-3_sp)
+            call outfile_var2d(file, "bmb_shlf", now%bmb_shlf, n, ncid, "m/yr", "Shelf basal mass balance", table=TABLE)
+            call outfile_var2d(file, "T_shlf",   now%T_shlf,   n, ncid, "K",    "Shelf temperature",        table=TABLE)
+            call outfile_var2d(file, "tf_shlf",  now%tf_shlf,  n, ncid, "K",    "Thermal forcing",          table=TABLE)
         end associate
         call nc_close(ncid)
     end subroutine marshelf_write_output_
