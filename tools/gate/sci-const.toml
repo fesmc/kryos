@@ -1,0 +1,68 @@
+# Gate sci-const (phase 3 WP5, phase3-plan 3.2): the science case of gate sci with bsl = const: the domains are
+# independent, so each domain of the two-domain run equals the single-domain run of its configuration (the `nor` and
+# `ant` gates' par files, same clock, same bsl method, same binary) bit for bit. 1000 yr, lossless output. par/gate/sci.nml = kryos-merge.jl of par/gate/nor.nml and par/gate/ant.nml (the gate's -p
+# already applied; resolved: clock.time_const = 0.0, barysealevel.sl_path = "none"). The single-domain runs take the
+# merged clock (clock.time_const = 0.0: the forcing time is not used by either base) and bsl = const.
+gate     = "sci-const"
+kind     = "kryos"
+p        = ["ctrl.time_end=1000", "ctrl.write_lossless=True", "tm_2D.dt=100",
+            "tm_2Dsm.dt=10", "tm_1D.dt=10", "tm_rst.dt=500"]
+time_end = 1000.0
+chunks   = [0.0, 500.0, 1000.0]
+restart_times = [500.0, 1000.0]
+domain_order  = ["North", "Antarctica"]       # [kryos] domains of par/gate/sci.nml
+# the aggregates over the domains: the forcing's ice mass and the gathered dV_bsl (globe files of the bundles)
+skip     = ["*forcing_imports.nc:M_ice", "*geo_glob_imports.nc:dV_bsl"]
+
+[domains.North.instances]
+domain     = "North"
+ice        = "ice_nor"
+geo        = "geo_nor"
+climate    = "climate_nor"
+surface    = "surface_nor"
+shelf      = "shelf_nor"
+geothermal = "ghf_nor"
+sediments  = "sed_nor"
+forcing    = "forcing"
+geo_glob   = "geo_glob"
+
+[domains.Antarctica.instances]
+domain     = "Antarctica"
+ice        = "ice_ant"
+geo        = "geo_ant"
+climate    = "climate_ant"
+surface    = "surface_ant"
+shelf      = "shelf_ant"
+geothermal = "ghf_ant"
+sediments  = "sed_ant"
+forcing    = "forcing"
+geo_glob   = "geo_glob"
+
+# runs (tools/levante/run_kryos_kk.sh)
+[[run]]
+name = "cont"
+par  = "sci"
+kp   = ['barysealevel.method="const"']
+
+[[run]]
+name = "nor"
+par  = "nor"
+kp   = ['barysealevel.method="const"', 'clock.time_const=0.0']
+
+[[run]]
+name = "ant"
+par  = "ant"
+kp   = ['barysealevel.method="const"']
+
+# checks (kryos-gate-kk.jl check)
+[[check]]
+type   = "domain"
+domain = "North"
+ref    = "nor"
+run    = "cont"
+
+[[check]]
+type   = "domain"
+domain = "Antarctica"
+ref    = "ant"
+run    = "cont"

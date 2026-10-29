@@ -1,0 +1,76 @@
+# Gate sci (phase 3 WP5, phase3-plan 3.2): NH (yelmox_North, NH-32KM, recon cold start) + ANT (yelmox_Antarctica,
+# hub ANT-16KM, ice ANT-32KM, relax/opt off) in one run, bsl = fastiso, 1000 yr, lossless output. No yelmox side:
+# kryos against kryos. par/gate/sci.nml = kryos-merge.jl of par/gate/nor.nml and par/gate/ant.nml (the gate's -p
+# already applied; resolved: clock.time_const = 0.0, barysealevel.sl_path = "none").
+gate     = "sci"
+kind     = "kryos"
+p        = ["ctrl.time_end=1000", "ctrl.write_lossless=True", "tm_2D.dt=100",
+            "tm_2Dsm.dt=10", "tm_1D.dt=10", "tm_rst.dt=500"]
+time_end = 1000.0
+chunks   = [0.0, 500.0, 1000.0]
+restart_times = [500.0, 1000.0]
+domain_order  = ["North", "Antarctica"]       # [kryos] domains of par/gate/sci.nml
+skip     = []
+
+[domains.North.instances]
+domain     = "North"
+ice        = "ice_nor"
+geo        = "geo_nor"
+climate    = "climate_nor"
+surface    = "surface_nor"
+shelf      = "shelf_nor"
+geothermal = "ghf_nor"
+sediments  = "sed_nor"
+forcing    = "forcing"
+geo_glob   = "geo_glob"
+
+[domains.Antarctica.instances]
+domain     = "Antarctica"
+ice        = "ice_ant"
+geo        = "geo_ant"
+climate    = "climate_ant"
+surface    = "surface_ant"
+shelf      = "shelf_ant"
+geothermal = "ghf_ant"
+sediments  = "sed_ant"
+forcing    = "forcing"
+geo_glob   = "geo_glob"
+
+# runs (tools/levante/run_kryos_kk.sh)
+[[run]]
+name = "cont"
+par  = "sci"
+
+[[run]]
+name = "cont2"
+par  = "sci"
+
+[[run]]
+name  = "chunk"
+par   = "sci"
+chunk = true
+
+[[run]]
+name = "swap"
+par  = "sci"
+swap = true
+
+# checks (kryos-gate-kk.jl check)
+[[check]]
+type = "identical"
+ref  = "cont"
+run  = "cont2"
+
+[[check]]
+type = "chunks"
+ref  = "cont"
+run  = "chunk"
+
+[[check]]
+type = "identical"
+ref  = "cont"
+run  = "swap"
+
+[[check]]
+type = "budget"
+run  = "cont"

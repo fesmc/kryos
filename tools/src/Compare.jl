@@ -100,6 +100,7 @@ end
 The gate file (`tools/gate/<gate>.toml`): `gate`, `base`, `p`, `instances`
 (placeholders), `chunks`, `restart_times`. A bare name is looked up in `dir`.
 """
+load_gate(g::AbstractDict; dir::AbstractString="") = g
 function load_gate(g::AbstractString; dir::AbstractString=joinpath(@__DIR__, "..", "gate"))
     path = isfile(g) ? g : joinpath(dir, g * ".toml")
     isfile(path) || error("gate $g: no file $path")
@@ -235,10 +236,11 @@ mutable struct Report
     first_divergence::Union{Nothing,Dict{String,Any}}
     order::Vector{String}
     constants::Dict{String,Float64}
+    skip::Vector{String}              # identity mode: "<file>:<var>" globs not compared (the gate file's `skip`)
 end
 
 Report(ref, run, map, mode) = Report(ref, run, map, "", mode, VarResult[], String[], String[], String[],
-                                     String[], String[], String[], nothing, String[], Dict{String,Float64}())
+                                     String[], String[], String[], nothing, String[], Dict{String,Float64}(), String[])
 
 """
     exit_code(rep) -> Int
@@ -520,6 +522,11 @@ function compare_pair!(rep::Report, results::Vector{VarResult}, refdir, rundir, 
             end
             for r in results
                 r.ref_path = rp; r.run_path = up
+                if mode == "identity" && any(p -> globmatch(p, r.key), rep.skip)
+                    r.applied = "skip"; r.status = "skipped"; r.note = "skipped by the gate file (skip)"
+                    push!(rep.results, r)
+                    continue
+                end
                 dev = apply_deviation!(r, rep, devs, mode)
                 if r.class == "A"
                     r.status = "absent"
@@ -757,10 +764,11 @@ and the restart times; `deviations` the registry (mapped mode only).
 `restarts` also compares the restart bundles.
 """
 function compare(refdir::AbstractString, rundir::AbstractString; map::AbstractString="identity",
-                 gate::AbstractString="", deviations::AbstractString="", restarts::Bool=false,
-                 restart_times=nothing, repo::Union{Nothing,AbstractString}=nothing)
+                 gate::Union{AbstractString,AbstractDict}="", deviations::AbstractString="", restarts::Bool=false,
+                 restart_times=nothing, repo::Union{Nothing,AbstractString}=nothing,
+                 instances::Union{Nothing,AbstractDict}=nothing)
     rep = Report(refdir, rundir, map, map == "identity" ? "identity" : "mapped")
-    rep.gate = gate
+    rep.gate = gate isa AbstractString ? gate : get(gate, "gate", "")
     inst = Dict{String,String}()
     gd = Dict{String,Any}()
     devs = Deviation[]
@@ -772,7 +780,9 @@ function compare(refdir::AbstractString, rundir::AbstractString; map::AbstractSt
             gd = load_gate(gate)
             rep.gate = gd["gate"]
             inst = Dict{String,String}(k => String(v) for (k, v) in get(gd, "instances", Dict()))
+            rep.skip = String.(get(gd, "skip", String[]))
         end
+        instances === nothing || (inst = Dict{String,String}(String(k) => String(v) for (k, v) in instances))
         restart_times === nothing && (restart_times = Float64.(get(gd, "restart_times", Float64[])))
         if map != "identity"
             spec = load_map(map)
@@ -845,8 +855,8 @@ one chunk `k` writes at `t_k+1`. The record at `t_k` and the bundle a chunk
 writes at its own start are diagnostics of a state not yet stepped (not every
 field is restored) and are not compared.
 """
-function compare_chunks(contdir::AbstractString, chunkdir::AbstractString; gate::AbstractString,
-                        restarts::Bool=true)
+function compare_chunks(contdir::AbstractString, chunkdir::AbstractString; gate::Union{AbstractString,AbstractDict},
+                        restarts::Bool=true, instances::Union{Nothing,AbstractDict}=nothing)
     rep = Report(contdir, chunkdir, "identity", "identity")
     rep.order = copy(IDENTITY_ORDER)
     inst = Dict{String,String}()
@@ -857,6 +867,8 @@ function compare_chunks(contdir::AbstractString, chunkdir::AbstractString; gate:
         gd = load_gate(gate)
         rep.gate = gd["gate"]
         inst = Dict{String,String}(k => String(v) for (k, v) in get(gd, "instances", Dict()))
+        instances === nothing || (inst = Dict{String,String}(String(k) => String(v) for (k, v) in instances))
+        rep.skip = String.(get(gd, "skip", String[]))
         ts = Float64.(get(gd, "chunks", Float64[]))
         length(ts) >= 3 || error("gate $(rep.gate): chunks $(ts) (at least two chunks)")
     catch e
