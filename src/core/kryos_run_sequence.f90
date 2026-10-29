@@ -16,7 +16,8 @@ submodule (kryos_run) kryos_run_sequence
     !            climate's PASS_BOUNDARY), coefficients into the climate
     !            (forcing_to_climate, lag 0).
 
-    use fesm_clock,      only: clock_to_years, cadence_t_last, cadence_due, cadence_dt_years
+    use fesm_clock,      only: clock_to_years, clock_time_rel, clock_time_elapsed, clock_dtt, cadence_t_last, &
+                               cadence_due, cadence_dt_years
     use kryos_component, only: PASS_GEOMETRY, PASS_BOUNDARY, PASS_STATE, PASS_SPINUP, PASS_FINAL
     use kryos_wiring,    only: wire_node
     use kryos_geo,       only: geo_scatter
@@ -25,6 +26,8 @@ submodule (kryos_run) kryos_run_sequence
     use kryos_domain,    only: domain_present, domain_due, domain_prepare, domain_update, domain_time, exchange, exchange_into, &
                                domain_hub_update, domain_check_reference, &
                                C_ICE, C_GEO, C_CLIMATE, C_SURFACE, C_SHELF, RESTORE_ORDER
+    use kryos_experiment, only: hook_time_t, experiments_hook, HOOK_STEP_BEGIN, HOOK_ICE_BND, &
+                                HOOK_COLD_PRE_STATE, HOOK_COLD_POST_STATE
     use kryos_restart,   only: GLOBE_ORDER, restart_read_clock, restart_check_manifest, restart_read_global, &
                                restart_read_instance
 
@@ -233,7 +236,11 @@ contains
         end if
         call timer_step(run%tmr, TT_FORCING)
 
-        ! 2. hooks: none in phase 1 (yelmox step_relax, step_optimize)
+        ! 2. experiment hooks, every domain in order (yelmox step_relax, step_optimize)
+        do d = 1, run%n_dom
+            call run_hook(run, d, HOOK_STEP_BEGIN)
+        end do
+        call timer_step(run%tmr, TT_EXPER)
 
         ! 3. geo: every domain on its cadence (step_isostasy, :194), then the
         !    global reduction (gather -> reduce -> scatter, decision 5)
@@ -255,7 +262,10 @@ contains
             associate (dom => run%dom(d))
                 call exchange_into(dom, "ice", t, run%clk)                        ! couple_to_yelmo
                 ice_due = domain_due(dom, C_ICE, run%clk)
-                if (ice_due) call domain_prepare(dom, C_ICE, run%clk)             ! imports -> Yelmo's bnd
+                if (ice_due) then
+                    call domain_prepare(dom, C_ICE, run%clk)                      ! imports -> Yelmo's bnd
+                    call run_hook(run, d, HOOK_ICE_BND)                           ! experiments on the prepared boundary
+                end if
                 call timer_step(run%tmr, TT_COUPLE_ICE)
                 if (ice_due) call domain_update(dom, C_ICE, run%clk)              ! step_icesheet
                 call timer_step(run%tmr, TT_ICE)
@@ -282,6 +292,28 @@ contains
             end associate
         end do
     end subroutine run_sequence
+
+    subroutine run_hook(run, d, id)
+        ! Hook `id` of the experiments of domain d, at the clock's time: the
+        ! run's step [t1 - dtt, t1] (the cold start: t0 = t1), the forcing
+        ! time, and the elapsed time of the clock (core-design 3.9).
+        type(run_t), target, intent(inout) :: run
+        integer,             intent(in)    :: d, id
+
+        type(hook_time_t) :: st
+        logical :: cold
+
+        if (.not. allocated(run%exps(d)%s)) return
+        cold = id == HOOK_COLD_PRE_STATE .or. id == HOOK_COLD_POST_STATE
+        st%t1        = clock_time(run%clk)
+        st%t0        = st%t1
+        if (.not. cold) st%t0 = clock_to_years(run%clk, run%clk%n - run%clk%dt)
+        st%t_eval    = clock_time_rel(run%clk)
+        st%t_elapsed = clock_time_elapsed(run%clk)
+        st%dtt       = clock_dtt(run%clk)
+        st%clk       => run%clk
+        call experiments_hook(run%exps(d), run%dom(d), id, st)
+    end subroutine run_hook
 
     ! =========================================================================
     ! Globe <-> domain

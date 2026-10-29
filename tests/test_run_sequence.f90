@@ -1,3 +1,104 @@
+module test_run_toys
+    ! Host experiments of the sequence test (core-design 3.9): a recorder that
+    ! logs, at every hook it wants, what the run has published at that point,
+    ! and one that makes the boundary of the ice look unprepared (the guard in
+    ! Yelmo's update).
+    use precision,       only: dp
+    use kryos_domain,    only: domain_t
+    use kryos_experiment
+    use kryos_ice_yelmo, only: yelmo_ice_t
+    implicit none
+    private
+
+    integer, parameter, public :: MAXLOG = 64
+    integer,  public :: n_log = 0
+    integer,  public :: log_id(MAXLOG) = 0
+    real(dp), public :: log_t0(MAXLOG), log_t1(MAXLOG), log_elapsed(MAXLOG), log_dtt(MAXLOG)
+    real(dp), public :: log_geo_t1(MAXLOG), log_ice_t1(MAXLOG), log_zbed_t1(MAXLOG)   ! publication times seen
+    logical,  public :: log_prepared(MAXLOG) = .false.                              ! Yelmo's tick is the step's
+    integer(8), public :: log_tick(MAXLOG)
+
+    type, extends(experiment_t), public :: recorder_t
+    contains
+        procedure :: init => rec_init
+        procedure :: hook => rec_hook
+    end type recorder_t
+
+    type, extends(experiment_t), public :: skip_prepare_t
+    contains
+        procedure :: init => skip_init
+        procedure :: hook => skip_hook
+    end type skip_prepare_t
+
+contains
+
+    subroutine rec_init(self, ctx, dom)
+        class(recorder_t), intent(inout) :: self
+        type(exp_ctx_t),   intent(in)    :: ctx
+        type(domain_t),    intent(in)    :: dom
+        associate (u => ctx%time + len(dom%name)); end associate
+        self%wants(HOOK_STEP_BEGIN) = .true.
+        self%wants(HOOK_ICE_BND)    = .true.
+    end subroutine rec_init
+
+    subroutine rec_hook(self, dom, id, st)
+        class(recorder_t), intent(inout) :: self
+        type(domain_t),    intent(inout) :: dom
+        integer,           intent(in)    :: id
+        type(hook_time_t), intent(in)    :: st
+
+        associate (u => self%restart); end associate
+        n_log = n_log + 1
+        log_id(n_log)      = id
+        log_t0(n_log)      = st%t0
+        log_t1(n_log)      = st%t1
+        log_elapsed(n_log) = st%t_elapsed
+        log_dtt(n_log)     = st%dtt
+        log_tick(n_log)    = st%clk%n
+        log_geo_t1(n_log)  = dom%geo%c%exports%f(dom%geo%c%h_dz_bed)%t1
+        log_ice_t1(n_log)  = dom%ice%c%exports%f(dom%ice%c%h_H_ice)%t1
+        log_zbed_t1(n_log) = dom%ice%c%imports%f(dom%ice%c%hi_z_bed)%t1
+        select type (c => dom%ice%c)
+        type is (yelmo_ice_t)
+            log_prepared(n_log) = c%tick_prepared == st%clk%n
+        end select
+    end subroutine rec_hook
+
+    subroutine skip_init(self, ctx, dom)
+        class(skip_prepare_t), intent(inout) :: self
+        type(exp_ctx_t),       intent(in)    :: ctx
+        type(domain_t),        intent(in)    :: dom
+        associate (u => ctx%time + len(dom%name)); end associate
+        select type (c => dom%ice%c)
+        type is (yelmo_ice_t)
+            self%wants(HOOK_ICE_BND) = .true.
+        class default
+            call fesm_error_toy("skip_prepare needs yelmo_ice_t")
+        end select
+    end subroutine skip_init
+
+    subroutine skip_hook(self, dom, id, st)
+        ! Forget that the boundary was prepared for this step (as if domain_prepare had been skipped).
+        class(skip_prepare_t), intent(inout) :: self
+        type(domain_t),        intent(inout) :: dom
+        integer,               intent(in)    :: id
+        type(hook_time_t),     intent(in)    :: st
+        associate (u => id + st%t1 + len_trim(self%name)); end associate
+        select type (c => dom%ice%c)
+        type is (yelmo_ice_t)
+            c%tick_prepared = -1
+        end select
+    end subroutine skip_hook
+
+    subroutine fesm_error_toy(msg)
+        use fesm_log, only: fesm_error
+        character(len=*), intent(in) :: msg
+        call fesm_error("test_run_sequence", msg)
+    end subroutine fesm_error_toy
+
+end module test_run_toys
+
+
 program test_run_sequence
     ! C9: the whole run sequence (core-design 3.1-3.6) on one Greenland
     ! domain, GRL-16KM, with every phase 1 backend: ice = yelmo, geo =
@@ -57,6 +158,7 @@ program test_run_sequence
     !     test_run_sequence.x run <par file>          cold start + checks
     !     test_run_sequence.x plain <par file>        the run as the driver does it
     !     test_run_sequence.x restored <par file>     a restored chunk + checks
+    !     test_run_sequence.x hooks <par file>        a restored chunk with the recorder experiment + checks
     !     test_run_sequence.x require <folder> <file> restart_require_files of one file
     ! Built only with yelmo=1 fastisostasy=1 chion=1 (config/common.mk).
 
@@ -70,6 +172,8 @@ program test_run_sequence
     use kryos_component, only: component_t, PATH_LEN
     use kryos_domain,    only: domain_component, NCOMP
     use kryos_run,       only: run_t, run_init, run_step, run_done, run_end
+    use kryos_experiment, only: experiment_proto_t, HOOK_STEP_BEGIN, HOOK_ICE_BND
+    use test_run_toys
     use kryos_ice_yelmo, only: yelmo_ice_t
     use kryos_climate_snapshots,  only: snapshots_climate_t
     use kryos_surface_chion,      only: chion_surface_t
@@ -82,7 +186,8 @@ program test_run_sequence
 
     ! The restart round trip: cont 0 -> T_END, chunks 0 -> T_MID -> T_END.
     real(dp), parameter :: T_MID = 40.0_dp, T_END = 80.0_dp
-    character(len=*), parameter :: CONT = "cont/", C00 = "chunk/c00/", C01 = "chunk/c01/", CMM = "chunk/mm/"
+    character(len=*), parameter :: CONT = "cont/", C00 = "chunk/c00/", C01 = "chunk/c01/", CMM = "chunk/mm/", &
+                                CHK = "chunk/c01h/", GRD = "guard/"
 
     ! The instances of the par file (manifest groups, bundle files).
     character(len=16), parameter :: INSTANCES(9) = [character(len=16) :: "forcing", "geo_glob", "ice_grl", &
@@ -94,7 +199,7 @@ program test_run_sequence
 
     call get_command_argument(1, arg)
     select case (trim(arg))
-    case ("run", "plain", "restored", "require")
+    case ("run", "plain", "restored", "hooks", "require")
         call get_command_argument(2, par_arg)
         select case (trim(arg))
         case ("require")
@@ -105,6 +210,7 @@ program test_run_sequence
         case ("run");      call run_child(trim(par_arg))
         case ("plain");    call plain_child(trim(par_arg))
         case ("restored"); call restored_child(trim(par_arg))
+        case ("hooks");    call hooks_child(trim(par_arg))
         end select
         stop 0
     end select
@@ -120,7 +226,7 @@ program test_run_sequence
 
     call sh("rm -rf '"//trim(repo)//"/"//DIR//"'")
     call setup_run_dir("")
-    call write_par(trim(repo)//"/"//DIR//PAR, "None", 0.0_dp, 20.0_dp, 20.0_dp)
+    call write_par(trim(repo)//"/"//DIR//PAR, "None", 0.0_dp, 20.0_dp, 20.0_dp, exps="rec")
     call check(child("", "run "//PAR, "run.log"), &
                "cold start + 2 steps + end with every phase 1 backend (child run, log "//DIR//"run.log)")
     call sh("grep -E '^  (ok|FAIL|OPEN)|^---' '"//trim(repo)//"/"//DIR//"run.log'")
@@ -148,7 +254,7 @@ contains
         real(dp) :: m_prev, dto_prev, t
         integer :: n
 
-        call run_init(run, par_file)
+        call run_init(run, par_file, protos=host_protos())
         call check_init(run)
 
         n = 0
@@ -166,6 +272,7 @@ contains
         end do
         call check(n == 2, "two steps to time_end = 20")
         call run_end(run)
+        call check_hooks_run()
 
         call check_files()
         if (nfail > 0) then
@@ -180,7 +287,7 @@ contains
         character(len=*), intent(in) :: par_file
         type(run_t), target :: run
 
-        call run_init(run, par_file)
+        call run_init(run, par_file, protos=host_protos())
         do while (.not. run_done(run))
             call run_step(run)
         end do
@@ -198,7 +305,7 @@ contains
         type(run_t), target :: run
         integer :: n
 
-        call run_init(run, par_file)
+        call run_init(run, par_file, protos=host_protos())
         write(*,'(a)') "--- after run_init (restored, t = 40)"
         call check(run%clk%continued .and. clock_time(run%clk) == T_MID .and. clock_time_elapsed(run%clk) == T_MID, &
                    "continuation at 40: the clock and the elapsed time run on")
@@ -234,6 +341,80 @@ contains
         write(*,'(a)') "test_run_sequence (restored): OK"
     end subroutine restored_child
 
+    function host_protos() result(protos)
+        ! The host experiments of the tests, selected by the group name in the par file.
+        type(experiment_proto_t), allocatable :: protos(:)
+        allocate(protos(2))
+        protos(1)%name = "rec"
+        allocate(recorder_t :: protos(1)%c)
+        protos(2)%name = "skip_prepare"
+        allocate(skip_prepare_t :: protos(2)%c)
+    end function host_protos
+
+    subroutine check_hooks_run()
+        ! The recorder of a cold-started run, two steps (t = 10, 20): at every
+        ! step STEP_BEGIN before geo and the ice, ICE_BND after geo, the ice's
+        ! imports and prepare, before the ice update; the elapsed time of the
+        ! clock (core-design 3.9). Restore runs no hook.
+        integer :: n, k
+        real(dp) :: t
+        logical :: ok
+
+        write(*,'(a)') "--- experiment hooks (recorder)"
+        call check(n_log == 4, "recorder: STEP_BEGIN and ICE_BND at each of the two steps (no hook at the cold start yet)")
+        if (n_log /= 4) return
+        do n = 1, 2
+            t = 10.0_dp*n
+            k = 2*n - 1
+            ok = log_id(k) == HOOK_STEP_BEGIN .and. log_id(k+1) == HOOK_ICE_BND
+            call check(ok, "step "//trim(itoa(n))//": STEP_BEGIN, then ICE_BND")
+            call check(log_t1(k) == t .and. log_t0(k) == t - 10.0_dp .and. log_dtt(k) == 10.0_dp .and. &
+                       log_t1(k+1) == t, "step "//trim(itoa(n))//": the run's step [t-10, t]")
+            call check(log_elapsed(k) == t .and. log_elapsed(k+1) == t, &
+                       "step "//trim(itoa(n))//": elapsed time of the clock = t (origin at 0)")
+            call check(log_geo_t1(k) == t - 10.0_dp .and. log_ice_t1(k) == t - 10.0_dp .and. &
+                       log_zbed_t1(k) == t - 10.0_dp, "step "//trim(itoa(n))//": STEP_BEGIN before geo, the ice rows and the ice update")
+            call check(log_geo_t1(k+1) == t .and. log_zbed_t1(k+1) == t .and. log_ice_t1(k+1) == t - 10.0_dp, &
+                       "step "//trim(itoa(n))//": ICE_BND after geo and the ice imports at t, before the ice update")
+            call check(.not. log_prepared(k), "step "//trim(itoa(n))//": STEP_BEGIN: prepare not yet run for this step")
+            call check(log_prepared(k+1), "step "//trim(itoa(n))//": ICE_BND: the ice's boundary prepared for this step")
+        end do
+    end subroutine check_hooks_run
+
+    subroutine hooks_child(par_file)
+        ! A chunk restored from the bundle at T_MID with the recorder (a stateless
+        ! experiment added between chunks): no hook runs in the restore; the
+        ! elapsed time of the continuation keeps the origin of the run (core-design 3.9).
+        character(len=*), intent(in) :: par_file
+
+        type(run_t), target :: run
+        integer :: n, k
+
+        call run_init(run, par_file, protos=host_protos())
+        write(*,'(a)') "--- after run_init (restored, t = 40, recorder)"
+        call check(n_log == 0, "the restore runs no hook")
+        call check(run%clk%continued .and. clock_time_elapsed(run%clk) == T_MID, "continuation: elapsed = 40 at the restore")
+        n = 0
+        do while (.not. run_done(run))
+            call run_step(run)
+            n = n + 1
+        end do
+        call check(n == 4 .and. n_log == 8, "four steps, two hooks each")
+        if (n_log == 8) then
+            do k = 1, 4
+                call check(log_elapsed(2*k-1) == T_MID + 10.0_dp*k .and. log_elapsed(2*k) == T_MID + 10.0_dp*k .and. &
+                           log_t1(2*k) == T_MID + 10.0_dp*k, "step "//trim(itoa(k))//" after the restore: elapsed = "// &
+                           trim(ftoa(T_MID + 10.0_dp*k))//" (continuous, not restarted)")
+            end do
+        end if
+        call run_end(run)
+        if (nfail > 0) then
+            write(*,'(a,i0,a)') "test_run_sequence (hooks): FAILED (", nfail, " checks)"
+            error stop 1
+        end if
+        write(*,'(a)') "test_run_sequence (hooks): OK"
+    end subroutine hooks_child
+
     ! =========================================================================
     ! C10: restart round trip, manifest checks
     ! =========================================================================
@@ -259,6 +440,21 @@ contains
         ok = child(C01, "restored "//PAR, "run.log")
         call sh("grep -E '^  (ok|FAIL|OPEN)|^---' '"//d//C01//"run.log'")
         call check(ok, "chunk 40 -> 80 restored from ../c00/restart-40 ("//DIR//C01//"run.log)")
+
+        ! the same chunk with the recorder experiment added (stateless: allowed between chunks), and
+        ! a run in which the ice's boundary looks unprepared at the update (the guard)
+        call setup_run_dir(CHK)
+        call write_par(d//CHK//PAR, "../c00/restart-40", T_MID, T_END, T_MID, exps="rec")
+        ok = child(CHK, "hooks "//PAR, "run.log")
+        call sh("grep -E '^  (ok|FAIL|OPEN)|^---' '"//d//CHK//"run.log'")
+        call check(ok, "chunk 40 -> 80 with the recorder: no hook in the restore, elapsed time continuous ("// &
+                   DIR//CHK//"run.log)")
+        call setup_run_dir(GRD)
+        call write_par(d//GRD//PAR, "None", 0.0_dp, 20.0_dp, 20.0_dp, exps="skip_prepare")
+        call check(.not. child(GRD, "plain "//PAR, "run.log", quiet=.true.) .and. &
+                   in_file(d//GRD//"run.log", "kryos_ice_yelmo::update") .and. &
+                   in_file(d//GRD//"run.log", "was not prepared"), &
+                   "the ice's update stops when its boundary was not prepared for the step ("//DIR//GRD//"run.log)")
         if (nfail > 0) return
 
         call check_bundle(CONT//"restart-40")
@@ -794,7 +990,7 @@ contains
         call nc_write(file, "so",    s,                dim1="xc", dim2="yc", dim3="depth")
     end subroutine write_data
 
-    subroutine write_par(file, restart, time_init, time_end, dt_rst, sed)
+    subroutine write_par(file, restart, time_init, time_end, dt_rst, sed, exps)
         ! The Greenland par file of the run: kryos groups (core-design 5), the
         ! hub's groups (ice_data), and the backend groups (yelmox_Greenland.nml
         ! values where they matter; library defaults otherwise). The clock
@@ -802,15 +998,17 @@ contains
         ! time_end); `sed` renames the sediments instance (default sed_grl).
         character(len=*), intent(in) :: file, restart
         real(dp),         intent(in) :: time_init, time_end, dt_rst
-        character(len=*), intent(in), optional :: sed
+        character(len=*), intent(in), optional :: sed, exps
 
-        character(len=:), allocatable :: topo, basins, sed_name
+        character(len=:), allocatable :: topo, basins, sed_name, exp_key
         integer :: u
 
         topo   = trim(root)//"/{domain}/{grid_name}/{grid_name}_TOPO-M17-v5.nc"
         basins = trim(root)//"/{domain}/{grid_name}/{grid_name}_BASINS-nasa.nc"
         sed_name = "sed_grl"
         if (present(sed)) sed_name = sed
+        exp_key = ""
+        if (present(exps)) exp_key = "  experiments = '"//exps//"'"      ! a host experiment of that name
 
         open(newunit=u, file=file, status="replace", action="write")
         call w(u, [character(len=400) :: &
@@ -829,7 +1027,7 @@ contains
             "&Greenland", "  grid_hub = 'GRL-16KM'", "  topo = 'topo_grl'", "  regions = 'regions_grl'", &
             "  basins = 'basin'", "  out_2D = 'out_2D'", "  ice = 'ice_grl'", "  geo = 'geo_grl'", &
             "  climate = 'climate_grl'", "  surface = 'surface_grl'", "  shelf = 'shelf_grl'", &
-            "  geothermal = 'ghf_grl'", "  sediments = '"//sed_name//"'", "/", &
+            "  geothermal = 'ghf_grl'", "  sediments = '"//sed_name//"'", exp_key, "/", &
             "&topo_grl", "  path = '"//topo//"'", "  remove_lakes = True", "  H_ice_min = 1.0", &
             "  grad_lim_zb = 0.5", "/", &
             "&regions_grl", "  layers = 'basin'", "  path_basin = '"//basins//"'", "/", &
@@ -845,6 +1043,7 @@ contains
             "&ghf_const", "  mode = 'const'", "  value = 0.05", "/", &
             "&"//sed_name, "  backend = 'data'", "  dt = -1.0", "  H_sed = 'sed_none'", "/", &
             "&sed_none", "  mode = 'const'", "  value = 0.0", "/"])
+        if (present(exps)) write(u,'(a)') "&"//exps, "  kind = 'host'", "/"
         ! forcing coefficients
         call w(u, [character(len=400) :: &
             "&coef_alpha", "  method = 'const'", "  f_min = 0.5", "/", &

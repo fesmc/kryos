@@ -37,6 +37,8 @@ module kryos_run
     use kryos_domain,     only: domain_t, domain_init, domain_create, domain_wire, domain_component, &
                                 domain_pass, domain_end, domain_hub_write, exchange_static, &
                                 NCOMP, INIT_ORDER
+    use kryos_experiment, only: experiment_list_t, experiment_proto_t, experiments_create, experiments_describe, &
+                                experiments_end
     use kryos_output,     only: output_t, output_init, output_add_component, output_add_hub, &
                                 output_add_timing, output_write, output_describe
     use kryos_restart,    only: year_label, restart_dir, restart_write
@@ -51,9 +53,9 @@ module kryos_run
 
     ! Stages of the timer (yelmox timer table; timing.txt).
     integer, parameter :: TT_OUTPUT = 1, TT_FORCING = 2, TT_GEO = 3, TT_COUPLE_ICE = 4, TT_ICE = 5, &
-                          TT_HUB = 6, TT_CLIMATE = 7, TT_SURFACE = 8, TT_SHELF = 9
-    character(len=16), parameter :: TT_LABELS(9) = [character(len=16) :: "output", "forcing", "geo", &
-        "couple_ice", "ice", "hub", "climate", "surface", "shelf"]
+                          TT_HUB = 6, TT_CLIMATE = 7, TT_SURFACE = 8, TT_SHELF = 9, TT_EXPER = 10
+    character(len=16), parameter :: TT_LABELS(10) = [character(len=16) :: "output", "forcing", "geo", &
+        "couple_ice", "ice", "hub", "climate", "surface", "shelf", "experiments"]
 
     type :: run_t
         type(config_t)     :: cfg                           ! par file, [kryos] keys
@@ -72,6 +74,7 @@ module kryos_run
         type(census_t)     :: census                        ! admitted instances (backend constraints)
         type(globe_t)      :: globe
         type(domain_t), allocatable :: dom(:)               ! in [kryos] domains order
+        type(experiment_list_t), allocatable :: exps(:)     ! the experiments of each domain, indexed like dom (core-design 3.9)
         integer, allocatable :: dom_order(:)                ! domain indices in name order (gathers)
         type(output_t)     :: out
         type(timer_class)  :: tmr                           ! wall time per stage
@@ -101,13 +104,16 @@ contains
     ! Lifecycle
     ! =========================================================================
 
-    subroutine run_init(run, par_file, out_groups)
+    subroutine run_init(run, par_file, out_groups, protos)
         ! core-design section 3.1. `out_groups`: schedule groups the run
         ! evaluates besides [kryos] restart_out (run%due), for tests and hosts
         ! that dispatch their own output; the instances' streams are output's.
+        ! `protos`: the experiments of kind "host" the host provides, selected
+        ! by the name of their par-file group (core-design 3.9).
         type(run_t),      intent(out), target  :: run
         character(len=*), intent(in)           :: par_file
         character(len=*), intent(in), optional :: out_groups(:)
+        type(experiment_proto_t), intent(in), optional :: protos(:)
 
         integer :: d
 
@@ -138,10 +144,18 @@ contains
             call domain_init(run%dom(d), run%cfg, trim(run%cfg%domains(d)), run%cnst, clock_time(run%clk))
             call domain_create(run%dom(d), run%cfg, run%clk, run%cnst, run%census)
         end do
-        call run_check_names(run)
         do d = 1, run%n_dom
             call domain_wire(run%dom(d), run%clk, extra=globe_nodes(run%globe, run%clk))
         end do
+        allocate(run%exps(run%n_dom))
+        do d = 1, run%n_dom
+            if (present(protos)) then
+                call experiments_create(run%exps(d), run%cfg, run%dom(d), run%clk, run%cnst, protos)
+            else
+                call experiments_create(run%exps(d), run%cfg, run%dom(d), run%clk, run%cnst)
+            end if
+        end do
+        call run_check_names(run)
         run%dom_order = name_order(run%dom)
 
         ! 5. schedules: the run's (restart), the output streams (instances, hubs, timing)
@@ -209,6 +223,7 @@ contains
 
         call globe_end(run%globe)
         do d = 1, run%n_dom
+            call experiments_end(run%exps(d))
             call domain_end(run%dom(d))
         end do
         call timer_print_totals(run%tmr, "s")
@@ -286,8 +301,8 @@ contains
     end subroutine run_clock_init
 
     subroutine run_check_names(run)
-        ! Domain names and instance names are unique in a run (core-design 5,
-        ! 6): output files and restart bundles are named by them.
+        ! Domain names, instance names and experiment names are unique in a run
+        ! (core-design 5, 6): output files and restart bundles are named by them.
         type(run_t), intent(in), target :: run
 
         character(len=NAME_LEN), allocatable :: names(:), owners(:)
@@ -308,6 +323,11 @@ contains
                 c => domain_component(run%dom(d), j)
                 if (associated(c)) call add(c%name, "domain "//trim(run%dom(d)%name))
             end do
+            if (allocated(run%exps(d)%s)) then
+                do j = 1, size(run%exps(d)%s)
+                    call add(run%exps(d)%s(j)%c%name, "an experiment of domain "//trim(run%dom(d)%name))
+                end do
+            end if
         end do
 
     contains
@@ -460,6 +480,7 @@ contains
         do d = 1, run%n_dom
             call log_msg(LOG_INFO, "kryos_run", "domain "//trim(run%dom(d)%name)//":")
             call wiring_describe(run%dom(d)%wires)
+            call experiments_describe(run%exps(d))
         end do
     end subroutine run_describe
 
