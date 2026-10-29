@@ -16,13 +16,18 @@ module kryos_surface
 
     private
 
-    type, public :: surface_opt_t                   ! optional exports the backend supports (set in init)
-        logical :: melt = .false., runoff = .false., refrz = .false., albedo = .false.
+    type, public :: surface_opt_t                   ! the optional vocabulary the backend uses (set in init)
+        logical :: melt = .false., runoff = .false., refrz = .false., albedo = .false.   ! exports
+        ! Imports. atm: the monthly atmosphere (tas, pr); geom: the land and ice geometry (H_ice, z_bed, z_sl);
+        ! both on for a column model (chion), off for a scheme of the elevation alone (smb_simple). tsl_ann
+        ! (climate) and H_ice_ref (ice) are the extra imports of smb_simple, required when set.
+        logical :: atm = .true., geom = .true., tsl_ann = .false., H_ice_ref = .false.
     end type surface_opt_t
 
     type, abstract, extends(component_t), public :: surface_t
         type(surface_opt_t) :: opt
         integer :: hi_z_srf = 0, hi_H_ice = 0, hi_z_bed = 0, hi_z_sl = 0, hi_tas = 0, hi_pr = 0
+        integer :: hi_tsl_ann = 0, hi_H_ice_ref = 0
         integer :: h_smb = 0, h_T_srf = 0, h_melt = 0, h_runoff = 0, h_refrz = 0, h_albedo = 0
     end type surface_t
 
@@ -156,13 +161,23 @@ contains
 
         call fields_init(c%imports, trim(c%name)//":imports")
         call fields_add(c%imports, "z_srf", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_z_srf, grid=g, dims=d2)
-        call fields_add(c%imports, "H_ice", "m", FIELD_INSTANT, FIELD_EXTENSIVE, c%hi_H_ice, grid=g, dims=d2)
-        call fields_add(c%imports, "z_bed", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_z_bed, grid=g, dims=d2)
-        call fields_add(c%imports, "z_sl", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_z_sl, grid=g, dims=d2)
-        call fields_add(c%imports, "tas", "K", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_tas, grid=g, &
-                        dims=[d2, component_axis(c, ctx, "month")], zdim="month")
-        call fields_add(c%imports, "pr", "kg m-2 yr-1", FIELD_INSTANT, FIELD_EXTENSIVE, c%hi_pr, grid=g, &
-                        dims=[d2, component_axis(c, ctx, "month")], zdim="month")
+        if (c%opt%geom) then
+            call fields_add(c%imports, "H_ice", "m", FIELD_INSTANT, FIELD_EXTENSIVE, c%hi_H_ice, grid=g, dims=d2)
+            call fields_add(c%imports, "z_bed", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_z_bed, grid=g, dims=d2)
+            call fields_add(c%imports, "z_sl", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_z_sl, grid=g, dims=d2)
+        end if
+        if (c%opt%atm) then
+            call fields_add(c%imports, "tas", "K", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_tas, grid=g, &
+                            dims=[d2, component_axis(c, ctx, "month")], zdim="month")
+            call fields_add(c%imports, "pr", "kg m-2 yr-1", FIELD_INSTANT, FIELD_EXTENSIVE, c%hi_pr, grid=g, &
+                            dims=[d2, component_axis(c, ctx, "month")], zdim="month")
+        end if
+        if (c%opt%tsl_ann) then
+            call fields_add(c%imports, "tsl_ann", "K", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_tsl_ann, grid=g, dims=d2)
+        end if
+        if (c%opt%H_ice_ref) then
+            call fields_add(c%imports, "H_ice_ref", "m", FIELD_INSTANT, FIELD_EXTENSIVE, c%hi_H_ice_ref, grid=g, dims=d2)
+        end if
         call fields_lock(c%imports)
 
         call fields_init(c%exports, trim(c%name)//":exports")

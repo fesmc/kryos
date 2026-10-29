@@ -148,6 +148,9 @@ contains
         ! climate -> surface (re-elevated), shelf
         call add(t, "climate", "tas", "surface", "tas", "bilin", transform=T_LAPSE_T)
         call add(t, "climate", "pr", "surface", "pr", "bilin", transform=T_LAPSE_P)
+        ! surface = smb_simple: the sea-level air temperature, the reference ice of its mask
+        call add(t, "climate", "tsl_ann", "surface", "tsl_ann", "bilin")
+        call add(t, "ice", "H_ice_ref", "surface", "H_ice_ref", "bilin")
         call add_set(t, "climate", "to_ann so_ann dto_ann", "shelf", "bilin")
         call add_set(t, "climate", "to_shlf so_shlf dto_shlf dso_shlf", "shelf", "bilin")
         ! lagged boundary conditions into the ice

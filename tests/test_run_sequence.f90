@@ -303,6 +303,15 @@ program test_run_sequence
         stop 0
     end if
 
+    if (trim(only) == "smb") then                   ! development: surface = smb_simple only (after a full run)
+        if (.not. exists(trim(repo)//"/"//DIR//DATA)) call setup_run_dir("")
+        call sh("rm -rf '"//trim(repo)//"/"//DIR//"smb'")
+        call smb_round_trip()
+        if (nfail > 0) error stop 1
+        write(*,'(a)') "test_run_sequence (smb_simple only): OK"
+        stop 0
+    end if
+
     call sh("rm -rf '"//trim(repo)//"/"//DIR//"'")
     call setup_run_dir("")
     call write_par(trim(repo)//"/"//DIR//PAR, "None", 0.0_dp, 20.0_dp, 20.0_dp, exps="rec")
@@ -313,6 +322,7 @@ program test_run_sequence
     call round_trip()
     call manifest_mismatch()
     call exp_round_trip()
+    call smb_round_trip()
 
     if (nfail > 0) then
         write(*,'(a,i0,a)') "test_run_sequence: FAILED (", nfail, " checks)"
@@ -769,6 +779,101 @@ contains
 
         call compare_tool("")
     end subroutine round_trip
+
+    subroutine smb_round_trip()
+        ! surface = smb_simple (phase 3 WP2): the same restart round trip, cont 0 -> 80 against
+        ! chunks 0 -> 40 -> 80, in smb/. The par file is the one above with the surface instance
+        ! replaced (to_smb_simple: the NH set of yelmox_North.nml, mask from H_ice_ref): the
+        ! surface imports z_srf, tsl_ann and H_ice_ref from the hub, the climate and the ice and
+        ! none of tas, pr; the surface is stateless (no backend file in the bundle).
+        character(len=*), parameter :: SS = "smb/", SC = "smb/cont/", S0 = "smb/chunk/c00/", S1 = "smb/chunk/c01/"
+        character(len=:), allocatable :: d
+        logical :: ok
+
+        write(*,'(a)') "--- surface = smb_simple: restart round trip, cont 0 -> 80 against chunks 0 -> 40 -> 80"
+        d = trim(repo)//"/"//DIR
+        call setup_run_dir(SC)
+        call setup_run_dir(S0)
+        call setup_run_dir(S1)
+        call write_par(d//SC//PAR, "None", 0.0_dp, T_END, T_MID)
+        call write_par(d//S0//PAR, "None", 0.0_dp, T_MID, T_MID)
+        call write_par(d//S1//PAR, "../c00/restart-40", T_MID, T_END, T_MID)
+        call to_smb_simple(d//SC//PAR)
+        call to_smb_simple(d//S0//PAR)
+        call to_smb_simple(d//S1//PAR)
+
+        call check(child(SC, "plain "//PAR, "run.log"), "smb_simple: continuous run 0 -> 80 ("//DIR//SC//"run.log)")
+        call check(child(S0, "plain "//PAR, "run.log"), "smb_simple: chunk 0 -> 40 ("//DIR//S0//"run.log)")
+        ok = child(S1, "restored "//PAR, "run.log")
+        call sh("grep -E '^  (ok|FAIL|OPEN)|^---' '"//d//S1//"run.log'")
+        call check(ok, "smb_simple: chunk 40 -> 80 restored from ../c00/restart-40 ("//DIR//S1//"run.log)")
+        if (nfail > 0) return
+
+        call check(nc_exists_var(DIR//SC//"restart-80/Greenland/surface_grl_imports.nc", "tsl_ann") .and. &
+                   nc_exists_var(DIR//SC//"restart-80/Greenland/surface_grl_imports.nc", "H_ice_ref") .and. &
+                   .not. nc_exists_var(DIR//SC//"restart-80/Greenland/surface_grl_imports.nc", "tas") .and. &
+                   .not. exists(d//SC//"restart-80/Greenland/surface_grl_restart.nc"), &
+                   "smb_simple: the bundle has tsl_ann and H_ice_ref among the surface imports, no tas, no backend file")
+        call check(nc_exists_var(DIR//SC//"restart-80/Greenland/climate_grl_exports.nc", "tsl_ann"), &
+                   "smb_simple: the climate bundle has the export tsl_ann")
+        call same_2d(SC//"restart-80/Greenland/ice_grl_exports.nc", S1//"restart-80/Greenland/ice_grl_exports.nc", &
+                     "H_ice", "smb_simple, bundle at 80: ice H_ice export")
+        call same_2d(SC//"restart-80/Greenland/surface_grl_exports.nc", S1//"restart-80/Greenland/surface_grl_exports.nc", &
+                     "smb", "smb_simple, bundle at 80: surface smb export")
+        call same_2d(SC//"restart-80/Greenland/surface_grl_exports.nc", S1//"restart-80/Greenland/surface_grl_exports.nc", &
+                     "T_srf", "smb_simple, bundle at 80: surface T_srf export")
+        call same_2d(SC//"restart-80/Greenland/ice_grl_exports.nc", S1//"restart-80/Greenland/ice_grl_exports.nc", &
+                     "H_ice_ref", "smb_simple, bundle at 80: ice H_ice_ref export")
+        call same_record(SC//"surface_grl.nc", S1//"surface_grl.nc", "smb", T_END, "smb_simple, output surface_grl.nc smb at 80")
+        call compare_tool(SS)
+    end subroutine smb_round_trip
+
+    subroutine to_smb_simple(file)
+        ! Replace the instance group &surface_grl of a par file written by write_par by a smb_simple
+        ! one, and append the group [smb_simple] (the NH set of yelmox_North.nml; no mask file).
+        character(len=*), intent(in) :: file
+
+        character(len=400), allocatable :: line(:)
+        character(len=400) :: buf
+        integer :: u, n, i, ios
+        logical :: skip
+
+        open(newunit=u, file=file, status="old", action="read")
+        n = 0
+        do
+            read(u,'(a)', iostat=ios) buf
+            if (ios /= 0) exit
+            n = n + 1
+        end do
+        rewind(u)
+        allocate(line(n))
+        do i = 1, n
+            read(u,'(a)') line(i)
+        end do
+        close(u)
+
+        open(newunit=u, file=file, status="replace", action="write")
+        skip = .false.
+        do i = 1, n
+            if (line(i)(1:12) == "&surface_grl") then
+                write(u,'(a)') "&surface_grl", "  backend = 'smb_simple'", "  clock = 'forcing'", &
+                               "  smb_simple = 'smb_simple'", "  out_2D = 'out_2D'", "/"
+                skip = .true.
+            else if (skip) then
+                if (trim(line(i)) == "/") skip = .false.
+            else
+                write(u,'(a)') trim(line(i))
+            end if
+        end do
+        write(u,'(a)') "&smb_simple", "  scheme = 'syn'", "  co2_const = 280.0", "  f_const = 494.5", "  mask_file = ''", &
+                       "  mask_var = ''", "  mask_idx = 1", "  a1 = 3900.0", "  a2 = -50.0", "  a3 = 0.0", "  a4 = 0.0", &
+                       "  fmean = 494.5", "  beta0 = 5.0", "  beta1 = 0.05", "  phiref = 60.0", "  beta_floor = 0.0", &
+                       "  c0 = 300.0", "  L_acc = 300.0", "  k_acc_lat = 0.0", "  phi_acc_ref = 0.0", "  facc_lat_min = 0.3", &
+                       "  use_plastic = True", "  slope = 6.09e-3", "  tau0 = 36.0e3", "  slope_out = 6.09e-3", &
+                       "  z_max_in = 2500.0", "  z_max_out = 200.0", "  gamma_t = 6.5e-3", "  t_ice_max = 273.15", &
+                       "  smb_min = -2000.0", "/"
+        close(u)
+    end subroutine to_smb_simple
 
     subroutine exp_round_trip()
         ! The plugin experiments (xr/ set): the same restart round trip as above,

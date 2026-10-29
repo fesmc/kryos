@@ -246,7 +246,7 @@ contains
             if (t(i)%gather) n_gather = n_gather + 1
             if (t(i)%lag == LAG_INIT) n_init = n_init + 1
         end do
-        call check("59 rows", size(t) == 59)
+        call check("61 rows", size(t) == 61)
         call check("two gather rows (dV_bsl, M_ice)", n_gather == 2)
         call check("static rows: ref x2, z_srf_ref, Q_geo, H_sed, and the two T_GIA reference rows", n_init == 7)
         call check("six T_GIA rows, all into the global geo", &
@@ -296,8 +296,8 @@ contains
         call build(nodes)
         call wire_resolve(w, nodes, cpl, stat=stat)
         call check("resolves", stat == 0)
-        call check("43 of 59 rows active (the phase 4 rows need a host-resolved global geo)", &
-                   count(w%active) == 43 .and. size(w) == 59)
+        call check("43 of 61 rows active (the phase 4 rows need a host-resolved global geo; the smb_simple rows no smb_simple surface)", &
+                   count(w%active) == 43 .and. size(w) == 61)
         call check("rule rows expanded: coef_alpha and dTo", &
                    any([(wire_label(w(i)) == "forcing.alpha -> climate.coef_alpha" .and. w(i)%active, i = 1, size(w))]) &
                    .and. any([(wire_label(w(i)) == "climate.dTo -> forcing.dTo" .and. w(i)%active, i = 1, size(w))]))
@@ -389,7 +389,7 @@ contains
         call wire_resolve(w, nodes, cpl, stat=stat)
         call check("resolves; the port's imports have a producer each (dz_bed, dz_ss, dphi, bsl)", stat == 0)
         nrow = count(w%active)
-        call check("active: 4 globe -> port rows and 6 T_GIA rows", nrow == 10 .and. size(w) == 59)
+        call check("active: 4 globe -> port rows and 6 T_GIA rows", nrow == 10 .and. size(w) == 61)
         call check("globe -> port rank 2: bilin (Gauss -> geo grid), none for the scalars", &
                    w(row_of(w, "geo_g.dz_bed -> geo.dz_bed"))%mres == "bilin" .and. &
                    w(row_of(w, "geo_g.dz_ss -> geo.dz_ss"))%mres == "bilin" .and. &

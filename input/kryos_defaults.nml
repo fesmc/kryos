@@ -178,6 +178,10 @@
     orbit         = "orbit"
 /
 
+&surface_smb_simple
+    smb_simple = "smb_simple"                  ! parameter group (schema: &smb_simple at the end of this file)
+/
+
 &shelf_marine_shelf
     marine_shelf = "marine_shelf"
     corr         = "shelf_corr"                ! the shelf component's group of the thermal-forcing corrections and basins (kryos_shelf_ocean):
@@ -223,4 +227,50 @@
     overlap_tol = 0.01                         ! coverage of the host region above 1 + overlap_tol stops (overlapping domains)
     cons_tol    = 1.0e-9                       ! relative closure of the merges above which a gather stops
     out_2D      = "none"                       ! schedule of globe_ice.nc (the hub output)
+/
+
+&smb_simple
+    ! The synthetic-elevation SMB scheme of the surface backend smb_simple (yelmox
+    ! libs/smb_simple.f90, group [smb_simple]). SMB in mm w.e./yr. The defaults are the
+    ! module's own; a par file of a science configuration lists the tuned keys.
+    scheme       = "syn"        ! synthetic-elevation piecewise-linear; "tg24" is not implemented
+    co2_const    = 280.0        ! [ppm]   constant CO2 (affects the snow line only if a3 /= 0)
+    f_const      = 494.5        ! [W m-2] constant insolation (only if a4 /= 0)
+    mask_file    = ""           ! target ice-mask file ("" => H_ice_ref > 0; {domain}, {grid_name} = the surface grid)
+    mask_var     = ""           ! mask variable of mask_file
+    mask_idx     = 1            ! index along the third dimension of mask_var
+
+    ! Climate snow line  z_SL = a1 + a2*phi + a3*CO2 + a4*(f - fmean), phi = |latitude|
+    a1           = 3750.0       ! [m]
+    a2           = -50.0        ! [m/degN]
+    a3           = 0.0          ! [m/ppm]
+    a4           = 0.0          ! [m/(W m-2)]
+    fmean        = 494.5        ! [W m-2]
+
+    ! Ablation lapse rate  beta = max(beta_floor, beta0 + beta1*(phiref - phi))
+    beta0        = 4.0          ! [(mm/yr)/m] at phiref
+    beta1        = 0.05         ! [(mm/yr)/m] per degN
+    phiref       = 60.0         ! [degN]
+    beta_floor   = 0.0          ! [(mm/yr)/m]
+
+    ! Accumulation  acc = c0 * f_lat(phi) * f_dist(d_in)
+    !   f_dist = exp(-d_in_km / L_acc), f_lat = clamp(1 - k_acc_lat*max(0, phi - phi_acc_ref), facc_lat_min, 1)
+    c0           = 150.0        ! [mm w.e./yr] accumulation at the margin
+    L_acc        = 1000.0       ! [km] e-folding length of the inland decay
+    k_acc_lat    = 0.0          ! [1/degN] (0 = off)
+    phi_acc_ref  = 0.0          ! [degN]
+    facc_lat_min = 0.3          ! [1]
+
+    ! Synthetic elevation profile
+    use_plastic  = True         ! True: plastic Nye/Vialov inside; False: linear wedge (slope)
+    slope        = 6.09e-3      ! [m/m] inside (use_plastic = False)
+    tau0         = 36.0e3       ! [Pa] plastic basal yield stress
+    slope_out    = 6.09e-3      ! [m/m] outside ramp
+    z_max_in     = 2500.0       ! [m] inside cap
+    z_max_out    = 200.0        ! [m] outside floor
+
+    ! Surface temperature  t_srf = t_sl - gamma_t*max(z_syn, 0), capped at t_ice_max over ice
+    gamma_t      = 6.5e-3       ! [K/m]
+    t_ice_max    = 273.15       ! [K]
+    smb_min      = -2000.0      ! [mm w.e./yr] floor outside the mask (<= 0)
 /

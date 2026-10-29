@@ -84,6 +84,7 @@ contains
                 if (domain_present(dom, C_SURFACE)) then                          ! step_surface(init)
                     call exchange(dom, "hub", "surface", t0, run%clk, init=.true.)
                     call exchange(dom, "climate", "surface", t0, run%clk, init=.true.)
+                    call exchange(dom, "ice", "surface", t0, run%clk, init=.true.)    ! H_ice_ref (smb_simple)
                     call domain_pass(dom, C_SURFACE, run%clk, PASS_BOUNDARY)      ! spin-up + one cycle
                 end if
                 if (domain_present(dom, C_SHELF)) then                            ! step_shelf
@@ -105,6 +106,7 @@ contains
                 call domain_hub_update(dom, t0, run%clk, init=.true.)            ! couple_yelmo_to_htopo
                 if (domain_present(dom, C_SURFACE)) then
                     call exchange(dom, "hub", "surface", t0, run%clk, init=.true.)
+                    call exchange(dom, "ice", "surface", t0, run%clk, init=.true.)    ! H_ice_ref (recon: the new one)
                     call domain_pass(dom, C_SURFACE, run%clk, PASS_FINAL)         ! step_surface
                     call exchange(dom, "surface", "ice", t0, run%clk, init=.true.) ! couple_surface_to_yelmo
                 end if
@@ -285,6 +287,7 @@ contains
                 if (domain_due(dom, C_SURFACE, run%clk)) then                      ! step_surface
                     call exchange(dom, "hub", "surface", t, run%clk)
                     call exchange(dom, "climate", "surface", t, run%clk)
+                    call exchange(dom, "ice", "surface", t, run%clk)               ! H_ice_ref (smb_simple)
                     call domain_update(dom, C_SURFACE, run%clk)
                 end if
                 call timer_step(run%tmr, TT_SURFACE)

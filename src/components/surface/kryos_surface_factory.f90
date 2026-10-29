@@ -4,6 +4,7 @@ submodule (kryos_surface) kryos_surface_factory
     ! it (decision 12), so a stub stops here, before init.
 
     use kryos_surface_chion, only: chion_surface_t, chion_surface_constraints
+    use kryos_surface_smb_simple, only: smb_simple_surface_t, smb_simple_surface_constraints
 
     implicit none
 
@@ -19,9 +20,12 @@ contains
         case ("chion")
             allocate(chion_surface_t :: surface%c)
             con = chion_surface_constraints()
+        case ("smb_simple")
+            allocate(smb_simple_surface_t :: surface%c)
+            con = smb_simple_surface_constraints()
         case default
             call fesm_error("kryos_surface::surface_create", "unknown surface backend '"//trim(ctx%backend)//"'", &
-                            "instance "//trim(ctx%instance)//"; known: chion")
+                            "instance "//trim(ctx%instance)//"; known: chion, smb_simple")
         end select
         call component_identity(surface%c, ctx, "surface", con)
         call backend_admit(surface%c, census)
