@@ -137,6 +137,7 @@ contains
         caps%has_snapshots  = .true.
         caps%has_ocn_prof   = self%snap%par%with_ocn
         self%caps%has_ocn   = self%snap%par%with_ocn
+        self%caps%has_tsl_ann = .true.
 
         call terms_check(self%terms, caps)
         call dair_init(self, ctx)
@@ -449,6 +450,7 @@ contains
             end do
             call fields_put(self%exports, self%h_lapse, lapse3, t1=t1)
             call fields_put(self%exports, self%h_beta_p, now%beta_p, t1=t1)
+            call fields_put(self%exports, self%h_tsl_ann, now%tsl_ann, t1=t1)
 
             if (self%caps%has_ocn) then
                 call fields_put(self%exports, self%h_to_ann, now%to_ann, t1=t1)

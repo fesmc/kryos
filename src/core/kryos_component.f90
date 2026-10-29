@@ -49,6 +49,7 @@ module kryos_component
 
     type, public :: caps_t                      ! capability flags, set by the backend in init
         logical :: has_ocn = .false., has_ocn_shelf = .false., has_smb = .false., has_Qd = .false.
+        logical :: has_tsl_ann = .false.        ! climate: the annual sea-level air temperature tsl_ann (surface smb_simple)
         logical :: has_flotation = .false.      ! ice: the flotation binding (contracts-design 2.1)
     end type caps_t
 

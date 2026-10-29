@@ -22,6 +22,7 @@ module kryos_climate
         integer :: h_to_ann = 0, h_so_ann = 0, h_dto_ann = 0                   ! has_ocn
         integer :: h_to_shlf = 0, h_so_shlf = 0, h_dto_shlf = 0, h_dso_shlf = 0 ! has_ocn_shelf
         integer :: h_smb = 0, h_T_srf = 0, h_Qd = 0                            ! has_smb, has_Qd
+        integer :: h_tsl_ann = 0                                               ! has_tsl_ann
         ! Forcing scalars (section 7), set by the backend in init: the
         ! coefficients its terms name (imports coef_<name>) and the derived
         ! coefficients it produces (exports <name>), with their units.
@@ -200,6 +201,9 @@ contains
         if (c%caps%has_smb) then
             call fields_add(c%exports, "smb", "kg m-2 yr-1", FIELD_MEAN, FIELD_EXTENSIVE, c%h_smb, grid=g, dims=d2)
             call fields_add(c%exports, "T_srf", "K", FIELD_MEAN, FIELD_INTENSIVE, c%h_T_srf, grid=g, dims=d2)
+        end if
+        if (c%caps%has_tsl_ann) then
+            call fields_add(c%exports, "tsl_ann", "K", FIELD_INSTANT, FIELD_INTENSIVE, c%h_tsl_ann, grid=g, dims=d2)
         end if
         if (c%caps%has_Qd) then
             call fields_add(c%exports, "Qd", "m3 s-1", FIELD_INSTANT, FIELD_EXTENSIVE, c%h_Qd, grid=g, dims=d2)

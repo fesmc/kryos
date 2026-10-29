@@ -34,7 +34,7 @@ program test_climate_snapshots
     real(dp) :: lap(12), tas_e, pr_e, dto_e, scale
     real(dp) :: tas(nx,ny,12), pr(nx,ny,12), dto, to(nx,ny,23), l(12)
     real(sp), allocatable :: tmp3(:,:,:)
-    real(dp), allocatable :: d3(:,:,:)
+    real(dp), allocatable :: d3(:,:,:), tsl2(:,:), tsl_e(:,:)
     integer :: i, j, m, nfail
 
     nfail = 0
@@ -104,6 +104,16 @@ program test_climate_snapshots
     allocate(d3(nx,ny,12))
     call fields_get(cl%c%exports, cl%c%h_tas, d3)
     call check("tas: blend and lapse inflation", maxval(abs(d3 - tas)) < 2.0e-3_dp)
+    ! tsl_ann: the annual mean of the sea-level temperature of the blend (tas + lapse x the surface it refers to)
+    allocate(tsl2(nx,ny), tsl_e(nx,ny))
+    do j = 1, ny
+        do i = 1, nx
+            tsl2(i,j) = sum([(tas(i,j,m) + (500.0_dp + 10.0_dp*i + dz_in)*l(m), m = 1, 12)])/12.0_dp
+        end do
+    end do
+    call fields_get(cl%c%exports, cl%c%h_tsl_ann, tsl_e)
+    call check("caps: has_tsl_ann, export tsl_ann declared", cl%c%caps%has_tsl_ann .and. cl%c%h_tsl_ann > 0)
+    call check("tsl_ann = annual mean of the sea-level air temperature", maxval(abs(tsl_e - tsl2)) < 2.0e-3_dp)
     call fields_get(cl%c%exports, cl%c%h_pr, d3)
     call check("pr [kg m-2 yr-1] = blend x sec_year/86400", maxval(abs(d3/scale - pr)/pr) < 1.0e-4_dp)
     call fields_get(cl%c%exports, cl%c%h_lapse, d3)
