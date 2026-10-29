@@ -35,7 +35,7 @@ module kryos_run
     use kryos_forcing,    only: forcing_present, forcing_kill, forcing_restart_due, forcing_restart_fldr
     use kryos_geo,        only: geo_present
     use kryos_globe,      only: globe_t, globe_init, globe_init_state, globe_end, globe_nodes
-    use kryos_domain,     only: domain_t, domain_init, domain_create, domain_wire, domain_component, &
+    use kryos_domain,     only: domain_t, domain_init, domain_create, domain_wire, domain_component, domain_present, C_CLIMATE, &
                                 domain_pass, domain_end, domain_hub_write, exchange_static, &
                                 NCOMP, INIT_ORDER
     use kryos_experiment, only: experiment_list_t, experiment_proto_t, experiments_create, experiments_describe, &
@@ -157,6 +157,7 @@ contains
             end if
         end do
         call run_check_names(run)
+        call run_check_producers(run)
         call gia_check(run%globe, run%dom, run%cfg)      ! vilma2: which instances go together, what the ice offers
         run%dom_order = name_order(run%dom)
 
@@ -351,6 +352,36 @@ contains
         end subroutine add
 
     end subroutine run_check_names
+
+    subroutine run_check_producers(run)
+        ! A derived forcing coefficient has one producer (contracts-design 7): two domains whose climates both produce
+        ! one (a term on `dTo` in each) would overwrite each other's value in the forcing every step, in domain order.
+        ! Stops at init, naming the coefficient and the domains.
+        type(run_t), intent(in), target :: run
+
+        character(len=NAME_LEN) :: name
+        integer :: d, e, k, l
+
+        do d = 1, run%n_dom
+            if (.not. domain_present(run%dom(d), C_CLIMATE)) cycle
+            if (.not. allocated(run%dom(d)%climate%c%derived_names)) cycle
+            do k = 1, size(run%dom(d)%climate%c%derived_names)
+                name = run%dom(d)%climate%c%derived_names(k)
+                do e = d + 1, run%n_dom
+                    if (.not. domain_present(run%dom(e), C_CLIMATE)) cycle
+                    if (.not. allocated(run%dom(e)%climate%c%derived_names)) cycle
+                    do l = 1, size(run%dom(e)%climate%c%derived_names)
+                        if (trim(run%dom(e)%climate%c%derived_names(l)) /= trim(name)) cycle
+                        call fesm_error("kryos_run::run_init", "the derived coefficient `"//trim(name)// &
+                                        "` has two producers: the climates of domains "//trim(run%dom(d)%name)//" and "// &
+                                        trim(run%dom(e)%name), "a derived coefficient has one producer: give the "// &
+                                        "climate term of each domain a derived coefficient of its own ([coef_<name>] "// &
+                                        "in [forcing] coefs, the term's coef)")
+                    end do
+                end do
+            end do
+        end do
+    end subroutine run_check_producers
 
     subroutine run_schedules_init(run, out_groups)
         ! One schedule per distinct group of `out_groups`, then the restart

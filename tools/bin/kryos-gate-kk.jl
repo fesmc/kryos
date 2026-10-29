@@ -7,7 +7,7 @@
 #
 # GATE is a name of tools/gate (kind = "kryos") or a path to a gate file. `check` runs every [[check]] of the
 # gate over the run folders in RUNS (exit 0 all pass, 1 a failure, 2 an error). `stage` prints, for the run RUN,
-# `PAR=<par/gate/NAME.nml name>` and `KP=<kryos -p overrides>` for the staging script.
+# `PAR=<par/gate/NAME.nml name>` and one line `KP=<override>` per kryos -p override, and for a chunk run `CHUNK=<t0 t1 t2>` for the staging script.
 
 using KryosTools
 using KryosTools.Compare
@@ -35,7 +35,12 @@ function main(args)
         length(args) == 3 || (print(stderr, USAGE); return 2)
         par, p = kk_stage(g, args[3])
         println("PAR=", par)
-        println("KP=", join(p, " "))
+        foreach(x -> println("KP=", x), p)
+        run = only(r for r in kk_runs(g) if r["name"] == args[3])
+        if get(run, "chunk", false)
+            ts = Float64.(g["chunks"])
+            println("CHUNK=", join(ts, " "))
+        end
         return 0
     elseif cmd == "check"
         length(args) >= 3 || (print(stderr, USAGE); return 2)
