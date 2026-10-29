@@ -14,6 +14,7 @@ module kryos_ice_yelmo
                                component_write_output, NAME_LEN, PATH_LEN, &
                                PASS_INIT, PASS_GEOMETRY, PASS_STATE, PASS_SPINUP, PASS_RESTART
     use kryos_ice,       only: ice_t, ice_opt_t
+    use yelmo_defs,      only: MASK_ICE_NONE
     use yelmo,           only: yelmo_class, ytopo_input_class, yelmo_init, yelmo_init_grid, yelmo_init_state, &
                                yelmo_update, yelmo_update_equil, yelmo_end, yelmo_print_bound, &
                                yelmo_restart_write, yelmo_restart_init, yelmo_regions_update, &
@@ -80,7 +81,8 @@ contains
         self%nx   = ctx%grid%G%nx
         self%ny   = ctx%grid%G%ny
         self%opt  = ice_opt_t(T_shlf=.true., tf_shlf=.false., Q_geo=.true., H_sed=.true., Qd=.false., &
-                              uxy_s=.false., dz_bed_dt_corr=.false., z_bed_ref=.true., H_ice_ref=.true.)
+                              uxy_s=.false., dz_bed_dt_corr=.false., z_bed_ref=.true., H_ice_ref=.true., &
+                              footprint=.true., H_ice_pd=.true.)
 
         call yelmo_init_grid(self%ylmo%grd, ctx%grid)
         call reference_narrow(self, ctx%ref, topo)
@@ -105,6 +107,7 @@ contains
         case (PASS_INIT)                                ! the initialised state; MEAN exports not put
             call exports_geometry(self, st%t1)
             call exports_reference(self, st%t1)
+            call exports_static(self, st%t1)
             call exports_mass(self, st%t1)
         case (PASS_GEOMETRY)                            ! domain_init_isostasy tail (kryos_startup.f90:246-249)
             call bnd_geometry(self)
@@ -411,6 +414,19 @@ contains
         call fields_put(self%exports, self%h_z_bed_ref, self%ylmo%bnd%z_bed_ref, t1=t1)
         call fields_put(self%exports, self%h_H_ice_ref, self%ylmo%bnd%H_ice_ref, t1=t1)
     end subroutine exports_reference
+
+    subroutine exports_static(self, t1)
+        ! INSTANT, put once (PASS_INIT, after yelmo_init: mask_ice and the present
+        ! day are final, with or without a restart): footprint = 1 where Yelmo
+        ! holds ice (mask_ice /= MASK_ICE_NONE), and H_ice_pd = dta%pd%H_ice, the
+        ! present-day ice, not bnd%H_ice_ref, which recon and ice_bnd overwrite.
+        class(yelmo_ice_t), intent(inout) :: self
+        real(dp),           intent(in)    :: t1
+
+        call fields_put(self%exports, self%h_footprint, &
+                        merge(1.0_sp, 0.0_sp, self%ylmo%bnd%mask_ice /= MASK_ICE_NONE), t1=t1)
+        call fields_put(self%exports, self%h_H_ice_pd, self%ylmo%dta%pd%H_ice, t1=t1)
+    end subroutine exports_static
 
     subroutine exports_mass(self, t1)
         ! INSTANT, M_ice [Gt] = V_ice * rho_ice * 1e-3 in sp (yelmox.f90:185).

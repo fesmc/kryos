@@ -1,0 +1,170 @@
+module test_ice_toys
+    ! Two toy ice instances that only declare their fields (the test puts the
+    ! exports): one with the phase 4 additions (footprint, H_ice_pd), one bare.
+    use precision,       only: dp
+    use kryos_component, only: init_ctx_t, step_time_t
+    use kryos_ice,       only: ice_t, ice_opt_t
+    implicit none
+    private
+
+    type, extends(ice_t), public :: toy_full_t
+    contains
+        procedure :: init => full_init
+        procedure :: update => toy_update
+        procedure :: restart_write => toy_rw
+        procedure :: restart_read => toy_rr
+    end type toy_full_t
+
+    type, extends(toy_full_t), public :: toy_bare_t
+    contains
+        procedure :: init => bare_init
+    end type toy_bare_t
+
+contains
+
+    subroutine full_init(self, ctx)
+        class(toy_full_t), intent(inout) :: self
+        type(init_ctx_t),  intent(in)    :: ctx
+        self%nx = ctx%grid%G%nx
+        self%ny = ctx%grid%G%ny
+        self%opt = ice_opt_t(z_bed_ref=.true., footprint=.true., H_ice_pd=.true.)
+    end subroutine full_init
+
+    subroutine bare_init(self, ctx)
+        class(toy_bare_t), intent(inout) :: self
+        type(init_ctx_t),  intent(in)    :: ctx
+        self%nx = ctx%grid%G%nx
+        self%ny = ctx%grid%G%ny
+    end subroutine bare_init
+
+    subroutine toy_update(self, st)
+        class(toy_full_t), intent(inout) :: self
+        type(step_time_t), intent(in)    :: st
+        associate (u => st%t1 + self%nx); end associate
+    end subroutine toy_update
+
+    subroutine toy_rw(self, dir, t)
+        class(toy_full_t), intent(inout) :: self
+        character(len=*),  intent(in)    :: dir
+        real(dp),          intent(in)    :: t
+        associate (u => t + self%nx + len(dir)); end associate
+    end subroutine toy_rw
+
+    subroutine toy_rr(self, dir, t)
+        class(toy_full_t), intent(inout) :: self
+        character(len=*),  intent(in)    :: dir
+        real(dp),          intent(in)    :: t
+        associate (u => t + self%nx + len(dir)); end associate
+    end subroutine toy_rr
+
+end module test_ice_toys
+
+program test_ice_contract
+    ! The ice contract of phase 4 (contracts-design 2.1) on toy ice instances,
+    ! through the real wrappers (ice_adopt, ice_init): the optional static
+    ! exports footprint and H_ice_pd are declared exactly when the backend sets
+    ! their option, with their units, shape and nature. (The yelmo adapter's
+    ! values are checked in test_run_sequence, which links Yelmo.)
+
+    use precision,       only: dp
+    use coords,          only: grid_init
+    use fesm_fields,     only: fields_has, fields_put, FIELD_INSTANT, FIELD_INTENSIVE
+    use kryos_component, only: init_ctx_t, census_t, constraints_t
+    use kryos_ice,       only: ice_t, ice_slot_t, ice_adopt, ice_init
+    use test_ice_toys,   only: toy_full_t, toy_bare_t
+
+    implicit none
+
+    integer, parameter :: NX = 5, NY = 4
+    integer :: nfail = 0
+
+    call test_declaration()
+
+    if (nfail > 0) then
+        write(*,"(a,i0,a)") "test_ice_contract: ", nfail, " check(s) FAILED"
+        error stop 1
+    end if
+    write(*,"(a)") "test_ice_contract: OK"
+
+contains
+
+    subroutine check(label, ok)
+        character(len=*), intent(in) :: label
+        logical,          intent(in) :: ok
+        if (ok) then
+            write(*,"(a)") "  ok    "//label
+        else
+            write(*,"(a)") "  FAIL  "//label
+            nfail = nfail + 1
+        end if
+    end subroutine check
+
+    subroutine make_ice(slot, full)
+        ! A toy ice on a small cartesian grid, adopted and initialised through the wrappers.
+        type(ice_slot_t), intent(out) :: slot
+        logical,          intent(in)  :: full
+        class(ice_t), allocatable :: proto
+        type(init_ctx_t) :: ctx
+        type(census_t)   :: census
+
+        ctx%instance  = "ice_toy"
+        ctx%component = "ice"
+        ctx%backend   = "toy"
+        ctx%domain    = "Toy"
+        ctx%grid_name = "TOY"
+        call grid_init(ctx%grid, name="TOY", mtype="cartesian", units="km", dx=16.0_dp, nx=NX, dy=16.0_dp, ny=NY, &
+                       x0=0.0_dp, y0=0.0_dp)
+        if (full) then
+            allocate(toy_full_t :: proto)
+        else
+            allocate(toy_bare_t :: proto)
+        end if
+        call ice_adopt(slot, proto, constraints_t(), ctx, census)
+        call ice_init(slot, ctx)
+    end subroutine make_ice
+
+    subroutine test_declaration()
+        type(ice_slot_t) :: full, bare
+        real(dp) :: a(NX,NY), b(NX,NY)
+        integer :: i, j
+
+        write(*,"(a)") "declaration of footprint and H_ice_pd"
+        call make_ice(full, .true.)
+        call make_ice(bare, .false.)
+        associate (c => full%c, e => full%c%exports)
+            call check("footprint declared on request", fields_has(e, "footprint") .and. c%h_footprint > 0)
+            call check("H_ice_pd declared on request", fields_has(e, "H_ice_pd") .and. c%h_H_ice_pd > 0)
+            call check("footprint: 1, instant, intensive, rank 2 on the instance grid", &
+                       trim(e%f(c%h_footprint)%units) == "1" .and. e%f(c%h_footprint)%tsem == FIELD_INSTANT .and. &
+                       e%f(c%h_footprint)%cons == FIELD_INTENSIVE .and. e%f(c%h_footprint)%rank == 2 .and. &
+                       trim(e%f(c%h_footprint)%grid) == "TOY" .and. e%f(c%h_footprint)%nx == NX .and. &
+                       e%f(c%h_footprint)%ny == NY)
+            call check("H_ice_pd: m, instant, intensive, rank 2 on the instance grid", &
+                       trim(e%f(c%h_H_ice_pd)%units) == "m" .and. e%f(c%h_H_ice_pd)%tsem == FIELD_INSTANT .and. &
+                       e%f(c%h_H_ice_pd)%cons == FIELD_INTENSIVE .and. e%f(c%h_H_ice_pd)%rank == 2 .and. &
+                       trim(e%f(c%h_H_ice_pd)%grid) == "TOY")
+            call check("neither is an import", .not. fields_has(c%imports, "footprint") .and. &
+                       .not. fields_has(c%imports, "H_ice_pd"))
+
+            ! a static put, once: the value and its time come back
+            do j = 1, NY
+                do i = 1, NX
+                    a(i,j) = merge(1.0_dp, 0.0_dp, i + j > 4)
+                    b(i,j) = 100.0_dp*real(i, dp) + real(j, dp)
+                end do
+            end do
+            call fields_put(full%c%exports, full%c%h_footprint, a, t1=0.0_dp)
+            call fields_put(full%c%exports, full%c%h_H_ice_pd, b, t1=0.0_dp)
+            call check("footprint and H_ice_pd published at t0", e%f(c%h_footprint)%published .and. &
+                       e%f(c%h_H_ice_pd)%published .and. e%f(c%h_footprint)%t1 == 0.0_dp .and. &
+                       e%f(c%h_H_ice_pd)%t1 == 0.0_dp)
+        end associate
+
+        call check("a backend that does not set the options declares neither", &
+                   .not. fields_has(bare%c%exports, "footprint") .and. .not. fields_has(bare%c%exports, "H_ice_pd") &
+                   .and. bare%c%h_footprint == 0 .and. bare%c%h_H_ice_pd == 0)
+        call check("the rest of the vocabulary is unchanged", fields_has(bare%c%exports, "H_ice") .and. &
+                   fields_has(bare%c%exports, "f_grnd") .and. .not. fields_has(bare%c%exports, "z_bed_ref"))
+    end subroutine test_declaration
+
+end program test_ice_contract

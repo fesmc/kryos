@@ -235,6 +235,7 @@ program test_run_sequence
     use kryos_experiment, only: experiment_proto_t, HOOK_STEP_BEGIN, HOOK_ICE_BND, HOOK_COLD_PRE_STATE, HOOK_COLD_POST_STATE
     use test_run_toys
     use kryos_ice_yelmo, only: yelmo_ice_t
+    use yelmo_defs,      only: MASK_ICE_NONE
     use kryos_climate_snapshots,  only: snapshots_climate_t
     use kryos_surface_chion,      only: chion_surface_t
     use kryos_shelf_marine_shelf, only: marshelf_shelf_t
@@ -332,6 +333,7 @@ contains
             call check_step(run, n, t, smb_prev, bmb_prev, m_prev, dto_prev)
         end do
         call check(n == 2, "two steps to time_end = 20")
+        call check_ice_static(run, "t = 20", 0.0_dp)
         call run_end(run)
         call check_hooks_run()
 
@@ -388,6 +390,7 @@ contains
                        "hub rebuilt from the restored ice at 40")
         end associate
 
+        call check_ice_static(run, "restored at 40", -2.0_dp)
         n = 0
         do while (.not. run_done(run))
             call run_step(run)
@@ -953,7 +956,35 @@ contains
         c => domain_component(run%dom(1), 1)
         call check(trim(c%name) == "ice_grl", "domain_component(ice)")
         call round_trips(run)
+        call check_ice_static(run, "t0", 0.0_dp)
     end subroutine check_init
+
+    subroutine check_ice_static(run, what, t_put)
+        ! footprint and H_ice_pd (contracts-design 2.1, phase 4): Yelmo's mask_ice
+        ! (/= MASK_ICE_NONE) and dta%pd%H_ice, static, put once at PASS_INIT
+        ! (t_put, if > -1: the time of the put, which later steps never change).
+        type(run_t), target, intent(in) :: run
+        character(len=*),    intent(in) :: what
+        real(dp),            intent(in) :: t_put
+
+        real(dp), allocatable :: fp(:,:), pd(:,:)
+
+        select type (ice => run%dom(1)%ice%c)
+        type is (yelmo_ice_t)
+            fp = get2(ice%exports, ice%h_footprint)
+            pd = get2(ice%exports, ice%h_H_ice_pd)
+            call check(all(real(fp, sp) == merge(1.0_sp, 0.0_sp, ice%ylmo%bnd%mask_ice /= MASK_ICE_NONE)) .and. &
+                       count(fp == 1.0_dp) > 0, what//": footprint = (mask_ice /= MASK_ICE_NONE)")
+            call check(all(real(pd, sp) == ice%ylmo%dta%pd%H_ice) .and. any(pd > 0.0_dp), &
+                       what//": H_ice_pd = dta%pd%H_ice")
+            if (t_put > -1.0_dp) &
+                call check(published_at(ice%exports, ice%h_footprint, t_put) .and. &
+                           published_at(ice%exports, ice%h_H_ice_pd, t_put), &
+                           what//": footprint and H_ice_pd put once, at PASS_INIT (published at the start time)")
+        class default
+            call check(.false., what//": the ice instance is Yelmo")
+        end select
+    end subroutine check_ice_static
 
     subroutine round_trips(run)
         ! The two unit conversions across the exchange (adapters-design 1.2 P3,

@@ -19,6 +19,7 @@ module kryos_ice
     type, public :: ice_opt_t                       ! optional fields the backend supports (set in init)
         logical :: T_shlf = .false., tf_shlf = .false., Q_geo = .false., H_sed = .false., Qd = .false.
         logical :: uxy_s = .false., dz_bed_dt_corr = .false., z_bed_ref = .false., H_ice_ref = .false.
+        logical :: footprint = .false., H_ice_pd = .false.     ! static: where the ice model holds ice; its present day
     end type ice_opt_t
 
     type, abstract, extends(component_t), public :: ice_t
@@ -28,6 +29,7 @@ module kryos_ice
         integer :: h_H_ice = 0, h_z_srf = 0, h_z_bed = 0, h_z_sl = 0, h_f_ice = 0, h_f_grnd = 0   ! exports
         integer :: h_dHidt = 0, h_smb = 0, h_bmb = 0, h_cmb = 0, h_mb_net = 0, h_M_ice = 0
         integer :: h_ux_s = 0, h_uy_s = 0, h_dz_bed_dt_corr = 0, h_z_bed_ref = 0, h_H_ice_ref = 0
+        integer :: h_footprint = 0, h_H_ice_pd = 0
     end type ice_t
 
     type, public :: ice_slot_t                      ! what domain_t holds
@@ -151,7 +153,9 @@ contains
     subroutine ice_declare(c)
         ! The vocabulary of contracts-design section 2.1, once for all backends.
         ! H_ice_ref (optional): the reference load geo is initialised with
-        ! (design decision 4, refined in the phase 1 review).
+        ! (design decision 4, refined in the phase 1 review). footprint and
+        ! H_ice_pd (optional, static, phase 4 and phase 2 WP3): published once,
+        ! at PASS_INIT.
         class(ice_t), intent(inout) :: c
         integer :: d2(2)
         character(len=:), allocatable :: g
@@ -213,6 +217,12 @@ contains
         end if
         if (c%opt%H_ice_ref) then
             call fields_add(c%exports, "H_ice_ref", "m", FIELD_INSTANT, FIELD_EXTENSIVE, c%h_H_ice_ref, grid=g, dims=d2)
+        end if
+        if (c%opt%footprint) then
+            call fields_add(c%exports, "footprint", "1", FIELD_INSTANT, FIELD_INTENSIVE, c%h_footprint, grid=g, dims=d2)
+        end if
+        if (c%opt%H_ice_pd) then
+            call fields_add(c%exports, "H_ice_pd", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_H_ice_pd, grid=g, dims=d2)
         end if
         call fields_lock(c%exports)
     end subroutine ice_declare

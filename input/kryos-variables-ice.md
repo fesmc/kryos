@@ -23,3 +23,5 @@ default writer: dimensions without `time` (empty: 0-D, written to `<instance>_ts
 | 15 | dz_bed_dt_corr | xc, yc     | m yr-1      | Bedrock rate correction                          | 1e-4       |
 | 16 | z_bed_ref      | xc, yc     | m           | Reference bedrock elevation                      | 1e-3       |
 | 17 | H_ice_ref      | xc, yc     | m           | Reference ice thickness                          | 1e-3       |
+| 18 | footprint      | xc, yc     | 1           | Where the ice model holds ice (static)           | 1e-4       |
+| 19 | H_ice_pd       | xc, yc     | m           | Present-day ice thickness (static)               | 1e-3       |

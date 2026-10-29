@@ -395,10 +395,10 @@ contains
 
         call expect("ice", [character(len=16) :: "H_ice", "z_srf", "z_bed", "z_sl", "f_ice", "f_grnd", "dHidt", &
                             "smb", "bmb", "cmb", "mb_net", "M_ice", "ux_s", "uy_s", "dz_bed_dt_corr", &
-                            "z_bed_ref", "H_ice_ref"], &
+                            "z_bed_ref", "H_ice_ref", "footprint", "H_ice_pd"], &
                     [character(len=16) :: "m", "m", "m", "m", "1", "1", "m yr-1", "kg m-2 yr-1", "kg m-2 yr-1", &
-                            "kg m-2 yr-1", "kg m-2 yr-1", "Gt", "m yr-1", "m yr-1", "m yr-1", "m", "m"], &
-                    [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2])
+                            "kg m-2 yr-1", "kg m-2 yr-1", "Gt", "m yr-1", "m yr-1", "m yr-1", "m", "m", "1", "m"], &
+                    [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2])
         call expect("geo", [character(len=16) :: "dz_bed", "dz_ss", "z_bed_ref", "dz_bed_dt", "bsl", "A_ocn", "dV_bsl", "dphi"], &
                     [character(len=16) :: "m", "m", "m", "m yr-1", "m", "m2", "m3", "m"], [2, 2, 2, 2, 0, 0, 0, 0])
         call expect("climate", [character(len=16) :: "tas", "pr", "z_srf_clim", "lapse", "beta_p", "to_ann", "so_ann", &
