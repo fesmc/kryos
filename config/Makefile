@@ -215,7 +215,7 @@ kryos: $(objdir)/libkryos.a | $(bindir)
 # exits non-zero on failure. `make check` builds and runs them all, except the
 # tests that need a backend library switched off (test_skip, config/common.mk).
 # The long tests (minutes) run with `make check-long`, not `make check`.
-long_tests = $(testdir)/test_run_domains.f90
+long_tests = $(testdir)/test_run_domains.f90 $(testdir)/test_gia_sequence.f90
 test_srcs = $(filter-out $(test_skip) $(long_tests),$(wildcard $(testdir)/test_*.f90))
 test_exes = $(patsubst $(testdir)/%.f90,$(bindir)/%.x,$(test_srcs))
 long_srcs = $(filter-out $(test_skip),$(filter $(long_tests),$(wildcard $(testdir)/test_*.f90)))
@@ -258,7 +258,7 @@ usage:
 	@echo " make kryos-static : $(objdir)/libkryos.a and the .mod files in $(objdir)"
 	@echo " make kryos        : $(bindir)/kryos.x, the driver"
 	@echo " make check        : input-check, then builds and runs every tests/test_*.f90 except the long ones"
-	@echo " make check-long   : the long tests (test_run_domains: two domains, about 8 min)"
+	@echo " make check-long   : the long tests (test_run_domains: two domains, about 8 min; test_gia_sequence: VILMA2 with two domains, about 6 min)"
 	@echo " make sync-input   : copies the library sources over the input/ copies (input/sync.txt)"
 	@echo " make input-check  : fails if an input/ copy differs from its source"
 	@echo " make deps-check   : fails with instructions if a dependency is not built"
