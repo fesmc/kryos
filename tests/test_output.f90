@@ -962,7 +962,7 @@ contains
             character(len=24) :: name
             real(sp) :: pa, pr
         end type lit_t
-        type(lit_t), parameter :: LIT(28) = [ &
+        type(lit_t), parameter :: LIT(33) = [ &
             lit_t("geo-fastisostasy", "z_bed", 1e-3_sp, 0.0_sp), lit_t("geo-fastisostasy", "z_ss", 1e-3_sp, 0.0_sp), &
             lit_t("geo-fastisostasy", "w", 1e-3_sp, 0.0_sp), lit_t("geo-fastisostasy", "we", 1e-3_sp, 0.0_sp), &
             lit_t("climate-snapshots", "t2m_ann", 1e-3_sp, 0.0_sp), lit_t("climate-snapshots", "t2m_sum", 1e-3_sp, 0.0_sp), &
@@ -976,7 +976,10 @@ contains
             lit_t("surface-chion", "sf", 0.0_sp, 1e-4_sp), lit_t("surface-chion", "t2m", 1e-3_sp, 0.0_sp), &
             lit_t("surface-chion", "S", 0.0_sp, 1e-4_sp), lit_t("surface-chion", "PDDs", 0.0_sp, 1e-4_sp), &
             lit_t("surface-chion", "alb_s", 1e-4_sp, 0.0_sp), lit_t("surface-chion", "H_snow", 0.1_sp, 0.0_sp), &
-            lit_t("shelf-marine_shelf", "bmb_shlf", 1e-4_sp, 0.0_sp), lit_t("hub", "f_ice", 1e-4_sp, 0.0_sp)]
+            lit_t("shelf-marine_shelf", "bmb_shlf", 1e-4_sp, 0.0_sp), lit_t("hub", "f_ice", 1e-4_sp, 0.0_sp), &
+            lit_t("hub", "z_bed", 1e-3_sp, 0.0_sp), lit_t("hub", "H_ice", 1e-3_sp, 0.0_sp), &
+            lit_t("hub", "z_srf", 1e-3_sp, 0.0_sp), lit_t("hub", "z_sl", 1e-3_sp, 0.0_sp), &
+            lit_t("hub", "f_grnd", 1e-4_sp, 0.0_sp)]
 
         type(var_io_type) :: row
         character(len=:), allocatable :: f1, f2

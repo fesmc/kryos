@@ -186,9 +186,11 @@ program test_domain
                                cadence_init, cadence_mark
     use fesm_fields,     only: fields_put, fields_has, fields_handle
     use fesm_log,        only: log_set_level, LOG_WARN
-    use htopo,           only: htopo_class, htopo_update
+    use htopo,           only: htopo_class, htopo_update, htopo_write_init, htopo_write_step
     use regions,         only: regions_class, regions_init_nml, regions_basin_ids, regions_select
-    use ncio,            only: nc_read, nc_set_lossless, nc_exists_var, nc_create, nc_write_dim, nc_write
+    use ncio,            only: nc_read, nc_set_lossless, nc_exists_var, nc_create, nc_write_dim, nc_write, nc_open, nc_close, &
+                               nc_time_index
+    use kryos_outfile,   only: outfile_var2d
     use phys_constants,  only: phys_const_class, phys_const_set, phys_const_load
     use kryos_component, only: init_ctx_t, census_t, constraints_t, grid_ref_t, kryos_mask, PASS_FINAL
     use kryos_config,    only: config_t, config_init
@@ -485,8 +487,83 @@ contains
         call check("hub file: four-value mask from f_ice and f_grnd", all(m3(:,:,2) == kryos_mask(real(fi, dp), real(fg, dp))))
         call check("hub file: z_sl, z_srf, basin, time variables", nc_exists_var(file, "z_sl") .and. nc_exists_var(file, "z_srf") &
                    .and. nc_exists_var(file, "basin") .and. nc_exists_var(file, "time"))
+        call hub_precision(d)
         call nc_set_lossless(.false.)
     end subroutine test_mirror_and_output
+
+    subroutine hub_precision(d)
+        ! The `prec` column of the table `hub` reaches htopo_write_step: the file of
+        ! domain_hub_write is byte for byte the file of the call as it was written before
+        ! (the library's default precisions, 1e-3 and f_grnd 1e-4; f_ice 1e-4), rounded and
+        ! under write_lossless (nc_set_lossless); rounding changes the values within the
+        ! precision.
+        type(domain_t), intent(in) :: d
+
+        character(len=*), parameter :: fr = dir//"hub_prec_round.nc", fr0 = dir//"hub_prec_round_ref.nc", &
+                                       fl = dir//"hub_prec_lossless.nc", fl0 = dir//"hub_prec_lossless_ref.nc"
+        real(sp), allocatable :: a(:,:,:), b(:,:,:)
+        integer :: nx, ny, es
+        logical :: ok
+
+        nx = d%hub%nx;  ny = d%hub%ny
+        allocate(a(nx,ny,2), b(nx,ny,2))
+        call execute_command_line("rm -f "//fr//" "//fr0//" "//fl//" "//fl0)
+
+        call nc_set_lossless(.false.)
+        call domain_hub_write(d, fr, 0.0_dp, .true.)
+        call domain_hub_write(d, fr, 10.0_dp, .false.)
+        call hub_write_literal(d, fr0, 0.0_dp, .true.)
+        call hub_write_literal(d, fr0, 10.0_dp, .false.)
+        call execute_command_line("cmp -s "//fr//" "//fr0, exitstat=es)
+        call check("hub file, rounded: byte-identical to the one with the library's default precisions", es == 0)
+
+        call nc_set_lossless(.true.)
+        call domain_hub_write(d, fl, 0.0_dp, .true.)
+        call domain_hub_write(d, fl, 10.0_dp, .false.)
+        call hub_write_literal(d, fl0, 0.0_dp, .true.)
+        call hub_write_literal(d, fl0, 10.0_dp, .false.)
+        call execute_command_line("cmp -s "//fl//" "//fl0, exitstat=es)
+        call check("hub file, write_lossless: byte-identical to the one with the default precisions", es == 0)
+        call execute_command_line("cmp -s "//fl//" "//fr, exitstat=es)
+        call check("hub file: rounded and lossless files differ", es /= 0)
+
+        ok = .true.
+        call nc_read(fl, "z_bed", a);  call nc_read(fr, "z_bed", b)
+        ok = ok .and. same_sp(a(:,:,2), d%hub%z_bed) .and. any(a /= b) .and. maxval(abs(a - b)) <= 1.0e-3_sp
+        call nc_read(fl, "H_ice", a);  call nc_read(fr, "H_ice", b)
+        ok = ok .and. same_sp(a(:,:,2), d%hub%H_ice) .and. any(a /= b) .and. maxval(abs(a - b)) <= 1.0e-3_sp
+        call nc_read(fl, "z_srf", a);  call nc_read(fr, "z_srf", b)
+        ok = ok .and. same_sp(a(:,:,2), d%hub%z_srf) .and. any(a /= b) .and. maxval(abs(a - b)) <= 1.0e-3_sp
+        call nc_read(fl, "z_sl", a);   call nc_read(fr, "z_sl", b)
+        ok = ok .and. same_sp(a(:,:,2), d%hub%z_sl) .and. maxval(abs(a - b)) <= 1.0e-3_sp
+        call nc_read(fl, "f_grnd", a); call nc_read(fr, "f_grnd", b)
+        ok = ok .and. same_sp(a(:,:,2), d%hub%f_grnd) .and. maxval(abs(a - b)) <= 1.0e-4_sp
+        call check("hub file: write_lossless holds the fields exactly, the rounded file within the precision", ok)
+        call nc_set_lossless(.false.)
+    end subroutine hub_precision
+
+    subroutine hub_write_literal(d, file, t, init)
+        ! domain_hub_write as it was written before the precisions came from the table.
+        type(domain_t),   intent(in) :: d
+        character(len=*), intent(in) :: file
+        real(dp),         intent(in) :: t
+        logical,          intent(in) :: init
+
+        integer :: ncid, n
+        integer, allocatable :: mask(:,:)
+
+        if (init) call htopo_write_init(d%hub, trim(file), t)
+        call htopo_write_step(d%hub, trim(file), t)
+        mask = kryos_mask(d%hub_exports%f(d%hh%h_f_ice)%v(:,:,1), d%hub_exports%f(d%hh%h_f_grnd)%v(:,:,1))
+        call nc_open(trim(file), ncid, writable=.true.)
+        n = nc_time_index(trim(file), "time", t, ncid)
+        call outfile_var2d(trim(file), "f_ice", real(d%hub_exports%f(d%hh%h_f_ice)%v(:,:,1), wp), n, ncid, &
+                           "1", "Ice-covered fraction", prec_abs=1.0e-4_wp, prec_rel=0.0_wp)
+        call nc_write(trim(file), "mask", mask, dim1="xc", dim2="yc", dim3="time", &
+                      start=[1,1,n], count=[d%hub%nx,d%hub%ny,1], ncid=ncid, units="1", &
+                      long_name="Surface type (0 ocean, 1 land, 2 grounded ice, 3 floating ice)")
+        call nc_close(ncid)
+    end subroutine hub_write_literal
 
     subroutine test_anomaly_exchange_check()
         ! AntChain: toy ice and geo on ANT-32KM, toy shelf on ANT-32KM, hub ANT-16KM.

@@ -46,9 +46,10 @@ module kryos_domain
     use regions,         only: regions_class, regions_init_nml
     use nml,             only: nml_has_group
     use ncio,            only: nc_open, nc_close, nc_write, nc_time_index
-    use kryos_outfile,   only: outfile_var2d
+    use kryos_outfile,   only: outfile_var2d, outfile_prec
     use coupler,         only: coupler_class, coupler_init, coupler_prime, remap
-    use htopo,           only: htopo_class, htopo_init, htopo_update, htopo_write_init, htopo_write_step
+    use htopo,           only: htopo_class, htopo_init, htopo_update, htopo_write_init, htopo_write_step, &
+                               htopo_prec_t, htopo_write_prec_t
     use phys_constants,  only: phys_const_class
     use kryos_component, only: component_t, grid_ref_t, init_ctx_t, step_time_t, census_t, axis_t, &
                                step_time_of, axis_find, kryos_mask, component_prepare_call, NAME_LEN, PATH_LEN, &
@@ -1231,9 +1232,10 @@ contains
 
     subroutine domain_hub_write(dom, file, t, init)
         ! The hub's current geometry at t: z_bed, H_ice, z_srf, f_grnd, z_sl
-        ! (htopo_write_step) plus f_ice and the four-value mask (kryos_mask on
-        ! the hub exports). init: first write, creates the file with the regions
-        ! and basins (htopo_write_init). The caller (output, core C8) owns the
+        ! (htopo_write_step, rounded to the `prec` column of the table `hub`) plus
+        ! f_ice (same table) and the four-value mask (kryos_mask on the hub
+        ! exports). init: first write, creates the file with the regions and
+        ! basins (htopo_write_init). The caller (output, core C8) owns the
         ! schedule `dom%out_2D` and the file name.
         type(domain_t),   intent(in) :: dom
         character(len=*), intent(in) :: file
@@ -1246,7 +1248,7 @@ contains
         nx = dom%hub%nx
         ny = dom%hub%ny
         if (init) call htopo_write_init(dom%hub, trim(file), t)
-        call htopo_write_step(dom%hub, trim(file), t)
+        call htopo_write_step(dom%hub, trim(file), t, hub_write_prec())
 
         mask = kryos_mask(dom%hub_exports%f(dom%hh%h_f_ice)%v(:,:,1), dom%hub_exports%f(dom%hh%h_f_grnd)%v(:,:,1))
         call nc_open(trim(file), ncid, writable=.true.)
@@ -1258,6 +1260,31 @@ contains
                       long_name="Surface type (0 ocean, 1 land, 2 grounded ice, 3 floating ice)")
         call nc_close(ncid)
     end subroutine domain_hub_write
+
+    function hub_write_prec() result(p)
+        ! The precisions of the five fields of htopo_write_step, from the rows of
+        ! the table `hub` (outfile_prec checks the units against those the library
+        ! writes: m, and 1 for f_grnd); a field the table does not list is lossless.
+        type(htopo_write_prec_t) :: p
+
+        p%z_bed  = hub_prec("z_bed",  "m", "Bedrock elevation")
+        p%H_ice  = hub_prec("H_ice",  "m", "Ice thickness")
+        p%z_srf  = hub_prec("z_srf",  "m", "Surface elevation")
+        p%f_grnd = hub_prec("f_grnd", "1", "Grounded-ice fraction")
+        p%z_sl   = hub_prec("z_sl",   "m", "Sea-surface height")
+    end function hub_write_prec
+
+    function hub_prec(name, units, long_name) result(p)
+        character(len=*), intent(in) :: name, units, long_name
+        type(htopo_prec_t) :: p
+
+        character(len=len(long_name)+256) :: lname
+        real(dp) :: pa, pr
+
+        lname = long_name
+        call outfile_prec("hub", name, units, lname, pa, pr)
+        p = htopo_prec_t(real(pa, wp), real(pr, wp))
+    end function hub_prec
 
     ! =========================================================================
     ! Helpers
