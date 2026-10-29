@@ -98,6 +98,9 @@ contains
         call check(x == 0.0_dp, "default dp from [instance]")
         call config_read(cfg, "ice_grl", "init_equil_time", x, "instance", "ice_yelmo")
         call check(x == 10.0_dp, "set dp from the group, declared by the backend template")
+        x = -1.0_dp
+        call config_read(cfg, "ice_grl", "init_time_thrm", x, "instance", "ice_yelmo")
+        call check(x == 0.0_dp, "init_time_thrm: default 0 from the backend template")
         call config_read(cfg, "ice_grl", "yelmo", s, "instance", "ice_yelmo")
         call check(trim(s) == "yelmo", "default string from the backend template")
         call config_read(cfg, "ice_grl", "out_1D", s, "instance", "ice_yelmo")

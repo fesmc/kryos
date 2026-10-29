@@ -97,6 +97,7 @@
 &ice_yelmo
     yelmo           = "yelmo"                  ! Yelmo's top group
     init_equil_time = 0.0                      ! [yr] cold start: yelmo_update_equil, 0 = none
+    init_time_thrm  = 0.0                      ! [yr] cold start, after it: equilibrate at the run step with topography fixed, 0 = none
     out_yelmo       = "none"                   ! schedule of <instance>_yelmo.nc (YELMO_VARS_2D)
     out_yelmo_sm    = "none"                   ! schedule of <instance>_yelmo_sm.nc (small 2D set)
     out_yelmo_ts    = "none"                   ! schedule of <instance>_yelmo_ts[_<region>].nc

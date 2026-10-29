@@ -39,6 +39,7 @@ module kryos_ice_yelmo
         type(yelmo_class) :: ylmo
         character(len=NAME_LEN) :: group = "yelmo"        ! Yelmo's top group in the par file
         real(sp) :: init_equil_time = 0.0_sp              ! [yr] cold start: yelmo_update_equil, 0 = none
+        real(sp) :: init_time_thrm  = 0.0_sp              ! [yr] then equilibrate with topography fixed, 0 = none
         real(dp) :: t_Q_geo = -huge(1.0_dp), t_H_sed = -huge(1.0_dp)   ! publication times last copied
     contains
         procedure :: init          => yelmo_init_
@@ -114,6 +115,9 @@ contains
             if (self%init_equil_time > 0.0_sp) &
                 call yelmo_update_equil(self%ylmo, st%t1, time_tot=self%init_equil_time, dt=1.0_sp, &
                                         topo_fixed=.false.)
+            if (self%init_time_thrm > 0.0_sp) &
+                call yelmo_update_equil(self%ylmo, st%t1, time_tot=self%init_time_thrm, dt=real(st%dtt, sp), &
+                                        topo_fixed=.true.)
             call exports_all(self, st)
         case (PASS_RESTART)                             ! domain_restart_read tail (kryos_startup.f90:521-527)
             call bnd_geometry(self)                     ! the restored imports; exports: restored by the core
@@ -222,6 +226,8 @@ contains
             call nml_read(ctx%par_file, ctx%instance, "yelmo", self%group)
         if (nml_has_param(ctx%par_file, ctx%instance, "init_equil_time")) &
             call nml_read(ctx%par_file, ctx%instance, "init_equil_time", self%init_equil_time)
+        if (nml_has_param(ctx%par_file, ctx%instance, "init_time_thrm")) &
+            call nml_read(ctx%par_file, ctx%instance, "init_time_thrm", self%init_time_thrm)
     end subroutine group_read
 
     subroutine reference_narrow(self, ref, topo)

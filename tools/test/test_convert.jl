@@ -50,6 +50,7 @@ kvg(G, g) = Dict(k.name => NL.parse_value(k.raw) for k in G[g].keys)
     @testset "instances" begin
         ice = kv(G, "ice_tes")
         @test ice["backend"] == "yelmo" && ice["grid"] == "TST-32KM" && ice["init_equil_time"] === 10.0
+        @test ice["init_time_thrm"] === 0.0
         @test ice["out_yelmo"] == "out_2D" && ice["out_yelmo_sm"] == "out_2Dsm" && ice["out_yelmo_ts"] == "out_1D"
         geo = kv(G, "geo_tes")
         @test geo["dt"] === 20.0 && geo["isos"] == "isos" && !haskey(geo, "bsl")
@@ -132,6 +133,10 @@ end
     @test kvg(G, "clock")["time_end"] === 500.0
     @test kvg(G, "forcing")["coefs"] == "alpha"
     @test kvg(G, "snapshots")["f_p"] === 0.07
+    # init_time_thrm is the yelmo key of the ice instance
+    conv4 = convert_mini(root; overrides=["sim.init_time_thrm=5.0"])
+    G4 = Dict(g.name => g for g in namelist(conv4))
+    @test kvg(G4, "ice_tes")["init_time_thrm"] === 5.0
     # an alias of info.json: ghfx -> ghf
     conv2 = convert_mini(root; overrides=["ghfx.use_obs=False"])
     G2 = Dict(g.name => g for g in namelist(conv2))

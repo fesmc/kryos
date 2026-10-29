@@ -123,11 +123,6 @@ allow = [false]
 phase = "2"
 why = "cold-start plugin"
 [[refuse]]
-key = "sim.init_time_thrm"
-allow = [0.0]
-phase = "2"
-why = "cold-start plugin (dropped, off in both gates)"
-[[refuse]]
 key = "sim.init_method"
 allow = ["none", "equil"]
 phase = "2"
@@ -504,7 +499,10 @@ rule = "equil_time"
 src = "sim.init_equil_time"
 rule = "equil_time"
 [[key]]
-src = "re:^sim\\.(init_marine_H|init_kill_shelves|init_time_thrm|relax|opt|use_negis|scale_glacial_smb|lim_pd_ice)$"
+src = "sim.init_time_thrm"
+dst = "{ice}.init_time_thrm"
+[[key]]
+src = "re:^sim\\.(init_marine_H|init_kill_shelves|relax|opt|use_negis|scale_glacial_smb|lim_pd_ice)$"
 drop = "experiment or cold-start plugin (phase 2), off"
 [[key]]
 src = "re:^sim\\.recon_\\w+$"
