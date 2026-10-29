@@ -42,15 +42,16 @@ module kryos_domain
                                FIELD_EXTENSIVE
     use fesm_clock,      only: clock_t, clock_dtt, clock_time, clock_time_rel, cadence_t_last, cadence_due, &
                                cadence_dt_years, cadence_mark
-    use coords,          only: grid_cdo_read_desc
-    use regions,         only: regions_init_nml
+    use coords,          only: grid_class, grid_cdo_read_desc
+    use regions,         only: regions_class, regions_init_nml
     use nml,             only: nml_has_group
     use ncio,            only: nc_open, nc_close, nc_write, nc_time_index
     use coupler,         only: coupler_class, coupler_init, coupler_prime, remap
     use htopo,           only: htopo_class, htopo_init, htopo_update, htopo_write_init, htopo_write_step
     use phys_constants,  only: phys_const_class
     use kryos_component, only: component_t, grid_ref_t, init_ctx_t, step_time_t, census_t, axis_t, &
-                               step_time_of, axis_find, kryos_mask, component_prepare_call, NAME_LEN, PATH_LEN
+                               step_time_of, axis_find, kryos_mask, component_prepare_call, NAME_LEN, PATH_LEN, &
+                               PASS_BOUNDARY, PASS_FINAL
     use kryos_config,    only: config_t, config_read, config_validate, config_validate_instance, config_cadence
     use kryos_wiring,    only: wire_t, wire_node_t, wire_node, wire_node_states, wire_resolve, &
                                wire_prime, wire_exchange, wire_runs, wire_label, LAG_INIT, T_GIA
@@ -149,6 +150,7 @@ module kryos_domain
     public :: domain_nodes, domain_wire
     public :: exchange, exchange_into, exchange_static, domain_hub_update, domain_check_reference
     public :: domain_hub_write
+    public :: domain_regions_load, domain_refresh_boundary
 
 contains
 
@@ -332,6 +334,19 @@ contains
     ! Instances
     ! =========================================================================
 
+    subroutine domain_regions_load(reg, dom, cfg, grid)
+        ! The domain's regions (the `regions` group of the hub, its files on the hub grid) on the
+        ! grid `grid` (yelmox domain_regions_load), as every instance's init context gets them;
+        ! an experiment that selects cells by region (recon) loads them on the ice grid.
+        type(regions_class), intent(out) :: reg
+        type(domain_t),      intent(in)  :: dom
+        type(config_t),      intent(in)  :: cfg
+        type(grid_class),    intent(in)  :: grid
+
+        call regions_init_nml(reg, trim(cfg%par_file), trim(dom%regions), domain=trim(dom%name), &
+                              grid_name=trim(dom%grid_hub), grid=grid, verbose=.false.)
+    end subroutine domain_regions_load
+
     subroutine domain_create(dom, cfg, clk, cnst, census)
         ! The instances of the domain (core-design 3.1 step 4), in INIT_ORDER:
         ! each present component's init_ctx_t (instance_ctx), its factory
@@ -396,8 +411,7 @@ contains
         ctx%scope     = "regional"
         ctx%map_fldr  = cfg%map_fldr
         call grid_cdo_read_desc(ctx%grid, trim(dom%grid(k)), trim(cfg%map_fldr))
-        call regions_init_nml(ctx%reg, trim(cfg%par_file), trim(dom%regions), domain=trim(dom%name), &
-                              grid_name=trim(dom%grid_hub), grid=ctx%grid, verbose=.false.)
+        call domain_regions_load(ctx%reg, dom, cfg, ctx%grid)
         ir = domain_ref_index(dom, dom%grid(k))
         if (ir == 0) then
             call fesm_error("kryos_domain::domain_create", "domain "//trim(dom%name)//": no reference on grid "// &
@@ -875,6 +889,32 @@ contains
         call hub_put(dom, t, f_ice)
         dom%hub_t = t
     end subroutine domain_hub_update
+
+    subroutine domain_refresh_boundary(dom, t, clk)
+        ! The boundary fields of the domain on the ice's current geometry, at time t, inside a
+        ! cold-start recipe that changed the ice (recon: yelmox domain_init_recon, kryos_startup.f90
+        ! 332-337): the hub from the ice, the climate (PASS_BOUNDARY again, on the hub), the surface
+        ! (PASS_FINAL: one more cycle, no spin-up) and its smb and temperature into the ice, then the
+        ! ice's boundary prepared from its imports (domain_prepare, init). Domain-local: nothing of
+        ! the globe is exchanged (the climate keeps the coefficients it was given at the cold start).
+        ! A component the domain lacks is skipped.
+        type(domain_t), target, intent(inout) :: dom
+        real(dp),               intent(in)    :: t
+        type(clock_t),          intent(in)    :: clk
+
+        call domain_hub_update(dom, t, clk, init=.true.)
+        if (domain_present(dom, C_CLIMATE)) then
+            call exchange(dom, "hub", "climate", t, clk, init=.true.)
+            call domain_pass(dom, C_CLIMATE, clk, PASS_BOUNDARY)
+        end if
+        if (domain_present(dom, C_SURFACE)) then
+            call exchange(dom, "hub", "surface", t, clk, init=.true.)
+            if (domain_present(dom, C_CLIMATE)) call exchange(dom, "climate", "surface", t, clk, init=.true.)
+            call domain_pass(dom, C_SURFACE, clk, PASS_FINAL)
+            call exchange(dom, "surface", "ice", t, clk, init=.true.)
+        end if
+        call domain_prepare(dom, C_ICE, clk, init=.true.)
+    end subroutine domain_refresh_boundary
 
     ! =========================================================================
     ! Reference check (decision 4, contracts-design 5.3)

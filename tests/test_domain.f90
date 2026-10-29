@@ -3,7 +3,8 @@ module test_domain_toys
     ! their component through the real wrappers (ice_init, geo_init, shelf_init)
     ! and do nothing else; the test puts their exports by hand.
     use precision,       only: dp
-    use kryos_component, only: init_ctx_t, step_time_t
+    use fesm_fields,     only: fields_put
+    use kryos_component, only: init_ctx_t, step_time_t, PASS_FINAL
     use kryos_ice,       only: ice_t
     use kryos_geo,       only: geo_t
     use kryos_surface,   only: surface_t
@@ -30,8 +31,10 @@ module test_domain_toys
     end type toy_geo_t
 
     type, extends(surface_t), public :: toy_surface_t
+        integer :: n_pass(0:6) = 0                       ! init_state calls by pass
     contains
         procedure :: init => toy_surface_init
+        procedure :: init_state => toy_surface_init_state
         procedure :: update => toy_surface_update
         procedure :: restart_write => toy_surface_rw
         procedure :: restart_read => toy_surface_rr
@@ -101,6 +104,21 @@ contains
         self%nx = ctx%grid%G%nx
         self%ny = ctx%grid%G%ny
     end subroutine toy_surface_init
+    subroutine toy_surface_init_state(self, st, pass)
+        ! Counts the pass; PASS_FINAL puts the two exports a surface -> ice row needs.
+        class(toy_surface_t), intent(inout) :: self
+        type(step_time_t),    intent(in)    :: st
+        integer,              intent(in)    :: pass
+        real(dp), allocatable :: v(:,:)
+        self%n_pass(pass) = self%n_pass(pass) + 1
+        if (pass == PASS_FINAL) then
+            allocate(v(self%nx, self%ny))
+            v = 100.0_dp
+            call fields_put(self%exports, self%h_smb, v, t1=st%t1, t0=st%t0)
+            v = 250.0_dp
+            call fields_put(self%exports, self%h_T_srf, v, t1=st%t1, t0=st%t0)
+        end if
+    end subroutine toy_surface_init_state
     subroutine toy_surface_update(self, st)
         class(toy_surface_t), intent(inout) :: self
         type(step_time_t),    intent(in)    :: st
@@ -169,9 +187,10 @@ program test_domain
     use fesm_fields,     only: fields_put, fields_has, fields_handle
     use fesm_log,        only: log_set_level, LOG_WARN
     use htopo,           only: htopo_class, htopo_update
+    use regions,         only: regions_class, regions_init_nml, regions_basin_ids, regions_select
     use ncio,            only: nc_read, nc_set_lossless, nc_exists_var, nc_create, nc_write_dim, nc_write
     use phys_constants,  only: phys_const_class, phys_const_set, phys_const_load
-    use kryos_component, only: init_ctx_t, census_t, constraints_t, grid_ref_t, kryos_mask
+    use kryos_component, only: init_ctx_t, census_t, constraints_t, grid_ref_t, kryos_mask, PASS_FINAL
     use kryos_config,    only: config_t, config_init
     use kryos_wiring,    only: wire_t, wire_node_t, wiring_table
     use kryos_ice,       only: ice_t, ice_adopt, ice_init
@@ -217,6 +236,8 @@ program test_domain
     call test_anomaly_exchange_check()
     call test_no_ice()
     call test_prepare()
+    call test_regions_load()
+    call test_refresh_boundary()
 
     if (nfail > 0) then
         write(*,'(a,i0,a)') "test_domain: FAILED (", nfail, " checks)"
@@ -642,6 +663,79 @@ contains
         end select
         call check("the default binding (geo) and an absent component (surface) do nothing", n == 2)
     end subroutine test_prepare
+
+    subroutine test_regions_load()
+        ! domain_regions_load: the domain's regions on a grid, as an instance's init context gets them
+        ! (basins of the hub's regions group on the ice grid).
+        type(domain_t), target :: d
+        type(regions_class) :: reg, reg2
+        type(grid_class) :: grid
+        integer, allocatable :: b1(:,:), b2(:,:)
+
+        write(*,"(a)") "domain_regions_load"
+        call setup(d, "Greenland", ice=.true.)
+        call grid_cdo_read_desc(grid, trim(d%grid(C_ICE)), "maps")
+        call domain_regions_load(reg, d, cfg, grid)
+        call regions_init_nml(reg2, trim(cfg%par_file), trim(d%regions), domain=trim(d%name), &
+                              grid_name=trim(d%grid_hub), grid=grid, verbose=.false.)
+        b1 = regions_basin_ids(reg, "domain")
+        b2 = regions_basin_ids(reg2, "domain")
+        call check("regions on the ice grid = regions_init_nml of the hub's group (basin ids of 'domain')", &
+                   all(b1 == b2) .and. size(b1,1) == grid%G%nx .and. size(b1,2) == grid%G%ny .and. all(b1 == 1 .or. b1 == 0))
+        call check("regions_select 'all' selects every cell", all(regions_select(reg, "all")))
+    end subroutine test_regions_load
+
+    subroutine test_refresh_boundary()
+        ! domain_refresh_boundary (recon's mid-recipe refresh): the hub from the ice, the surface's
+        ! PASS_FINAL (not BOUNDARY: no spin-up), its output into the ice, the ice's boundary prepared
+        ! over t0 = t1 = now; a domain without climate skips the climate rows.
+        type(domain_t), target :: d
+        type(wire_t), allocatable :: rows(:)
+        real(sp), allocatable :: zb(:,:), hh(:,:), zs(:,:), fi(:,:), fg(:,:), zl(:,:)
+        integer :: nx, ny, stat, i, j, np
+        real(dp) :: t0p
+
+        write(*,"(a)") "domain_refresh_boundary"
+        call setup(d, "Greenland", ice=.true., surface=.true.)
+        nx = d%hub%nx;  ny = d%hub%ny
+        rows = [rows_between("ice", "hub"), rows_between("hub", "surface"), rows_between("surface", "ice")]
+        call domain_wire(d, clk, table=rows, check=.false., stat=stat)
+        call check("domain_wire: ice -> hub, hub -> surface, surface -> ice rows", stat == 0)
+
+        ! (the cold start: the clock is at time_init, as in a recipe)
+        allocate(zb(nx,ny), hh(nx,ny), zs(nx,ny), fi(nx,ny), fg(nx,ny), zl(nx,ny))
+        do j = 1, ny
+            do i = 1, nx
+                zb(i,j) = real(d%refs(1)%z_bed(i,j), sp)
+                hh(i,j) = max(real(d%refs(1)%H_ice(i,j), sp) + 5.0_sp*cos(0.05_sp*i - 0.1_sp*j), 0.0_sp)
+                zs(i,j) = real(d%refs(1)%z_srf(i,j), sp)
+                fi(i,j) = merge(1.0_sp, 0.0_sp, hh(i,j) > 0.0_sp)
+                fg(i,j) = 1.0_sp
+                zl(i,j) = 0.0_sp
+            end do
+        end do
+        call put_ice(d, 0.0_dp, zb, hh, zs, fi, fg, zl, real(d%refs(1)%z_bed, sp))
+        call domain_refresh_boundary(d, 0.0_dp, clk)
+
+        call check("the hub follows the ice (mirror): H_ice, published at t = 0", d%hub_t == 0.0_dp .and. same_sp(d%hub%H_ice, hh))
+        np = -1
+        select type (s => d%surface%c)
+        type is (toy_surface_t)
+            np = s%n_pass(PASS_FINAL)
+            call check("the surface ran PASS_FINAL once and no other pass", np == 1 .and. sum(s%n_pass) == 1)
+        end select
+        associate (imp => d%ice%c%imports)
+            call check("surface -> ice: smb and T_srf in the ice's imports at t = 0", &
+                       imp%f(d%ice%c%hi_smb)%published .and. imp%f(d%ice%c%hi_smb)%t1 == 0.0_dp .and. &
+                       imp%f(d%ice%c%hi_T_srf)%published .and. all(imp%f(d%ice%c%hi_T_srf)%v(:,:,1) == 250.0_dp))
+        end associate
+        np = -1;  t0p = -1.0_dp
+        select type (c => d%ice%c)
+        type is (toy_ice_t)
+            np = c%n_prepare;  t0p = c%t0_prepare
+        end select
+        call check("the ice's boundary prepared once, over t0 = t1 = now", np == 1 .and. t0p == 0.0_dp)
+    end subroutine test_refresh_boundary
 
     ! -------------------------------------------------------------------------
     ! Toy domains
