@@ -1,0 +1,21 @@
+# Gate nor (phase 2 WP4): yelmox_North (NH-32KM), the cold start from the ICE-6G_C reconstruction
+# (init_method = recon, region North_America), 1000 yr, lossless output. Baseline R2' (topo-prep).
+gate     = "nor"
+base     = "yelmox/yelmox_North.nml"
+p        = ["ctrl.time_end=1000", "ctrl.write_lossless=True", "tm_2D.dt=100",
+            "tm_2Dsm.dt=10", "tm_1D.dt=10", "tm_rst.dt=500"]
+time_end = 1000.0
+chunks   = [0.0, 500.0, 1000.0]
+restart_times = [500.0, 1000.0]
+
+[instances]
+domain     = "North"
+ice        = "ice_nor"
+geo        = "geo_nor"
+climate    = "climate_nor"
+surface    = "surface_nor"
+shelf      = "shelf_nor"
+geothermal = "ghf_nor"
+sediments  = "sed_nor"
+forcing    = "forcing"
+geo_glob   = "geo_glob"

@@ -527,7 +527,7 @@ function rule_equil_time(S::State, g, k, row)
             account!(S, g, k, :mapped, "$(og.name).init_equil_time", "init_method = equil: the key carries init_equil_time", e.source)
         else
             setkey!(S, og, "init_equil_time", "0.0"; origin="yelmox sim.init_method = none", comment="yelmox sim.init_method = none", src=nothing)
-            account!(S, g, k, :default, "$(og.name).init_equil_time", "init_method = none: init_equil_time = 0 (none)", e.source)
+            account!(S, g, k, :default, "$(og.name).init_equil_time", "init_method = $method: init_equil_time = 0 (none)", e.source)
         end
     else  # init_equil_time
         if method == "equil"
@@ -668,7 +668,9 @@ function apply_keys_group!(S::State, name::AbstractString)
     for k in rg.order
         row = find_key_row(S, name, k)
         row === nothing && fail("yelmox key $name.$k is not accounted for (no [[key]] row in the spec)")
-        if haskey(row, "drop")
+        if haskey(row, "defer")
+            continue                          # carried or dropped by apply_experiments!
+        elseif haskey(row, "drop")
             account!(S, name, k, :dropped, "", row["drop"], rg.entries[k].source)
         elseif haskey(row, "rule")
             haskey(RULES, row["rule"]) || fail("[[key]] $name.$k: unknown rule $(row["rule"])")
@@ -802,6 +804,14 @@ end
 
 # ---------- experiments ----------
 
+"Is the yelmox group `name` one of the `keys` groups (its keys go through [[key]] rows)?"
+function is_keys_group(S::State, name::AbstractString)
+    for r in get(S.spec, "group", [])
+        match_src(r["src"], name) && return get(r, "action", "") == "keys"
+    end
+    return false
+end
+
 "Is the [[experiment]] row active? Returns (active, why-not)."
 function experiment_active(S::State, row)
     if haskey(row, "when")
@@ -863,6 +873,11 @@ function apply_experiments!(S::State)
         nfill = 0
         for k in rg.order
             k in got && continue
+            # a `keys` group (sim) has its other keys accounted by their [[key]] rows; only the deferred ones are ours
+            if is_keys_group(S, from)
+                row = find_key_row(S, from, k)
+                (row !== nothing && haskey(row, "defer")) || continue
+            end
             if rg.entries[k].source == "default"       # yelmox's own default, as in drop_group!
                 nfill += 1
             else

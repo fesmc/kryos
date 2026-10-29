@@ -195,6 +195,22 @@ end
     t = kvg(G3, "opt_tf_tes")
     @test t["kind"] == "opt_tf" && t["method"] == "L21" && t["tf_basins"] == [3, 4] && t["tf_max"] === 1.0 && t["basin_fill"] === false
     @test t["tau_m"] === 100.0 && !haskey(t, "cf_init") && !haskey(kvg(G3, "opt_cf_tes"), "tf_max")
+    # the cold start from a reconstruction: its own experiment, first in the list
+    recon_edits = ["init_method       = \"equil\"" => "init_method       = \"recon\"\n    recon_path = \"ice_data/{domain}/{grid_name}/R.nc\"\n    recon_var = \"dz\"\n    recon_time = -26e3\n    recon_regions = \"region:A\""]
+    conv5 = convert_mini(mini(edits=recon_edits); overrides=["sim.relax=True"])
+    G5 = Dict(g.name => g for g in namelist(conv5))
+    @test kvg(G5, "Testland")["experiments"] == ["recon_tes", "relax_tes"]
+    rc = kvg(G5, "recon_tes")
+    @test rc["kind"] == "recon" && rc["recon_var"] == "dz" && rc["recon_time"] === -26e3 && rc["recon_regions"] == "region:A" &&
+          rc["recon_path"] == "ice_data/{domain}/{grid_name}/R.nc"
+    @test kvg(G5, "ice_tes")["init_equil_time"] === 0.0
+    d5 = Dict("$(a.group).$(a.key)" => a for a in conv5.acc)
+    @test d5["sim.recon_path"].dst == "recon_tes.recon_path" && d5["sim.init_method"].status == :default
+    # without recon the recon_* keys of the sim group are dropped with the reason
+    G6 = Dict(g.name => g for g in namelist(convert_mini(mini(edits=["init_method       = \"equil\"" => "init_method       = \"equil\"\n    recon_path = \"x.nc\""]))))
+    @test !haskey(G6, "recon_tes")
+    d6 = Dict("$(a.group).$(a.key)" => a for a in convert_mini(mini(edits=["init_method       = \"equil\"" => "init_method       = \"equil\"\n    recon_path = \"x.nc\""])).acc)
+    @test d6["sim.recon_path"].status == :dropped && occursin("sim.init_method = \"equil\"", d6["sim.recon_path"].reason)
     # opt_cf = none keeps the experiment (cb_ref from outside, no optimisation)
     G2 = Dict(g.name => g for g in namelist(convert_mini(mini(); overrides=["sim.opt=True", "opt.opt_cf=none"])))
     @test kvg(G2, "opt_cf_tes")["method"] == "none" && kvg(G2, "Testland")["experiments"] == "opt_cf_tes"
@@ -206,7 +222,7 @@ end
 @testset "Convert: refusals name the key and the phase" begin
     cases = [
         (["sim.lim_pd_ice=True"] => "sim.lim_pd_ice = true"),
-        (["sim.init_method=recon"] => "sim.init_method"),
+        (["sim.init_method=recon_ref"] => "sim.init_method"),
         (["comps.climate=esm"] => "comps.climate"),
         (["comps.with_isostasy=False"] => "comps.with_isostasy"),
         (["comps.surface_method=smbpal"] => "comps.surface_method"),
@@ -318,7 +334,7 @@ if isfile(joinpath(YELMOXROOT, ".runme", "info.json"))
         end
         # the others are refused, naming a phase
         others = ["yelmox_GreenlandPaleo.nml" => "bias.active", "yelmox_LIS.nml" => "comps.surface_method",
-                  "yelmox_North.nml" => "sim.init_method", "yelmox_Pyrenees.nml" => "comps.with_shelf",
+                  "yelmox_Pyrenees.nml" => "comps.with_shelf",
                   "yelmox_SRG.nml" => "comps.with_isostasy", "yelmox_esm_Antarctica.nml" => "comps.climate",
                   "yelmox_esm_Greenland.nml" => "comps.climate", "yelmox_rembo_Greenland.nml" => "comps.climate",
                   "rembo_Greenland.nml" => "&rembo"]
@@ -337,6 +353,15 @@ if isfile(joinpath(YELMOXROOT, ".runme", "info.json"))
             @test kv(G, "Antarctica")["experiments"] == ["relax_ant", "opt_cf_ant", "opt_tf_ant"]
             t = kv(G, "opt_tf_ant")
             @test t["method"] == "L21-points" && t["tf_basins"] === -1 && t["basin_fill"] === false && t["tf_sigma"] === 50e3
+            # the NOR base: cold start from the reconstruction (gate nor)
+            if isfile(joinpath(base, "yelmox_North.nml"))
+                conv = convert_yelmox(; yelmox=YELMOXROOT, par="yelmox/yelmox_North.nml", overrides=gate_p, kryos=KRYOS)
+                out = joinpath(mktempdir(), "nor.nml")
+                write_par(out, conv)
+                G = NL.read_namelist(out)
+                @test kv(G, "North")["experiments"] == "recon_nor"
+                @test kv(G, "recon_nor")["recon_regions"] == "region:North_America" && kv(G, "recon_nor")["recon_time"] === -26e3
+            end
             # the interim gate ant-cf: relax and the cb_ref optimisation, without opt_tf
             conv = convert_yelmox(; yelmox=YELMOXROOT, par="yelmox/yelmox_Antarctica.nml", overrides=vcat(gate_p, ["opt.opt_tf=none"]), kryos=KRYOS)
             out = joinpath(mktempdir(), "ant.nml")

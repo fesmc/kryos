@@ -124,9 +124,9 @@ phase = "2"
 why = "cold-start plugin"
 [[refuse]]
 key = "sim.init_method"
-allow = ["none", "equil"]
+allow = ["none", "equil", "recon"]
 phase = "2"
-why = "cold-start plugins recon, recon_ref"
+why = "cold-start plugin recon_ref (the reconstruction as the reference ice only)"
 [[refuse]]
 keys = ["ice_bnd.active", "bias.active", "taper.active"]
 allow = [false]
@@ -516,7 +516,7 @@ src = "re:^sim\\.(init_marine_H|init_kill_shelves|use_negis|scale_glacial_smb|li
 drop = "experiment or cold-start plugin (phase 2), off"
 [[key]]
 src = "re:^sim\\.recon_\\w+$"
-drop = "init_method recon (phase 2), not used"
+defer = "experiment"            # carried by the recon [[experiment]] row (apply_experiments!), or dropped there
 [[key]]
 src = "re:^output\\.write_(yelmo|isos|shelf|surface|clim|htopo)$"
 rule = "switch"
@@ -574,6 +574,13 @@ rule = "sed_field"
 # key of the experiment group (default: the same name, all keys); `when = [key, value]`: the row
 # is active when that yelmox key has that value; `skip_if`: and that key does not. A key of a
 # `from` group that no active row carries is dropped with the reason of the inactive row.
+[[experiment]]
+name = "recon_{sfx}"
+kind = "recon"
+from = "sim"
+when = ["sim.init_method", "recon"]
+map = { recon_path = "recon_path", recon_var = "recon_var", recon_time = "recon_time", recon_regions = "recon_regions" }
+
 [[experiment]]
 name = "relax_{sfx}"
 kind = "relax"
