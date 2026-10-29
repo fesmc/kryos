@@ -394,6 +394,7 @@ contains
         ctx%domain    = dom%name
         ctx%grid_name = dom%grid(k)
         ctx%scope     = "regional"
+        ctx%map_fldr  = cfg%map_fldr
         call grid_cdo_read_desc(ctx%grid, trim(dom%grid(k)), trim(cfg%map_fldr))
         call regions_init_nml(ctx%reg, trim(cfg%par_file), trim(dom%regions), domain=trim(dom%name), &
                               grid_name=trim(dom%grid_hub), grid=ctx%grid, verbose=.false.)

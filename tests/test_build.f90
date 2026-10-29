@@ -10,11 +10,14 @@ program test_build
     use kryos_component, only: init_ctx_t, census_t, census_count, constraints_t
     use kryos_ice,       only: ice_slot_t, ice_create, ice_present
     use kryos_ice_yelmo, only: yelmo_ice_constraints
+    use kryos_geo,       only: geo_slot_t, geo_create, geo_present
+    use kryos_geo_vilma2, only: vilma2_earth_constraints
 
     implicit none
 
     type(run_t)      :: run
     type(ice_slot_t) :: ice
+    type(geo_slot_t) :: geo
     type(init_ctx_t) :: ctx
     type(census_t)   :: census
     type(constraints_t) :: con
@@ -56,6 +59,22 @@ program test_build
         end if
     else
         write(*,'(a)') "test_build: ice factory skipped (yelmo stub)"
+    end if
+
+    con = vilma2_earth_constraints()
+    if (con%linked) then
+        ctx%instance = "geo_test"
+        ctx%backend  = "vilma2"
+        ctx%scope    = "global"
+        census = census_t()
+        call geo_create(geo, ctx, census)
+        if (.not. geo_present(geo) .or. trim(geo%c%backend) /= "vilma2" .or. trim(geo%c%kind) /= "geo" &
+            .or. census_count(census, "geo:vilma2:global") /= 1) then
+            write(*,'(a)') "test_build: FAILED (geo factory, vilma2)"
+            error stop 1
+        end if
+    else
+        write(*,'(a)') "test_build: geo factory (vilma2) skipped (stub; test_geo_vilma2_stub covers it)"
     end if
 
     write(*,'(a)') "test_build: OK"

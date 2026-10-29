@@ -82,6 +82,7 @@ module kryos_component
         character(len=PATH_LEN) :: par_file = "", library(NLIB) = ""
         character(len=NAME_LEN) :: instance = "", component = "", backend = "", domain = ""
         character(len=NAME_LEN) :: grid_name = "", scope = "regional"
+        character(len=PATH_LEN) :: map_fldr = "maps"   ! [kryos] map_fldr: grid descriptions and maps (a global instance writes its own grid there)
         type(grid_class)        :: grid         ! from maps/grid_<name>.txt
         type(regions_class)     :: reg          ! domain regions on this grid
         type(grid_ref_t)        :: ref          ! reference topography on this grid

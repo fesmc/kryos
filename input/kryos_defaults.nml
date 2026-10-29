@@ -103,6 +103,11 @@
     out_bsl_ts  = "none"                       ! global instance: schedule of <instance>_bsl_ts.nc
 /
 
+&geo_vilma2
+    vilma  = "vilma"                           ! global instance: the &vilma group (overrides of input/vilma_defaults.nml)
+    ice_bg = "globe_ice"                       ! global instance: the global ice field group
+/
+
 &ice_yelmo
     yelmo           = "yelmo"                  ! Yelmo's top group
     init_equil_time = 0.0                      ! [yr] cold start: yelmo_update_equil, 0 = none

@@ -134,6 +134,7 @@ contains
         ctx%domain    = ""
         ctx%grid_name = ""
         ctx%scope     = "global"
+        ctx%map_fldr  = cfg%map_fldr
         ctx%cnst      = cnst
         ctx%time      = clock_time(clk)
         ctx%time_rel  = clock_time_rel(clk)

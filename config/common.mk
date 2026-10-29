@@ -199,6 +199,7 @@ ifeq ($(vilma), 1)
     backend_static += vilma-static
     need_lis_fftw   = 1
     LIB_SHTNS_USED  = $(LIB_SHTNS)
+    test_skip += $(testdir)/test_geo_vilma2_stub.f90
 else
     kryos_geo_vilma2_obj = $(objdir)/kryos_geo_vilma2_stub.o
     test_skip += $(testdir)/test_geo_vilma2.f90
