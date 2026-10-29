@@ -118,12 +118,6 @@ allow = [false]
 phase = "2"
 why = "plugin"
 [[refuse]]
-key = "opt.opt_tf"
-allow = ["none"]
-when = ["sim.opt", true]
-phase = "2 (WP3)"
-why = "the opt_tf experiment (thermal-forcing optimisation) is not ported yet"
-[[refuse]]
 keys = ["sim.init_marine_H", "sim.init_kill_shelves"]
 allow = [false]
 phase = "2"
@@ -592,6 +586,14 @@ kind = "opt_cb_ref"
 from = "opt"
 when = ["sim.opt", true]
 map = { opt_cf = "method", cf_time_init = "cf_time_init", cf_time_end = "cf_time_end", cf_init = "cf_init", tau_c = "tau_c", H0 = "H0", sigma_err = "sigma_err", sigma_vel = "sigma_vel", fill_method = "fill_method" }
+
+[[experiment]]
+name = "opt_tf_{sfx}"
+kind = "opt_tf"
+from = "opt"
+when = ["sim.opt", true]
+skip_if = ["opt.opt_tf", "none"]
+map = { opt_tf = "method", tf_time_init = "tf_time_init", tf_time_end = "tf_time_end", H_grnd_lim = "H_grnd_lim", tf_sigma = "tf_sigma", tau_m = "tau_m", m_temp = "m_temp", tf_min = "tf_min", tf_max = "tf_max", tf_basins = "tf_basins", basin_fill = "basin_fill" }
 
 [rules.ghf_field]
 ghf_min = 1e-4             # [W m-2] yelmox geothermal.f90 floor ghf_min = 0.1 mW m-2

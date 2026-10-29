@@ -180,7 +180,7 @@ end
     keyof(a) = "$(a.group).$(a.key)"
     d = Dict(keyof(a) => a for a in conv.acc)
     @test d["relax.tau2"].dst == "relax_tes.tau2" && d["opt.opt_cf"].dst == "opt_cf_tes.method"
-    @test d["opt.opt_tf"].status == :dropped && occursin("no experiment", d["opt.opt_tf"].reason)   # opt_tf: WP3
+    @test d["opt.opt_tf"].status == :dropped && occursin("opt.opt_tf = \"none\"", d["opt.opt_tf"].reason)
     @test d["opt.tf_max"].status == :dropped
     @test d["sim.relax"].status == :dropped && d["sim.opt"].status == :dropped
     @test length(conv.acc) == length(unique(keyof.(conv.acc)))
@@ -188,6 +188,13 @@ end
     # only relax
     G1 = Dict(g.name => g for g in namelist(convert_mini(mini(); overrides=["sim.relax=True"])))
     @test kvg(G1, "Testland")["experiments"] == "relax_tes" && !haskey(G1, "opt_cf_tes")
+    # opt_tf selected: its own group, keys by name (the basin list as written), after opt_cf
+    G3 = Dict(g.name => g for g in namelist(convert_mini(mini(edits=["opt_tf       = \"none\"" => "opt_tf       = \"L21\"", "tf_basins    = -1" => "tf_basins    = 3 4"]);
+                                                        overrides=["sim.relax=True", "sim.opt=True"])))
+    @test kvg(G3, "Testland")["experiments"] == ["relax_tes", "opt_cf_tes", "opt_tf_tes"]
+    t = kvg(G3, "opt_tf_tes")
+    @test t["kind"] == "opt_tf" && t["method"] == "L21" && t["tf_basins"] == [3, 4] && t["tf_max"] === 1.0 && t["basin_fill"] === false
+    @test t["tau_m"] === 100.0 && !haskey(t, "cf_init") && !haskey(kvg(G3, "opt_cf_tes"), "tf_max")
     # opt_cf = none keeps the experiment (cb_ref from outside, no optimisation)
     G2 = Dict(g.name => g for g in namelist(convert_mini(mini(); overrides=["sim.opt=True", "opt.opt_cf=none"])))
     @test kvg(G2, "opt_cf_tes")["method"] == "none" && kvg(G2, "Testland")["experiments"] == "opt_cf_tes"
@@ -199,7 +206,6 @@ end
 @testset "Convert: refusals name the key and the phase" begin
     cases = [
         (["sim.lim_pd_ice=True"] => "sim.lim_pd_ice = true"),
-        (["sim.opt=True", "opt.opt_tf=L21"] => "opt.opt_tf"),
         (["sim.init_method=recon"] => "sim.init_method"),
         (["comps.climate=esm"] => "comps.climate"),
         (["comps.with_isostasy=False"] => "comps.with_isostasy"),
@@ -220,8 +226,7 @@ end
     # a refusal lists every reason, not only the first
     msg = refused(() -> convert_mini(mini(); overrides=["sim.lim_pd_ice=True", "sim.use_negis=True"]))
     @test occursin("sim.lim_pd_ice", msg) && occursin("sim.use_negis", msg)
-    # opt_tf is refused only when sim.opt selects it
-    @test convert_mini(mini(); overrides=["opt.opt_tf=L21"]) isa Conversion
+
     # a group of a rembo par file, and a suffixed group
     msg = refused(() -> convert_mini(mini(edits=["&relax" => "&rembo\n    a = 1.0\n/\n&relax"])))
     @test occursin("&rembo", msg) && occursin("phase 2", msg)
@@ -324,8 +329,14 @@ if isfile(joinpath(YELMOXROOT, ".runme", "info.json"))
         end
         # the shipped Antarctica base needs the plugins: refused without the gate's overrides
         if isfile(joinpath(base, "yelmox_Antarctica.nml"))
-            msg = refused(() -> convert_yelmox(; yelmox=YELMOXROOT, par="yelmox/yelmox_Antarctica.nml", kryos=KRYOS))
-            @test occursin("opt.opt_tf", msg) && occursin("phase", msg)
+            # the shipped Antarctica base (relax, opt_cf, opt_tf on): gate ant-full
+            conv = convert_yelmox(; yelmox=YELMOXROOT, par="yelmox/yelmox_Antarctica.nml", overrides=gate_p, kryos=KRYOS)
+            out = joinpath(mktempdir(), "antfull.nml")
+            write_par(out, conv)
+            G = NL.read_namelist(out)
+            @test kv(G, "Antarctica")["experiments"] == ["relax_ant", "opt_cf_ant", "opt_tf_ant"]
+            t = kv(G, "opt_tf_ant")
+            @test t["method"] == "L21-points" && t["tf_basins"] === -1 && t["basin_fill"] === false && t["tf_sigma"] === 50e3
             # the interim gate ant-cf: relax and the cb_ref optimisation, without opt_tf
             conv = convert_yelmox(; yelmox=YELMOXROOT, par="yelmox/yelmox_Antarctica.nml", overrides=vcat(gate_p, ["opt.opt_tf=none"]), kryos=KRYOS)
             out = joinpath(mktempdir(), "ant.nml")

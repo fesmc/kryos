@@ -115,17 +115,17 @@ Not counted: 28 keys that yelmox fills from its defaults in dropped groups (coef
 | `pico.rho_star` | unused: bmb_method is not pico |
 | `pico.gamma_tstar` | unused: bmb_method is not pico |
 | `pico.C_over` | unused: bmb_method is not pico |
-| `opt.opt_tf` | no experiment takes it |
-| `opt.tf_time_init` | no experiment takes it |
-| `opt.tf_time_end` | no experiment takes it |
-| `opt.H_grnd_lim` | no experiment takes it |
-| `opt.tf_sigma` | no experiment takes it |
-| `opt.tau_m` | no experiment takes it |
-| `opt.m_temp` | no experiment takes it |
-| `opt.tf_min` | no experiment takes it |
-| `opt.tf_max` | no experiment takes it |
-| `opt.tf_basins` | no experiment takes it |
-| `opt.basin_fill` | no experiment takes it |
+| `opt.opt_tf` | no `opt_tf` experiment (opt.opt_tf = "none") |
+| `opt.tf_time_init` | no `opt_tf` experiment (opt.opt_tf = "none") |
+| `opt.tf_time_end` | no `opt_tf` experiment (opt.opt_tf = "none") |
+| `opt.H_grnd_lim` | no `opt_tf` experiment (opt.opt_tf = "none") |
+| `opt.tf_sigma` | no `opt_tf` experiment (opt.opt_tf = "none") |
+| `opt.tau_m` | no `opt_tf` experiment (opt.opt_tf = "none") |
+| `opt.m_temp` | no `opt_tf` experiment (opt.opt_tf = "none") |
+| `opt.tf_min` | no `opt_tf` experiment (opt.opt_tf = "none") |
+| `opt.tf_max` | no `opt_tf` experiment (opt.opt_tf = "none") |
+| `opt.tf_basins` | no `opt_tf` experiment (opt.opt_tf = "none") |
+| `opt.basin_fill` | no `opt_tf` experiment (opt.opt_tf = "none") |
 
 Groups dropped (all their keys, listed above): coef_alpha, smbpal, smb_simple, itm, pico, opt.
 
