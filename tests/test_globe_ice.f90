@@ -678,6 +678,7 @@ contains
         real(dp), allocatable :: expect(:,:)
         logical, allocatable :: onlya(:,:)
         real(dp) :: lhs, rhs
+        integer :: d
 
         write(*,"(a)") "reference: assembly twice, the spliced reference"
         call build(sc, "def")
@@ -696,9 +697,16 @@ contains
                    any(sc%gi%cov_bg == 0.0_dp) .and. any(sc%gi%cov_bg > 0.0_dp))
         ab = areas(sc%gbg)
         lhs = sum(ab*sc%gi%H_spl)
-        rhs = sum(ab*(1.0_dp - min(sc%gi%cov_bg, 1.0_dp))*sc%gi%H_X) + sum(areas(sc%ga)*sc%hpd_a) + sum(areas(sc%gb)*sc%hpd_b)
-        call check("splice: the ice is the background outside the domains plus the present days (plain sums, 1e-9)", &
+        rhs = sum(ab*(1.0_dp - min(sc%gi%cov_bg, 1.0_dp))*sc%gi%H_X)
+        do d = 1, size(sc%gi%dom)
+            if (trim(sc%gi%dom(d)%name) == "A") rhs = rhs + sum(areas(sc%ga)*sc%gi%dom(d)%H_ref)
+            if (trim(sc%gi%dom(d)%name) == "B") rhs = rhs + sum(areas(sc%gb)*sc%gi%dom(d)%H_ref)
+        end do
+        call check("splice: the ice is the background outside the domains plus the reference ice of the domains (plain sums, 1e-9)", &
                    relerr(lhs, rhs) < 1.0e-9_dp)
+        call check("one reference definition: H_ref = H_pd in the footprint, X on the ice grid elsewhere", &
+                   all(merge(sc%gi%dom(1)%H_ref == sc%gi%dom(1)%H_pd, .true., sc%gi%dom(1)%footprint > 0.5_dp)) .and. &
+                   all(merge(sc%gi%dom(1)%H_ref == sc%gi%dom(1)%ext_ref, .true., sc%gi%dom(1)%footprint < 0.5_dp)))
         call check("splice: coverage in [0, 1]", minval(sc%gi%cov_bg) >= 0.0_dp .and. maxval(sc%gi%cov_bg) <= 1.0_dp + 1.0e-9_dp)
         call globe_ice_end(sc%gi)
 

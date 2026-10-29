@@ -30,6 +30,21 @@ module kryos_globe_ice
     ! Domains are merged and summed in the order of their ice grid names, so
     ! the result does not depend on the order of the add calls. Every error
     ! stops through fesm_error naming the domain, the grid or the key.
+    !
+    ! Metrics (decided with phase4-plan 4.4). The amounts (grounded ice, F, the
+    ! merged ice) are per true area: each ice grid's model area is the true
+    ! (ellipsoidal) cell area, so the merges conserve the ice model's own mass.
+    ! The weights w and C are geometric on the sphere (the coupler's coverage
+    ! fraction of the target cell, in its map metric). Near the poles an
+    ! ellipsoidal cell is up to 0.9 % larger than the sphere's, so at the rim
+    ! cells (0 < w < 1) the amount per area and w times the cell mean differ by
+    ! up to that much (ANT-32KM, GRL-16KM); in the interior they agree to
+    ! round-off, and the closure of the merges is round-off (4e-14).
+    !
+    ! One reference definition: in a host cell the ice is the domain's present
+    ! day inside its footprint and the background X elsewhere (also in domain
+    ! cells outside the footprint), the bed the domain's z_bed_ref. VILMA2's
+    ! reference host terms and the spliced reference of the hub are both that.
 
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use precision,       only: dp
@@ -68,6 +83,7 @@ module kryos_globe_ice
         real(dp), allocatable :: ext_ref(:,:)            ! background ice on the ice grid (reference)
         real(dp), allocatable :: fg_ref(:,:)             ! reference grounded fraction
         real(dp), allocatable :: I_ref(:,:), I_last(:,:) ! grounded ice H_tot f_g [m] of the reference, of the last gather
+        real(dp), allocatable :: H_ref(:,:)              ! total ice of the reference m H_pd + (1 - m) X [m]
         real(dp) :: V_ref = 0.0_dp                       ! grounded ice volume of the reference [m3]
         real(dp) :: V_src = 0.0_dp                       ! of the last gather (source grid integral)
         logical  :: ref_added = .false., added = .false.
@@ -491,7 +507,7 @@ contains
         ! Domain `name` in the reference: its present day with the background ice
         ! outside the footprint, the reference flotation of the ice instance
         ! (sea level 0, the bed z_bed_ref in every cell), the host terms of the
-        ! same procedure as a step, and its present day for the spliced reference.
+        ! same procedure as a step, and the same ice and bed for the spliced reference.
         type(globe_ice_t),   intent(inout) :: gi
         type(coupler_class), intent(inout) :: cpl
         character(len=*),    intent(in)    :: name
@@ -515,8 +531,9 @@ contains
             call coupler_merge_add(gi%acc_I, cpl, trim(dm%grid), I)
             call coupler_merge_add(gi%acc_C, cpl, trim(dm%grid), Cc)
             call coupler_merge_add(gi%acc_zs, cpl, trim(dm%grid), dm%z_bed_ref)
-            call coupler_merge_add(gi%acc_hs, cpl, trim(dm%grid), dm%H_pd)
+            call coupler_merge_add(gi%acc_hs, cpl, trim(dm%grid), H_tot)
             dm%I_ref = I
+            dm%H_ref = H_tot
             dm%V_ref = coupler_integral(cpl, trim(dm%grid), I)
             dm%ref_added = .true.
         end associate
@@ -525,7 +542,7 @@ contains
     subroutine globe_ice_reference_end(gi, cpl)
         ! Close the reference: host_w, host_Ig_ref, host_C_ref on the target grid
         ! (F_ref = 0), the spliced reference on the background grid
-        ! ((1 - sum f_d) X + sum f_d pd), the ocean area of the reference, the log.
+        ! ((1 - sum f_d) X + sum f_d H_ref,d; the bed likewise), the ocean area of the reference, the log.
         type(globe_ice_t),   intent(inout) :: gi
         type(coupler_class), intent(inout) :: cpl
 

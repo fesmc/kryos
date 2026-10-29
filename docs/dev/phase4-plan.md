@@ -418,6 +418,13 @@ call: its default area is the quadrature area, §3.5); Yelmo's `M_ice`
 differs from the Gauss-grid grounded ice by that factor and the mass check (§4.5) reports
 both. Decided (Q11).
 
+Metrics at the poles (decided, WP3 checkpoint): the amounts (`host_Ig`, `host_F`, the merged ice)
+are per true area, so the merges conserve Yelmo's mass; the weights `w` and `C` are the coupler's
+geometric coverage on the sphere (map metric). Near the poles an ellipsoidal cell is up to 0.9 %
+larger than the sphere's, so in rim cells (0 < w < 1) the amount per area and `w` times the cell
+mean differ by up to that much (measured on ANT-32KM and GRL-16KM against GAUSS-L170: 0.9 %;
+spherical grids: 8e-5); in the interior they agree to round-off, and the merge closes to 4e-14.
+
 ### 4.5 Checks and logs (every gather)
 
 - finite; `0 ≤ host_C ≤ host_w + tol`; `host_Ig ≥ 0`; `host_w ≤ 1 + tol` (VILMA2's
@@ -447,7 +454,10 @@ After every instance's `PASS_INIT` and the static rows (`run_pass_init`,
    `host_Ig_ref`, `host_C_ref`; `F_ref ≡ 0` (`ht` Q2).
 3. The **spliced global reference topography** (`z_bed`: intensive merge; `H_ice`: extensive
    merge, background X) for the global geometry hub (§5.4) and diagnostics:
-   `(1 − Σf_d)·X + Σ f_d·pd`, exactly `design.md` §6 item 1. VILMA2 itself gets the
+   `(1 − Σf_d)·X + Σ f_d·ref_d`, with `ref_d` the domain's reference of item 2 (`H_ref,tot` and
+   `z_bed_ref` on its whole grid: `H_ice_pd` inside the footprint, X elsewhere; decided, WP3
+   checkpoint: one reference definition for VILMA2 and the hub, D18). `design.md` §6 item 1 says
+   "present day" for `ref_d`; outside the footprint that is X here. VILMA2 itself gets the
    background part only (item 1): giving it the spliced ice would count the domain's present
    day twice in partial cells.
 
