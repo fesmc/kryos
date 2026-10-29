@@ -104,9 +104,9 @@ phase = "2"
 why = "climate backends esm, rembo"
 [[refuse]]
 key = "comps.surface_method"
-allow = ["chion"]
+allow = ["chion", "smb_simple"]
 phase = "2"
-why = "surface backends smbpal, smb_simple, climate"
+why = "surface backends smbpal, climate"
 [[refuse]]
 keys = ["comps.with_ice_sheet", "comps.with_isostasy", "comps.with_climate", "comps.with_surface", "comps.with_shelf"]
 allow = [true]
@@ -314,9 +314,6 @@ sediments  = "data"
 "{ice}.yelmo"            = "yelmo"
 "{climate}.snapshots"    = "snapshots"
 "{climate}.clock"        = "forcing"
-"{surface}.surface_chion" = "surface_chion"
-"{surface}.chion"        = "chion"
-"{surface}.orbit"        = "orbit"
 "{surface}.clock"        = "forcing"
 "{shelf}.marine_shelf"   = "marine_shelf"
 "{shelf}.corr"           = "shelf_corr_{sfx}"
@@ -324,6 +321,14 @@ sediments  = "data"
 "{geothermal}.Q_geo"     = "{Q_geo}"
 "{sediments}.dt"         = -1.0
 "{sediments}.H_sed"      = "{H_sed}"
+
+# Fixed values that hold for one backend of a role: [fixed_backend.<role>.<backend>].
+[fixed_backend.surface.chion]
+"{surface}.surface_chion" = "surface_chion"
+"{surface}.chion"        = "chion"
+"{surface}.orbit"        = "orbit"
+[fixed_backend.surface.smb_simple]
+"{surface}.smb_simple"   = "smb_simple"
 
 # Output switches ([output] write_*): a switch that is True sets these keys
 # (instance role -> key = schedule group). A key the templates of the
@@ -397,6 +402,17 @@ dst = "out_2Dsm"
 src = "tm_rst"
 action = "into"
 dst = "out_rst"
+# The surface method that is not used: its groups are dropped, the used one's copied
+# (`when = [key, value]`: the rule applies only when that key has that value).
+[[group]]
+src = "re:^(surface_chion|chion|chion_const|orbit|smbpal|itm|\\w+_chion)$"
+when = ["comps.surface_method", "smb_simple"]
+action = "drop"
+why = "unused: surface_method = smb_simple"
+[[group]]
+src = "smb_simple"
+when = ["comps.surface_method", "smb_simple"]
+action = "copy"
 [[group]]
 src = "re:^(topo|regions|isos|barysealevel|snapshots|orbit|surface_chion|chion|chion_const|marine_shelf|yelmo|ytopo|ycalv|ydyn|ytill|yhyd|ymat|ytrc|ytherm|yelmo_masks|yelmo_init_topo|yelmo_data)$"
 action = "copy"

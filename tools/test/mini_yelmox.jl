@@ -310,6 +310,12 @@ function par_text(; edits=Pair{String,String}[])
 &smbpal
     abl_method = "itm"
 /
+&smb_simple
+    scheme    = "syn"
+    mask_file = ""
+    a1        = 3900.0
+    c0        = 300.0
+/
 &surface_chion
     sf_a = 0.273
 /

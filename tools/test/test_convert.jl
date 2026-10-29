@@ -219,6 +219,25 @@ end
     @test occursin("no [relax] group", msg)
 end
 
+@testset "Convert: surface_method = smb_simple" begin
+    conv = convert_mini(mini(); overrides=["comps.surface_method=smb_simple"])
+    out = joinpath(mktempdir(), "smb.nml")
+    write_par(out, conv)
+    G = NL.read_namelist(out)
+    names = [g.name for g in G]
+    sf = kv(G, "surface_tes")
+    @test sf["backend"] == "smb_simple" && sf["smb_simple"] == "smb_simple" && sf["clock"] == "forcing"
+    @test !haskey(sf, "surface_chion") && !haskey(sf, "chion") && !haskey(sf, "orbit")
+    @test kv(G, "smb_simple")["a1"] === 3900.0 && kv(G, "smb_simple")["mask_file"] == ""
+    # the chion and smbpal groups are not read by this surface
+    for g in ("chion", "chion_const", "itm_chion", "surface_chion", "orbit", "smbpal")
+        @test !(g in names)
+    end
+    # with chion the group smb_simple is the unused one
+    G0 = NL.read_namelist(let o = joinpath(mktempdir(), "chion.nml"); write_par(o, convert_mini(mini())); o end)
+    @test !("smb_simple" in [g.name for g in G0])
+end
+
 @testset "Convert: refusals name the key and the phase" begin
     cases = [
         (["sim.lim_pd_ice=True"] => "sim.lim_pd_ice = true"),
@@ -333,7 +352,7 @@ if isfile(joinpath(YELMOXROOT, ".runme", "info.json"))
             end
         end
         # the others are refused, naming a phase
-        others = ["yelmox_GreenlandPaleo.nml" => "bias.active", "yelmox_LIS.nml" => "comps.surface_method",
+        others = ["yelmox_GreenlandPaleo.nml" => "bias.active",
                   "yelmox_Pyrenees.nml" => "comps.with_shelf",
                   "yelmox_SRG.nml" => "comps.with_isostasy", "yelmox_esm_Antarctica.nml" => "comps.climate",
                   "yelmox_esm_Greenland.nml" => "comps.climate", "yelmox_rembo_Greenland.nml" => "comps.climate",
@@ -353,6 +372,28 @@ if isfile(joinpath(YELMOXROOT, ".runme", "info.json"))
             @test kv(G, "Antarctica")["experiments"] == ["relax_ant", "opt_cf_ant", "opt_tf_ant"]
             t = kv(G, "opt_tf_ant")
             @test t["method"] == "L21-points" && t["tf_basins"] === -1 && t["basin_fill"] === false && t["tf_sigma"] === 50e3
+            # the NOR base with the surface smb_simple (sci-smb): the group [smb_simple] of the base, the
+            # mask from H_ice_ref (mask_file empty), no chion groups
+            if isfile(joinpath(base, "yelmox_North.nml"))
+                conv = convert_yelmox(; yelmox=YELMOXROOT, par="yelmox/yelmox_North.nml",
+                                      overrides=vcat(gate_p, ["comps.surface_method=smb_simple"]), kryos=KRYOS)
+                out = joinpath(mktempdir(), "norsmb.nml")
+                write_par(out, conv)
+                G = NL.read_namelist(out)
+                @test kv(G, "surface_nor")["backend"] == "smb_simple" && kv(G, "surface_nor")["smb_simple"] == "smb_simple"
+                sm = kv(G, "smb_simple")
+                @test sm["mask_file"] == "" && sm["a1"] === 3900.0 && sm["c0"] === 300.0 && sm["L_acc"] === 300.0 && sm["use_plastic"] === true
+                @test !any(g -> g.name in ("chion", "chion_const", "orbit", "surface_chion", "pdd_chion"), G)
+            end
+            # the LIS base (smb_simple, mask from a file) converts: the file names {domain} and {grid_name}
+            if isfile(joinpath(base, "yelmox_LIS.nml"))
+                conv = convert_yelmox(; yelmox=YELMOXROOT, par="yelmox/yelmox_LIS.nml", overrides=gate_p, kryos=KRYOS)
+                out = joinpath(mktempdir(), "lis.nml")
+                write_par(out, conv)
+                G = NL.read_namelist(out)
+                @test kv(G, "surface_lau")["backend"] == "smb_simple"
+                @test occursin("{grid_name}", kv(G, "smb_simple")["mask_file"]) && kv(G, "smb_simple")["mask_idx"] === 18
+            end
             # the NOR base: cold start from the reconstruction (gate nor)
             if isfile(joinpath(base, "yelmox_North.nml"))
                 conv = convert_yelmox(; yelmox=YELMOXROOT, par="yelmox/yelmox_North.nml", overrides=gate_p, kryos=KRYOS)

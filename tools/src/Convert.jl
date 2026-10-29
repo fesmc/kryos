@@ -773,6 +773,10 @@ function apply_groups!(S::State)
     for name in S.R.order
         rule = nothing
         for r in rules
+            if haskey(r, "when")                  # the rule applies only when that key has that value
+                wv = getval(S.R, r["when"][1])
+                (wv !== nothing && same(wv, r["when"][2])) || continue
+            end
             match_src(r["src"], name) && (rule = r; break)
         end
         rule === nothing && fail("yelmox group &$name has no [[group]] rule in the spec")
@@ -972,8 +976,12 @@ function convert_yelmox(; yelmox::AbstractString, par::AbstractString, overrides
             filter!(x -> x.name != k, og.keys)
         end
     end
-    # fixed values
-    for (dst, v) in sp["fixed"]
+    # fixed values, and those of the backend each role has
+    fixed = Pair{String,Any}[collect(sp["fixed"])...]
+    for (role, byb) in get(sp, "fixed_backend", Dict())
+        append!(fixed, collect(get(byb, get(be, role, ""), Dict{String,Any}())))
+    end
+    for (dst, v) in fixed
         gn, kn = split_dst(S, dst)
         og = need_group(S, gn)
         v2 = v isa AbstractString ? subst(S, v) : v
