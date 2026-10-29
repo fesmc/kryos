@@ -144,6 +144,12 @@ $(CHION_ARCHIVE):
 $(INSOL_ARCHIVE):
 	@$(call dep_missing,insol,make -C $(INSOLROOT) static)
 
+$(VILMA_ARCHIVE):
+	@$(call dep_missing,VILMA2,make -C $(VILMAROOT) vilma-static openmp=$(openmp))
+
+$(SHTNS_ARCHIVE):
+	@$(call dep_missing,SHTns of fesm-utils (one-time),make -C $(FESMUTILSROOT) shtns openmp=$(openmp))
+
 deps-check: $(dep_archives)
 	@echo "    dependencies present: $(dep_archives)"
 
@@ -165,6 +171,10 @@ chion-static: fesmutils-static
 # insol is serial (no OpenMP)
 insol-static:
 	$(MAKE) -C $(INSOLROOT) static
+
+# VILMA2 links fesm-utils and its SHTns (make -C fesm-utils shtns, one-time; deps-check names it)
+vilma-static: fesmutils-static
+	$(MAKE) -C $(VILMAROOT) vilma-static openmp=$(openmp)
 
 deps-static: fesmutils-static $(backend_static)
 
@@ -228,7 +238,7 @@ input-check:
 	@sh config/sync_input.sh check input/sync.txt $(input_roots)
 
 .PHONY : build-info usage kryos-static kryos check clean cleanall depend deps-check deps-static \
-         fesmutils-static yelmo-static isostasy-static chion-static insol-static sync-input input-check
+         fesmutils-static yelmo-static isostasy-static chion-static insol-static vilma-static sync-input input-check
 usage:
 	@echo ""
 	@echo "    * USAGE * "

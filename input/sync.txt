@@ -19,3 +19,5 @@ chion_defaults.nml                  CHIONROOT      input/chion_defaults.nml
 datasrc_defaults.nml                FESMUTILSROOT  par/datasrc_defaults.nml
 LA2004.INSOLN.5Ma.txt               INSOLROOT      input/LA2004.INSOLN.5Ma.txt
 LA2004.INSOLP.1Ma.txt               INSOLROOT      input/LA2004.INSOLP.1Ma.txt
+vilma_defaults.nml                  VILMAROOT      input/vilma_defaults.nml
+vilma-variables.md                  VILMAROOT      input/vilma-variables.md

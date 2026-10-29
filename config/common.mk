@@ -81,12 +81,29 @@ INSOL_ARCHIVE = $(INSOLROOT)/libinsol/include/libinsol.a
 # The roots of the input/ copies (input/sync.txt), for make sync-input and the
 # staleness check of make check.
 input_roots = FESMUTILSROOT=$(FESMUTILSROOT) YELMOROOT=$(YELMOROOT) CHIONROOT=$(CHIONROOT) \
-              INSOLROOT=$(INSOLROOT)
+              INSOLROOT=$(INSOLROOT) VILMAROOT=$(VILMAROOT)
 
 REMBOROOT = rembo1
 INC_REMBO = -I${REMBOROOT}/librembo/include
 LIB_REMBO = -L${REMBOROOT}/librembo/include -lrembo
 REMBO_ARCHIVE = $(REMBOROOT)/librembo/include/librembo.a
+
+# VILMA2 (geo = vilma2): libvilma, and the SHTns that fesm-utils builds (make
+# shtns, once; the serial or OpenMP variant as for LIS and FFTW). VILMA2 must be
+# built with the same openmp= as kryos and fesm-utils.
+VILMAROOT = vilma2
+INC_VILMA = -I${VILMAROOT}/libvilma/include
+LIB_VILMA = -L${VILMAROOT}/libvilma/include -lvilma
+VILMA_ARCHIVE = $(VILMAROOT)/libvilma/include/libvilma.a
+
+SHTNS_NAME = shtns
+SHTNS_DIR  = shtns-serial
+ifeq ($(openmp), 1)
+    SHTNS_NAME = shtns_omp
+    SHTNS_DIR  = shtns-omp
+endif
+LIB_SHTNS     = -L${FESMUTILSROOT}/SHTns/$(SHTNS_DIR)/lib -l$(SHTNS_NAME)
+SHTNS_ARCHIVE = ${FESMUTILSROOT}/SHTns/$(SHTNS_DIR)/lib/lib$(SHTNS_NAME).a
 
 # Backend switches (design section 9). Every backend library is optional: on,
 # its INC/LIB/archive are added and its adapters are compiled; off, each
@@ -172,12 +189,24 @@ ifeq ($(insol), 1)
     backend_static += insol-static
 endif
 
+ifeq ($(vilma), 1)
+    kryos_geo_vilma2_obj = $(objdir)/kryos_geo_vilma2.o
+    INC_BACKENDS   += $(INC_VILMA)
+    LIB_BACKENDS   += $(LIB_VILMA)
+    dep_archives   += $(VILMA_ARCHIVE) $(SHTNS_ARCHIVE)
+    backend_roots  += $(VILMAROOT)
+    build_info_libs += vilma:$(VILMAROOT)
+    backend_static += vilma-static
+    need_lis_fftw   = 1
+    LIB_SHTNS_USED  = $(LIB_SHTNS)
+else
+    kryos_geo_vilma2_obj = $(objdir)/kryos_geo_vilma2_stub.o
+    test_skip += $(testdir)/test_geo_vilma2.f90
+endif
+
 # Backends whose adapters arrive in later phases (design section 14).
 ifeq ($(rembo), 1)
     $(error rembo=1: the climate/rembo adapter does not exist yet (phase 2))
-endif
-ifeq ($(vilma), 1)
-    $(error vilma=1: the geo/vilma2 adapter does not exist yet (phase 4))
 endif
 ifeq ($(cism), 1)
     $(error cism=1: the ice/cism adapter does not exist yet (phase 5))
@@ -188,8 +217,9 @@ endif
 
 # fesm-utils' LIS and FFTW, when a backend needs them.
 LIB_EXTERNAL =
+LIB_SHTNS_USED ?=
 ifeq ($(need_lis_fftw), 1)
-    LIB_EXTERNAL  = $(LIB_LIS) $(LIB_FFTW)
+    LIB_EXTERNAL  = $(LIB_LIS) $(LIB_SHTNS_USED) $(LIB_FFTW)
     dep_archives += $(LIS_ARCHIVE) $(FFTW_ARCHIVE)
 endif
 
