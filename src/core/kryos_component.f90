@@ -201,9 +201,10 @@ contains
         ! (unset: all), unpublished ones skipped. Stream 2D: the rank-2 and rank-3
         ! exports on the native grid (xc, yc [km], time; rank 3 also its axis),
         ! file <instance>.nc. Stream 1D: the 0-D exports, file <instance>_ts.nc.
-        ! Values are written as float with the fixed precision of the component
+        ! Values are written as float with the precision of the component
         ! kind's table input/kryos-variables-<kind>.md (lossless under
-        ! [kryos] write_lossless); the units attribute is the export's own. A
+        ! [kryos] write_lossless; the 0-D rows of the tables are lossless: time
+        ! series stay lossless); the units attribute is the export's own. A
         ! rank-2 or rank-3 export without a table row stops; a 0-D export without
         ! one (derived coefficients, named by the par file) is written lossless
         ! with its name as long_name. init = .true. creates the file; any other

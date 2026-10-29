@@ -467,12 +467,16 @@ contains
             if (len_trim(tab(k)%dims(1)) == 0) nd = 0
             ok_r = ok_r .and. nd == ranks(i)
             if (nd >= 2) ok_r = ok_r .and. trim(tab(k)%dims(1)) == "xc" .and. trim(tab(k)%dims(2)) == "yc"
-            ok_p = ok_p .and. (tab(k)%prec_abs > 0.0d0 .or. tab(k)%prec_rel > 0.0d0)
+            if (nd >= 2) then
+                ok_p = ok_p .and. (tab(k)%prec_abs > 0.0d0 .or. tab(k)%prec_rel > 0.0d0)
+            else                                    ! 0-D: time series are lossless
+                ok_p = ok_p .and. tab(k)%prec_abs == 0.0d0 .and. tab(k)%prec_rel == 0.0d0
+            end if
             ok_l = ok_l .and. len_trim(tab(k)%long_name) > 0
         end do
         call check(ok_u, "tables: "//kind//" units")
         call check(ok_r, "tables: "//kind//" dimensions")
-        call check(ok_p, "tables: "//kind//" every row has a precision")
+        call check(ok_p, "tables: "//kind//" every 2D, 3D row has a precision, every 0-D row is lossless")
         call check(ok_l, "tables: "//kind//" every row has a long_name")
     end subroutine expect
 
@@ -651,6 +655,8 @@ contains
         call check(nc_exists_var(f, "bsl") .and. nc_exists_var(f, "A_ocn"), "geo_glob_ts.nc: bsl, A_ocn")
         call check(attr(f, "A_ocn", "units") == "m2" .and. attr(f, "bsl", "long_name") == "Barystatic sea level", &
                    "geo_glob_ts.nc: units, long_name")
+        call nc_read(f, "A_ocn", a(1:4, 1))
+        call check(all(a(1:4, 1) == real(3.6e14_dp, sp)), "geo_glob_ts.nc: a 0-D export is lossless in a rounded run (time series)")
 
         ! backend streams routed to the backend's write_output, init once
         call check(toy_calls(ice, "yelmo") == 4 .and. toy_calls(ice, "yelmo_ts") == 4, &
@@ -829,7 +835,8 @@ contains
     subroutine table_roundtrip(pdir, table, backend)
         ! Every row of `table` (the writer's way: variable_io for an instance
         ! table, the backend helpers for a backend table) round-trips within the
-        ! row's tolerance, exact when it has none and under nc_set_lossless.
+        ! row's tolerance, exact when it has none and under nc_set_lossless; a
+        ! rank-0 row (a time series) carries no precision.
         character(len=*), intent(in) :: pdir, table
         logical,          intent(in) :: backend
 
@@ -848,7 +855,11 @@ contains
             row = tab(i)
             rank = row%ndims
             if (len_trim(row%dims(1)) == 0) rank = 0
-            if (rank == 0) then
+            if (rank == 0) then                 ! time series stay lossless
+                if (row%prec_abs > 0.0_dp .or. row%prec_rel > 0.0_dp) then
+                    nbad = nbad + 1
+                    write(*,'(a)') "  FAIL  precision: "//table//" 0-D row `"//trim(row%varname)//"` has a prec (time series are lossless)"
+                end if
                 cycle
             end if
             nz = 1
@@ -896,7 +907,7 @@ contains
                 write(*,'(a)') "  FAIL  precision: "//table//" `"//trim(row%varname)//"` is not exact under write_lossless"
             end if
         end do
-        call check(nbad == 0, "precision: "//table//": every row within its tolerance, exact without prec and under write_lossless")
+        call check(nbad == 0, "precision: "//table//": every row within its tolerance, exact without prec and under write_lossless, 0-D rows lossless")
         call check(nlossy > 0 .or. all(tab%prec_abs == 0.0_dp .and. tab%prec_rel == 0.0_dp), &
                    "precision: "//table//": the rounding rows do round the sample")
     end subroutine table_roundtrip
