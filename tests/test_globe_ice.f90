@@ -105,13 +105,15 @@ program test_globe_ice
     integer :: nfail = 0
 
     type :: scene_t                                   ! the grids, the coupler, the globe, the mock ice of two domains
-        type(grid_class)       :: gbg, gtg, ga, gb
+        type(grid_class)       :: gbg, gtg, ga, gb, g2
         type(coupler_class)    :: cpl
         type(config_t)         :: cfg
         type(phys_const_class) :: cnst
         type(globe_ice_t)      :: gi
-        type(ice_slot_t)       :: ice_a, ice_b
+        type(ice_slot_t)       :: ice_a, ice_b, ice_2
+        logical                :: has_2 = .false.       ! a third domain "A2" that overlaps A (owner weights)
         real(dp), allocatable  :: fp_a(:,:), fp_b(:,:), hpd_a(:,:), hpd_b(:,:), zb_a(:,:), zb_b(:,:)
+        real(dp), allocatable  :: fp_2(:,:), hpd_2(:,:), zb_2(:,:)
     end type scene_t
 
     if (command_argument_count() > 0) then
@@ -127,6 +129,7 @@ program test_globe_ice
     call test_coverage_and_conservation()
     call test_reference()
     call test_order()
+    call test_owners()
     call test_no_domains()
     call test_wgs84()
     call test_stops()
@@ -279,6 +282,9 @@ contains
         call grid_init(sc%gb, name="TANT-100KM"//trim(tag), mtype="polar_stereographic", units="kilometers", &
                        planet=trim(planet), lon180=.false., x0=-2500.0_dp, dx=100.0_dp, nx=51, y0=-2500.0_dp, dy=100.0_dp, &
                        ny=51, lambda=0.0_dp, phi=-71.0_dp)
+        call grid_init(sc%g2, name="TNH2-100KM"//trim(tag), mtype="polar_stereographic", units="kilometers", &
+                       planet=trim(planet), lon180=.false., x0=-1000.0_dp, dx=100.0_dp, nx=31, y0=500.0_dp, dy=100.0_dp, &
+                       ny=31, lambda=-40.0_dp, phi=70.0_dp)
     end subroutine grids
 
     subroutine statics(g, xc, yc, rad, h0, fp, hpd, zb)
@@ -318,14 +324,14 @@ contains
         call ice_init(slot, ctx)
     end subroutine make_ice
 
-    subroutine build(sc, scen, planet, order_ab, uniform)
+    subroutine build(sc, scen, planet, order_ab, uniform, with_2)
         ! The scene of scenario `scen`: grids, coupler, globe_ice initialised, both domains
         ! registered (A, B or B, A), and the reference not yet assembled. uniform: the footprint of A is
         ! its whole grid, 1000 m of ice over a bed at -500 m (the direct host-term checks).
         type(scene_t),    intent(inout) :: sc
         character(len=*), intent(in)    :: scen
         character(len=*), intent(in), optional :: planet
-        logical,          intent(in), optional :: order_ab, uniform
+        logical,          intent(in), optional :: order_ab, uniform, with_2
         character(len=*), parameter :: par = DIR//"par.nml"
         character(len=32) :: pl
         logical :: ab, uni
@@ -354,7 +360,22 @@ contains
                             time_span=[-60000.0_dp, 0.0_dp])
         call make_ice(sc%ice_a, sc%ga, "A")
         call make_ice(sc%ice_b, sc%gb, "B")
-        if (ab) then
+        sc%has_2 = .false.
+        if (present(with_2)) sc%has_2 = with_2
+        if (sc%has_2) then
+            ! a third domain over A: priorities A 2, A2 1 (B 1 shares no cell with either)
+            call statics(sc%g2, 500.0_dp, 2000.0_dp, 600.0_dp, 1500.0_dp, sc%fp_2, sc%hpd_2, sc%zb_2)
+            call make_ice(sc%ice_2, sc%g2, "A2")
+            if (ab) then
+                call globe_ice_add_domain(sc%gi, sc%cpl, "A", sc%ga, sc%fp_a, sc%hpd_a, sc%zb_a, priority=2)
+                call globe_ice_add_domain(sc%gi, sc%cpl, "A2", sc%g2, sc%fp_2, sc%hpd_2, sc%zb_2, priority=1)
+                call globe_ice_add_domain(sc%gi, sc%cpl, "B", sc%gb, sc%fp_b, sc%hpd_b, sc%zb_b, priority=1)
+            else
+                call globe_ice_add_domain(sc%gi, sc%cpl, "B", sc%gb, sc%fp_b, sc%hpd_b, sc%zb_b, priority=1)
+                call globe_ice_add_domain(sc%gi, sc%cpl, "A2", sc%g2, sc%fp_2, sc%hpd_2, sc%zb_2, priority=1)
+                call globe_ice_add_domain(sc%gi, sc%cpl, "A", sc%ga, sc%fp_a, sc%hpd_a, sc%zb_a, priority=2)
+            end if
+        else if (ab) then
             call globe_ice_add_domain(sc%gi, sc%cpl, "A", sc%ga, sc%fp_a, sc%hpd_a, sc%zb_a)
             call globe_ice_add_domain(sc%gi, sc%cpl, "B", sc%gb, sc%fp_b, sc%hpd_b, sc%zb_b)
         else
@@ -372,9 +393,11 @@ contains
         call globe_ice_reference_begin(sc%gi, sc%cpl)
         if (ab) then
             call globe_ice_reference_add(sc%gi, sc%cpl, "A", sc%ice_a)
+            if (sc%has_2) call globe_ice_reference_add(sc%gi, sc%cpl, "A2", sc%ice_2)
             call globe_ice_reference_add(sc%gi, sc%cpl, "B", sc%ice_b)
         else
             call globe_ice_reference_add(sc%gi, sc%cpl, "B", sc%ice_b)
+            if (sc%has_2) call globe_ice_reference_add(sc%gi, sc%cpl, "A2", sc%ice_2)
             call globe_ice_reference_add(sc%gi, sc%cpl, "A", sc%ice_a)
         end if
         call globe_ice_reference_end(sc%gi, sc%cpl)
@@ -394,9 +417,11 @@ contains
         call globe_ice_gather_begin(sc%gi, sc%cpl, t)
         if (ab) then
             call add_one(sc, "A", dHa)
+            if (sc%has_2) call add_one(sc, "A2")
             call add_one(sc, "B")
         else
             call add_one(sc, "B")
+            if (sc%has_2) call add_one(sc, "A2")
             call add_one(sc, "A", dHa)
         end if
         call globe_ice_gather_end(sc%gi, sc%cpl)
@@ -415,6 +440,13 @@ contains
             call ice_flotation(sc%ice_a, H, sc%zb_a, zs, fY)
             fY = merge(fY, 0.5_dp, sc%fp_a > 0.5_dp)
             call globe_ice_gather_add(sc%gi, sc%cpl, "A", sc%ice_a, H, fY, sc%zb_a, zs, sc%fp_a)
+        else if (trim(name) == "A2") then
+            H = sc%hpd_2
+            allocate(fY(size(H,1), size(H,2)), zs(size(H,1), size(H,2)))
+            zs = 0.0_dp
+            call ice_flotation(sc%ice_2, H, sc%zb_2, zs, fY)
+            fY = merge(fY, 0.5_dp, sc%fp_2 > 0.5_dp)
+            call globe_ice_gather_add(sc%gi, sc%cpl, "A2", sc%ice_2, H, fY, sc%zb_2, zs, sc%fp_2)
         else
             H = sc%hpd_b
             allocate(fY(size(H,1), size(H,2)), zs(size(H,1), size(H,2)))
@@ -755,6 +787,65 @@ contains
         call globe_ice_end(s2%gi)
     end subroutine test_order
 
+    subroutine test_owners()
+        ! A third domain A2 over A: A (priority 2) owns the cells the two share, A2 (priority 1) the rest of
+        ! its grid. The coverage then sums to at most 1, the merges conserve the owned ice, and the result does
+        ! not depend on the order of the registrations.
+        type(scene_t) :: s1, s2
+        real(dp), allocatable :: at(:,:)
+        real(dp) :: v_src, v_tgt, wsum
+        integer :: d, d2, da, db
+        logical :: same
+
+        write(*,"(a)") "owner weights: overlapping domains with priorities"
+        call build(s1, "def", with_2=.true.)
+        call reference(s1)
+        call gather(s1, -40000.0_dp, dHa=120.0_dp)
+        at = areas(s1%gtg)
+        da = dom_of(s1, "A"); d2 = dom_of(s1, "A2"); db = dom_of(s1, "B")
+        call check("the owner of the higher priority is 1 everywhere", all(s1%gi%dom(da)%owner == 1.0_dp))
+        call check("A2: owner in [0, 1], zero deep in the overlap, one outside A's grid", &
+                   minval(s1%gi%dom(d2)%owner) >= 0.0_dp .and. maxval(s1%gi%dom(d2)%owner) <= 1.0_dp .and. &
+                   any(s1%gi%dom(d2)%owner == 0.0_dp) .and. any(s1%gi%dom(d2)%owner == 1.0_dp))
+        call check("B shares no cell with a domain of higher priority: no owner reduction", all(s1%gi%dom(db)%owner == 1.0_dp))
+        call check("the coverage of the host region is at most 1 (the domains no longer double count)", &
+                   maxval(s1%gi%host_w) <= 1.0_dp + 1.0e-9_dp)
+        wsum = maxval(abs(s1%gi%host_w - s1%gi%dom(da)%f_tgt - s1%gi%dom(d2)%f_tgt - s1%gi%dom(db)%f_tgt))
+        call check("w is the sum of the owned coverage of the three domains (1e-12)", wsum < 1.0e-12_dp)
+        call check("the owned coverage and footprint fraction are within the grid's", &
+                   all(s1%gi%dom(d2)%fp_tgt <= s1%gi%dom(d2)%f_tgt + 1.0e-12_dp))
+        v_tgt = sum(at*s1%gi%host_Ig)
+        v_src = 0.0_dp
+        do d = 1, size(s1%gi%dom)
+            if (trim(s1%gi%dom(d)%name) == "A")  v_src = v_src + sum(areas(s1%ga)*s1%gi%dom(d)%owner*s1%gi%dom(d)%I_last)
+            if (trim(s1%gi%dom(d)%name) == "A2") v_src = v_src + sum(areas(s1%g2)*s1%gi%dom(d)%owner*s1%gi%dom(d)%I_last)
+            if (trim(s1%gi%dom(d)%name) == "B")  v_src = v_src + sum(areas(s1%gb)*s1%gi%dom(d)%owner*s1%gi%dom(d)%I_last)
+        end do
+        call check("overlap: the merged grounded ice = the owned ice of the sources (plain sums, 1e-12)", relerr(v_tgt, v_src) < 1.0e-12_dp)
+        call check("overlap: the closure checks of the gather are at round-off", s1%gi%diag%cons_I < 1.0e-12_dp)
+
+        call build(s2, "def", order_ab=.false., with_2=.true.)
+        call reference(s2, order_ab=.false.)
+        call gather(s2, -40000.0_dp, dHa=120.0_dp, order_ab=.false.)
+        same = all(s1%gi%host_w == s2%gi%host_w) .and. all(s1%gi%host_Ig_ref == s2%gi%host_Ig_ref) .and. &
+               all(s1%gi%host_Ig == s2%gi%host_Ig) .and. all(s1%gi%host_C == s2%gi%host_C) .and. &
+               all(s1%gi%host_F == s2%gi%host_F) .and. all(s1%gi%z_bed_spl == s2%gi%z_bed_spl) .and. &
+               all(s1%gi%H_spl == s2%gi%H_spl) .and. all(s1%gi%cov_bg == s2%gi%cov_bg)
+        call check("overlap: registration and add order swapped, bit identical (reference and gather)", same)
+        call globe_ice_end(s1%gi)
+        call globe_ice_end(s2%gi)
+    end subroutine test_owners
+
+    integer function dom_of(sc, name)
+        type(scene_t), intent(in) :: sc
+        character(len=*), intent(in) :: name
+        integer :: k
+        dom_of = 0
+        do k = 1, size(sc%gi%dom)
+            if (trim(sc%gi%dom(k)%name) == trim(name)) dom_of = k
+        end do
+    end function dom_of
+
     subroutine test_no_domains()
         ! No domain: the host terms are zero, the reference is X, the ocean area is the background's.
         type(scene_t) :: sc
@@ -888,7 +979,7 @@ contains
             call build(sc, "bad_hold")
         case ("overlap")
             call build(sc, "def")
-            ! a third domain on a grid shifted by 500 km over A
+            ! a third domain on a grid shifted by 500 km over A, without a priority
             call grid_init(g2, name="TNH2-100KM-SPH", mtype="polar_stereographic", units="kilometers", planet="Spherical Earth", &
                            lon180=.false., x0=-1000.0_dp, dx=100.0_dp, nx=31, y0=500.0_dp, dy=100.0_dp, ny=31, &
                            lambda=-40.0_dp, phi=70.0_dp)
@@ -898,7 +989,7 @@ contains
             call globe_ice_reference_begin(sc%gi, sc%cpl)
             call globe_ice_reference_add(sc%gi, sc%cpl, "A", sc%ice_a)
             call globe_ice_reference_add(sc%gi, sc%cpl, "B", sc%ice_b)
-            call globe_ice_reference_add(sc%gi, sc%cpl, "A2", sc%ice_a)     ! (flotation of the grid of A: shapes differ)
+            call globe_ice_reference_add(sc%gi, sc%cpl, "A2", sc%ice_a)     ! (flotation of the grid of A: shapes agree)
             call globe_ice_reference_end(sc%gi, sc%cpl)
         case ("fp_changed")
             call build(sc, "def")

@@ -54,7 +54,8 @@ module kryos_globe_ice
     use fesm_datasrc,    only: datasrc_t, datasrc_init, datasrc_update, datasrc_get, datasrc_describe, datasrc_end
     use coords,          only: grid_class, mv_dp
     use coupler,         only: coupler_class, coupler_merge_t, coupler_add_grid, coupler_set_area, &
-                               coupler_integral, coupler_merge_begin, coupler_merge_add, coupler_merge_end, remap
+                               coupler_integral, coupler_merge_begin, coupler_merge_add, coupler_merge_end, &
+                               coupler_owner_reduce, remap
     use nml,             only: nml_read
     use phys_constants,  only: phys_const_class, phys_const_isset
     use kryos_config,    only: config_t, config_read, config_validate, config_find, CFG_PATH_LEN
@@ -84,6 +85,9 @@ module kryos_globe_ice
         real(dp), allocatable :: fg_ref(:,:)             ! reference grounded fraction
         real(dp), allocatable :: I_ref(:,:), I_last(:,:) ! grounded ice H_tot f_g [m] of the reference, of the last gather
         real(dp), allocatable :: H_ref(:,:)              ! total ice of the reference m H_pd + (1 - m) X [m]
+        logical  :: has_prio = .false.                   ! overlapping domains: priority given (owner weights)
+        integer  :: priority = 0                         ! higher wins the cells two domains share
+        real(dp), allocatable :: owner(:,:)              ! owner weights [0,1] on the ice grid (has_prio), else absent: 1
         real(dp) :: V_ref = 0.0_dp                       ! grounded ice volume of the reference [m3]
         real(dp) :: V_src = 0.0_dp                       ! of the last gather (source grid integral)
         logical  :: ref_added = .false., added = .false.
@@ -105,7 +109,7 @@ module kryos_globe_ice
 
     type, public :: globe_ice_t
         logical :: ready = .false., have_ref = .false.
-        logical :: in_ref = .false., in_gather = .false.
+        logical :: in_ref = .false., in_gather = .false., owners_done = .false.
         character(len=GI_NAME_LEN) :: group = "", bg = "", tgt = ""
         integer :: nxb = 0, nyb = 0, nxg = 0, nyg = 0
         character(len=8) :: ext = "ref"                  ! "ref" | "file": ice outside the footprints
@@ -338,17 +342,22 @@ contains
     ! Domains
     ! =========================================================================
 
-    subroutine globe_ice_add_domain(gi, cpl, name, grid, footprint, H_ice_pd, z_bed_ref)
+    subroutine globe_ice_add_domain(gi, cpl, name, grid, footprint, H_ice_pd, z_bed_ref, priority)
         ! Register a domain: its ice grid in the coupler with the true spherical
         ! cell areas as model areas (section 4.4: the load per true area, global
         ! integrals spherical; the plane dx*dy is Yelmo's), its static exports
         ! (copied), and its coverage and footprint fraction on the two global
-        ! grids. Call before the reference; any order.
+        ! grids. Call before the reference; any order. priority (optional): for
+        ! domains that overlap; the domain with the higher priority owns the cells
+        ! two share (owner weights, coupler_owner_reduce, section 5.4), so the
+        ! result does not depend on the order of the calls either. Domains without
+        ! a priority, or with equal ones, must not overlap (the merge stops).
         type(globe_ice_t),   intent(inout) :: gi
         type(coupler_class), intent(inout) :: cpl
         character(len=*),    intent(in)    :: name
         type(grid_class),    intent(in)    :: grid
         real(dp),            intent(in)    :: footprint(:,:), H_ice_pd(:,:), z_bed_ref(:,:)
+        integer,             intent(in), optional :: priority
 
         character(len=*), parameter :: proc = "kryos_globe_ice::globe_ice_add_domain"
         type(gi_domain_t) :: dm
@@ -394,6 +403,10 @@ contains
         dm%footprint = footprint
         dm%H_pd      = H_ice_pd
         dm%z_bed_ref = z_bed_ref
+        if (present(priority)) then
+            dm%has_prio = .true.
+            dm%priority = priority
+        end if
 
         call coupler_add_grid(cpl, trim(dm%grid), grid)
         call coupler_set_area(cpl, trim(dm%grid), grid%area*grid%cs%xy_conv**2)
@@ -415,6 +428,109 @@ contains
         call move_alloc(tmp, gi%dom)
         call sort_order(gi)
     end subroutine globe_ice_add_domain
+
+    subroutine merge_add(acc, cpl, dm, v)
+        ! coupler_merge_add of a domain, with its owner weights when it has them.
+        type(coupler_merge_t), intent(inout) :: acc
+        type(coupler_class),   intent(inout) :: cpl
+        type(gi_domain_t),     intent(in)    :: dm
+        real(dp),              intent(in)    :: v(:,:)
+        if (allocated(dm%owner)) then
+            call coupler_merge_add(acc, cpl, trim(dm%grid), v, owner=dm%owner)
+        else
+            call coupler_merge_add(acc, cpl, trim(dm%grid), v)
+        end if
+    end subroutine merge_add
+
+    function owned_integral(cpl, dm, v) result(tot)
+        ! Integral of v over the part of the domain it owns (true areas).
+        type(coupler_class), intent(in) :: cpl
+        type(gi_domain_t),   intent(in) :: dm
+        real(dp),            intent(in) :: v(:,:)
+        real(dp) :: tot
+        if (allocated(dm%owner)) then
+            tot = coupler_integral(cpl, trim(dm%grid), dm%owner*v)
+        else
+            tot = coupler_integral(cpl, trim(dm%grid), v)
+        end if
+    end function owned_integral
+
+    subroutine finalize_owners(gi, cpl)
+        ! Owner weights of the domains that have a priority (once, before the
+        ! first reference): in the order of descending priority (ties by ice
+        ! grid name), a domain's owner is 1 on its grid minus the part already
+        ! owned by each domain of higher priority that shares a global cell with
+        ! it (coupler_owner_reduce, which needs the ice-to-ice map: pairs that
+        ! share no cell are skipped). The coverage and footprint fractions are
+        ! then the owned ones.
+        type(globe_ice_t),   intent(inout) :: gi
+        type(coupler_class), intent(inout) :: cpl
+
+        integer, allocatable :: ord(:)
+        real(dp), allocatable :: ones(:,:), v(:,:), tmp(:,:)
+        integer :: i, j, k, a, b, n
+        logical :: share
+
+        gi%owners_done = .true.
+        n = size(gi%dom)
+        if (.not. any(gi%dom(:)%has_prio)) return
+
+        ord = pack(gi%ord, gi%dom(gi%ord)%has_prio)          ! name order of the domains with a priority
+        do i = 2, size(ord)                                   ! stable insertion sort, priority descending
+            k = ord(i); j = i - 1
+            do while (j >= 1)
+                if (gi%dom(ord(j))%priority >= gi%dom(k)%priority) exit
+                ord(j + 1) = ord(j); j = j - 1
+            end do
+            ord(j + 1) = k
+        end do
+
+        do i = 1, size(ord)
+            associate (lo => gi%dom(ord(i)))
+                allocate(lo%owner(lo%nx, lo%ny))
+                lo%owner = 1.0_dp
+                do j = 1, i - 1
+                    associate (hi => gi%dom(ord(j)))
+                        if (hi%priority == lo%priority) cycle
+                        share = any(hi%f_tgt > 0.0_dp .and. lo%f_tgt > 0.0_dp) .or. any(hi%f_bg > 0.0_dp .and. lo%f_bg > 0.0_dp)
+                        if (.not. share) cycle
+                        call coupler_owner_reduce(cpl, trim(hi%grid), hi%owner, trim(lo%grid), lo%owner)
+                    end associate
+                end do
+            end associate
+        end do
+        a = 0; b = 0
+        do i = 1, size(ord)
+            associate (dm => gi%dom(ord(i)))
+                allocate(ones(dm%nx, dm%ny), v(dm%nx, dm%ny))
+                ones = dm%owner
+                v = merge(dm%owner, mv_dp, dm%footprint > 0.5_dp)
+                call owned_coverage(cpl, ones, dm%grid, gi%tgt, dm%f_tgt)
+                call owned_coverage(cpl, ones, dm%grid, gi%bg,  dm%f_bg)
+                call owned_coverage(cpl, v,    dm%grid, gi%tgt, dm%fp_tgt)
+                call owned_coverage(cpl, v,    dm%grid, gi%bg,  dm%fp_bg)
+                deallocate(ones, v)
+                if (any(dm%owner < 1.0_dp)) a = a + 1
+                b = b + 1
+            end associate
+        end do
+        if (allocated(tmp)) deallocate(tmp)
+        call log_msg(LOG_INFO, "kryos_globe_ice", "owner weights for "//to_str(b)//" domains with a priority, "// &
+                     to_str(a)//" of them share cells with a domain of higher priority")
+    end subroutine finalize_owners
+
+    subroutine owned_coverage(cpl, v, src, dst, f)
+        ! Coverage of a cell of `dst` by the valid cells of `src` (v /= mv_dp), weighted by v: the
+        ! coverage times the mean owner weight, as the merge's.
+        type(coupler_class), intent(inout) :: cpl
+        real(dp),            intent(in)    :: v(:,:)
+        character(len=*),    intent(in)    :: src, dst
+        real(dp),            intent(out)   :: f(:,:)
+        real(dp), allocatable :: mean(:,:), cov(:,:)
+        allocate(cov(size(f,1), size(f,2)))
+        call remap(cpl, v, trim(src), mean, trim(dst), method="con", missing_value=mv_dp, frac2=cov)
+        f = cov*merge(mean, 0.0_dp, mean /= mv_dp)
+    end subroutine owned_coverage
 
     subroutine coverage(cpl, v, src, dst, f, miss)
         ! Fraction of each cell of `dst` covered by the valid cells (v /= miss) of `src`.
@@ -480,6 +596,7 @@ contains
             call fesm_error(proc, "a reference or a gather is open", "close it with its _end first")
         end if
 
+        if (.not. gi%owners_done) call finalize_owners(gi, cpl)
         call datasrc_update(gi%ds_x, gi%ext_tref)
         call datasrc_get(gi%ds_x, "z_bed_ref", gi%z_bed_X)
         call datasrc_get(gi%ds_x, "H_ice_ref", gi%H_X)
@@ -528,13 +645,13 @@ contains
             dm%fg_ref = f_g
             I  = H_tot*f_g
             Cc = 1.0_dp - f_g
-            call coupler_merge_add(gi%acc_I, cpl, trim(dm%grid), I)
-            call coupler_merge_add(gi%acc_C, cpl, trim(dm%grid), Cc)
-            call coupler_merge_add(gi%acc_zs, cpl, trim(dm%grid), dm%z_bed_ref)
-            call coupler_merge_add(gi%acc_hs, cpl, trim(dm%grid), H_tot)
+            call merge_add(gi%acc_I, cpl, dm, I)
+            call merge_add(gi%acc_C, cpl, dm, Cc)
+            call merge_add(gi%acc_zs, cpl, dm, dm%z_bed_ref)
+            call merge_add(gi%acc_hs, cpl, dm, H_tot)
             dm%I_ref = I
             dm%H_ref = H_tot
-            dm%V_ref = coupler_integral(cpl, trim(dm%grid), I)
+            dm%V_ref = owned_integral(cpl, dm, I)
             dm%ref_added = .true.
         end associate
     end subroutine globe_ice_reference_add
@@ -688,11 +805,11 @@ contains
             I  = H_tot*f_g
             Cc = 1.0_dp - f_g
             F  = dm%z_bed_ref*(dm%fg_ref - f_g)
-            call coupler_merge_add(gi%acc_I, cpl, trim(dm%grid), I)
-            call coupler_merge_add(gi%acc_C, cpl, trim(dm%grid), Cc)
-            call coupler_merge_add(gi%acc_F, cpl, trim(dm%grid), F)
+            call merge_add(gi%acc_I, cpl, dm, I)
+            call merge_add(gi%acc_C, cpl, dm, Cc)
+            call merge_add(gi%acc_F, cpl, dm, F)
             dm%I_last = I
-            dm%V_src = coupler_integral(cpl, trim(dm%grid), I)
+            dm%V_src = owned_integral(cpl, dm, I)
             dm%added = .true.
         end associate
     end subroutine globe_ice_gather_add
