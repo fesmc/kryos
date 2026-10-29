@@ -25,3 +25,5 @@ default writer: dimensions without `time` (empty: 0-D, written to `<instance>_ts
 | 17 | H_ice_ref      | xc, yc     | m           | Reference ice thickness                          | 1e-3       |
 | 18 | footprint      | xc, yc     | 1           | Where the ice model holds ice (static)           | 1e-4       |
 | 19 | H_ice_pd       | xc, yc     | m           | Present-day ice thickness (static)               | 1e-3       |
+| 20 | H_grnd         | xc, yc     | m           | Ice thickness above flotation                    | 1e-3       |
+| 21 | H_grnd_pd      | xc, yc     | m           | Present-day thickness above flotation (static)   | 1e-3       |

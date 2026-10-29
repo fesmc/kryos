@@ -21,6 +21,7 @@ module kryos_ice
         logical :: T_shlf = .false., tf_shlf = .false., Q_geo = .false., H_sed = .false., Qd = .false.
         logical :: uxy_s = .false., dz_bed_dt_corr = .false., z_bed_ref = .false., H_ice_ref = .false.
         logical :: footprint = .false., H_ice_pd = .false.     ! static: where the ice model holds ice; its present day
+        logical :: H_grnd = .false., H_grnd_pd = .false.       ! thickness above flotation, and its present day (static)
     end type ice_opt_t
 
     type, abstract, extends(component_t), public :: ice_t
@@ -30,7 +31,7 @@ module kryos_ice
         integer :: h_H_ice = 0, h_z_srf = 0, h_z_bed = 0, h_z_sl = 0, h_f_ice = 0, h_f_grnd = 0   ! exports
         integer :: h_dHidt = 0, h_smb = 0, h_bmb = 0, h_cmb = 0, h_mb_net = 0, h_M_ice = 0
         integer :: h_ux_s = 0, h_uy_s = 0, h_dz_bed_dt_corr = 0, h_z_bed_ref = 0, h_H_ice_ref = 0
-        integer :: h_footprint = 0, h_H_ice_pd = 0
+        integer :: h_footprint = 0, h_H_ice_pd = 0, h_H_grnd = 0, h_H_grnd_pd = 0
     contains
         procedure :: flotation => ice_flotation_default   ! (H, z_bed, z_sl, f_grnd): capability has_flotation
     end type ice_t
@@ -194,7 +195,9 @@ contains
         ! H_ice_ref (optional): the reference load geo is initialised with
         ! (design decision 4, refined in the phase 1 review). footprint and
         ! H_ice_pd (optional, static, phase 4 and phase 2 WP3): published once,
-        ! at PASS_INIT.
+        ! at PASS_INIT. H_grnd (optional, with the geometry) and H_grnd_pd (static) are
+        ! what the thermal-forcing calibration (experiment opt_tf) reads, with H_ice,
+        ! dHidt and H_ice_pd.
         class(ice_t), intent(inout) :: c
         integer :: d2(2)
         character(len=:), allocatable :: g
@@ -262,6 +265,12 @@ contains
         end if
         if (c%opt%H_ice_pd) then
             call fields_add(c%exports, "H_ice_pd", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_H_ice_pd, grid=g, dims=d2)
+        end if
+        if (c%opt%H_grnd) then                      ! per step, with the geometry
+            call fields_add(c%exports, "H_grnd", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_H_grnd, grid=g, dims=d2)
+        end if
+        if (c%opt%H_grnd_pd) then                   ! static, with H_ice_pd
+            call fields_add(c%exports, "H_grnd_pd", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_H_grnd_pd, grid=g, dims=d2)
         end if
         call fields_lock(c%exports)
     end subroutine ice_declare

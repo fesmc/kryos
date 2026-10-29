@@ -1238,12 +1238,16 @@ contains
         character(len=*),    intent(in) :: what
         real(dp),            intent(in) :: t_put
 
-        real(dp), allocatable :: fp(:,:), pd(:,:)
+        real(dp), allocatable :: fp(:,:), pd(:,:), hg(:,:), hgpd(:,:)
 
         select type (ice => run%dom(1)%ice%c)
         type is (yelmo_ice_t)
             fp = get2(ice%exports, ice%h_footprint)
             pd = get2(ice%exports, ice%h_H_ice_pd)
+            hg = get2(ice%exports, ice%h_H_grnd)
+            hgpd = get2(ice%exports, ice%h_H_grnd_pd)
+            call check(all(real(hg, sp) == ice%ylmo%tpo%now%H_grnd), what//": H_grnd = tpo%now%H_grnd")
+            call check(all(real(hgpd, sp) == ice%ylmo%dta%pd%H_grnd), what//": H_grnd_pd = dta%pd%H_grnd")
             call check(all(real(fp, sp) == merge(1.0_sp, 0.0_sp, ice%ylmo%bnd%mask_ice /= MASK_ICE_NONE)) .and. &
                        count(fp == 1.0_dp) > 0, what//": footprint = (mask_ice /= MASK_ICE_NONE)")
             call check(all(real(pd, sp) == ice%ylmo%dta%pd%H_ice) .and. any(pd > 0.0_dp), &

@@ -85,7 +85,7 @@ contains
         self%ny   = ctx%grid%G%ny
         self%opt  = ice_opt_t(T_shlf=.true., tf_shlf=.false., Q_geo=.true., H_sed=.true., Qd=.false., &
                               uxy_s=.false., dz_bed_dt_corr=.false., z_bed_ref=.true., H_ice_ref=.true., &
-                              footprint=.true., H_ice_pd=.true.)
+                              footprint=.true., H_ice_pd=.true., H_grnd=.true., H_grnd_pd=.true.)
 
         call yelmo_init_grid(self%ylmo%grd, ctx%grid)
         call reference_narrow(self, ctx%ref, topo)
@@ -437,6 +437,7 @@ contains
             call fields_put(self%exports, self%h_z_sl,   bnd%z_sl,   t1=t1)
             call fields_put(self%exports, self%h_f_ice,  tpo%f_ice,  t1=t1)
             call fields_put(self%exports, self%h_f_grnd, tpo%f_grnd, t1=t1)
+            call fields_put(self%exports, self%h_H_grnd, tpo%H_grnd, t1=t1)
         end associate
     end subroutine exports_geometry
 
@@ -453,13 +454,15 @@ contains
         ! INSTANT, put once (PASS_INIT, after yelmo_init: mask_ice and the present
         ! day are final, with or without a restart): footprint = 1 where Yelmo
         ! holds ice (mask_ice /= MASK_ICE_NONE), and H_ice_pd = dta%pd%H_ice, the
-        ! present-day ice, not bnd%H_ice_ref, which recon and ice_bnd overwrite.
+        ! present-day ice, not bnd%H_ice_ref, which recon and ice_bnd overwrite;
+        ! H_grnd_pd = dta%pd%H_grnd.
         class(yelmo_ice_t), intent(inout) :: self
         real(dp),           intent(in)    :: t1
 
         call fields_put(self%exports, self%h_footprint, &
                         merge(1.0_sp, 0.0_sp, self%ylmo%bnd%mask_ice /= MASK_ICE_NONE), t1=t1)
         call fields_put(self%exports, self%h_H_ice_pd, self%ylmo%dta%pd%H_ice, t1=t1)
+        call fields_put(self%exports, self%h_H_grnd_pd, self%ylmo%dta%pd%H_grnd, t1=t1)
     end subroutine exports_static
 
     subroutine exports_mass(self, t1)

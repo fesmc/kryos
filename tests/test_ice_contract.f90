@@ -38,7 +38,7 @@ contains
         type(init_ctx_t),  intent(in)    :: ctx
         self%nx = ctx%grid%G%nx
         self%ny = ctx%grid%G%ny
-        self%opt = ice_opt_t(z_bed_ref=.true., footprint=.true., H_ice_pd=.true.)
+        self%opt = ice_opt_t(z_bed_ref=.true., footprint=.true., H_ice_pd=.true., H_grnd=.true., H_grnd_pd=.true.)
         self%caps%has_flotation = .true.
     end subroutine full_init
 
@@ -172,8 +172,14 @@ contains
                        trim(e%f(c%h_H_ice_pd)%units) == "m" .and. e%f(c%h_H_ice_pd)%tsem == FIELD_INSTANT .and. &
                        e%f(c%h_H_ice_pd)%cons == FIELD_INTENSIVE .and. e%f(c%h_H_ice_pd)%rank == 2 .and. &
                        trim(e%f(c%h_H_ice_pd)%grid) == "TOY")
-            call check("neither is an import", .not. fields_has(c%imports, "footprint") .and. &
-                       .not. fields_has(c%imports, "H_ice_pd"))
+            call check("H_grnd and H_grnd_pd declared on request: m, instant, intensive, rank 2", &
+                       fields_has(e, "H_grnd") .and. fields_has(e, "H_grnd_pd") .and. c%h_H_grnd > 0 .and. c%h_H_grnd_pd > 0 .and. &
+                       trim(e%f(c%h_H_grnd)%units) == "m" .and. e%f(c%h_H_grnd)%tsem == FIELD_INSTANT .and. &
+                       e%f(c%h_H_grnd)%cons == FIELD_INTENSIVE .and. e%f(c%h_H_grnd_pd)%rank == 2 .and. &
+                       trim(e%f(c%h_H_grnd_pd)%grid) == "TOY")
+            call check("none of them is an import", .not. fields_has(c%imports, "footprint") .and. &
+                       .not. fields_has(c%imports, "H_ice_pd") .and. .not. fields_has(c%imports, "H_grnd") .and. &
+                       .not. fields_has(c%imports, "H_grnd_pd"))
 
             ! a static put, once: the value and its time come back
             do j = 1, NY
@@ -191,7 +197,8 @@ contains
 
         call check("a backend that does not set the options declares neither", &
                    .not. fields_has(bare%c%exports, "footprint") .and. .not. fields_has(bare%c%exports, "H_ice_pd") &
-                   .and. bare%c%h_footprint == 0 .and. bare%c%h_H_ice_pd == 0)
+                   .and. .not. fields_has(bare%c%exports, "H_grnd") .and. .not. fields_has(bare%c%exports, "H_grnd_pd") &
+                   .and. bare%c%h_footprint == 0 .and. bare%c%h_H_ice_pd == 0 .and. bare%c%h_H_grnd == 0)
         call check("the rest of the vocabulary is unchanged", fields_has(bare%c%exports, "H_ice") .and. &
                    fields_has(bare%c%exports, "f_grnd") .and. .not. fields_has(bare%c%exports, "z_bed_ref"))
     end subroutine test_declaration
