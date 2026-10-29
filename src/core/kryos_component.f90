@@ -110,6 +110,7 @@ module kryos_component
         type(field_state_t)     :: imports, exports
         type(axis_t), allocatable :: axes(:)            ! axes of the instance's rank-3 fields
         character(len=FIELD_NAME_LEN), allocatable :: opt_imports(:)   ! imports that may stay unwired
+        character(len=FIELD_NAME_LEN), allocatable :: core_imports(:)  ! imports the core fills outside the wiring rows
         real(dp), allocatable :: xkm(:), ykm(:)         ! grid axes [km], from the init context (component_identity)
         character(len=FIELD_NAME_LEN), allocatable :: out_vars(:)   ! exports the default writer writes; unset: all
     contains
@@ -146,7 +147,7 @@ module kryos_component
 
     public :: step_time_of, sec_year_check
     public :: backend_admit, component_identity, component_close, component_enter, component_leave
-    public :: component_axis, component_optional, month_axis, axis_find, axes_equal
+    public :: component_axis, component_optional, component_core_filled, month_axis, axis_find, axes_equal
     public :: census_count, kryos_mask
     public :: component_init_state, component_restart_files, component_write_output, component_end, component_output
     public :: component_prepare, component_prepare_call
@@ -611,6 +612,16 @@ contains
         if (.not. allocated(c%opt_imports)) allocate(c%opt_imports(0))
         c%opt_imports = [character(len=FIELD_NAME_LEN) :: c%opt_imports, name]
     end subroutine component_optional
+
+    subroutine component_core_filled(c, name)
+        ! Mark import `name` as filled by the core outside the wiring rows (the
+        ! global geo's external ice and reference, phase 4): wire_resolve does
+        ! not look for a producer of it.
+        class(component_t), intent(inout) :: c
+        character(len=*),   intent(in)    :: name
+        if (.not. allocated(c%core_imports)) allocate(c%core_imports(0))
+        c%core_imports = [character(len=FIELD_NAME_LEN) :: c%core_imports, name]
+    end subroutine component_core_filled
 
     function component_axis(c, ctx, name) result(nz)
         ! Length of axis `name` for a rank-3 declaration: the instance's own
