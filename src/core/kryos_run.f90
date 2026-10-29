@@ -31,6 +31,7 @@ module kryos_run
                                 CFG_NAME_LEN, CFG_PATH_LEN
     use kryos_component,  only: component_t, census_t, PASS_INIT, NAME_LEN
     use kryos_wiring,     only: wiring_describe
+    use kryos_gia_check,  only: gia_check
     use kryos_forcing,    only: forcing_present, forcing_kill
     use kryos_geo,        only: geo_present
     use kryos_globe,      only: globe_t, globe_init, globe_init_state, globe_end, globe_nodes
@@ -156,6 +157,7 @@ contains
             end if
         end do
         call run_check_names(run)
+        call gia_check(run%globe, run%dom, run%cfg)      ! vilma2: which instances go together, what the ice offers
         run%dom_order = name_order(run%dom)
 
         ! 5. schedules: the run's (restart), the output streams (instances, hubs, timing)

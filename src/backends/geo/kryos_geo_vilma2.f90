@@ -47,6 +47,7 @@ module kryos_geo_vilma2
         character(len=NAME_LEN) :: group  = VILMA_GROUP  ! the &vilma group of the par file
         character(len=NAME_LEN) :: ice_bg = "globe_ice"  ! the global ice field group (read by globe_ice)
         logical :: built = .false.                       ! solid_earth_init done
+        real(dp) :: g_run = 0.0_dp                       ! the run's g (phys_const), for the log
     contains
         procedure :: init          => earth_init_
         procedure :: init_state    => earth_init_state_
@@ -123,6 +124,7 @@ contains
         self%prec = dp
         self%opt  = geo_opt_t(host=.true.)
 
+        self%g_run = ctx%cnst%g
         call params_check(self, ctx)
         call gauss_build(self, ctx)
     end subroutine earth_init_
@@ -231,7 +233,7 @@ contains
 
         select case (pass)
         case (PASS_GEOMETRY)
-            call build_model(self)
+            call build_model(self, self%g_run)
             call exports_state(self, st%t1)             ! the reference: nothing has moved
         case (PASS_STATE)
             call spin_up_and_seed(self)
@@ -239,10 +241,12 @@ contains
         end select
     end subroutine earth_init_state_
 
-    subroutine build_model(self)
+    subroutine build_model(self, g_run)
         ! plan 3.1: no h_ice_init; the reference is the background X on the Gauss grid (the 1 - w
-        ! part) and the reference host terms.
+        ! part) and the reference host terms. g_run: the run's g, logged beside VILMA2's own (its
+        ! gravity comes from the Earth model; there is no key to set).
         class(vilma_earth_t), intent(inout) :: self
+        real(dp),             intent(in)    :: g_run
 
         real(dp), allocatable :: z_bed_ref(:,:), H_ice_ref(:,:), w(:,:), Ig(:,:), C(:,:), F0(:,:)
 
@@ -263,6 +267,8 @@ contains
 
         call solid_earth_init(self%se, z_bed_ref, H_ice_ref, grid=self%gauss, w=w, I_g=Ig, C=C)
         self%built = .true.
+        call log_msg(LOG_INFO, "kryos_geo_vilma2", "Earth built at the reference; surface gravity of its Earth model "// &
+                     to_str(self%se%resp%g)//" m s-2 (the run's g "//to_str(g_run)//")", "instance "//trim(self%name))
         if (self%se%remap) then
             call fesm_error("kryos_geo_vilma2::init_state", "VILMA2 does not take grid `"//trim(self%grid)// &
                             "` as its own Gauss grid", "instance "//trim(self%name)// &
