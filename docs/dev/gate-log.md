@@ -588,3 +588,23 @@ changes). The Levante gates above ran on 99589d0 (before the rebase and the fix;
 Accepted (Alex, 2026-10-29, option a): `clock.time_const = 0.0` in the merged file. The four differing values of the clock check (`time_init`, `time_prev` of
 `forcing_alpha_restart.nc` in the bundles at 500 and 1000) are the stored clock constant, which enters no physics: an accepted difference
 (`regression-design.md` §1.6). The science configuration will set the clock explicitly ("in the future it will be right": the real transient clock).
+
+### Rerun on the rebased head and registration of `K3-sci` (kryos 2d80b43, stack S5b)
+
+Code: p3-dom rebased on main 1f8a7b8 with the snapshots fix (2d80b43; the later commits of the branch are docs only), built in `$G/p3dom/kryos` on S5b as before.
+Jobs: `sci-const` cont 28555723, nor 28555737, ant 28555738; `sci` cont 28555739, cont2 28555740, chunk 28555743/44, swap 28555746 (two-domain runs 13.5 min).
+Reports `$G/reports/KK/{sci-const,sci}-2d80b43-S5b.md` (jobs 28556423/24):
+
+| gate | check | result |
+|---|---|---|
+| `sci-const` | North: two-domain run vs `nor` | PASS, 1251 variables, 0 failing, 2 skipped (aggregates) |
+| `sci-const` | Antarctica: two-domain run vs `ant` | PASS, 1362 variables, 0 failing, 2 skipped |
+| `sci` | cont2 vs cont (`--restarts`) | PASS, 2579 variables |
+| `sci` | chunk vs cont (bundles) | PASS, 3170 variables |
+| `sci` | domains swapped vs original order | PASS, 2579 variables |
+| `sci` | bsl budget | closes: 100 records, max residual / scale 2.2e-8 (bound 4.8e-7), max residual 3.8e-6 m |
+
+(The variable counts are above the 99589d0 run: main's output-precision changes add variables.)
+
+**`K3-sci` registered**: `$G/ref/K3-sci/kx-2d80b43/S5b/{sci,sci-const}/cont` (`register_k3.sh 2d80b43 S5b`; 122 nc files each, files and bundles at 500 and 1000,
+`par.nml`, `kryos_commit.txt`; read-only, 1.4 GB; `registered.txt`). Phase 4 G1 compares against it (`kryos-compare.jl --map identity --restarts`).
