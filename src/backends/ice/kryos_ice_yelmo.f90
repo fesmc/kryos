@@ -21,6 +21,7 @@ module kryos_ice_yelmo
                                yelmo_regions_write, yelmo_write_init, yelmo_write_step
     use yelmo_io,         only: yelmo_restart_read_topo_bnd
     use yelmo_topography, only: calc_ytopo_diagnostic
+    use topography,       only: calc_H_grnd, calc_f_grnd_subgrid_linear, calc_f_grnd_subgrid_area
 
     implicit none
 
@@ -49,6 +50,7 @@ module kryos_ice_yelmo
         procedure :: init_state    => yelmo_init_state_
         procedure :: prepare       => yelmo_prepare_
         procedure :: update        => yelmo_update_
+        procedure :: flotation     => yelmo_flotation_
         procedure :: restart_write => yelmo_restart_write_
         procedure :: restart_read  => yelmo_restart_read_
         procedure :: restart_files => yelmo_restart_files_
@@ -78,6 +80,7 @@ contains
 
         call group_read(self, ctx)
         self%prec = sp
+        self%caps%has_flotation = .true.
         self%nx   = ctx%grid%G%nx
         self%ny   = ctx%grid%G%ny
         self%opt  = ice_opt_t(T_shlf=.true., tf_shlf=.false., Q_geo=.true., H_sed=.true., Qd=.false., &
@@ -157,6 +160,37 @@ contains
         call exports_mass(self, st%t1)
         call exports_rates(self, st)
     end subroutine yelmo_update_
+
+    subroutine yelmo_flotation_(self, H, z_bed, z_sl, f_grnd)
+        ! Yelmo's own grounded fraction of ice H over z_bed and z_sl, as
+        ! calc_ytopo_diagnostic forms f_grnd: calc_H_grnd (use_f_ice = .false.:
+        ! the thickness at face value, so no f_ice) with the run's densities, then
+        ! the subgrid rule of ytopo.gl_sep on the instance grid. Narrowed once,
+        ! computed in sp, widened: on Yelmo's own geometry it is tpo%now%f_grnd
+        ! bit for bit (pinning points enter f_grnd_pin, not f_grnd).
+        class(yelmo_ice_t), intent(in)  :: self
+        real(dp),           intent(in)  :: H(:,:), z_bed(:,:), z_sl(:,:)
+        real(dp),           intent(out) :: f_grnd(:,:)
+
+        real(sp), allocatable :: H_s(:,:), f_ice(:,:), H_grnd(:,:), f_g(:,:), f_x(:,:), f_y(:,:)
+
+        allocate(H_s(self%nx, self%ny), f_ice(self%nx, self%ny), H_grnd(self%nx, self%ny), f_g(self%nx, self%ny))
+        H_s   = real(H, sp)
+        f_ice = 1.0_sp                                  ! not read: use_f_ice = .false.
+        call calc_H_grnd(H_grnd, H_s, f_ice, real(z_bed, sp), real(z_sl, sp), &
+                         self%ylmo%bnd%c%rho_ice, self%ylmo%bnd%c%rho_sw, use_f_ice=.false.)
+        select case (self%ylmo%tpo%par%gl_sep)
+        case (1)                                        ! binary f_grnd
+            allocate(f_x(self%nx, self%ny), f_y(self%nx, self%ny))
+            call calc_f_grnd_subgrid_linear(f_g, f_x, f_y, H_grnd, self%ylmo%tpo%par%boundaries)
+        case (3)                                        ! grounded area of the interpolated H_grnd
+            call calc_f_grnd_subgrid_area(f_g, H_grnd=H_grnd, boundaries=self%ylmo%tpo%par%boundaries)
+        case default
+            call fesm_error("kryos_ice_yelmo::flotation", "ytopo.gl_sep = "//to_str(self%ylmo%tpo%par%gl_sep)// &
+                            " is not 1 or 3", "instance "//trim(self%name))
+        end select
+        f_grnd = real(f_g, dp)
+    end subroutine yelmo_flotation_
 
     subroutine yelmo_restart_write_(self, dir, t)
         ! kryos_startup.f90:427

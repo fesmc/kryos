@@ -234,6 +234,7 @@ program test_run_sequence
     use kryos_run,       only: run_t, run_init, run_step, run_done, run_end
     use kryos_experiment, only: experiment_proto_t, HOOK_STEP_BEGIN, HOOK_ICE_BND, HOOK_COLD_PRE_STATE, HOOK_COLD_POST_STATE
     use test_run_toys
+    use kryos_ice,       only: ice_flotation
     use kryos_ice_yelmo, only: yelmo_ice_t
     use yelmo_defs,      only: MASK_ICE_NONE
     use kryos_climate_snapshots,  only: snapshots_climate_t
@@ -334,6 +335,7 @@ contains
         end do
         call check(n == 2, "two steps to time_end = 20")
         call check_ice_static(run, "t = 20", 0.0_dp)
+        call check_ice_flotation(run, "t = 20")
         call run_end(run)
         call check_hooks_run()
 
@@ -957,7 +959,40 @@ contains
         call check(trim(c%name) == "ice_grl", "domain_component(ice)")
         call round_trips(run)
         call check_ice_static(run, "t0", 0.0_dp)
+        call check_ice_flotation(run, "t0")
     end subroutine check_init
+
+    subroutine check_ice_flotation(run, what)
+        ! The ice's flotation binding (contracts-design 2.1) on Yelmo's own
+        ! geometry: the exports H_ice, z_bed, z_sl are what Yelmo's last
+        ! calc_ytopo_diagnostic used, so the binding returns tpo%now%f_grnd bit
+        ! for bit (pinning points enter f_grnd_pin, not f_grnd), and so the
+        ! exported f_grnd; on another sea level it differs where the ice floats.
+        type(run_t), target, intent(in) :: run
+        character(len=*),    intent(in) :: what
+
+        real(dp), allocatable :: H(:,:), zb(:,:), zs(:,:), f(:,:), g(:,:)
+        integer :: n_tpo, n_exp
+
+        associate (dom => run%dom(1), ice => run%dom(1)%ice%c)
+            H  = get2(ice%exports, ice%h_H_ice)
+            zb = get2(ice%exports, ice%h_z_bed)
+            zs = get2(ice%exports, ice%h_z_sl)
+            allocate(f(size(H,1), size(H,2)), g(size(H,1), size(H,2)))
+            call ice_flotation(dom%ice, H, zb, zs, f)
+            n_exp = count(f /= get2(ice%exports, ice%h_f_grnd))
+            n_tpo = -1
+            select type (ice)
+            type is (yelmo_ice_t)
+                n_tpo = count(real(f, sp) /= ice%ylmo%tpo%now%f_grnd)
+            end select
+            call check(ice%caps%has_flotation, what//": the yelmo ice declares has_flotation")
+            call check(n_tpo == 0, what//": flotation = tpo%f_grnd bit for bit (cells differing: "//trim(itoa(n_tpo))//")")
+            call check(n_exp == 0, what//": flotation = the exported f_grnd (cells differing: "//trim(itoa(n_exp))//")")
+            call ice_flotation(dom%ice, H, zb, zs + 5000.0_dp, g)
+            call check(all(g <= f) .and. any(g < f), what//": a sea level 5 km higher floats ice that was grounded")
+        end associate
+    end subroutine check_ice_flotation
 
     subroutine check_ice_static(run, what, t_put)
         ! footprint and H_ice_pd (contracts-design 2.1, phase 4): Yelmo's mask_ice

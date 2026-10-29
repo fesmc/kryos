@@ -6,6 +6,7 @@ module kryos_ice
     ! kryos_ice_factory, which names them; a host adds its own with ice_adopt.
 
     use precision,       only: dp
+    use fesm_log,        only: fesm_error, to_str
     use fesm_fields,     only: fields_init, fields_add, fields_lock, FIELD_INSTANT, FIELD_MEAN, &
                                FIELD_INTENSIVE, FIELD_EXTENSIVE
     use kryos_component, only: component_t, PATH_LEN, init_ctx_t, step_time_t, census_t, constraints_t, &
@@ -30,6 +31,8 @@ module kryos_ice
         integer :: h_dHidt = 0, h_smb = 0, h_bmb = 0, h_cmb = 0, h_mb_net = 0, h_M_ice = 0
         integer :: h_ux_s = 0, h_uy_s = 0, h_dz_bed_dt_corr = 0, h_z_bed_ref = 0, h_H_ice_ref = 0
         integer :: h_footprint = 0, h_H_ice_pd = 0
+    contains
+        procedure :: flotation => ice_flotation_default   ! (H, z_bed, z_sl, f_grnd): capability has_flotation
     end type ice_t
 
     type, public :: ice_slot_t                      ! what domain_t holds
@@ -47,9 +50,20 @@ module kryos_ice
     public :: ice_create, ice_adopt, ice_present
     public :: ice_init, ice_init_state, ice_update, ice_restart_write, ice_restart_read
     public :: ice_restart_files
-    public :: ice_write_output, ice_end
+    public :: ice_write_output, ice_end, ice_flotation
 
 contains
+
+    subroutine ice_flotation_default(self, H, z_bed, z_sl, f_grnd)
+        ! A backend without the binding (caps%has_flotation false): ice_flotation stops first.
+        class(ice_t), intent(in)  :: self
+        real(dp),     intent(in)  :: H(:,:), z_bed(:,:), z_sl(:,:)
+        real(dp),     intent(out) :: f_grnd(:,:)
+        call fesm_error("kryos_ice::flotation", "instance `"//trim(self%name)//"` ("//trim(self%backend)// &
+                        ") has no flotation binding")
+        associate (unused => size(H) + size(z_bed) + size(z_sl)); end associate
+        f_grnd = 0.0_dp
+    end subroutine ice_flotation_default
 
     subroutine ice_adopt(ice, proto, con, ctx, census)
         ! A host-provided extension of ice_t (design decision 1), admitted as a factory would.
@@ -142,6 +156,31 @@ contains
         call ice%c%write_output(file, t, stream, init)
         call component_leave()
     end subroutine ice_write_output
+
+    subroutine ice_flotation(ice, H, z_bed, z_sl, f_grnd)
+        ! The grounded fraction the ice model's own rule gives for ice thickness H
+        ! over bed z_bed and sea level z_sl [m, the instance's grid, dp]
+        ! (contracts-design 2.1): what the core uses for ice outside the
+        ! footprint and in the reference, never the model's routines itself.
+        type(ice_slot_t), intent(in)  :: ice
+        real(dp),         intent(in)  :: H(:,:), z_bed(:,:), z_sl(:,:)
+        real(dp),         intent(out) :: f_grnd(:,:)
+
+        character(len=*), parameter :: proc = "kryos_ice::ice_flotation"
+
+        if (.not. ice%c%caps%has_flotation) then
+            call fesm_error(proc, "instance `"//trim(ice%c%name)//"` ("//trim(ice%c%backend)// &
+                            ") does not declare has_flotation", "the backend sets caps%has_flotation in init")
+        end if
+        if (any([size(H,1), size(z_bed,1), size(z_sl,1), size(f_grnd,1)] /= ice%c%nx) .or. &
+            any([size(H,2), size(z_bed,2), size(z_sl,2), size(f_grnd,2)] /= ice%c%ny)) then
+            call fesm_error(proc, "arrays are not on the instance grid", "instance `"//trim(ice%c%name)//"`, grid "// &
+                            to_str(ice%c%nx)//" x "//to_str(ice%c%ny))
+        end if
+        call component_enter(ice%c)
+        call ice%c%flotation(H, z_bed, z_sl, f_grnd)
+        call component_leave()
+    end subroutine ice_flotation
 
     subroutine ice_end(ice)
         type(ice_slot_t), intent(inout) :: ice

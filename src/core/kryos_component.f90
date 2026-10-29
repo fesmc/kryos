@@ -49,6 +49,7 @@ module kryos_component
 
     type, public :: caps_t                      ! capability flags, set by the backend in init
         logical :: has_ocn = .false., has_ocn_shelf = .false., has_smb = .false., has_Qd = .false.
+        logical :: has_flotation = .false.      ! ice: the flotation binding (contracts-design 2.1)
     end type caps_t
 
     type, public :: constraints_t               ! decision 12; one function per backend module

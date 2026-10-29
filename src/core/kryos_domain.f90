@@ -459,6 +459,7 @@ contains
         if (c%caps%has_ocn_shelf) caps = caps//" has_ocn_shelf"
         if (c%caps%has_smb)       caps = caps//" has_smb"
         if (c%caps%has_Qd)        caps = caps//" has_Qd"
+        if (c%caps%has_flotation) caps = caps//" has_flotation"
         if (len(caps) == 0) caps = " none"
         call log_msg(LOG_INFO, "kryos_domain", "domain "//trim(dom%name)//": "//trim(COMP_NAME(k))//" `"// &
                      trim(c%name)//"` ("//trim(c%backend)//") on "//trim(c%grid)//", "//cad//", clock "// &
