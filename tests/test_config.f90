@@ -14,7 +14,7 @@ program test_config
     use fesm_log,        only: LOG_WARN, LOG_INFO
     use kryos_component, only: NAME_LEN, PATH_LEN, NLIB
     use kryos_config,    only: config_t, config_init, config_read, config_has, config_find, &
-                               config_validate, config_validate_instance, &
+                               config_validate, config_validate_instance, config_validate_experiment, &
                                CFG_NAME_LEN, CFG_PATH_LEN, CFG_NLIB
 
     implicit none
@@ -112,6 +112,15 @@ contains
         call config_read(cfg, "geo_glob", "dt", x, "instance", "geo_fastisostasy")
         call check(x == 10.0_dp, "set dp: dt")
 
+        ! the domain's list of experiments: set, and empty by default
+        names = "x"
+        call config_read(cfg, "Greenland", "experiments", names, "domain")
+        call check(trim(names(1)) == "exp_host" .and. trim(names(2)) == "exp_other" .and. len_trim(names(3)) == 0, &
+                   "domain experiments: the list in order")
+        names = "x"
+        call config_read(cfg, "Bad_domain", "experiments", names, "domain")
+        call check(all(len_trim(names) == 0), "domain experiments: default none")
+
         ! integer, logical, vector
         call config_read(cfg, "clock", "ticks_per_year", i, "clock")
         call check(i == 36000, "default integer")
@@ -174,6 +183,8 @@ contains
         call check(stat == 0 .and. trim(backend) == "yelmo", "validate: instance, core and backend keys")
         call config_validate_instance(cfg, "geo_glob", "geo", backend, stat)
         call check(stat == 0 .and. trim(backend) == "fastisostasy", "validate: global geo instance")
+        call config_validate_experiment(cfg, "exp_host", backend, stat)
+        call check(stat == 0 .and. trim(backend) == "host", "validate: experiment of kind host")
     end subroutine test_validate
 
     subroutine test_errors()
@@ -216,6 +227,18 @@ contains
         call config_validate_instance(cfg, "geo_wrongkind", "ice", backend, stat)
         call check(stat == 1, "backend of another component")
 
+        ! experiments
+        call config_validate_experiment(cfg, "exp_badkey", backend, stat)
+        call check(stat == 1 .and. len_trim(backend) == 0, "unknown key in an experiment group")
+        call config_validate_experiment(cfg, "exp_nokind", backend, stat)
+        call check(stat == 1, "experiment without kind key")
+        call config_validate_experiment(cfg, "exp_emptykind", backend, stat)
+        call check(stat == 1, "experiment with an empty kind")
+        call config_validate_experiment(cfg, "exp_unknown", backend, stat)
+        call check(stat == 1 .and. len_trim(backend) == 0, "kind without template")
+        call config_validate_experiment(cfg, "no_such_exp", backend, stat)
+        call check(stat == 1, "missing experiment group")
+
         ! files, values
         call config_init(bad, dir//"missing.nml", stat=stat)
         call check(stat == 1, "par file not found")
@@ -233,6 +256,8 @@ contains
         call check(aborts("missing-group"), "abort: missing group stops")
         call check(aborts("missing-find"),  "abort: library lookup of a missing group stops")
         call check(aborts("undeclared"),    "abort: config_read of an undeclared key stops")
+        call check(aborts("exp-unknown"),   "abort: an experiment of an unknown kind stops")
+        call check(aborts("exp-badkey"),    "abort: an unknown key in an experiment group stops")
         call check(.not. aborts("valid"),   "abort: a valid group does not stop")
     end subroutine test_aborts
 
@@ -248,6 +273,8 @@ contains
         case ("missing-group"); call config_validate(cfg, "NoSuchDomain", "domain")
         case ("missing-find");  s = config_find(cfg, "no_such_group")
         case ("undeclared");    call config_read(cfg, "ice_grl", "bogus", s, "instance", "ice_yelmo")
+        case ("exp-unknown");   call config_validate_experiment(cfg, "exp_unknown", backend)
+        case ("exp-badkey");    call config_validate_experiment(cfg, "exp_badkey", backend)
         case ("valid");         call config_validate_instance(cfg, "ice_grl", "ice", backend)
         end select
     end subroutine abort_case
@@ -283,8 +310,24 @@ contains
             '    dtt        = 10.0', &
             '/', &
             '&Greenland', &
-            '    grid_hub = "GRL-16KM"', &
-            '    ice      = "ice_grl"', &
+            '    grid_hub    = "GRL-16KM"', &
+            '    ice         = "ice_grl"', &
+            '    experiments = "exp_host" "exp_other"', &
+            '/', &
+            '&exp_host', &
+            '    kind = "host"', &
+            '/', &
+            '&exp_badkey', &
+            '    kind  = "host"', &
+            '    bogus = 1.0', &
+            '/', &
+            '&exp_nokind', &
+            '/', &
+            '&exp_emptykind', &
+            '    kind = ""', &
+            '/', &
+            '&exp_unknown', &
+            '    kind = "nonexistent"', &
             '/', &
             '&ice_grl', &
             '    backend         = "yelmo"', &

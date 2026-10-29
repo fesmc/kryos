@@ -58,7 +58,7 @@ module kryos_config
     end interface config_read
 
     public :: config_init, config_read, config_has, config_find
-    public :: config_validate, config_validate_instance, config_cadence
+    public :: config_validate, config_validate_instance, config_validate_experiment, config_cadence
 
 contains
 
@@ -292,6 +292,50 @@ contains
         if (failed(stat)) backend = ""
     end subroutine config_validate_instance
 
+    subroutine config_validate_experiment(cfg, group, kind, stat)
+        ! Validate an experiment group (core-design 3.9): its `kind` key
+        ! (required) names the template [experiment_<kind>], which with
+        ! [experiment] declares the valid keys. Returns the kind. The twin of
+        ! config_validate_instance.
+        type(config_t),   intent(in)            :: cfg
+        character(len=*), intent(in)            :: group
+        character(len=*), intent(out)           :: kind
+        integer,          intent(out), optional :: stat
+
+        character(len=*), parameter :: proc = "kryos_config::config_validate_experiment"
+        character(len=CFG_NAME_LEN) :: extra
+
+        kind = ""
+        if (present(stat)) stat = 0
+
+        call require_group(cfg, group, "experiment", proc, stat)
+        if (failed(stat)) return
+        if (.not. nml_has_param(trim(cfg%par_file), trim(group), "kind")) then
+            call fesm_error(proc, "required key 'kind' is not set in experiment group &"//trim(group), &
+                            "known kinds: "//known_backends(cfg, "experiment")//"; par file "//trim(cfg%par_file), stat)
+            return
+        end if
+
+        call nml_read(trim(cfg%par_file), trim(group), "kind", kind, init=.true.)
+        if (len_trim(kind) == 0) then
+            call fesm_error(proc, "experiment &"//trim(group)//" has an empty kind", &
+                            "par file "//trim(cfg%par_file), stat)
+            return
+        end if
+
+        extra = "experiment_"//trim(kind)
+        if (.not. nml_has_group(trim(cfg%defaults_file), trim(extra))) then
+            call fesm_error(proc, "experiment &"//trim(group)//": kind '"//trim(kind)// &
+                            "' has no template &"//trim(extra)//" in "//trim(cfg%defaults_file), &
+                            "known kinds: "//known_backends(cfg, "experiment"), stat)
+            kind = ""
+            return
+        end if
+
+        call config_validate(cfg, group, "experiment", extra, stat=stat)
+        if (failed(stat)) kind = ""
+    end subroutine config_validate_experiment
+
     ! =========================================================================
     ! Cadence of an instance
     ! =========================================================================
@@ -346,7 +390,8 @@ contains
     end subroutine require_group
 
     function known_backends(cfg, component) result(list)
-        ! The backends with a template [<component>_<backend>], blank separated.
+        ! The backends with a template [<component>_<backend>], blank separated
+        ! (also the kinds of "experiment").
         type(config_t),   intent(in) :: cfg
         character(len=*), intent(in) :: component
         character(len=:), allocatable :: list

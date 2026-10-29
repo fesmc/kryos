@@ -69,6 +69,7 @@
     shelf      = ""
     geothermal = ""
     sediments  = ""
+    experiments = ""                           ! experiment groups, in call order (core-design 3.9); "" = none
 /
 
 &instance
@@ -80,6 +81,14 @@
     out_2D   = "none"
     out_1D   = "none"
     out_vars = ""                              ! "" = all exports
+/
+
+&experiment
+    kind = ""                                  ! required: the experiment kind; its keys are in [experiment_<kind>]
+/
+
+&experiment_host
+    ! Experiments a host program passes to run_init (experiment_proto_t): any key is the host's.
 /
 
 &forcing_tsgen

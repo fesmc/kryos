@@ -44,6 +44,7 @@ kvg(G, g) = Dict(k.name => NL.parse_value(k.raw) for k in G[g].keys)
         d = kv(G, "Testland")
         @test d["ice"] == "ice_tes" && d["sediments"] == "sed_tes" && d["grid_hub"] == "TST-16KM"
         @test d["out_2D"] == "out_2D" && d["basins"] == "Zwally2012"
+        @test d["experiments"] == ""                       # no experiment plugin yet: the template default
         @test kv(G, "globe") == Dict("forcing" => "forcing", "geo" => "geo_glob")
     end
 
