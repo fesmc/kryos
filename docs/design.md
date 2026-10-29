@@ -365,17 +365,24 @@ on the Levante test cases.
    `yelmox_Antarctica` and `yelmox_North` (NH-32KM). Narrowed 2026-10-29 to
    the science case (VILMA2 global + NH and ANT domains); the other yelmox
    bases (GRP, LIS, PYR, SRG, esm, rembo), `data` backends beyond what the
-   coupling needs, smb_simple and the `dp` hub are deferred
+   coupling needs and the `dp` hub are deferred; smb_simple is back in scope
+   (science-case surface option)
    (`docs/dev/phase2-plan.md`; smbpal dropped: deprecated, chion is its
    successor).
-3. Globe: `forcing`, N domains, `ocean = obm`. Target: `yelmox_bipolar`.
+3. Globe: N domains in one run (two for the science case: NH-32KM and
+   ANT-32KM), shared `forcing`, the `bsl` reduction, N-domain output and
+   restart, output precision (ncio rounding; restarts lossless). Narrowed
+   2026-10-29: `ocean = obm` and `yelmox_bipolar` come much later
+   (`docs/dev/phase3-plan.md`).
 4. `geo = vilma2` (VILMA2's own gaps: export `u` and `N` separately,
    barystatic definition, `libvilma.a`, FesmData viscosity format). The
    global reference topography is assembled at runtime, not a FesmData
    product: the background dataset of the globe (a run input on a global
    grid) with the domain references gathered onto it exactly as in an update
-   step (§6 mechanism, item 1). Target: VILMA2 global + NH-32KM +
-   ANT with obm and the bipolar forcing (the science case). Global GIA is
+   step (§6 mechanism, item 1); background PaleoMIST (0 ka reference,
+   history back to 80 ka). Target (the science case): VILMA2 global + Yelmo
+   NH-32KM + ANT-32KM, climate and surface from snapshots + tsgen + chion or
+   smb_simple (`docs/dev/phase4-plan.md`). Global GIA is
    built in kryos only; yelmox gets none (its VILMA2 plan,
    `yelmox/docs/_vilma2-backend-plan.md`, is superseded except for the
    VILMA2 and FesmData changes).

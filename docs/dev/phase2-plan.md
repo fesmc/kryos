@@ -8,8 +8,9 @@ climate; smbpal and smb_simple; experiments plugins. Target: all yelmox base
 configs." smbpal is dropped (Q14: deprecated, chion is its successor).
 
 **Scope narrowed 2026-10-29 (Alex).** The science case is VILMA2 global +
-two Yelmo domains, NH (`yelmox_North`, NH-32KM, snapshots + chion) and ANT,
-with obm and the bipolar forcing (`design.md` §14 phases 3-4). Global GIA is
+two Yelmo domains, NH (`yelmox_North`, NH-32KM) and ANT (32 km), climate and
+surface from snapshots + tsgen + chion or smb_simple (`design.md` §14 phases
+3-4); obm and the bipolar setup come much later (decided 2026-10-29). Global GIA is
 built in kryos only (yelmox gets none). Phase 2 keeps:
 
 - WP0: stack S4, its identity checks (grl, ant); maps and R0/R1/R2'
@@ -20,8 +21,10 @@ built in kryos only (yelmox gets none). Phase 2 keeps:
 
 Deferred (no gate in phase 2): GRP, LIS, PYR, SRG, eANT, eGRL, rGRL and their
 packages WP4 rest (recon_ref, marine_H, kill_shelves), WP5, WP6 (except what
-the globe needs in phase 3-4), WP7, WP8, WP9, WP10, WP12, WP13, WP14. The
+the globe needs in phase 3-4), WP8, WP9, WP10, WP12, WP13, WP14. The
 sections below keep the full plan as the record; §4 has the new order.
+WP7 (smb_simple + climate `tsl_ann`) is back in scope (2026-10-29), placed by
+`phase3-plan.md`.
 
 Refs: `yx` = yelmox `topo-prep` (`~/models/yelmox/.claude/worktrees/topo-prep`,
 74f3a2b = v2.4 + R2 commit). `contracts`, `core`, `adapters`, `regression` =
