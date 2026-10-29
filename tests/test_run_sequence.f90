@@ -47,7 +47,7 @@ contains
     subroutine rec_init(self, ctx, dom)
         class(recorder_t), intent(inout) :: self
         type(exp_ctx_t),   intent(in)    :: ctx
-        type(domain_t),    intent(in)    :: dom
+        type(domain_t),    intent(inout) :: dom
         associate (u => ctx%time + len(dom%name)); end associate
         self%wants = .true.
     end subroutine rec_init
@@ -80,7 +80,7 @@ contains
     subroutine cnt_init(self, ctx, dom)
         class(counter_t), intent(inout) :: self
         type(exp_ctx_t),  intent(in)    :: ctx
-        type(domain_t),   intent(in)    :: dom
+        type(domain_t),   intent(inout) :: dom
         associate (u => ctx%time + len(dom%name)); end associate
         self%restart = .true.
         self%wants(HOOK_STEP_BEGIN) = .true.
@@ -126,7 +126,7 @@ contains
     subroutine skip_init(self, ctx, dom)
         class(skip_prepare_t), intent(inout) :: self
         type(exp_ctx_t),       intent(in)    :: ctx
-        type(domain_t),        intent(in)    :: dom
+        type(domain_t),        intent(inout) :: dom
         associate (u => ctx%time + len(dom%name)); end associate
         select type (c => dom%ice%c)
         type is (yelmo_ice_t)

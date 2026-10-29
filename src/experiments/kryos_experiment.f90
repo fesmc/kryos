@@ -21,7 +21,7 @@ module kryos_experiment
 
     use precision,       only: dp
     use fesm_log,        only: LOG_INFO, log_msg, log_set_prefix, fesm_error, to_str
-    use fesm_clock,      only: clock_t, clock_time, clock_time_rel, clock_dtt
+    use fesm_clock,      only: clock_t, clock_time, clock_time_rel, clock_dtt, cadence_dt_years
     use phys_constants,  only: phys_const_class
     use kryos_component, only: NAME_LEN, PATH_LEN, NLIB
     use kryos_config,    only: config_t, config_read, config_validate_experiment
@@ -43,6 +43,7 @@ module kryos_experiment
         character(len=NAME_LEN) :: instance = "", kind = "", domain = ""   ! instance = the experiment's group
         type(phys_const_class)  :: cnst
         real(dp) :: time = 0.0_dp, time_rel = 0.0_dp, dtt = 0.0_dp, sec_year = 0.0_dp   ! at t0
+        real(dp) :: dt_ice = 0.0_dp                 ! [yr] the domain's ice cadence step: dtt = every step, 0 = off or no ice
     end type exp_ctx_t
 
     type, public :: hook_time_t                     ! the `st` of a hook (the RUN's step)
@@ -58,7 +59,8 @@ module kryos_experiment
         logical :: wants(NHOOK) = .false.           ! set in init; the dispatcher skips the other hooks
         logical :: restart = .false.                ! stateful: kryos_restart keeps its files
     contains
-        procedure(x_init), deferred :: init         ! (ctx, dom): read the group, check the domain's instances, set wants
+        procedure(x_init), deferred :: init         ! (ctx, dom): read the group, check the domain's instances, set wants;
+                                                    ! may change the domain's instances (dom is inout)
         procedure(x_hook), deferred :: hook         ! (dom, id, st): select case (id) inside
         procedure :: restart_write => experiment_restart_write    ! (dir, t): default nothing
         procedure :: restart_read  => experiment_restart_read
@@ -71,7 +73,7 @@ module kryos_experiment
             import :: experiment_t, exp_ctx_t, domain_t
             class(experiment_t), intent(inout) :: self
             type(exp_ctx_t),     intent(in)    :: ctx
-            type(domain_t),      intent(in)    :: dom    ! keep no pointer into it
+            type(domain_t),      intent(inout) :: dom    ! keep no pointer into it
         end subroutine x_init
 
         subroutine x_hook(self, dom, id, st)
@@ -104,7 +106,7 @@ module kryos_experiment
         end subroutine experiment_create
     end interface
 
-    public :: experiment_create, experiment_adopt
+    public :: experiment_create, experiment_adopt, experiment_identity, experiment_require_ice_every_step
     public :: experiments_create, experiments_hook, experiments_count, experiments_describe, experiments_end
     public :: experiments_restart_write, experiments_restart_read, experiments_restart_files
 
@@ -156,6 +158,16 @@ contains
     ! Factory support
     ! =========================================================================
 
+    subroutine experiment_identity(slot, ctx)
+        ! The identity the factory and the adopt give every experiment: the
+        ! group's name, kind and the domain (from ctx).
+        type(experiment_slot_t), intent(inout) :: slot
+        type(exp_ctx_t),         intent(in)    :: ctx
+        slot%c%name   = ctx%instance
+        slot%c%kind   = ctx%kind
+        slot%c%domain = ctx%domain
+    end subroutine experiment_identity
+
     subroutine experiment_adopt(slot, proto, ctx)
         ! A host-provided extension of experiment_t, identified as the factory
         ! would (same shape as ice_adopt).
@@ -167,10 +179,23 @@ contains
         ! allocated with mold= from it keeps a pointer into that frame (its
         ! deallocation later reads a dead stack).
         allocate(slot%c, mold=proto)
-        slot%c%name   = ctx%instance
-        slot%c%kind   = ctx%kind
-        slot%c%domain = ctx%domain
+        call experiment_identity(slot, ctx)
     end subroutine experiment_adopt
+
+    subroutine experiment_require_ice_every_step(ctx, what)
+        ! For an experiment that acts every step the ice integrates (the
+        ! calibrations, relax): stops at init when the domain's ice is not
+        ! due at every step of the run (no ice, off, or a cadence other than dtt).
+        type(exp_ctx_t),  intent(in) :: ctx
+        character(len=*), intent(in) :: what
+
+        if (ctx%dt_ice == ctx%dtt .and. ctx%dtt > 0.0_dp) return
+        call fesm_error("kryos_experiment::experiment_require_ice_every_step", &
+                        "experiment `"//trim(ctx%instance)//"` ("//trim(ctx%kind)//"): "//trim(what)// &
+                        " needs the ice to run at every step", &
+                        "domain &"//trim(ctx%domain)//": the ice's cadence step is "//to_str(ctx%dt_ice)// &
+                        " yr (0: off or no ice), the run step dtt = "//to_str(ctx%dtt)//" yr; set dt = 0 in the ice instance")
+    end subroutine experiment_require_ice_every_step
 
     ! =========================================================================
     ! Dispatchers: the only call sites of the bindings
@@ -184,7 +209,7 @@ contains
         ! experiments of kind "host", selected by the group name.
         type(experiment_list_t),  intent(out)          :: list
         type(config_t),           intent(in)           :: cfg
-        type(domain_t),           intent(in)           :: dom
+        type(domain_t),           intent(inout)        :: dom     ! an experiment's init may adjust the instances
         type(clock_t),            intent(in)           :: clk
         type(phys_const_class),   intent(in)           :: cnst
         type(experiment_proto_t), intent(in), optional :: protos(:)
@@ -221,6 +246,8 @@ contains
             ctx%time_rel = clock_time_rel(clk)
             ctx%dtt      = clock_dtt(clk)
             ctx%sec_year = clk%sec_year
+            ctx%dt_ice   = 0.0_dp
+            if (allocated(dom%ice%c)) ctx%dt_ice = cadence_dt_years(dom%ice%c%cadence, clk)
             if (present(protos)) then
                 call experiment_create(list%s(i), ctx, protos)
             else

@@ -42,6 +42,13 @@ module test_experiment_toys
         procedure :: hook => need_hook
     end type need_toy_t
 
+    type, extends(experiment_t), public :: need_step_t    ! stops at init unless the ice runs every step
+        real(dp) :: dt_seen = -1.0_dp                    ! ctx%dt_ice as init saw it
+    contains
+        procedure :: init => step_init
+        procedure :: hook => step_hook
+    end type need_step_t
+
     type, extends(experiment_t), public :: counter_t      ! stateful: n, in <name>_toy.dat
         integer :: n = 0
     contains
@@ -74,7 +81,7 @@ contains
     subroutine rec_init(self, ctx, dom)
         class(recorder_t), intent(inout) :: self
         type(exp_ctx_t),   intent(in)    :: ctx
-        type(domain_t),    intent(in)    :: dom
+        type(domain_t),    intent(inout) :: dom
         associate (u => ctx%time + len(dom%name)); end associate
         select case (trim(self%name))
         case ("rec_a");  self%wants = .true.
@@ -96,7 +103,7 @@ contains
     subroutine need_init(self, ctx, dom)
         class(need_toy_t), intent(inout) :: self
         type(exp_ctx_t),   intent(in)    :: ctx
-        type(domain_t),    intent(in)    :: dom
+        type(domain_t),    intent(inout) :: dom
         associate (u => ctx%time); end associate
         if (.not. allocated(dom%ice%c)) then
             call fesm_error("test_experiment::need_toy", "experiment "//trim(self%name)//" needs an ice instance", &
@@ -118,10 +125,27 @@ contains
         associate (u => len(dom%name) + id + st%t1 + len_trim(self%name)); end associate
     end subroutine need_hook
 
+    subroutine step_init(self, ctx, dom)
+        class(need_step_t), intent(inout) :: self
+        type(exp_ctx_t),    intent(in)    :: ctx
+        type(domain_t),     intent(inout) :: dom
+        associate (u => len(dom%name)); end associate
+        self%dt_seen = ctx%dt_ice
+        call experiment_require_ice_every_step(ctx, "the toy")
+        self%wants(HOOK_STEP_BEGIN) = .true.
+    end subroutine step_init
+    subroutine step_hook(self, dom, id, st)
+        class(need_step_t), intent(inout) :: self
+        type(domain_t),     intent(inout) :: dom
+        integer,            intent(in)    :: id
+        type(hook_time_t),  intent(in)    :: st
+        associate (u => len(dom%name) + id + st%t1 + len_trim(self%name)); end associate
+    end subroutine step_hook
+
     subroutine cnt_init(self, ctx, dom)
         class(counter_t), intent(inout) :: self
         type(exp_ctx_t),  intent(in)    :: ctx
-        type(domain_t),   intent(in)    :: dom
+        type(domain_t),   intent(inout) :: dom
         associate (u => ctx%time + len(dom%name)); end associate
         self%restart = .true.
         self%wants(HOOK_STEP_BEGIN) = .true.
@@ -181,7 +205,7 @@ program test_experiment
     !     reads its state back; a stateless one writes nothing.
 
     use precision,       only: dp
-    use fesm_clock,      only: clock_t, clock_init, clock_start
+    use fesm_clock,      only: clock_t, clock_init, clock_start, cadence_init
     use fesm_log,        only: log_set_level, LOG_WARN
     use phys_constants,  only: phys_const_class, phys_const_set
     use kryos_component, only: PATH_LEN
@@ -279,6 +303,16 @@ contains
         call experiments_create(list, cfg, d, clk, cnst, [proto("need_toy", "needs")])
         call check("select type on the right ice type: created, wants STEP_BEGIN", &
                    experiments_count(list) == 1 .and. list%s(1)%c%wants(HOOK_STEP_BEGIN))
+
+        d%name = "StepEvery"                      ! the ice due every step: ctx%dt_ice = dtt, the guard passes
+        call toy_ice_domain(d, "every")
+        call experiments_create(list, cfg, d, clk, cnst, [proto("need_step", "needstep")])
+        call check("ice at every step: the guard passes, ctx%dt_ice = dtt", experiments_count(list) == 1 .and. &
+                   list%s(1)%c%wants(HOOK_STEP_BEGIN))
+        select type (c => list%s(1)%c)
+        type is (need_step_t)
+            call check("ctx%dt_ice is the ice cadence step [yr]", c%dt_seen == 10.0_dp)
+        end select
     end subroutine test_create_and_hooks
 
     subroutine test_restart()
@@ -326,6 +360,9 @@ contains
         call stops("duplicate",       "listed twice", "a name listed twice")
         call stops("no_proto",        "no host experiment named", "a host experiment without a prototype")
         call stops("missing_file",    "is not in the bundle", "a restart file missing from the bundle")
+        call stops("dt_slow",         "needs the ice to run at every step", "the ice on a 20 yr cadence, dtt = 10")
+        call stops("dt_off",          "needs the ice to run at every step", "the ice off")
+        call stops("dt_none",         "needs the ice to run at every step", "no ice instance")
         call stops("ok",              "", "a valid case does not stop", ok_expected=.true.)
     end subroutine test_stops
 
@@ -344,6 +381,17 @@ contains
             d%name = "Toyland"
             allocate(toy_ice_t :: d%ice%c)
             call experiments_create(list, cfg, d, clk, cnst, [proto("need_toy", "needs")])
+        case ("dt_slow")
+            d%name = "StepSlow"
+            call toy_ice_domain(d, "slow")
+            call experiments_create(list, cfg, d, clk, cnst, [proto("need_step", "needstep")])
+        case ("dt_off")
+            d%name = "StepOff"
+            call toy_ice_domain(d, "off")
+            call experiments_create(list, cfg, d, clk, cnst, [proto("need_step", "needstep")])
+        case ("dt_none")
+            d%name = "StepOff"
+            call experiments_create(list, cfg, d, clk, cnst, [proto("need_step", "needstep")])
         case ("unknown_kind")
             d%name = "BadKind"
             call experiments_create(list, cfg, d, clk, cnst, host_protos())
@@ -362,6 +410,23 @@ contains
             call experiments_restart_read(list, dir//"empty", 100.0_dp)
         end select
     end subroutine abort_case
+
+    subroutine toy_ice_domain(d, mode)
+        ! A toy ice with a cadence of the given kind, registered on a clock of the
+        ! same step that is not started (the run's clock is).
+        type(domain_t),   intent(inout) :: d
+        character(len=*), intent(in)    :: mode
+        type(clock_t) :: c2
+
+        if (allocated(d%ice%c)) deallocate(d%ice%c)
+        allocate(toy_ice_t :: d%ice%c)
+        call clock_init(c2, 0.0_dp, 100.0_dp, 10.0_dp, "365_day", "tropical")
+        select case (mode)
+        case ("every"); call cadence_init(d%ice%c%cadence, c2, "toy_ice", .true.)
+        case ("slow");  call cadence_init(d%ice%c%cadence, c2, "toy_ice", 20.0_dp)
+        case ("off");   call cadence_init(d%ice%c%cadence, c2, "toy_ice", .false.)
+        end select
+    end subroutine toy_ice_domain
 
     subroutine stops(name, text, label, expect_text, ok_expected)
         ! The child `abort <name>` exits non-zero and its output has `text`
@@ -407,6 +472,7 @@ contains
         select case (what)
         case ("recorder"); allocate(recorder_t :: p%c)
         case ("needs");    allocate(need_toy_t :: p%c)
+        case ("needstep"); allocate(need_step_t :: p%c)
         case ("counter");  allocate(counter_t :: p%c)
         end select
     end function proto
@@ -438,6 +504,10 @@ contains
         write(u,'(a)') '&rec_c', '    kind = "host"', '/'
         write(u,'(a)') '&cnt', '    kind = "host"', '/'
         write(u,'(a)') '&need_toy', '    kind = "host"', '/'
+        write(u,'(a)') '&StepEvery', '    experiments = "need_step"', '/'
+        write(u,'(a)') '&StepSlow', '    experiments = "need_step"', '/'
+        write(u,'(a)') '&StepOff', '    experiments = "need_step"', '/'
+        write(u,'(a)') '&need_step', '    kind = "host"', '/'
         write(u,'(a)') '&exp_unknown', '    kind = "nonexistent"', '/'
         write(u,'(a)') '&exp_badkey', '    kind  = "host"', '    bogus = 1.0', '/'
         close(u)
