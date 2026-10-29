@@ -338,3 +338,37 @@ Results (all jobs COMPLETED, exit 0):
   output 220 (178), geo 310 (309), ice 469 (463), climate 13.5 (9.5),
   surface 96 (93), shelf 15 (13). The remaining output difference is the extra
   kryos files (`_ts` every 10 yr, default-writer 2D every 100 yr): their opens.
+
+## WP0: stack S4, NOR baselines, data check (2026-10-29)
+
+Scope narrowed to the science case (VILMA2 global + NH-32KM + ANT,
+`phase2-plan.md` top): S4, its identity checks, NOR only. Reports:
+`gate-reports/wp0-baselines.md`, `gate-reports/wp0-data-check.md`.
+
+- yelmox `topo-prep` **5ac89c8**: `[topo]` keys in the other 8 bases
+  (Q1, per-base values; PYR `grad_lim_zb = 1.0`, others 0.5). Not pushed
+  (bundles in `$G/bundles`).
+- Stack **S4** = S3 + yelmo `topo-prepared` ea90fee7 (vm-m16 restart fix)
+  + rembo1 v1.3 linked (`rembo=1`); `tools/setup_S4.sh`, binaries
+  `stacks/S4/bin/{R1,R2}`. Identity (`--restarts`, all PASS): R1(S4) vs R0,
+  R2(S4) vs R2, K(S4) vs K(S3), grl and ant. kryos's links and
+  `run_kryos.sh` take `STACK=S4`.
+- Maps: `$G/maps/S4` = `maps/S` + 8 pairs (mapgen R0 runs on v24), frozen.
+  NOR needs `bilin_GLOBAL-1DEG_NH-32KM`; the others were made before the cut.
+- NOR (1 kyr, gate `-p`, ~11 min per run): R1 == R0 (cont, c00), cont2 ==
+  cont for R0, R1, R2'; R1 and R2' chunk == cont (vm-m16 fix). R0 chunk vs
+  cont and R1 vs R0 c01 differ from t = 510 (v2.4 has no vm-m16 fix;
+  expected). Gate `nor` is K == R2' (`$G/ref/nor/yx-5ac89c8/S4`).
+- R2' vs R0, NOR t = 0: `H_ice_ref` differs (5436 cells, ≤ 10 m in 5425,
+  max 50 m) because recon sets `H_ice_ref = H_ice` after its recipe, which
+  starts from Yelmo's initial ice (R0 raises 0.1-10 m ice to 10 m, R2'
+  takes the prepared field); initial `H_ice` differs after the recipe's
+  200 yr of dynamics. grl/ant (none/equil) keep the prepared reference.
+  WP4 reproduces the recipe on the hub's prepared field.
+- Open: the hub log reports 8385 cells removed by `H_ice_min` on NH-32KM,
+  the raw TOPO-GEBCO2026 file has 1313 cells with 0 < H < 1 m; the hub field
+  before preparation is not the raw file (to trace in WP4).
+- Data check (Q17): every file of the 8 bases resolves through the gate
+  links; no links made. Three yelmox series files are only in the stack's
+  `input/` (PYR, GRP, rGRL: deferred bases).
+- Julia compares on Levante need `julia +1.13`.
