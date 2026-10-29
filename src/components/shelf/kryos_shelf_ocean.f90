@@ -30,7 +30,7 @@ module kryos_shelf_ocean
     implicit none
 
     private
-    public :: shelf_corr_t, shelf_corr_init, shelf_corr_file, shelf_corr_restart_write, shelf_corr_restart_read
+    public :: shelf_corr_init, shelf_corr_file, shelf_corr_restart_write, shelf_corr_restart_read
 
     character(len=*), parameter :: DEFAULT_GROUP = "shelf_corr"
     integer, parameter :: N_CORR_MAX = 50, LEN_EXPR = 1000
