@@ -154,7 +154,7 @@ else
     kryos_exp_opt_cb_ref_obj = $(objdir)/kryos_exp_opt_cb_ref_stub.o
     kryos_exp_opt_tf_obj = $(objdir)/kryos_exp_opt_tf_stub.o
     kryos_exp_recon_obj = $(objdir)/kryos_exp_recon_stub.o
-    test_skip += $(testdir)/test_run_sequence.f90
+    test_skip += $(testdir)/test_run_sequence.f90 $(testdir)/test_exp_opt_tf.f90
 endif
 
 ifeq ($(fastisostasy), 1)
