@@ -12,4 +12,5 @@ include("mini_yelmox.jl")
     include("test_gate.jl")
     include("test_globe_ice.jl")
     include("test_kk.jl")
+    include("test_register.jl")
 end

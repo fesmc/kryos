@@ -35,6 +35,7 @@ synchronised copies in `input/` (`vilma_defaults.nml`, `vilma-variables.md`) com
 | `make kryos-static` | `libkryos/include/libkryos.a` and the `.mod`/`.smod` files in `libkryos/include` |
 | `make kryos` | `libkryos/bin/kryos.x`, the driver (`drivers/kryos.f90`) |
 | `make check` | `make input-check`, then every `tests/test_*.f90`, linked against libkryos, then runs them; fails if one exits non-zero |
+| `make check-long` | the long tests, left out of `make check`: `tests/test_run_domains.f90` (two domains, GRL-16KM + ANT-32KM, about 8 min; needs Julia with the project of `tools/`, else it reports OPEN and passes; its header lists the checks) |
 | `make sync-input` | copies the library sources over the synchronised copies in `input/` (`input/sync.txt`; [running.md](running.md)) |
 | `make input-check` | fails naming every copy in `input/` that differs from its source |
 | `make deps-check` | fails with instructions if a dependency archive is missing |

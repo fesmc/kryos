@@ -214,8 +214,12 @@ kryos: $(objdir)/libkryos.a | $(bindir)
 # Tests: every tests/test_*.f90 is a program linked against libkryos that
 # exits non-zero on failure. `make check` builds and runs them all, except the
 # tests that need a backend library switched off (test_skip, config/common.mk).
-test_srcs = $(filter-out $(test_skip),$(wildcard $(testdir)/test_*.f90))
+# The long tests (minutes) run with `make check-long`, not `make check`.
+long_tests = $(testdir)/test_run_domains.f90
+test_srcs = $(filter-out $(test_skip) $(long_tests),$(wildcard $(testdir)/test_*.f90))
 test_exes = $(patsubst $(testdir)/%.f90,$(bindir)/%.x,$(test_srcs))
+long_srcs = $(filter-out $(test_skip),$(filter $(long_tests),$(wildcard $(testdir)/test_*.f90)))
+long_exes = $(patsubst $(testdir)/%.f90,$(bindir)/%.x,$(long_srcs))
 
 $(bindir)/%.x: $(testdir)/%.f90 $(objdir)/libkryos.a | $(bindir)
 	$(FC) $(DFLAGS) $(FFLAGS) $(INC_FESMUTILS) $(INC_BACKENDS) -o $@ $< \
@@ -229,6 +233,14 @@ check: input-check $(test_exes)
 	if [ $$failed -ne 0 ]; then exit 1; fi; \
 	echo " "; echo "    make check: all tests passed."; echo " "
 
+check-long: input-check $(long_exes)
+	@failed=0; for t in $(long_exes); do \
+	  echo "--- $$t"; \
+	  ./$$t || { echo "*** FAILED: $$t"; failed=1; }; \
+	done; \
+	if [ $$failed -ne 0 ]; then exit 1; fi; \
+	echo " "; echo "    make check-long: all tests passed."; echo " "
+
 # The synchronised copies of input/ (input/sync.txt): sync-input copies each
 # source over its copy; input-check (run first by check) fails on a stale copy.
 sync-input:
@@ -237,7 +249,7 @@ sync-input:
 input-check:
 	@sh config/sync_input.sh check input/sync.txt $(input_roots)
 
-.PHONY : build-info usage kryos-static kryos check clean cleanall depend deps-check deps-static \
+.PHONY : build-info usage kryos-static kryos check check-long clean cleanall depend deps-check deps-static \
          fesmutils-static yelmo-static isostasy-static chion-static insol-static vilma-static sync-input input-check
 usage:
 	@echo ""
@@ -245,7 +257,8 @@ usage:
 	@echo ""
 	@echo " make kryos-static : $(objdir)/libkryos.a and the .mod files in $(objdir)"
 	@echo " make kryos        : $(bindir)/kryos.x, the driver"
-	@echo " make check        : input-check, then builds and runs every tests/test_*.f90"
+	@echo " make check        : input-check, then builds and runs every tests/test_*.f90 except the long ones"
+	@echo " make check-long   : the long tests (test_run_domains: two domains, about 8 min)"
 	@echo " make sync-input   : copies the library sources over the input/ copies (input/sync.txt)"
 	@echo " make input-check  : fails if an input/ copy differs from its source"
 	@echo " make deps-check   : fails with instructions if a dependency is not built"

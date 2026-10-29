@@ -11,4 +11,5 @@ g=$1; SHA=$2; STACK=${3:-S5b}
 OUT=$G/reports/KK; mkdir -p $OUT
 RUNS=$G/runs/$g/kx-$SHA/$STACK
 julia +1.13 --project=$TOOLS/tools $TOOLS/tools/bin/kryos-gate-kk.jl check $g $RUNS --md $OUT/$g-$SHA-$STACK.md > $OUT/$g-$SHA-$STACK.log 2>&1
-echo "$g | $SHA | $STACK | $(sed -n 1p $OUT/$g-$SHA-$STACK.md) | exit $?" >> $OUT/summary.txt
+rc=$?
+echo "$g | $SHA | $STACK | $(sed -n 1p $OUT/$g-$SHA-$STACK.md) | exit $rc" >> $OUT/summary.txt
