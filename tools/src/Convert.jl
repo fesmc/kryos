@@ -40,6 +40,7 @@ import FesmUtils.Namelist as NL
 
 export convert_yelmox, convert_file, Conversion, ConversionError, write_par, write_report,
        account_summary, validate_conversion, check_roundtrip, par_header, CONVERTER_VERSION, DEFAULT_SPEC
+export merge_par, write_merged, Merged, merge_report, split_merged
 
 const CONVERTER_VERSION = "0.1"
 const DEFAULT_SPEC = normpath(joinpath(@__DIR__, "..", "data", "yelmox2kryos.toml"))
@@ -1538,6 +1539,337 @@ function convert_file(; out::AbstractString, report::AbstractString="", kw...)
     write_par(out, conv)
     isempty(report) || write_report(report, conv)
     return conv
+end
+
+# ---------------------------------------------------------------------------
+# Merging converted single-domain files into one N-domain file (phase 3 WP1)
+# ---------------------------------------------------------------------------
+
+"""
+A merged par file: the groups, the domains in file order, and the accounting of
+the merge (`renamed`: domain, old, new; `repointed`: group, key, old, new;
+`resolved`: `group.key`, the value of each file, the value taken; `runwide`:
+the run-wide groups, `sources`: the files).
+"""
+struct Merged
+    groups::Vector{NL.Group}
+    domains::Vector{String}
+    suffixes::Vector{String}
+    sources::Vector{String}
+    renamed::Vector{NTuple{3,String}}
+    repointed::Vector{NTuple{4,String}}
+    resolved::Vector{Tuple{String,Vector{String},String}}
+    runwide::Vector{String}
+    header::String
+end
+
+"""
+The groups every domain of a run shares (taken once, must agree between the
+files): the run, clock, globe and schedule groups, the global instances, the
+bsl and the forcing coefficients.
+"""
+is_runwide(name::AbstractString, wide::AbstractVector{<:AbstractString}) =
+    name in wide || startswith(name, "out_") || startswith(name, "coef_")
+
+# Keys that name a group, as (prefix of the group name, keys). The value `v` of a key with prefix
+# `p` names the group `p*v`. Plain: the domain's component keys, the instance keys that name
+# backend groups, the `nml_*` keys of the physics groups and the field groups of a snapshot.
+const MERGE_REF_KEYS = [
+    "" => ["topo", "regions", "ice", "geo", "climate", "surface", "shelf", "geothermal", "sediments", "experiments",
+           "yelmo", "isos", "snapshots", "taper", "bias", "surface_chion", "chion", "orbit", "marine_shelf", "corr",
+           "Q_geo", "H_sed"],
+    "term_" => ["terms"],
+    "snapshot_" => ["reference", "snap0", "snap1"],
+]
+
+"The prefix with which the value of key `key` of group `group` names a group, or `nothing` (not a reference)."
+function ref_prefix(group::AbstractString, key::AbstractString)
+    for (p, ks) in MERGE_REF_KEYS
+        key in ks && return p
+    end
+    startswith(key, "nml_") && return ""
+    startswith(group, "snapshot_") && key in ("tas", "pr", "zs", "to", "so") && return ""
+    return nothing
+end
+
+"`raw` with the quoted element `from` replaced by `to` (either quote character)."
+requote(raw::AbstractString, from::AbstractString, to::AbstractString) =
+    replace(raw, "\"$from\"" => "\"$to\"", "'$from'" => "'$to'")
+
+"The quoted string elements of a key's raw value."
+function str_elements(raw::AbstractString)
+    els = NL.elements(raw)
+    return [t for (t, q) in els if q]
+end
+
+"""
+The suffix of a converted single-domain file: what the instance names of its domain group share after the
+component (`ice_nor`, `geo_nor`, ... give `nor`).
+"""
+function domain_suffix(dg::NL.Group, file::AbstractString)
+    sfx = Set{String}()
+    for k in dg.keys
+        k.name in ("ice", "geo", "climate", "surface", "shelf", "geothermal", "sediments") || continue
+        v = NL.parse_value(k.raw)
+        (v isa AbstractString && !isempty(v)) || continue
+        i = findfirst('_', v)
+        i === nothing && fail("$file: instance $(k.name) = \"$v\" of &$(dg.name) has no `_<suffix>`: cannot name the domain's groups")
+        push!(sfx, v[i+1:end])
+    end
+    length(sfx) == 1 || fail("$file: the instances of &$(dg.name) do not share one suffix ($(join(sort(collect(sfx)), ", "))): " *
+                              "cannot name the domain's groups")
+    return only(sfx)
+end
+
+kv_of(g::NL.Group) = Dict(k.name => k for k in g.keys)
+
+"""
+    merge_par(files; resolve=Dict(), wide=[...]) -> Merged
+
+Merge converted single-domain par files into one file for a run with all their domains
+(`[kryos] domains` in the order of `files`).
+
+- The run-wide groups (`[kryos]`, `[clock]`, `[globe]`, `[forcing]`, `[geo_glob]`, `[barysealevel]`,
+  `[out_*]`, `[coef_*]`) are taken once and must agree: a key with different values in two files
+  stops the merge, naming both, unless `resolve` gives its value (`"group.key" => raw text`, recorded in the
+  header). `[kryos] domains` lists the domains and `[forcing] coefs` the union of the coefficients.
+- Every other group belongs to its file's domain. A name that two files both have is renamed with
+  the domain's suffix (`ytopo` -> `ytopo_nor`; a snapshot `pd` -> `pd_nor`, i.e. `snapshot_pd_nor`) and the keys that name
+  the group are repointed (`MERGE_REF_KEYS`); a name only one file has is kept.
+- Every file must be a single-domain file with the groups of its domain (the instance groups, the groups they name).
+"""
+function merge_par(files::AbstractVector{<:AbstractString}; resolve::AbstractDict=Dict{String,String}(),
+                   wide::AbstractVector{<:AbstractString}=["kryos", "clock", "globe", "forcing", "geo_glob", "barysealevel"])
+    length(files) >= 2 || fail("merge_par: need at least two files")
+    res = Dict{String,String}(String(k) => String(v) for (k, v) in resolve)
+    used_res = Set{String}()
+    parsed = [NL.read_namelist(f) for f in files]
+    gds = [NL.group_dict(g) for g in parsed]
+    doms = String[]; sfxs = String[]
+    for (i, f) in enumerate(files)
+        haskey(gds[i], "kryos") || fail("$f: no &kryos group")
+        d = NL.parse_value(kv_of(gds[i]["kryos"])["domains"].raw)
+        (d isa AbstractString && !isempty(d)) || fail("$f: [kryos] domains = $d: a single-domain file is expected")
+        haskey(gds[i], d) || fail("$f: the domain group &$d is not in the file")
+        push!(doms, d)
+        push!(sfxs, domain_suffix(gds[i][d], f))
+    end
+    length(unique(doms)) == length(doms) || fail("the files have the same domain ($(join(doms, ", "))): $(join(files, ", "))")
+    length(unique(sfxs)) == length(sfxs) || fail("the domains $(join(doms, ", ")) have the same instance suffix ($(join(sfxs, ", ")))")
+
+    # run-wide groups: in the order of the first file, then the new groups of the others
+    wnames = String[]
+    for g in parsed, grp in g
+        is_runwide(grp.name, wide) && !(grp.name in wnames) && push!(wnames, grp.name)
+    end
+    out = NL.Group[]
+    resolved = Tuple{String,Vector{String},String}[]
+    conflicts = String[]
+    for name in wnames
+        have = [(i, gds[i][name]) for i in eachindex(files) if haskey(gds[i], name)]
+        keys = NL.Key[]
+        names = String[]
+        for (_, g) in have, k in g.keys
+            k.name in names || push!(names, k.name)
+        end
+        for kn in names
+            vals = [(i, get(kv_of(g), kn, nothing)) for (i, g) in have]
+            if name == "kryos" && kn == "domains"
+                push!(keys, NL.Key(kn, join(["\"$d\"" for d in doms], " "); comment=join(["domain of " * basename(f) for f in files], ", ")))
+                continue
+            end
+            if name == "forcing" && kn == "coefs"
+                cs = String[]
+                for (_, k) in vals
+                    k === nothing && continue
+                    for c in str_elements(k.raw)
+                        isempty(c) || c in cs || push!(cs, c)
+                    end
+                end
+                raw = isempty(cs) ? "\"\"" : join(["\"$c\"" for c in cs], " ")
+                push!(keys, NL.Key(kn, raw; comment="the union of the coefficients of the files"))
+                continue
+            end
+            present = [(i, k) for (i, k) in vals if k !== nothing]
+            first_k = present[1][2]
+            agree = all(NL.parse_value(k.raw) == NL.parse_value(first_k.raw) for (_, k) in present) && length(present) == length(have)
+            if agree
+                push!(keys, first_k)
+                continue
+            end
+            id = "$name.$kn"
+            if haskey(res, id)
+                push!(used_res, id)
+                push!(resolved, (id, String[strip(string(k === nothing ? "(absent)" : k.raw)) for (_, k) in vals], res[id]))
+                push!(keys, NL.Key(kn, res[id]; comment="resolved: " * join([basename(files[i]) * " " * (k === nothing ? "(absent)" : strip(k.raw)) for (i, k) in vals], ", ")))
+            else
+                push!(conflicts, "&$name $kn (resolve[\"$id\"]):\n" *
+                      join(["    $(files[i]): " * (k === nothing ? "(absent)" : strip(k.raw)) for (i, k) in vals], "\n"))
+                push!(keys, first_k)
+            end
+        end
+        push!(out, NL.Group(name, keys; comment=first(have)[2].comment))
+    end
+    isempty(conflicts) || fail("run-wide keys that differ between the files and are not resolved:\n" * join(conflicts, "\n"))
+    for id in keys(res)
+        id in used_res || fail("resolve $id = $(res[id]): the files agree on it or do not have it (remove it)")
+    end
+
+    # domain-owned groups: the names two files share are renamed
+    owned = [[g for g in parsed[i] if !is_runwide(g.name, wide)] for i in eachindex(files)]
+    ownedn = [Set(g.name for g in o) for o in owned]
+    renamed = NTuple{3,String}[]
+    maps = [Dict{String,String}() for _ in files]
+    for i in eachindex(files), g in owned[i]
+        if any(j -> j != i && g.name in ownedn[j], eachindex(files))
+            new = g.name * "_" * sfxs[i]
+            new in ownedn[i] && fail("$(files[i]): cannot rename &$(g.name) to &$new: the file has it")
+            maps[i][g.name] = new
+            push!(renamed, (doms[i], g.name, new))
+        end
+    end
+    repointed = NTuple{4,String}[]
+    refd = [Set{String}() for _ in files]
+    for i in eachindex(files)
+        for g in owned[i]
+            keys = NL.Key[]
+            for k in g.keys
+                p = ref_prefix(g.name, k.name)
+                raw = k.raw
+                if p !== nothing
+                    for e in unique(str_elements(raw))
+                        isempty(e) && continue
+                        t = p * e
+                        t in ownedn[i] && push!(refd[i], t)
+                        if haskey(maps[i], t)
+                            new = e * "_" * sfxs[i]
+                            raw = requote(raw, e, new)
+                            push!(repointed, (get(maps[i], g.name, g.name), k.name, e, new))
+                        end
+                    end
+                end
+                push!(keys, NL.Key(k.name, raw; comment=k.comment, pre=k.pre))
+            end
+            name = get(maps[i], g.name, g.name)
+            push!(out, NL.Group(name, keys; comment=g.comment, inline=g.inline, post=g.post))
+        end
+    end
+    # a renamed group no key names would be a group the other domain's keys silently cannot reach
+    for i in eachindex(files), (old, _) in maps[i]
+        old in refd[i] || fail("$(files[i]): the renamed group &$old is named by no key (MERGE_REF_KEYS has no entry for the key that names it)")
+    end
+    names = [g.name for g in out]
+    length(unique(names)) == length(names) || fail("merged file: duplicate groups " * join(unique([n for n in names if count(==(n), names) > 1]), ", "))
+
+    hdr = IOBuffer()
+    println(hdr, "kryos par file, merged from ", length(files), " single-domain files by KryosTools.Convert.merge_par (tools/bin/kryos-merge.jl). Generated: do not edit.")
+    println(hdr, "domains: ", join(doms, ", "), " (instance suffixes ", join(sfxs, ", "), ")")
+    for (i, f) in enumerate(files)
+        println(hdr, "from ", doms[i], ": ", basename(f))
+        for g in parsed[i][1:1], l in split(g.pre, '\n')
+            occursin(r"^(yelmox commit|source|-p):", strip(l)) && println(hdr, "  ", strip(l))
+        end
+    end
+    for (id, vals, v) in resolved
+        println(hdr, "resolved ", id, " = ", v, "  (", join(vals, " | "), ")")
+    end
+    println(hdr, "domain-specific groups the files share are renamed with the instance suffix (see the merge report).")
+    return Merged(out, doms, sfxs, String.(files), renamed, repointed, resolved, wnames, rstrip(String(take!(hdr))))
+end
+
+"Write a merged file (the header names the sources and the resolutions)."
+function write_merged(path::AbstractString, m::Merged)
+    mkpath(dirname(abspath(path)))
+    gs = copy(m.groups)
+    NL.write_namelist(path, gs; header=m.header)
+    back = NL.read_namelist(path)
+    [g.name for g in back] == [g.name for g in gs] || fail("merged file $path does not read back to its groups")
+    return path
+end
+
+"""
+    split_merged(m::Merged, i) -> Vector{NL.Group}
+
+The single-domain file of domain `i` inside a merged one (the inverse of `merge_par`, for the checks): the run-wide
+groups and the groups reachable from the domain group through the keys of `MERGE_REF_KEYS`, with the renamed
+groups and the keys that name them restored. Equals the original file's groups except for the run-wide values the other
+domain contributed (`[kryos] domains`, the union of `[forcing] coefs`, resolved keys).
+"""
+function split_merged(m::Merged, i::Integer)
+    gd = NL.group_dict(m.groups)
+    sfx = m.suffixes[i]
+    undo = Dict(r[3] => r[2] for r in m.renamed if r[1] == m.domains[i])
+    domain = m.domains[i]
+    reach = String[domain]
+    queue = [domain]
+    while !isempty(queue)
+        g = gd[popfirst!(queue)]
+        for k in g.keys
+            p = ref_prefix(g.name, k.name)
+            p === nothing && continue
+            for e in str_elements(k.raw)
+                isempty(e) && continue
+                t = p * e
+                (haskey(gd, t) && !is_runwide(t, m.runwide) && !(t in reach)) || continue
+                push!(reach, t); push!(queue, t)
+            end
+        end
+    end
+    out = NL.Group[g for g in m.groups if is_runwide(g.name, m.runwide)]
+    for n in reach
+        g = gd[n]
+        keys = NL.Key[]
+        for k in g.keys
+            p = ref_prefix(g.name, k.name)
+            raw = k.raw
+            if p !== nothing
+                for e in unique(str_elements(raw))
+                    haskey(undo, p * e) || continue
+                    old = undo[p * e][length(p)+1:end]
+                    raw = requote(raw, e, old)
+                end
+            end
+            push!(keys, NL.Key(k.name, raw; comment=k.comment, pre=k.pre))
+        end
+        push!(out, NL.Group(get(undo, n, n), keys; comment=g.comment, inline=g.inline, post=g.post))
+    end
+    return out
+end
+
+"The merge as a markdown report: sources, run-wide groups, renamed groups, repointed keys, resolutions."
+function merge_report(io::IO, m::Merged, out::AbstractString="")
+    println(io, "# Merged par file", isempty(out) ? "" : " `$(basename(out))`")
+    println(io)
+    println(io, "Sources (domain, instance suffix):")
+    for (f, d, s) in zip(m.sources, m.domains, m.suffixes)
+        println(io, "- `", f, "`: ", d, " (`", s, "`)")
+    end
+    println(io)
+    println(io, "Run-wide groups (taken once, the files agree except where resolved): ", join(["`&$n`" for n in m.runwide], ", "), ".")
+    println(io)
+    if !isempty(m.resolved)
+        println(io, "## Resolved keys")
+        println(io)
+        println(io, "| key | values of the files | taken |\n|---|---|---|")
+        for (id, vals, v) in m.resolved
+            println(io, "| `", id, "` | ", join(["`$x`" for x in vals], ", "), " | `", v, "` |")
+        end
+        println(io)
+    end
+    println(io, "## Renamed groups (", length(m.renamed), ")")
+    println(io)
+    for d in m.domains
+        rs = [r for r in m.renamed if r[1] == d]
+        println(io, "- ", d, ": ", isempty(rs) ? "none" : join(["`&$(r[2])` -> `&$(r[3])`" for r in rs], ", "))
+    end
+    println(io)
+    println(io, "## Repointed keys (", length(m.repointed), ")")
+    println(io)
+    println(io, "| group | key | was | now |\n|---|---|---|---|")
+    for r in m.repointed
+        println(io, "| `&", r[1], "` | `", r[2], "` | `", r[3], "` | `", r[4], "` |")
+    end
+    return nothing
 end
 
 end # module
