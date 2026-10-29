@@ -915,14 +915,17 @@ contains
                        "geo bsl export = the reduced global bsl (scattered)")
             call check(published_at(geo%exports, geo%h_dV_bsl, 0.0_dp), "geo dV_bsl published at t0 (gathered)")
 
-            ! geo -> ice in sp: z_bed = ref + dz_bed, z_sl = bsl + dz_ss
+            ! geo -> ice in sp: z_bed = ref + dz_bed, z_sl = dphi + dz_ss (fastisostasy: dphi = bsl)
+            call check(get0(geo%exports, geo%h_dphi) == bsl .and. geo%exports%f(geo%h_dphi)%t1 == geo%exports%f(geo%h_bsl)%t1, &
+                       "geo dphi export = the bsl export (fastisostasy), same validity")
             r = dom%refs(1)%z_bed
             a = get2(geo%exports, geo%h_dz_bed)
             b = get2(ice%imports, ice%hi_z_bed)
             call check(all(real(b, sp) == real(r, sp) + real(a, sp)), "ice z_bed = ref + dz_bed (sp, identity grid)")
             a = get2(geo%exports, geo%h_dz_ss)
             b = get2(ice%imports, ice%hi_z_sl)
-            call check(all(real(b, sp) == real(bsl, sp) + real(a, sp)), "ice z_sl = bsl + dz_ss (sp)")
+            call check(all(real(b, sp) == real(get0(geo%exports, geo%h_dphi), sp) + real(a, sp)), &
+                       "ice z_sl = dphi + dz_ss (sp)")
 
             ! the hub mirrors the ice
             a = get2(dom%hub_exports, dom%hh%h_z_srf)
@@ -1019,7 +1022,9 @@ contains
                        geo%exports%f(geo%h_bsl)%t1 == t, "geo bsl = the reduced global bsl of this step")
             a = get2(geo%exports, geo%h_dz_ss)
             b = get2(ice%imports, ice%hi_z_sl)
-            call check(all(real(b, sp) == real(bsl, sp) + real(a, sp)), "ice z_sl = bsl + dz_ss (sp)")
+            call check(all(real(b, sp) == real(get0(geo%exports, geo%h_dphi), sp) + real(a, sp)) .and. &
+                       get0(geo%exports, geo%h_dphi) == bsl .and. geo%exports%f(geo%h_dphi)%t1 == t, &
+                       "ice z_sl = dphi + dz_ss (sp), dphi = the reduced bsl of this step")
 
             ! ice and hub at t
             call check(published_at(ice%exports, ice%h_H_ice, t) .and. ice%exports%f(ice%h_smb)%t0 == t - 10.0_dp, &

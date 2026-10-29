@@ -12,3 +12,4 @@ section 2.2). See kryos-variables-ice.md for the columns.
 |  5 | bsl       |            | m      | Barystatic sea level                               | 1e-3  |
 |  6 | A_ocn     |            | m2     | Ocean area                                         | 1e-6r |
 |  7 | dV_bsl    |            | m3     | Volume change contributing to barystatic sea level | 1e-6r |
+|  8 | dphi      |            | m      | Uniform sea-surface shift (dz_ss is relative to it) | 1e-3  |

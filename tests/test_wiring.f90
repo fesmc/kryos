@@ -251,9 +251,9 @@ contains
         call check("geo -> ice z_bed: ADD_REF z_bed, lag 0, auto", &
                    any([(wire_label(t(i)) == "geo.dz_bed -> ice.z_bed" .and. t(i)%transform == T_ADD_REF &
                          .and. t(i)%aux == "z_bed" .and. t(i)%lag == 0 .and. t(i)%method == "auto", i = 1, size(t))]))
-        call check("geo -> ice z_sl: ADD_SCALAR bsl", &
+        call check("geo -> ice z_sl: ADD_SCALAR dphi (z_sl = dphi + dz_ss)", &
                    any([(wire_label(t(i)) == "geo.dz_ss -> ice.z_sl" .and. t(i)%transform == T_ADD_SCALAR &
-                         .and. t(i)%aux == "bsl", i = 1, size(t))]))
+                         .and. t(i)%aux == "dphi", i = 1, size(t))]))
         call check("ice.z_bed_ref -> geo.z_bed_ref, lag init, auto", &
                    any([(wire_label(t(i)) == "ice.z_bed_ref -> geo.z_bed_ref" .and. t(i)%lag == LAG_INIT &
                          .and. t(i)%method == "auto", i = 1, size(t))]))
@@ -339,6 +339,7 @@ contains
         call fields_init(geo_e, "geo:exports")
         call st_add(geo_e, "dz_bed", "m", I_, IT, GF);  call st_add(geo_e, "dz_ss", "m", I_, IT, GF)
         call st_add(geo_e, "bsl", "m", I_, IT);  call st_add(geo_e, "dV_bsl", "m3", I_, EX)
+        call st_add(geo_e, "dphi", "m", I_, IT)
         call fields_lock(geo_e)
 
         call fields_init(gg_i, "geo_glob:imports");  call st_add(gg_i, "dV_bsl", "m3", I_, EX);  call fields_lock(gg_i)

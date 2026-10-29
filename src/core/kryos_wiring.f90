@@ -35,7 +35,7 @@ module kryos_wiring
     integer, parameter, public :: T_NONE       = 0   ! dst = remap(src)
     integer, parameter, public :: T_ADD_REF    = 1   ! dst = ref_dst%<aux> + remap(src)             (decision 4)
     integer, parameter, public :: T_SUB_REF    = 2   ! dst = remap(src - ref_src%<aux>)            (hub anomalies)
-    integer, parameter, public :: T_ADD_SCALAR = 3   ! dst = src_state%<aux> (0-D) + remap(src)     (z_sl = bsl + dz_ss)
+    integer, parameter, public :: T_ADD_SCALAR = 3   ! dst = src_state%<aux> (0-D) + remap(src)     (z_sl = dphi + dz_ss)
     integer, parameter, public :: T_LAPSE_T    = 4   ! tas re-elevated to the consumer's z_srf
     integer, parameter, public :: T_LAPSE_P    = 5   ! pr  re-elevated to the consumer's z_srf
     integer, parameter, public :: LAG_INIT     = -1  ! exchanged once after init (static fields)
@@ -113,7 +113,7 @@ contains
         call add(t, "geo", "dV_bsl", "geo_g", "dV_bsl", gather=.true.)
         ! geo -> ice: bed and sea level in one datum
         call add(t, "geo", "dz_bed", "ice", "z_bed", "auto", transform=T_ADD_REF, aux="z_bed")
-        call add(t, "geo", "dz_ss", "ice", "z_sl", "auto", transform=T_ADD_SCALAR, aux="bsl")
+        call add(t, "geo", "dz_ss", "ice", "z_sl", "auto", transform=T_ADD_SCALAR, aux="dphi")
         ! ice -> hub: mirror set (same grid), anomaly set (finer hub); z_sl serves both (identity on one grid)
         call add_set(t, "ice", "H_ice z_bed z_srf f_ice f_grnd", "hub", "")
         call add(t, "ice", "z_sl", "hub", "z_sl", "bilin")

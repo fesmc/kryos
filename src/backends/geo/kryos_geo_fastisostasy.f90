@@ -131,7 +131,7 @@ contains
 
     subroutine fastiso_geo_update_(self, st)
         ! step_isostasy (kryos_coupling.f90:150-160) on the imports of the step.
-        ! `bsl` is exported by geo_scatter, not here.
+        ! `bsl` (and dphi = bsl) is exported by geo_scatter, not here.
         class(fastiso_geo_t), intent(inout) :: self
         type(step_time_t),    intent(in)    :: st
 
@@ -313,7 +313,10 @@ contains
             call fields_put(self%exports, self%h_dz_ss,     out%z_ss - now%bsl,            t1=t1)
             call fields_put(self%exports, self%h_z_bed_ref, out%z_bed - out%w - out%we,    t1=t1)
             call fields_put(self%exports, self%h_dz_bed_dt, out%dwdt,                      t1=t1)
-            if (put_bsl) call fields_put(self%exports, self%h_bsl, now%bsl,                t1=t1)
+            if (put_bsl) then
+                call fields_put(self%exports, self%h_bsl,  now%bsl,                        t1=t1)
+                call fields_put(self%exports, self%h_dphi, now%bsl,                        t1=t1)   ! dphi = bsl
+            end if
         end associate
     end subroutine exports_state
 

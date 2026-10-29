@@ -27,6 +27,7 @@ module kryos_geo
         integer :: hi_dV_bsl = 0                                                               ! global import
         integer :: h_dz_bed = 0, h_dz_ss = 0, h_dV_bsl = 0, h_z_bed_ref = 0, h_dz_bed_dt = 0  ! regional exports
         integer :: h_bsl = 0, h_A_ocn = 0                                                      ! both / global
+        integer :: h_dphi = 0                                                                   ! regional export
     contains
         procedure :: reduce => geo_reduce_default   ! (st): the global part's solve; default nothing
     end type geo_t
@@ -124,8 +125,10 @@ contains
     end subroutine geo_reduce
 
     subroutine geo_scatter(geo, st)
-        ! Regional export bsl := import bsl (the reduced bsl just exchanged),
-        ! with its validity; component layer only (section 6).
+        ! Regional exports bsl := import bsl (the reduced bsl just exchanged) and
+        ! dphi := the same value (the uniform sea-surface shift of a barystatic
+        ! geo, contracts-design 2.2), with their validity; component layer only
+        ! (section 6).
         type(geo_slot_t),  intent(inout) :: geo
         type(step_time_t), intent(in)    :: st
         real(dp) :: v, t0, t1
@@ -138,7 +141,8 @@ contains
             call fesm_error("kryos_geo::geo_scatter", "imported bsl is newer than the step", &
                             "instance "//trim(geo%c%name))
         end if
-        call fields_put(geo%c%exports, geo%c%h_bsl, v, t1=t1, t0=t0)
+        call fields_put(geo%c%exports, geo%c%h_bsl,  v, t1=t1, t0=t0)
+        call fields_put(geo%c%exports, geo%c%h_dphi, v, t1=t1, t0=t0)
     end subroutine geo_scatter
 
     subroutine geo_restart_write(geo, dir, t)
@@ -221,6 +225,7 @@ contains
             call fields_add(c%exports, "dz_bed",    "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_dz_bed,    grid=g, dims=d2)
             call fields_add(c%exports, "dz_ss",     "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_dz_ss,     grid=g, dims=d2)
             call fields_add(c%exports, "bsl",       "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_bsl)
+            call fields_add(c%exports, "dphi",      "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_dphi)
             call fields_add(c%exports, "z_bed_ref", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_z_bed_ref, grid=g, dims=d2)
             if (c%opt%dV_bsl) call fields_add(c%exports, "dV_bsl", "m3", FIELD_INSTANT, FIELD_EXTENSIVE, c%h_dV_bsl)
             if (c%opt%dz_bed_dt) then
