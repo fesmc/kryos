@@ -213,7 +213,7 @@
     ! z_bed_ref, H_ice_ref, ext_field name datasrc field groups (input/datasrc_defaults.nml) of the
     ! globe, on `grid`; X is read at ext_tref. The history group is the anomaly against its own
     ! slice: mode = "transient", anomaly_ref = "slice", ref_time = ext_tref, out_of_range = "error"
-    ! (the gather holds it after ext_tref); a "years ago" axis needs time_units = "years BP".
+    ! (the gather holds it after ext_tref); the file's time units ("years ago", "years BP") are read as they are.
     grid        = ""                           ! required: background grid, e.g. "GLOBAL-0.5DEG"
     z_bed_ref   = ""                           ! required: field group of the background bed X [m]
     H_ice_ref   = ""                           ! required: field group of the background ice X [m]

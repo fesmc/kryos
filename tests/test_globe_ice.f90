@@ -255,12 +255,10 @@ contains
         write(u,"(a)") '    grid = "'//BGN//'"', '    z_bed_ref = "gi_X_zb"', '    H_ice_ref = "gi_X_H"'
         write(u,"(a)") '    ext = "'//trim(ext)//'"', '    ext_field = "gi_hist"', "    ext_tref = 0.0", &
                        "    cons_tol = "//trim(ctol), "/"
-        write(u,"(a)") "&gi_X_zb", '    filename = "'//HIST//'"', '    name = "z_bed"', '    mode = "transient"', &
-                       '    time_units = "years BP"', "/"
-        write(u,"(a)") "&gi_X_H", '    filename = "'//HIST//'"', '    name = "'//trim(xvar)//'"', '    mode = "transient"', &
-                       '    time_units = "years BP"', "/"
+        write(u,"(a)") "&gi_X_zb", '    filename = "'//HIST//'"', '    name = "z_bed"', '    mode = "transient"', "/"
+        write(u,"(a)") "&gi_X_H", '    filename = "'//HIST//'"', '    name = "'//trim(xvar)//'"', '    mode = "transient"', "/"
         write(u,"(a)") "&gi_hist", '    filename = "'//HIST//'"', '    name = "'//trim(hvar)//'"', '    mode = "transient"', &
-                       '    time_units = "years BP"', '    anomaly_ref = "slice"', "    ref_time = "//trim(reft), &
+                       '    anomaly_ref = "slice"', "    ref_time = "//trim(reft), &
                        '    out_of_range = "'//trim(oor)//'"', "/"
         close(u)
     end subroutine write_par
