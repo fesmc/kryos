@@ -1,6 +1,6 @@
 # kryos phase 2 — plan
 
-Status: reviewed 2026-10-26; all open questions (§5) decided; scope narrowed 2026-10-29 (below). No code yet. Phase 1 is done: K == R2 bit for
+Status: reviewed 2026-10-26; all open questions (§5) decided; scope narrowed 2026-10-29 (below). WP1 done; WP2-WP4 design approved 2026-10-29 (section "WP2-WP4 approved design" below), in progress on branch `p2-exp`. Phase 1 is done: K == R2 bit for
 bit, grl and ant, 1 kyr + chunks + 15 kyr (`gate-log.md`).
 
 Phase 2 (`design.md` §14): "`data` backends for every component; esm and rembo
@@ -216,6 +216,76 @@ trip); bit-neutral on grl/ant (no plugin active).
 - recon changes Yelmo `H_ice_ref` (`:327-330`): the ice `H_ice_ref` export
   is re-published after the recipe (consumers: smb_simple, WP7).
 - Depends WP1. Gate: NOR (chion), LIS (with WP7).
+
+### WP2-WP4 approved design (2026-10-29)
+
+Approved by Alex; it replaces the WP2-WP4 recipes above where they differ.
+Its own questions are numbered Q1-Q9 here (not §5).
+
+**Experiments** (`src/experiments/`): one module plus a `_stub.f90` each,
+selected by `yelmo=0|1` in `config/common.mk`; all stateless
+(`restart = .false.`).
+
+| kind | module | hooks | reaches |
+|---|---|---|---|
+| `relax` | `kryos_exp_relax` | STEP_BEGIN: `relax_update(p, ylmo%tpo%par, st%t_elapsed, topo_rel0, topo_rel_tau0)` (yelmox `kryos_coupling.f90:45`, `kryos.f90:501-514`) | `select type` yelmo |
+| `opt_cb_ref` | `kryos_exp_opt_cb_ref` | COLD_PRE_STATE: cb_ref init (`cf_init > 0`: constant, else `calc_cb_ref`; `kryos_startup.f90:197-216`). STEP_BEGIN in the window: `optimize_cb_ref` (`kryos_coupling.f90:75-86`). init sets `till_method = -1`, `cf_min`, `cf_max` (`kryos.f90:516-542`), also on a restore | `select type` yelmo |
+| `opt_tf` | `kryos_exp_opt_tf` | STEP_BEGIN in the window: the ice exports H_ice, H_grnd, dHidt, H_ice_pd (+ H_grnd_pd for L21-points) through `fields_get`, remapped ice -> shelf by `dom%cpl` (bilin if the shelf is finer, else con; `coupler_prime` at init), then `optimize_tf_corr_basin` (L21) or `optimize_tf_corr` (L21-points) on the shelf component's `tf_corr` (`kryos_coupling.f90:95-114`) | none |
+| `recon` | `kryos_exp_recon` | COLD_POST_STATE: `domain_init_recon` (`kryos_startup.f90:289-349`): read the recon field, mask by regions, smooth, `yelmo_init_topo(load_topo=.false.)`, equil steps, kill thin floating ice, `H_ice_ref = H_ice`, `yelmo_ice_publish`, `domain_refresh_boundary`, stabilise 200 yr (`beta_min` 100) | `select type` yelmo |
+
+- **Window time** is `st%t_elapsed`, continuous across chunks.
+- **Dt guard**: at init the ice must run every step (`exp_ctx_t%dt_ice`,
+  `experiment_require_ice_every_step`).
+- **Templates** `&experiment_relax`, `&experiment_opt_cb_ref` (`method =
+  "L21"`), `&experiment_opt_tf`, `&experiment_recon` in
+  `input/kryos_defaults.nml`, with the shipped yelmox values.
+- **Q1**: `x_init` takes `dom` as `intent(inout)` (opt_cb_ref sets Yelmo's
+  `till_method` at init). `experiment_identity(slot, ctx)` sets name, kind
+  and domain, for the factory and the adopt alike.
+- **Q2 = (b), full move** of the thermal-forcing corrections to the shelf
+  component: new `src/components/shelf/kryos_shelf_ocean.f90`, `shelf_corr_t`
+  holds `tf_corr`, `tf_corr_basin` (sp, shelf grid), basins and dx, plus its
+  own key group (`tf_correction`, `tf_path`, `corr_method` and the region
+  constants, `basins` source, as marine_shelf reads them today). Written to
+  the shelf instance's restart; the shelf component owns them. marine_shelf
+  no longer holds `now%tf_corr`: it receives `tf_corr` + `tf_corr_basin` as
+  inputs before `calc_shelf` and adds them as now, `(T_shlf - T_fp) + tf_corr
+  + tf_corr_basin`, bit-identical. The converter moves the keys to the new
+  group; the gate maps (`tools/gate/*.toml`) map yelmox's mshlf restart
+  `tf_corr` variables to the new kryos restart file and variable. grl and ant
+  stay bit-identical.
+- **Q3**: new optional ice exports `H_grnd`, `H_grnd_pd`, always on.
+  `H_ice_pd` exists from phase 4 WP1 and is reused.
+- **Q4**: basins from the shelf component.
+- **Q5**: recon's `domain_refresh_boundary(dom, t, clk)` is domain-local
+  (hub update, climate PASS_BOUNDARY, surface PASS_FINAL, surface -> ice,
+  `domain_prepare` init); no globe rows.
+- **`yelmo_ice_publish(self, t1)`**: INSTANT exports only (geometry,
+  reference, mass), with a stub twin.
+- **Q6**: four modules and four stubs.
+- **Q7**: interim gate `ant-cf` (shipped ANT with `opt_tf = "none"`) after
+  relax + opt_cf.
+- **Q8**: the 8385-vs-1313 hub count is an offline script only
+  (`tools/levante/wp4_hub_count.py`; hypothesis: `remove_lakes` before
+  `H_ice_min`, plus negatives counted); the result goes to the gate log.
+- **Q9**: recon only; `marine_H`, `kill_shelves` and `recon_ref` stay
+  deferred and are refused.
+- **Converter** (`tools/data/yelmox2kryos.toml`, `tools/src/Convert.jl`): an
+  `[[experiment]]` table and `apply_experiments!`. `[relax]` -> relax; `[opt]`
+  splits into opt_cf (cb_ref keys) and opt_tf (tf keys, with `basin_fill`);
+  `init_method = "recon"` with `recon_*` -> recon; `{domain}.experiments` in
+  the order recon, relax, opt_cf, opt_tf. The relax/opt/recon refusals are
+  lifted, the others kept. New gate files `tools/gate/ant-cf.toml`,
+  `ant-full.toml`, `nor.toml`.
+- **dHidt**: Yelmo's `tpo%now%dHidt` is already the mean over the ice call,
+  so the MEAN export equals it; asserted in `test_run_sequence`.
+
+Commit order: W0 docs; W1 experiment interface (x_init inout, identity, dt
+guard); W2a templates; W2b relax; W2c opt_cf; W2d converter relax/opt_cf +
+`ant-cf` gate file; then (after phase 4 WP1 is on main) W3a shelf corrections,
+W3b H_grnd exports, W3c opt_tf, W3d converter opt_tf + `ant-full`; W4a hub
+count, W4b `domain_refresh_boundary` + `domain_regions_load`, W4c
+`yelmo_ice_publish`, W4d recon, W4e converter recon + `nor`.
 
 ### WP5 Ice-boundary plugins — S each (~90 + `ice_bnd.f90` 158)
 

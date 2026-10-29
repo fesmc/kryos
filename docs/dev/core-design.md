@@ -494,6 +494,16 @@ elapsed time is the window time of the plugins: a continuation restart keeps
 the clock's origin (`clock_n_origin`), so it runs on across chunks; a branch
 restarts it. Nothing else is stored.
 
+Plugins of WP2-WP4 (`relax`, `opt_cb_ref`, `opt_tf`, `recon`; approved design
+in `phase2-plan.md`): each is a module `kryos_exp_<kind>` in
+`src/experiments/` with a `_stub.f90` twin selected by `yelmo=0|1`, all
+stateless; the factory names them. `init(ctx, dom)` takes `dom` as
+`intent(inout)` (opt_cb_ref sets Yelmo's `till_method` there, also on a
+restore). `experiment_identity(slot, ctx)` sets name, kind and domain (the
+factory and the adopt use it). `exp_ctx_t%dt_ice` is the ice's cadence step
+[yr]; a plugin that needs the ice every step calls
+`experiment_require_ice_every_step(ctx, what)` at init.
+
 `prepare` (binding of `component_t`, default nothing; wrapper
 `domain_prepare(dom, k, clk, init)`, an absent component does nothing) puts the
 imports into the backend's boundary, already converted, so that a hook can
