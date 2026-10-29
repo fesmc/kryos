@@ -3,7 +3,8 @@
 # The job template is that of the base gate (ant-cf, ant-full: ant).
 #   [STACK=S5] [SRC=<git url>] [BUNDLE=kryos.bundle] [REF=main] [MAPS=$G/maps/S] run_kryos.sh <gate> cont|cont2|chunk|base   (STACK default S3)
 # Environment: K = the kryos checkout (default $G/kryos); KSHA = commit to check out in it (then SRC, REF are not fetched);
-# with another K the build log is $K/build.log.
+# with another K the build log is $K/build.log. VILMA=0|1 adds vilma=<n> to the make line; RLABEL (default the stack) names the
+# run folder $G/runs/<gate>/kx-<sha>/<RLABEL>/<run> (S6: K=$S/kryos VILMA=1, K=$S/kryos-v0 VILMA=0 RLABEL=S6-v0).
 # cont2: a second cont run (determinism). The code is the REF branch of SRC (default $G/bundles/$BUNDLE;
 # SRC=git@github.com:fesmc/kryos.git pulls from origin). MAPS is the folder linked as <rundir>/maps.
 # chunk: c00 0 -> 500, c01 500 -> 1000 from c00/restart-500 (afterok), as submit_ref.sh.
@@ -23,8 +24,8 @@ fi
 SHA=$(git rev-parse --short=7 HEAD)
 $CM config kryos --only -m dkrz_levante -c ifx > /dev/null; $CM deps . > /dev/null
 BLOG=$G/stacks/kryos-build-$SHA.log; [ "$K" = "$G/kryos" ] || BLOG=$K/build.log
-make kryos openmp=1 DFLAGS_NODEBUG="$GF" > $BLOG 2>&1 || { tail -30 $BLOG; exit 1; }
-OUT=$G/runs/$GATE/kx-$SHA/$STACK/$RUN
+make kryos openmp=1 ${VILMA:+vilma=$VILMA} DFLAGS_NODEBUG="$GF" > $BLOG 2>&1 || { tail -30 $BLOG; exit 1; }
+OUT=$G/runs/$GATE/kx-$SHA/${RLABEL:-$STACK}/$RUN
 [ -e $OUT ] && { echo "exists: $OUT"; exit 1; }
 
 stage () {   # stage <dir> <jobname> <set_nml args...>; echo the folder

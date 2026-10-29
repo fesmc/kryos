@@ -5,6 +5,8 @@
 # <run> is a [[run]] of the gate file: its par file (par/gate/<par>.nml) with its overrides `kp` (merged group names,
 # `kryos.domains` reversed for `swap`); `chunk = true`: c00 0 -> time(1) and c01 from c00/restart-<t> (afterok), as
 # run_kryos.sh. The code is KSHA in K (built here with the gate flags). Runs go to $G/runs/<gate>/kx-<sha>/<stack>/<run>.
+# VILMA=0|1 adds vilma=<n> to the make line (and tags the built binary); RLABEL (default the stack) names the run folder
+# (S6: K=$S/kryos VILMA=1; K=$S/kryos-v0 VILMA=0 RLABEL=S6-v0). PARDIR (default $K/par/gate) is the folder of the par files.
 # The job template is that of the `nor` reference runs (time limit raised by JOBTIME, default 01:00:00).
 set -euo pipefail
 module load python3 >/dev/null 2>&1 || true
@@ -17,13 +19,14 @@ JL="env JULIA_DEPOT_PATH=$G/julia-depot julia +1.13 --project=$TOOLS/tools $TOOL
 cd $K
 [ -n "${KSHA:-}" ] && git checkout -q --detach $KSHA
 SHA=$(git rev-parse --short=7 HEAD)
-if [ ! -x $K/libkryos/bin/kryos.x ] || [ "$(cat $K/libkryos/bin/.kryos_sha 2>/dev/null)" != "$SHA" ]; then
+TAG=$SHA${VILMA:+-vilma$VILMA}
+if [ ! -x $K/libkryos/bin/kryos.x ] || [ "$(cat $K/libkryos/bin/.kryos_sha 2>/dev/null)" != "$TAG" ]; then
     $CM config kryos --only -m dkrz_levante -c ifx > /dev/null; $CM deps . > /dev/null
     BLOG=$G/stacks/kryos-build-$SHA.log; [ "$K" = "$G/kryos" ] || BLOG=$K/build.log
-    make kryos openmp=1 DFLAGS_NODEBUG="$GF" > $BLOG 2>&1 || { tail -30 $BLOG; exit 1; }
-    echo $SHA > $K/libkryos/bin/.kryos_sha
+    make kryos openmp=1 ${VILMA:+vilma=$VILMA} DFLAGS_NODEBUG="$GF" > $BLOG 2>&1 || { tail -30 $BLOG; exit 1; }
+    echo $TAG > $K/libkryos/bin/.kryos_sha
 fi
-OUT=$G/runs/$GATE/kx-$SHA/$STACK/$RUN
+OUT=$G/runs/$GATE/kx-$SHA/${RLABEL:-$STACK}/$RUN
 [ -e $OUT ] && { echo "exists: $OUT"; exit 1; }
 STAGE=$($JL stage $GATE $RUN)
 PAR=$(echo "$STAGE" | sed -n 's/^PAR=//p')
@@ -38,7 +41,7 @@ stage () {   # stage <dir> <jobname> <set_nml args...>
     ln -sf $K/fesm-utils/par/datasrc_defaults.nml input/datasrc_defaults.nml
     for d in fesmdata ice_data isostasy_data; do ln -s /work/ba1442/$d $d; done
     ln -s $K/fesm-utils fesm-utils; ln -s $MAPS maps
-    cp $K/par/gate/$PAR.nml par.nml; cp $K/libkryos/bin/kryos.x .
+    cp ${PARDIR:-$K/par/gate}/$PAR.nml par.nml; cp $K/libkryos/bin/kryos.x .
     local args=("${KP[@]}" "$@")
     [ ${#args[@]} -gt 0 ] && python3 $G/tools/set_nml.py par.nml "${args[@]}"
     git -C $K rev-parse HEAD > kryos_commit.txt
