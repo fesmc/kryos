@@ -548,4 +548,35 @@ that differ are resolved explicitly (recorded in the file header): `clock.time_c
 | derived `dTo` produced by both climates | stops at init: `run_check_producers` (new; `forcing_set`'s check was never reached) names the coefficient |
 
 `make check` passes; the `test_run_sequence` runs (cont, chunk c01) compared with `kryos-compare --restarts` against a build of main e6b44ed: PASS (1171 / 632
-variables, 0 failing). Levante gates `sci-const`, `sci`: pending.
+variables, 0 failing). Levante gates: below.
+
+### Levante: `sci-const`, `sci` (kryos 99589d0, stack S5b)
+
+Code: branch `p3-dom` at 99589d0 (bundle `$G/bundles/p3dom.bundle`; checkout and build `$G/p3dom/kryos`, linked to S5b, gate flags, `vilma=0`), maps `$G/maps/S5`.
+Runs staged by `tools/levante/run_kryos_kk.sh` (par `par/gate/{sci,nor,ant}.nml` with the `kp` overrides of the gate files), checks by
+`tools/levante/compare_kk.sh` (`kryos-gate-kk.jl check`, `julia +1.13`), reports `$G/reports/KK/{sci,sci-const}-99589d0-S5b.md`. 1 kyr, gate `-p`
+(`write_lossless`, 2D every 100, 1D and 2Dsm every 10, bundles at 500 and 1000). Two-domain runs 13.7 min (16 threads), NOR alone 11.8, ANT alone 2.6.
+
+`sci-const` (bsl const; the single-domain references are the `nor` and `ant` gate files on the same binary, `nor` with the merged clock `time_const = 0.0`);
+jobs cont 28554086, nor 28554093, ant 28554097:
+
+| check | result |
+|---|---|
+| North: two-domain run vs `nor` (every instance file, bundles at 500 and 1000, globe files) | PASS, 1249 variables, 0 failing, 2 skipped (aggregates: `forcing_imports.nc:M_ice`, `geo_glob_imports.nc:dV_bsl`) |
+| Antarctica: two-domain run vs `ant` | PASS, 1360 variables, 0 failing, 2 skipped |
+
+`sci` (bsl fastiso); jobs cont 28554103, cont2 28554104, chunk 28554105/06, swap 28554108:
+
+| check | result |
+|---|---|
+| cont2 vs cont (`--restarts`) | PASS, 2575 variables |
+| chunk vs cont (c00 0-500, c01 500-1000 from `restart-500`, bundles) | PASS, 3166 variables (no skips: `pc_tau_max` is refilled in a 500-yr chunk) |
+| `[kryos] domains` swapped vs original order (files and bundles) | PASS, 2575 variables |
+| `bsl` budget (`geo_glob_ts.nc` bsl, A_ocn; `geo_nor_ts.nc`, `geo_ant_ts.nc` dV_bsl) | closes: 100 records, max residual / scale 2.2e-8 (0.19 eps of sp), max residual 3.8e-6 m on a bsl that moves to -90.8 m; dV_bsl of both domains about 1.0e13 to 1.5e13 m3 per step at the end |
+
+The budget bound stays 4 eps of sp (4.8e-7); the two runs (local 2.9e-8, Levante 2.2e-8) sit more than a factor 10 below it.
+
+Clock choice (`clock.time_const = 0.0` in the merged file, NH has -21e3): NH alone, bsl fastiso, `time_const = 0.0` (`sci-const` run `nor-t0`, job 28554099) against the
+`nor` gate's K cont (kryos 888884d, S5, -21e3), identity `--restarts` (`$G/reports/KK/nor-t0-vs-kx-888884d_S5_cont.md`): **1247 of 1251 variables equal bit for bit,
+4 differ**: `time_init` and `time_prev` of `forcing_alpha_restart.nc` in both bundles (-21000 vs 0, the forcing time the tsgen coefficient stores; nothing
+else, no output file and no field of any instance differs). Not bit for bit by the letter: reported to the coordinator.
