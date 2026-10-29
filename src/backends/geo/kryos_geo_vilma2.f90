@@ -121,7 +121,8 @@ contains
         call vilma_par_load(self%se%par, trim(ctx%par_file), defaults_file=VILMA_DEFAULTS_FILE, group=trim(self%group))
 
         self%prec = dp
-        self%opt  = geo_opt_t(host=.true.)
+        ! the spin-up that holds the t0 load before the seed (plan 7.4): VILMA2's own, pre_spinup_1d or equil_time_max
+        self%opt  = geo_opt_t(host=.true., host_spinup=(self%se%par%pre_spinup_1d .or. self%se%par%equil_time_max > 0.0_dp))
 
         self%g_run = ctx%cnst%g
         call params_check(self, ctx)

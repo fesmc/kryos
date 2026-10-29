@@ -64,10 +64,30 @@ contains
             end do
         end if
 
+        if (glob_v) call check_spinup(globe, cfg)
         do d = 1, size(dom)
             call check_domain(globe, dom(d), cfg)
         end do
     end subroutine gia_check
+
+    subroutine check_spinup(globe, cfg)
+        ! The Earth is spun up under the t0 load before its seed (plan 7.4, F7: the dt = 0 seed solves with the
+        ! previous load, so without the spin-up the t0 load, the external ice above all, enters with the first
+        ! call): stops unless the instance sets `allow_no_spinup = True` (tests, present-day starts).
+        type(globe_t),  intent(in) :: globe
+        type(config_t), intent(in) :: cfg
+
+        logical :: allow
+
+        allow = .false.
+        call config_read(cfg, trim(globe%geo%c%name), "allow_no_spinup", allow, "instance", "geo_vilma2")
+        if (globe%geo%c%opt%host_spinup .or. allow) return
+        call fesm_error("kryos_gia_check::gia_check", "global geo `"//trim(globe%geo%c%name)// &
+                        "` has no VILMA2 spin-up before its seed", &
+                        "set `pre_spinup_1d = .true.` or `equil_time_max > 0` in the &vilma group (plan 7.4): the seed "// &
+                        "solves the previous load, so the t0 load would enter with the first call; "// &
+                        "`allow_no_spinup = True` in the instance group accepts that (tests, present-day starts)")
+    end subroutine check_spinup
 
     subroutine check_domain(globe, dom, cfg)
         type(globe_t),  intent(in) :: globe

@@ -23,6 +23,9 @@ module kryos_geo
                                                     ! own grid (grid, nx, ny set in init), no dV_bsl (contracts 2.2)
         logical :: port = .false.                   ! regional port of such a global part: imports the scattered
                                                     ! dz_bed, dz_ss, dphi instead of H_ice
+        logical :: host_spinup = .false.            ! host part: the backend spins its memory up under the t0 load before
+                                                    ! the seed (without it the seed solves the reference, plan 7.4, F7);
+                                                    ! kryos_gia_check stops a run without, unless allow_no_spinup
     end type geo_opt_t
 
     type, abstract, extends(component_t), public :: geo_t

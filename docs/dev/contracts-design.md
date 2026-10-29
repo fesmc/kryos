@@ -543,7 +543,7 @@ Phase 4 (`geo = vilma2`), added or changed rows:
 
 | src | field | dst | field | method | lag | transform |
 |---|---|---|---|---|---|---|
-| globe geo | `dz_bed`, `dz_ss` | geo | same | bilin (anomalies) | 0 | rank 2, `coupler_split` |
+| globe geo | `dz_bed`, `dz_ss` | geo | same | bilin (anomalies) | 0 | rank 2, remapped in the domain's coupler |
 | globe geo | `dphi` | geo | `dphi` | — | 0 | |
 | geo | `dz_ss` | ice | `z_sl` | auto | 0 | ADD_SCALAR, aux `dphi` (was `bsl`; fastisostasy exports `dphi = bsl`, bit-neutral) |
 | ice | `H_ice`, `f_grnd`, `z_bed`, `z_sl` | globe geo | `host_w`, `host_Ig`, `host_C`, `host_F` | — | 1 | `T_GIA` (gather) |
@@ -707,8 +707,8 @@ arrive one step later; logged when N > 1). VILMA2 (phase 4) follows the same
 two levels with a different gather and scatter: the gather is the core's
 `gia_gather` (host-resolved terms merged with `coupler_merge_*`, §4.2), the
 global `update` is the solve, `geo_reduce` finds no `dV_bsl` source and returns,
-and the scatter rows split `dz_bed`, `dz_ss` (`coupler_split`) into the
-regional ports, with the scalar `dphi` beside `bsl`.
+and the scatter rows remap `dz_bed`, `dz_ss` (bilinear, in the domain's coupler: the
+global grid is registered there) into the regional ports, with the scalar `dphi` beside `bsl`.
 
 ## 7. forcing
 

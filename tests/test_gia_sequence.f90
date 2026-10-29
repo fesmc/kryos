@@ -45,6 +45,8 @@ program test_gia_sequence
     character(len=*), parameter :: DIR = "tmp/test_gia_sequence/"
     character(len=*), parameter :: BGN = "TBG-4DEG"
     integer, parameter :: NZ = 5, NDOM = 2, NXB = 90, NYB = 45
+    logical  :: allow_nospin = .true.              ! allow_no_spinup in the par file being written (the runs without VILMA2's spin-up)
+    real(dp) :: restart_dt = 0.0_dp                ! > 0: the restart schedule of the par file being written, every restart_dt yr
     real(dp) :: dt_geo = 10.0_dp                    ! [yr] cadence of the Earth in the par file being written
     real(dp), parameter :: PI = 3.14159265358979323846_dp
     ! the two domains: name, instance suffix, hub grid, topography file
@@ -100,6 +102,7 @@ program test_gia_sequence
 
     call greenland_ref()                                 ! one domain, ice outside the footprint = X (ext = "ref")
     call greenland_slow()                                ! the Earth every second step
+    call no_spinup_stop()                                ! no VILMA2 spin-up, no opt-out: the run stops at init
     if (have_tools) then
         call two_domains()                               ! both, an external history that thins; spin-up; the order swap
     else
@@ -130,6 +133,21 @@ contains
         call check(ok, "inspecting run g1 (checks in "//DIR//"g1/run.log)")
     end subroutine greenland_ref
 
+    subroutine no_spinup_stop()
+        ! gia_check: without pre_spinup_1d / equil_time_max the run stops unless allow_no_spinup (plan 7.4).
+        write(*,'(a)') "--- no VILMA2 spin-up"
+        call setup_run_dir("ns")
+        allow_nospin = .false.
+        call write_domain_par(d//"ns/grl.nml", 1, 0.0_dp, 10.0_dp, "None")
+        allow_nospin = .true.
+        call sh("cp '"//d//"ns/grl.nml' '"//d//"ns/par.nml'")
+        call append_globe(d//"ns/par.nml", "ref", 0.0_dp)
+        ok = child("ns", "plain par.nml", "run.log", quiet=.true.)
+        call check(.not. ok .and. in_file(d//"ns/run.log", "has no VILMA2 spin-up before its seed") .and. &
+                   in_file(d//"ns/run.log", "allow_no_spinup"), &
+                   "a run without VILMA2's spin-up stops at init, naming the key that accepts it ("//DIR//"ns/run.log)")
+    end subroutine no_spinup_stop
+
     subroutine greenland_slow()
         ! The Earth steps every second ice step: dt = 20 yr, dtt = 10 yr, 4 steps.
         write(*,'(a)') "--- Greenland, ext = ref, the Earth every 20 yr"
@@ -148,12 +166,57 @@ contains
         ! from the start; the same run with the domains swapped.
         write(*,'(a)') "--- Greenland + Antarctica, ext = file; the order swap"
         call two_run("s2", .false., "inspect par.nml 3 10 nospin", spin=.false.)
+        allow_nospin = .false.                           ! with the spin-up the opt-out is not needed
         call two_run("s3", .false., "inspect par.nml 2 10 spin", spin=.true.)
+        allow_nospin = .true.
         call two_run("s2sw", .true., "plain par.nml", spin=.false.)
         call write_gate("gate_swap.toml", checks= &
-            [character(len=400) :: '[[check]]', 'type = "identical"', 'ref = "s2"', 'run = "s2sw"'])
+            [character(len=400) :: '[[check]]', 'type = "identical"', 'ref = "s2"', 'run = "s2sw"'], &
+            chunks="[-100.0, -70.0]", rtimes="[]")
         call gate_check("gate_swap.toml", "swap", "the domain order swapped gives identical files (KryosTools.Gate)")
+        call chunks_set()
     end subroutine two_domains
+
+    subroutine chunks_set()
+        ! Restarts: the continuous run -100 -> -60 against the chunks -100 -> -80 -> -60 (the bundle at -80: VILMA2's
+        ! restart file, the Earth's imports and exports on the Gauss grid, the ports, the domains), with VILMA2's
+        ! spin-up. The reference is rebuilt before the restore (plan 8.2); every file and the bundles are compared.
+        write(*,'(a)') "--- restarts: chunks == continuous run"
+        allow_nospin = .false.
+        restart_dt = 20.0_dp
+        call two_run_t("c",       -100.0_dp, -60.0_dp, "None",           "plain par.nml", spin=.true.)
+        call two_run_t("c2",      -100.0_dp, -60.0_dp, "None",           "plain par.nml", spin=.true.)
+        call two_run_t("chunk/c00", -100.0_dp, -80.0_dp, "None",         "plain par.nml", spin=.true.)
+        call two_run_t("chunk/c01", -80.0_dp, -60.0_dp, "../c00/restart--80", "plain par.nml", spin=.true.)
+        restart_dt = 0.0_dp
+        allow_nospin = .true.
+        call write_gate("gate_chunk.toml", checks= &
+            [character(len=400) :: &
+             '[[check]]', 'type = "identical"', 'ref = "c"', 'run = "c2"', &
+             '[[check]]', 'type = "chunks"', 'ref = "c"', 'run = "chunk"'], &
+            chunks="[-100.0, -80.0, -60.0]", rtimes="[-80.0, -60.0]")
+        call gate_check("gate_chunk.toml", "chunk", "cont2 == cont (determinism), chunks == cont: every file and the bundles "// &
+                        "at -80 and -60 (KryosTools.Gate)")
+    end subroutine chunks_set
+
+    subroutine two_run_t(sub, t0, t1, restart, args, spin)
+        ! Greenland + Antarctica (ext = file) over [t0, t1] from `restart`, run as `args`.
+        character(len=*), intent(in) :: sub, restart, args
+        real(dp),         intent(in) :: t0, t1
+        logical,          intent(in) :: spin
+        integer :: es
+        call setup_run_dir(sub)
+        call write_domain_par(d//sub//"/grl.nml", 1, t0, t1, restart)
+        call write_domain_par(d//sub//"/ant.nml", 2, t0, t1, restart)
+        call execute_command_line("cd '"//d//sub//"' && julia --project='"//trim(tools)//"' '"//trim(repo)// &
+                                  "/tools/bin/kryos-merge.jl' grl.nml ant.nml --out par.nml --report merge.md > merge.log 2>&1", &
+                                  exitstat=es)
+        if (es /= 0) call sh("tail -n 20 '"//d//sub//"/merge.log'")
+        call check(es == 0, "merge of the two single-domain par files ("//DIR//sub//"/merge.log)")
+        call append_globe(d//sub//"/par.nml", "file", t0, spin=spin)
+        ok = child(sub, args, "run.log")
+        call check(ok, "two-domain run "//sub//" ("//DIR//sub//"/run.log)")
+    end subroutine two_run_t
 
     subroutine two_run(sub, swap, args, spin)
         character(len=*), intent(in) :: sub, args
@@ -173,14 +236,14 @@ contains
                    " ("//DIR//sub//"/run.log)")
     end subroutine two_run
 
-    subroutine write_gate(file, checks)
+    subroutine write_gate(file, checks, chunks, rtimes)
         ! A kryos-against-kryos gate file for the runs of this test.
-        character(len=*),  intent(in) :: file
+        character(len=*),  intent(in) :: file, chunks, rtimes
         character(len=*),  intent(in) :: checks(:)
         integer :: u, i
         open(newunit=u, file=d//file, status="replace", action="write")
-        write(u,'(a)') 'gate = "test_gia_sequence"', 'kind = "kryos"', 'chunks = [-100.0, -70.0]', &
-                       'restart_times = []', 'domain_order = ["Greenland", "Antarctica"]', PCT, &
+        write(u,'(a)') 'gate = "test_gia_sequence"', 'kind = "kryos"', "chunks = "//chunks, &
+                       "restart_times = "//rtimes, 'domain_order = ["Greenland", "Antarctica"]', PCT, &
                        '[domains.Greenland.instances]', 'domain = "Greenland"', 'ice = "ice_grl"', 'geo = "geo_grl"', &
                        'climate = "climate_grl"', 'surface = "surface_grl"', 'shelf = "shelf_grl"', &
                        'geothermal = "ghf_grl"', 'sediments = "sed_grl"', 'forcing = "forcing"', 'geo_glob = "geo_glob"', &
@@ -717,15 +780,17 @@ contains
 
         open(newunit=u, file=file, status="replace", action="write")
         call w(u, [character(len=400) :: &
-            "&kryos", "  domains = '"//nm//"'", "  restart = '"//restart//"'", "  restart_out = 'none'", &
+            "&kryos", "  domains = '"//nm//"'", "  restart = '"//restart//"'", "  restart_out = '"//trim(merge("out_rst", "none   ", restart_dt > 0.0_dp))//"'", &
             "  write_lossless = True", "  log_level = 'info'", "/", &
             "&clock", "  method = 'const'", "  time_const = 0.0", "  time_init = "//ftoa(time_init), &
             "  time_end = "//ftoa(time_end), "  dtt = 10.0", "/", &
             "&out_2D", "  method = 'const'", "  dt = 10.0", "/", &
             "&out_1D", "  method = 'const'", "  dt = 10.0", "/", &
+            "&out_rst", "  method = 'const'", "  dt = "//ftoa(max(restart_dt, 1.0_dp)), "/", &
             "&globe", "  forcing = 'forcing'", "  geo = 'geo_glob'", "/", &
             "&forcing", "  backend = 'tsgen'", "  clock = 'forcing'", coefs, "  out_1D = 'out_1D'", "/", &
-            "&geo_glob", "  backend = 'vilma2'", "  dt = "//ftoa(dt_geo), "  out_1D = 'out_1D'", "/", &
+            "&geo_glob", "  backend = 'vilma2'", "  dt = "//ftoa(dt_geo), "  allow_no_spinup = "//trim(merge("True ", "False", allow_nospin)), &
+            "  out_1D = 'out_1D'", "/", &
             "&"//nm, "  grid_hub = '"//grid//"'", "  topo = 'topo'", "  regions = 'regions'", &
             "  basins = 'basin'", "  out_2D = 'out_2D'", "  ice = 'ice_"//sx//"'", "  geo = 'geo_"//sx//"'", &
             "  climate = 'climate_"//sx//"'", "  surface = 'surface_"//sx//"'", "  shelf = 'shelf_"//sx//"'", &

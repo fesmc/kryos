@@ -120,6 +120,7 @@ program test_gia_check
     call expect_abort("no_footprint", "does not export `footprint`")
     call expect_abort("no_h_ice_pd", "does not export `H_ice_pd`")
     call expect_abort("dt_differs", "differs from the global geo")
+    call expect_abort("no_spinup", "has no VILMA2 spin-up before its seed")
 
     call execute_command_line("rm -f "//errfile//" "//PAR)
     if (nfail > 0) then
@@ -141,11 +142,13 @@ contains
         end if
     end subroutine check
 
-    subroutine adopt_geo(slot, name, backend, scope)
-        ! A toy geo admitted under this backend name (the check reads names only).
+    subroutine adopt_geo(slot, name, backend, scope, spinup)
+        ! A toy geo admitted under this backend name (the check reads names only); spinup: what the
+        ! backend says about its spin-up (default: it has one).
         use kryos_geo, only: geo_slot_t
         type(geo_slot_t), intent(out) :: slot
         character(len=*), intent(in)  :: name, backend, scope
+        logical,          intent(in), optional :: spinup
         class(geo_t), allocatable :: proto
         type(init_ctx_t) :: ctx
         type(census_t)   :: census
@@ -155,6 +158,8 @@ contains
         ctx%scope    = scope
         allocate(toy_geo_t :: proto)
         call geo_adopt(slot, proto, constraints_t(regional=.true., global=.true.), ctx, census)
+        slot%c%opt%host_spinup = .true.
+        if (present(spinup)) slot%c%opt%host_spinup = spinup
     end subroutine adopt_geo
 
     subroutine make_domain(dom, name, geo_inst, geo_backend, ice, flot, foot, pd)
@@ -199,6 +204,10 @@ contains
         call make_domain(dom(2), "ANT", "geo_ant", "vilma2", .true., .true., .true., .true.)
         call gia_check(globe, dom, cfg)
         call check("vilma2 globe and two vilma2 ports on full ice instances (dt of geo_ant = the global's)", .true.)
+
+        call adopt_geo(globe%geo, "geo_open", "vilma2", "global", spinup=.false.)
+        call gia_check(globe, dom, cfg)
+        call check("no spin-up with allow_no_spinup = True in the instance group", .true.)
     end subroutine test_passes
 
     subroutine expect_abort(case_name, text)
@@ -247,6 +256,8 @@ contains
             call make_domain(dom(1), "NH", "geo_nh", "vilma2", .true., .true., .false., .true.)
         case ("no_h_ice_pd")
             call make_domain(dom(1), "NH", "geo_nh", "vilma2", .true., .true., .true., .false.)
+        case ("no_spinup")
+            call adopt_geo(globe%geo, "geo_glob", "vilma2", "global", spinup=.false.)
         case ("dt_differs")
             call make_domain(dom(1), "NH", "geo_bad", "vilma2", .true., .true., .true., .true.)
         end select
@@ -260,7 +271,8 @@ contains
                        "&geo_glob", ' backend = "vilma2"', " dt = 10.0", "/", &
                        "&geo_nh",   ' backend = "vilma2"', "/", &
                        "&geo_ant",  ' backend = "vilma2"', " dt = 10.0", "/", &
-                       "&geo_bad",  ' backend = "vilma2"', " dt = 5.0", "/"
+                       "&geo_bad",  ' backend = "vilma2"', " dt = 5.0", "/", &
+                       "&geo_open", ' backend = "vilma2"', " dt = 10.0", " allow_no_spinup = True", "/"
         close(u)
     end subroutine par_write
 

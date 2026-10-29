@@ -811,8 +811,8 @@ imports with the scatter rows just before. No `H_ice` import, no `dV_bsl`.
 **Core procedures** (`kryos_run_gia`): `gia_reference`, `gia_gather` (per
 domain on its ice grid: `H_tot = m·H + (1 - m)·ext`, `f_g = m·f_grnd + (1 -
 m)·flotation(...)`, merged to the Gauss grid with `coupler_merge_*`),
-`gia_seed`, `gia_scatter` (`coupler_split`, bilinear); the adapter never sees a
-domain. Restart and the bundle: `phase4-plan.md` §8.
+`gia_seed` (the scatter is the wiring rows `geo_g → geo`, bilinear in the domain's
+coupler, run by `bsl_to_geo`); the adapter never sees a domain. Restart and the bundle: `phase4-plan.md` §8.
 
 **Init-time contract checks** (named stops; `kryos_gia_check`, called by
 `run_init` after `run_check_names`): a domain geo with `vilma2` needs the

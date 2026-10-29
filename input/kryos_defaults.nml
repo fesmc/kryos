@@ -155,6 +155,11 @@
 &geo_vilma2
     vilma  = "vilma"                           ! global instance: the &vilma group (overrides of input/vilma_defaults.nml)
     ice_bg = "globe_ice"                       ! global instance: the global ice field group
+    allow_no_spinup = False                    ! global instance: a run without VILMA2's spin-up (pre_spinup_1d or equil_time_max > 0)
+                                               ! stops unless True: the dt = 0 seed then solves the reference and the t0 load
+                                               ! enters with the first call (tests, present-day starts only; plan 7.4)
+    out_gia    = "none"                        ! global instance: schedule of <instance>_gia.nc (the global ice field VILMA2 got)
+    out_vilma  = "none"                        ! global instance: schedule of <instance>_vilma.nc (VILMA2's own diagnostics file)
 /
 
 &ice_yelmo

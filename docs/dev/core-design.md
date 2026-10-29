@@ -236,7 +236,7 @@ reference, exports 0). Per domain, block a) takes the globe rows with zero
 anomalies into the regional port and runs `domain_check_reference`, as above;
 blocks b) and c) run on the reference bed. Then `gia_seed(run)` after c) of every
 domain: gather at t0, `globe_pass(geo, PASS_STATE)` (VILMA2's spin-up holding the
-t0 load, then the `dt = 0` seed), `gia_scatter`, ports `PASS_STATE`. The domain
+t0 load, then the `dt = 0` seed), the rows `geo_g → geo` into the ports, ports `PASS_STATE`. The domain
 loop is split there: a block c') per domain (`exchange(geo → ice)`, ice
 `PASS_GEOMETRY`, hub update) and then block d), so the surface's final cycle sees
 the final geometry. Per domain the order is unchanged and the loop split is
@@ -329,8 +329,8 @@ today (§10 R5).
 Phase 4 (`geo = vilma2`; `phase4-plan.md` §7.1): in block 1, when the global geo
 declares `opt%host` and is due, `gia_gather(run)` runs first (the ice at
 `t_{n-1}`, lag 1) and then the globe update is the VILMA2 solve; in block 3, when
-due, `gia_scatter(run)` runs rows `geo_g → geo` into the ports (`coupler_split`)
-and updates them, and `geo_global_reduce` finds no `dV_bsl` source and returns.
+due, the rows `geo_g → geo` (`bsl_to_geo`: rank 2 for a port, bilinear in the domain's coupler)
+run into the ports, which update, and `geo_global_reduce` finds no `dV_bsl` source and returns.
 Block 4 is unchanged (`exchange_into(dom, "ice")` takes `z_bed` and `z_sl =
 dphi + dz_ss` of this step, lag 0). For fastiso gather and scatter are skipped.
 
@@ -544,6 +544,8 @@ tick at `t1`); `update` stops with a named error if its own `st%tick` differs
   block c) of every domain, block c') (rows geo -> ice, ice `PASS_GEOMETRY`) and block d) in a second domain loop (only
   c') depends on the global geo; the split is neutral for the other runs). Step: `gia_gather` before the global update
   when the global geo is due.
+- One ice cadence across the domains: `gia_gather` takes the load time from the ice's last update and stops when two domains'
+  ice instances were last updated at different times (the Earth has one load time).
 - Not yet: the restore (a run with a host geo that is restarted stops naming this), the lon-lat output of the Earth's
   rank-2 exports, `globe_ice` as an observer without `geo = vilma2`.
 

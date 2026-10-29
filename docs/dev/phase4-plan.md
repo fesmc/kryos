@@ -36,7 +36,7 @@ section "Host-resolved terms" and `doc/design.md` §15.
    of the globe) plus each domain's present day (`dta%pd`) gathered as in a step. No
    FesmData product is needed; the only FesmData gap is a grid (below).
 4. The **scatter** splits `dz_bed`, `dz_ss` (anomalies) and `dphi` to each domain's
-   geo grid by `coupler_split` (bilinear); `z_sl = dphi + dz_ss` at the ice. This
+   geo grid by the wiring rows `geo_g → geo` (bilinear, in the domain's coupler); `z_sl = dphi + dz_ss` at the ice. This
    needs one small contract change: a scalar `dphi` beside `bsl` (Q1).
 5. **Time**: VILMA2 steps on the geo cadence (10 yr, revisited after G7), loads at the
    previous step (lag 1, as FastIsostasy), the ramp is VILMA2's. Cold start: VILMA2 is
@@ -154,7 +154,7 @@ New:
 |---|---|---|
 | `src/backends/geo/kryos_geo_vilma2.f90`, `…_stub.f90` | `vilma_earth_t`, `vilma_geo_t`, `vilma2_*_constraints()`; stub with the same names, `vilma=0` | M + S |
 | `src/core/kryos_globe_ice.f90` | `globe_ice_t`, the global geometry hub (all phase 4, §10): global grids (background, Gauss) and their coupler, per-domain footprints and coverage, background and external ice (datasrc), reference assembly (spliced and VILMA2's), the per-domain host terms, merges, checks, diagnostics, `globe_ice.nc`. Knows no domain type: callers pass arrays and the coupler | L |
-| `src/core/kryos_run_gia.f90` | submodule of `kryos_run`: `gia_reference`, `gia_gather`, `gia_seed`, `gia_scatter` (loops over `run%dom` in `run%dom_order`, as `reduce_bsl`, `gather_forcing` in `kryos_run_sequence.f90:338-388`) | M |
+| `src/core/kryos_run_gia.f90` | submodule of `kryos_run`: `gia_reference`, `gia_gather`, `gia_seed` (the scatter is the rows `geo_g → geo`, `bsl_to_geo`; loops over `run%dom` in `run%dom_order`, as `reduce_bsl`, `gather_forcing` in `kryos_run_sequence.f90:338-388`) | M |
 | `tests/test_globe_ice.f90`, `tests/test_geo_vilma2.f90`, `tests/test_gia_sequence.f90` | §13 | M |
 
 Changed: `kryos_geo.f90` (opts, declaration), `kryos_geo_factory.f90` (backend `vilma2`
@@ -218,7 +218,7 @@ Added or changed rows (`kryos_wiring.f90:100-141`, one table, fixed in code):
 
 | src | field | dst | field | method | lag | transform |
 |---|---|---|---|---|---|---|
-| geo_g | `dz_bed`, `dz_ss` | geo | same | bilin (anomalies) | 0 | — (rank 2, `coupler_split`) |
+| geo_g | `dz_bed`, `dz_ss` | geo | same | bilin (anomalies) | 0 | — (rank 2, remapped in the domain's coupler) |
 | geo_g | `dphi` | geo | `dphi` | — | 0 | — |
 | geo_g | `bsl` | geo | `bsl` | — | 0 | existing row |
 | geo | `dz_ss` | ice | `z_sl` | auto | 0 | `ADD_SCALAR`, aux **`dphi`** (was `bsl`, Q1) |
@@ -308,6 +308,9 @@ terms" and `doc/design.md` §15; no merge to wait for); `vilma2`'s own manifest 
 &geo_glob                              ! the global part
     backend  = "vilma2"
     dt       = 10.0                    ! [yr] geo cadence (Q6, revisit after G7); clock = "model"
+    allow_no_spinup = .false.          ! a run without VILMA2's spin-up (pre_spinup_1d, equil_time_max > 0) stops
+                                       ! (gia_check) unless .true.: the seed solves the previous load, so the t0 load
+                                       ! enters with the first call (F7); tests and present-day starts only
     vilma    = "vilma"                 ! the &vilma group; defaults input/vilma_defaults.nml
     ice_bg   = "globe_ice"             ! the global ice field group
 /
@@ -390,6 +393,10 @@ exports the ice published at the previous step (lag 1): `wire_resolve`'s lag che
    domains). The result is `ht`'s form (weighted fields per unit target area) with no
    further step.
 5. Checks and logs (§4.5), then the globe geo's imports are put (validity `[t_load, t_load]`).
+
+One ice cadence across the domains (decided at the WP4 checkpoint): the load time is the ice's last update
+(`cadence_t_last`, lag 1; the cold start: t0), and `gia_gather` stops when two domains' ice instances were last
+updated at different times: the Earth has one load time.
 
 ### 4.2 Footprint
 
@@ -508,10 +515,11 @@ every write); `tools/bin/kryos-globe-ice.jl` recomputes the merge offline from t
 
 ## 6. Scatter
 
-`gia_scatter(run)` after the global update, for every domain (name order):
+The scatter after the global update, for every domain (as built: `bsl_to_geo` runs the resolved rows, then
+`domain_update`; no separate procedure):
 
-1. rows `geo_g → geo` into the port's imports: `dz_bed`, `dz_ss` (`coupler_split`, `bilin`, no
-   references: anomalies stay anomalies), `dphi`, `bsl`;
+1. rows `geo_g → geo` into the port's imports: `dz_bed`, `dz_ss` (`bilin` remap through the domain's coupler,
+   in which the Gauss grid is registered; no references: anomalies stay anomalies), `dphi`, `bsl`;
 2. `domain_update(dom, C_GEO)` (the port copies imports to exports at `t1`);
 3. the existing rows (`kryos_wiring.f90:114-116`) `geo.dz_bed → ice.z_bed` (`ADD_REF`),
    `geo.dz_ss → ice.z_sl` (`ADD_SCALAR` with `dphi`), run in `exchange_into(dom, "ice")` at
@@ -534,7 +542,7 @@ The domain's `bsl` export is VILMA2's ocean mean; the sea level the ice sees is
 1. globe: [new] if the global geo needs a gather (opt%host) and is due: gia_gather(run)   ! ice at t_{n-1}
           globe_update(geo)                       ! fastiso: bsl_update; vilma2: solid_earth_update
           forcing as today
-3. geo:   [new] if due: gia_scatter(run)          ! rows geo_g -> geo, port update
+3. geo:   rows geo_g -> geo (bsl_to_geo, rank 2 for a port), port update, when due
           reduce_bsl: no source for vilma2, returns
 4. per domain: unchanged (exchange_into(ice) takes z_bed, z_sl of this step; lag 0)
 ```
@@ -591,7 +599,7 @@ run_cold_start, per domain, block a):
 per domain, blocks b), c):                             as today, on the reference bed
 [new] gia_seed(run), after c) of every domain          (c) includes the cold-start hooks and the ice PASS_SPINUP):
                                                        gather at t0 (ice final); globe_pass(geo, PASS_STATE)
-                                                       = spin-up + seed; gia_scatter; ports PASS_STATE
+                                                       = spin-up + seed; rows geo_g -> geo; ports PASS_STATE
 per domain, [new] block c'):                           exchange(geo -> ice); domain_pass(ice, PASS_GEOMETRY)
                                                        (bnd bed/sea level, calc_ytopo_diagnostic); hub update
 per domain, block d):                                  surface PASS_FINAL on the final geometry; as today
@@ -722,7 +730,7 @@ Phase 3 no longer has a globe geometry hub or rank-2 globe items; all are phase 
 | globe coupler with several global grids (background, Gauss), `coupler_set_area` per ice grid, domains' grids resolvable by name (N1) | WP4 (`globe%cpl`) |
 | a global instance has a grid: `ctx%grid_name`, `nx`, `ny`, manifest `grid` (N2) | WP4; `vilma_earth_t` sets its grid at `init` and the globe copies it |
 | rank-2 fields on a global geo (N3) | WP1 (declaration by `opt%host`) |
-| rank-2 globe ↔ domain rows, gather by merge, split by `coupler_split`, lag check (N4) | WP4 (`gia_gather`, `gia_scatter`; `exchange_globe` rank 2) |
+| rank-2 globe ↔ domain rows, gather by merge, scatter by the wiring rows (bilinear, domain coupler), lag check (N4) | WP4 (`gia_gather`, `bsl_to_geo`; `exchange_globe` rank 2) |
 | footprint and coverage of each domain on each global grid, owner weights (N5) | WP3 (`globe_ice`) |
 | global geometry hub: reference assembly, merged ice, checks, `globe_ice.nc` (N6) | WP3, §5.4; gate G1b |
 | generic global step in `run_sequence` (N7) | WP4 (§7.1; the hooks are `gia_*`) |

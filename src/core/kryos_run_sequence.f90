@@ -169,11 +169,6 @@ contains
         integer  :: d, j, k
 
         dir = strip_slash(run%restart)
-        if (run%globe%has_gi) then
-            call fesm_error("kryos_run::run_restore", "a restore with a host-resolved global geo (vilma2) is not implemented yet", &
-                            "phase4-plan 8.2: the reference is rebuilt (gia_reference, PASS_GEOMETRY) and VILMA2 restored "// &
-                            "before the geo restore; start the run cold ([kryos] restart = ""None"")")
-        end if
 
         ! 1. clock and cadences
         call restart_read_clock(dir, run%clk, run%globe, run%dom)
@@ -191,6 +186,14 @@ contains
 
         ! 3. the globe (yelmox bsl_startup, coefs_restart_read)
         do j = 1, size(GLOBE_ORDER)
+            if (trim(GLOBE_ORDER(j)) == "geo" .and. run%globe%has_gi) then
+                ! phase 4 (plan 8.2): the reference is a function of files and of the static exports PASS_INIT
+                ! published, so it is rebuilt before the geo restore, and VILMA2 is built at it (memory zero);
+                ! the restore (vilma_restart_read: checks the reference, restores the memory and the ramp's last
+                ! host terms) then replaces the state, the imports and exports are the bundle's
+                call gia_reference(run)
+                call globe_pass(run%globe, "geo", run%clk, PASS_GEOMETRY)
+            end if
             call restart_read_global(dir, run%globe, trim(GLOBE_ORDER(j)), run%clk)
         end do
 
@@ -201,8 +204,10 @@ contains
                     k = RESTORE_ORDER(j)
                     if (.not. domain_present(dom, k)) cycle
                     if (k == C_GEO) then                                      ! geo rebuilds on the restored ice, bsl
-                        call exchange(dom, "ice", "geo", t, run%clk, init=.true.)
-                        call bsl_to_geo(run, d, init=.true.)
+                        if (.not. dom%geo%c%opt%port) then                    ! (a port is stateless: its imports are the bundle's)
+                            call exchange(dom, "ice", "geo", t, run%clk, init=.true.)
+                            call bsl_to_geo(run, d, init=.true.)
+                        end if
                     end if
                     call restart_read_instance(dir, dom, k, run%clk)
                 end do
