@@ -11,7 +11,7 @@ module kryos_ice_yelmo
     use nml,             only: nml_read, nml_has_param
     use kryos_component, only: init_ctx_t, step_time_t, constraints_t, grid_ref_t, &
                                component_write_output, NAME_LEN, PATH_LEN, &
-                               PASS_INIT, PASS_GEOMETRY, PASS_STATE, PASS_RESTART
+                               PASS_INIT, PASS_GEOMETRY, PASS_STATE, PASS_SPINUP, PASS_RESTART
     use kryos_ice,       only: ice_t, ice_opt_t
     use yelmo,           only: yelmo_class, ytopo_input_class, yelmo_init, yelmo_init_grid, yelmo_init_state, &
                                yelmo_update, yelmo_update_equil, yelmo_end, yelmo_print_bound, &
@@ -106,10 +106,11 @@ contains
             call bnd_geometry(self)
             call topo_diagnostic(self)
             call exports_geometry(self, st%t1)
-        case (PASS_STATE)                               ! kryos_startup.f90:178-179, domain_init_ice 252-287
+        case (PASS_STATE)                               ! kryos_startup.f90:178-179
             call bnd_from_imports(self)
             call yelmo_print_bound(self%ylmo%bnd)
             call yelmo_init_state(self%ylmo, time=st%t1, thrm_method="robin-cold")
+        case (PASS_SPINUP)                              ! domain_init_ice 252-287, the experiment hook before it
             if (self%init_equil_time > 0.0_sp) &
                 call yelmo_update_equil(self%ylmo, st%t1, time_tot=self%init_equil_time, dt=1.0_sp, &
                                         topo_fixed=.false.)

@@ -31,11 +31,15 @@ module kryos_component
     ! after a restore, review outcome). PASS_INIT: right after every instance's
     ! init, cold start and restore alike, put the exports of the state as
     ! initialised at t0 (what other instances read before the cold start).
+    ! PASS_SPINUP: after PASS_STATE, with the experiment hook between them: the
+    ! cold-start equilibration of the instance and the exports of its initial
+    ! state (yelmo: init_equil_time, init_time_thrm).
     ! PASS_RESTART: after restart_read and the core's restore of the imports
     ! and exports (core-design 3.3): re-derive the backend's internal state
     ! from them; put no export (the bundle's are the run's, bit for bit).
+    ! The values are not stored anywhere.
     integer, parameter, public :: PASS_INIT = 0, PASS_GEOMETRY = 1, PASS_BOUNDARY = 2, PASS_STATE = 3, &
-                                  PASS_FINAL = 4, PASS_RESTART = 5
+                                  PASS_SPINUP = 4, PASS_FINAL = 5, PASS_RESTART = 6
 
     ! The canonical four-value mask (contracts-design section 8).
     integer, parameter, public :: MASK_OCEAN = 0, MASK_LAND = 1, MASK_GRND = 2, MASK_FLOAT = 3

@@ -17,7 +17,7 @@ submodule (kryos_run) kryos_run_sequence
     !            (forcing_to_climate, lag 0).
 
     use fesm_clock,      only: clock_to_years, cadence_t_last, cadence_due, cadence_dt_years
-    use kryos_component, only: PASS_GEOMETRY, PASS_BOUNDARY, PASS_STATE, PASS_FINAL
+    use kryos_component, only: PASS_GEOMETRY, PASS_BOUNDARY, PASS_STATE, PASS_SPINUP, PASS_FINAL
     use kryos_wiring,    only: wire_node
     use kryos_geo,       only: geo_scatter
     use kryos_globe,     only: gather_src_t, gather_src, gather_into, globe_update, globe_reduce, &
@@ -90,8 +90,9 @@ contains
                 end if
                 call exchange_into(dom, "ice", t0, run%clk, init=.true.)          ! couple_to_yelmo
 
-                ! c) the ice state: yelmo_init_state (robin-cold), domain_init_ice
+                ! c) the ice state: yelmo_init_state (robin-cold), then domain_init_ice
                 call domain_pass(dom, C_ICE, run%clk, PASS_STATE)
+                call domain_pass(dom, C_ICE, run%clk, PASS_SPINUP)
 
                 ! d) the surface on the final initial geometry: one more cycle, no spin-up
                 call domain_hub_update(dom, t0, run%clk, init=.true.)            ! couple_yelmo_to_htopo
