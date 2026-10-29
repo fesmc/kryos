@@ -1,8 +1,8 @@
 # Phase 4 WP3: `kryos_globe_ice` (2026-10-29)
 
-Branch `p4-wp3` on main aeee5dd, never pushed. Mac, gfortran, `make check` at every commit
-(`make -o input-check check` from the fourth commit on: the shared `vilma2` checkout moved and its
-`vilma_defaults.nml` no longer equals the synchronised copy; not touched here).
+Branch `p4-wp3`, rebased onto main a6e91bf, never pushed. Mac, gfortran, `make check` at every commit
+(during development `make -o input-check check` was used for a while: the shared `vilma2` checkout had moved ahead of the
+synchronised `vilma_defaults.nml`; main a6e91bf re-synced it).
 
 | commit | what |
 |---|---|
@@ -13,6 +13,12 @@ Branch `p4-wp3` on main aeee5dd, never pushed. Mac, gfortran, `make check` at ev
 | 1695fb2 | owner weights for overlapping domains (priority, `coupler_owner_reduce`) |
 | f082dec | hub output `globe_ice.nc` (background grid, table `kryos-variables-globe_ice.md` with `prec`), hub conservation check |
 | 923af09 | `KryosTools.GlobeIce` offline merge, `tools/bin/kryos-globe-ice.jl`; the test compares `globe_ice.nc` with it |
+
+## Final state (rebased onto a6e91bf)
+
+The history's time units are read as they are (fesm-utils 60aea73 decodes "years ago"); the test file has `years ago`, the par groups
+no `time_units`. Full `make check` (with input-check) passes on the head against shared fesm-utils 3ba56a9; the `plain` runs compared with
+`kryos-compare --restarts` against a fresh a6e91bf build: cont PASS 1171 variables, c00 and c01 PASS 632, 0 failing, 0 absent, 0 new.
 
 ## Bit-neutral
 

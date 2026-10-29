@@ -523,8 +523,8 @@ surface refreshed inside the recipe. R2' vs R0 differences are those documented 
 
 ## Phase 4 WP3: kryos_globe_ice (2026-10-29)
 
-Report `gate-reports/p4-wp3.md`. Branch `p4-wp3` on main aeee5dd: the gather (§4) and the reference (§5.1-5.3) with one reference definition (D18),
+Report `gate-reports/p4-wp3.md`. Branch `p4-wp3` on main a6e91bf: the gather (§4) and the reference (§5.1-5.3) with one reference definition (D18),
 owner weights for overlapping domains, the hub output `globe_ice.nc` (rounded, lossless under the ncio switch) with its conservation check, and the
 offline merge in Julia (`KryosTools.GlobeIce`). Mac, `make check` at every commit; `test_run_sequence` plain runs compared with
-`kryos-compare --restarts` against aeee5dd: PASS at every commit (1159 / 625 / 625 variables, 0 failing, 0 absent). G1b locally: hub closure 1e-15,
+`kryos-compare --restarts` against a build of the base: PASS at every commit; head against a fresh a6e91bf build: 1171 / 632 / 632 variables, 0 failing, 0 absent. G1b locally: hub closure 1e-15,
 order swap identical, offline merge equal to 1e-12. The run with and without `[globe_ice]` and the real-run offline merge are WP4/WP7.
