@@ -23,8 +23,8 @@ Deferred (no gate in phase 2): GRP, LIS, PYR, SRG, eANT, eGRL, rGRL and their
 packages WP4 rest (recon_ref, marine_H, kill_shelves), WP5, WP6 (except what
 the globe needs in phase 3-4), WP8, WP9, WP10, WP12, WP13, WP14. The
 sections below keep the full plan as the record; §4 has the new order.
-WP7 (smb_simple + climate `tsl_ann`) is back in scope (2026-10-29), placed by
-`phase3-plan.md`.
+WP7 (smb_simple + climate `tsl_ann`) is back in scope (2026-10-29): it moves
+to phase 3 WP2 (`phase3-plan.md`, Q17), gated there by unit tests plus `sci-smb`.
 
 Refs: `yx` = yelmox `topo-prep` (`~/models/yelmox/.claude/worktrees/topo-prep`,
 74f3a2b = v2.4 + R2 commit). `contracts`, `core`, `adapters`, `regression` =
@@ -82,7 +82,7 @@ pico stays refused until the E30 fix (`regression` §2.5); no base uses it.
 
 | Phase | What |
 |---|---|
-| 3 | globe with global grids, N domains, `ocean = obm`, `yelmox_bipolar` (`yx/yelmox_bipolar/`), bsl `mixed`, forcing-increment bundles (`core` §7), two domains producing one derived coefficient (`contracts` §7), suffixed multi-domain par files |
+| 3 | N domains (NH + ANT in one run), `smb_simple`, forcing-increment bundles (`core` §7), output precision (`phase3-plan.md`); `ocean = obm`, freshwater, `yelmox_bipolar` (`yx/yelmox_bipolar/`), bsl `mixed`, two domains producing one derived coefficient (`contracts` §7), suffixed multi-domain par files → Later (bipolar/obm) |
 | 4 | `geo = vilma2` |
 | 5 | `ice = cism`, then `pism`; `shelf.tf_shlf → ice`, `own_bmb` (D6) |
 | — | `ocean = data` (no `ocean` component before phase 3); geothermal `f_stdev` (0 in every base) |
@@ -265,6 +265,9 @@ surface (§3.3).
 
 ### WP7 smb_simple + climate `tsl_ann` — M (`smb_simple.f90` 985)
 
+Moved to phase 3 WP2 (2026-10-29, `phase3-plan.md` Q17); the text below is the
+record.
+
 - Backend `surface = smb_simple` (private module, stateless, no restart).
 - Climate vocabulary adds `tsl_ann` (snapshots `has_tsl_ann`,
   `src/backends/climate/kryos_climate_snapshots.f90:132`); with WP5, `ta_ann`,
@@ -361,7 +364,8 @@ Depends: WP8 (eGRL), WP1–3 (opt/relax in both). Gate: eANT, eGRL.
 - Lapse transform with `dz ≠ 0` (PYR) and geo on a coarser grid than the ice
   (PYR: `auto` both ways): first uses, no new code expected.
 - MEAN imports for slower consumers (`contracts` §1): no base needs them
-  (every MEAN row has equal cadences); **leave for phase 3**.
+  (every MEAN row has equal cadences); **no consumer** (the freshwater port is
+  Later, `phase3-plan.md` §7).
 
 ### WP14 `dp` hub rebaseline — S code, M gate work
 
@@ -447,8 +451,9 @@ and 6-8 and the FesmData global topography product (for phase 4).
 | 4 | WP4 recon | M | `nor` |
 
 Sign-off: `grl`, `ant`, `ant-full`, `nor` green in `docs/gate.md`; then
-phase 3 (globe, N domains, obm: `yelmox_bipolar`) and phase 4 (`geo =
-vilma2`: VILMA2 global + NH-32KM + ANT).
+phase 3 (N domains: NH + ANT) and phase 4 (`geo = vilma2`: VILMA2 global +
+NH-32KM + ANT). WP2 + WP3 (gate `ant-full`) and WP4 (gate `nor`) are done
+before phase 3 `sci` (decided 2026-10-29, `phase3-plan.md` Q19).
 
 The original order (all bases), kept for the deferred packages:
 

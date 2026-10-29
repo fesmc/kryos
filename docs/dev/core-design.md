@@ -226,6 +226,22 @@ same order, so bit-identical when no hook is set. The pass constants are not
 stored anywhere (restart files, manifests), so the renumbering of
 `PASS_FINAL` and `PASS_RESTART` is free.
 
+Phase 4 (`geo = vilma2`; `phase4-plan.md` §8.1): a global geo that declares
+`opt%host` makes the cold start two-pass, because the t0 load is final only
+after `PASS_STATE` (recon, equil) and the ice `PASS_SPINUP`, and the globe is
+initialised before the domains (it builds VILMA2 at `PASS_GEOMETRY`, not at
+`init`). After `run_pass_init`: `gia_reference(run)` (statics into the globe
+geo's imports) and `globe_pass(geo, PASS_GEOMETRY)` (VILMA2 built at the
+reference, exports 0). Per domain, block a) takes the globe rows with zero
+anomalies into the regional port and runs `domain_check_reference`, as above;
+blocks b) and c) run on the reference bed. Then `gia_seed(run)` after c) of every
+domain: gather at t0, `globe_pass(geo, PASS_STATE)` (VILMA2's spin-up holding the
+t0 load, then the `dt = 0` seed), `gia_scatter`, ports `PASS_STATE`. The domain
+loop is split there: a block c') per domain (`exchange(geo → ice)`, ice
+`PASS_GEOMETRY`, hub update) and then block d), so the surface's final cycle sees
+the final geometry. Per domain the order is unchanged and the loop split is
+bit-neutral for fastiso runs (gate G1).
+
 ### 3.3 Restore (restore, never step)
 
 Order: `clock_restart_read(clk, dir/clock_restart.nc)` (continuation if the
@@ -238,6 +254,15 @@ before geo because FastIsostasy's `isos_init_state(use_restart)` takes the
 restored Yelmo geometry (adapters-design). Then `domain_check_reference`,
 `domain_hub_update` (the hub is derived, never stored). No exchange runs:
 imports are restored as received.
+
+Phase 4: the globe step becomes `gia_reference(run)` (the reference is a
+function of files and of static exports that `PASS_INIT` publishes), then
+`globe_pass(geo, PASS_GEOMETRY)` (VILMA2 at the reference, memory zero), then
+the geo's backend restore (`vilma_restart_read`, which checks its reference
+against the model just built and restores memory, rotation and the ramp's last
+host terms) and its imports and exports; the reference is therefore built
+before the geo restore. Domain ports are stateless. Nothing is gathered or
+stepped (`phase4-plan.md` §8.2).
 
 Differences from yelmox, both bit-neutral at aligned restart times: the
 climate is restored from `climate_grl_fields.nc` instead of re-derived with
@@ -300,6 +325,14 @@ row into `dst`, in the order geo, surface, shelf, climate (yelmox
 `couple_to_yelmo`); rows from static producers (cadence off) run once, at init. The global reduction between the two loops is what makes
 `z_sl` at the ice see this step's `bsl`, as FastIsostasy's in-call update does
 today (§10 R5).
+
+Phase 4 (`geo = vilma2`; `phase4-plan.md` §7.1): in block 1, when the global geo
+declares `opt%host` and is due, `gia_gather(run)` runs first (the ice at
+`t_{n-1}`, lag 1) and then the globe update is the VILMA2 solve; in block 3, when
+due, `gia_scatter(run)` runs rows `geo_g → geo` into the ports (`coupler_split`)
+and updates them, and `geo_global_reduce` finds no `dV_bsl` source and returns.
+Block 4 is unchanged (`exchange_into(dom, "ice")` takes `z_bed` and `z_sl =
+dphi + dz_ss` of this step, lag 0). For fastiso gather and scatter are skipped.
 
 ### 3.5 `run_end`
 
@@ -721,6 +754,15 @@ As implemented (C8, `kryos_output`, `kryos_outfile`, `component_write_output`):
   2 or 3 export without a row stops, a 0-D one without a row (a coefficient
   named by the par file) is written lossless. Units attribute = the export's;
   a table whose units, rank or third axis differ from the export stops.
+- Precision (phase 3, WP3): the table's `prec` column is the only source of
+  rounding. Backend streams that wrote with hard-coded precisions (FastIsostasy
+  `w`, `we`, snapshots, the hub where kryos owns the call) read their `prec`
+  from `kryos-variables-<component>-<backend>.md`, like the instance tables; a
+  backend variable without a row is lossless, as in the default writer. Time
+  series (0-D, `*_ts.nc`, `forcing_ts.nc`, `timing.txt`), grids and debug output
+  stay lossless; `[kryos] write_lossless` (`nc_set_lossless`) is the lossless
+  override of every precision, which the gates set. Restarts and bundle field
+  files are lossless by construction.
 - Producers that are not components (hub, timing; the globe's parts are
   components) register a writer procedure with a context object
   (`output_add_writer`, `output_add_hub`, `output_add_timing`). The timing
@@ -773,8 +815,9 @@ named as in the par file (`scope`, `component`, `backend`, `grid`, `files`,
   (staging: §3.8).
   Continuation keeps `n_origin`, so `time_elapsed` runs on across chunks
   (yelmox restarts it per chunk: relax/opt windows differ, documented).
-- Deferred: forcing-increment bundles (`restart_every_df`, 0 in both
-  configs) to phase 3; the kill switch stays.
+- Forcing-increment bundles (`restart_every_df`, 0 in every shipped config):
+  phase 3 (WP4): the forcing exports `restart_due` and `run_step` writes a
+  bundle `restart-<n>` (counter as yelmox); the kill switch stays.
 
 ## 8. Errors, logging, describe
 

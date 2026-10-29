@@ -185,6 +185,21 @@ runs with the same components off (`comps.with_isostasy=False`,
 `comps.with_shelf=False`): ice + climate + surface, then + shelf, then + geo.
 Useful while components land; not required for the phase 1 sign-off.
 
+### 1.6 Kryos-against-kryos gates (phase 3)
+
+Where no yelmox run exists (the two-domain configuration `sci`, NH + ANT, phase 3)
+a gate compares kryos with kryos, anchored on the single-domain gates already
+proven against yelmox (`ant`, `nor`), which keep passing. Checks of this type
+(`phase3-plan.md` §3): per domain, the two-domain run equals the single-domain
+runs of the same binary bit for bit (`sci-const`: instance files by name, the
+domain's folders of the bundles, the globe files except aggregates over
+domains); `cont2 == cont`; `chunk == cont`, bundles included; the domain order
+swapped in `[kryos] domains` gives identical files and bundles; the `bsl`
+budget `bsl(t) - bsl(0) = -Σ_d Σ dV_bsl / A_ocn` recomputed from the exports
+closes to round-off; a non-lossless run (`write_lossless` off) against the same
+run lossless (restarts identical, every rounded file within its table row's
+tolerance). No yelmox side, no variable map.
+
 ## 2. Configuration migration
 
 ### 2.1 Tool
@@ -271,7 +286,9 @@ The converter stops, naming the key and the phase that brings it:
 2); `init_method = recon | recon_ref`; `[ice_bnd] active`; `[bias]`/`[taper]`
 active; `bmb_method = "pico"` or `*-slope` (broken, sweep E30); `write_cmip =
 True` (CMIP post-processing table, later); `ctrl.restart` ≠ `"None"`; any
-suffixed multi-domain file (phase 3).
+suffixed multi-domain file (the refusal stays: two-domain par files are
+assembled by a merge step from two converted single-domain files, phase 3 WP1;
+the bipolar mode of the converter is Later).
 
 ### 2.6 Checks
 
@@ -324,7 +341,11 @@ julia --project=tools tools/bin/kryos-compare.jl REF RUN \
 pattern each side uses; `--map identity` compares two runs of the same model).
 Exit 0 pass, 1 fail, 2 error (missing file or record, unreadable map).
 `tests/diff_nc.py` in yelmox is not suitable: it drops values outside (0, 1e4)
-and works with tolerances.
+and works with tolerances. Kryos-against-kryos gates (§1.6) use a mode of the
+same tool without a map: per-domain comparison of a two-domain run against
+single-domain runs, domain order swap, chunk and restart checks, the `bsl`
+budget and the lossless against rounded comparison (tolerance from the variable
+tables).
 
 ### 3.2 Mapping table
 
@@ -423,6 +444,14 @@ approved  = "Alex, <date>"
   `bsl`) without pass/fail. Phase 1 aims for no rebaseline before sign-off.
 
 The tool lists deviations that matched nothing; they are removed.
+
+**Kryos self-baselines.** A configuration without a yelmox run is registered
+after its sign-off as a kryos baseline `K<n>-<name>`: its files and restart
+bundles at the gate time with the kryos commit of the sign-off, read-only like
+a reference (§1.4), and gated by `--map identity` bit for bit in later phases.
+Phase 3 registers `K3-sci` (the files and bundles of `sci` and `sci-const` at
+1000 yr); phase 4 gate G1 compares the fastiso configurations against it,
+and registers `K4-*` after its own gates.
 
 ## 4. Automation
 
@@ -525,7 +554,7 @@ link in yelmox and the Antarctica `ice_data` files); the grids are small
 | 6 | Hub precision | `htopo` is `sp` today; design §5 moves it to `dp` (§12 row 8), which changes every consumer of hub geometry. Phase 1 keeps the `sp` hub until the gate is green; the `dp` hub is then a rebaseline (Q2). |
 | 7 | ncio read flush (`|x| < 1e-30` → 0) on restart | The same backend restart files are read by the same ncio in both models. New kryos state (exchange buffers, scheduler) is read through ncio too and only feeds values that yelmox also restored through ncio (Yelmo `bnd`). Covered by `chunk` vs `cont`. |
 | 8 | Lossless restarts | Backend restart writers are unchanged (Yelmo forces lossless on its table); `fesm_fields_restart_write` writes `dp` without rounding. E on the bundles at 500 and 1000. |
-| 9 | Output precision rounding | Gate runs are lossless. Backend files keep their writers and per-field precision; instance export files declare theirs in the variable table. Once per phase a non-lossless `grl` pair is compared: E rows must still pass. |
+| 9 | Output precision rounding | Gate runs are lossless. Backend files keep their writers and per-field precision; instance export files declare theirs in the variable table. Once per phase a non-lossless `grl` pair is compared: E rows must still pass. Phase 3: the non-lossless pair is `sci-nl` (`sci` with `write_lossless` off against `sci`: restart bundles identical, every rounded file within the tolerance of its table row, sizes reported). |
 | 10 | `bsl` reduction | One domain: `Σ_d` over one term is that term; the expression must be yelmox's (`bsl_update` order). E on `bsl`. |
 | 11 | Clock | Times are `n·tick` in kryos and accumulated `dtt` in yelmox; with integer `dtt` both are exact integers in `dp`. Gate `dt` values stay integer years. Time axes compared first. |
 | 12 | Defaults drift | Removed by the fully expanded par file (§2.3). |

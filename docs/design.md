@@ -37,6 +37,7 @@ Scope is a property of the instance, not of the component type (section 6).
 run
  ├─ clock + scheduler        one integer-tick clock; a cadence per instance
  ├─ globe                    global grids; global geometry hub; footprints
+ │    ├─ globe_ice           background + external ice (datasrc), reference, merges: the hub of the globe
  │    ├─ forcing             scalars at the forcing time: indices, CO2, orbit, bsl (if prescribed)
  │    ├─ geo       (global)  vilma2 | data | none        ← gather loads, solve, scatter dz_bed/dz_ss/bsl
  │    └─ ocean     (global)  obm | data | none           ← gather FWF, solve, scatter T/S
@@ -125,8 +126,8 @@ Canonical vocabulary (full table in `study/backends.md` section A):
 
 | Component | Imports | Exports |
 |---|---|---|
-| ice | `z_bed`, `z_sl` (2D), `smb`, `T_srf`, `bmb_shlf`; opt `T_shlf`/`tf_shlf`, `Q_geo`, `H_sed`, `Qd` | `H_ice`, `z_srf`, `f_ice`, `f_grnd`; interval-mean `dHidt`, `smb`, `bmb`, `cmb`, `mb_net`; opt `ux_s`, `uy_s`, `Q_b` |
-| geo | reference `z_bed_ref`, `H_ice_ref` (init); `H_ice` | `dz_bed`, `dz_ss`, scalar `bsl`; opt `dz_bed_dt` |
+| ice | `z_bed`, `z_sl` (2D), `smb`, `T_srf`, `bmb_shlf`; opt `T_shlf`/`tf_shlf`, `Q_geo`, `H_sed`, `Qd` | `H_ice`, `z_srf`, `f_ice`, `f_grnd`; interval-mean `dHidt`, `smb`, `bmb`, `cmb`, `mb_net`; opt `ux_s`, `uy_s`, `Q_b`; opt static `footprint`, `H_ice_pd`, and the capability `has_flotation` (a binding `flotation(H, z_bed, z_sl) → f_grnd`) |
+| geo | reference `z_bed_ref`, `H_ice_ref` (init); `H_ice` | `dz_bed`, `dz_ss` (relative to `dphi`), scalars `dphi` and `bsl`; opt `dz_bed_dt`; a global `geo` (`vilma2`) has rank-2 imports (the gathered ice terms) and exports on its global grid |
 | climate | geometry; forcing scalars | monthly `tas`, `pr`, the `z_srf` they refer to, lapse rate; opt ocean `T`,`S` profiles or shelf-base values, `smb`, `T_srf`, `Qd` |
 | surface | geometry; `tas`, `pr`; opt radiation, wind, humidity (chion) | `smb`, `T_srf`; opt `melt`, `runoff`, `refrz`, `albedo` |
 | shelf | geometry; ocean `T`,`S` | `bmb_shlf`, `T_shlf`, `tf_shlf` |
@@ -189,20 +190,28 @@ backend, not on the component:
    grid. Extensive fields (ice load, freshwater flux) are remapped `con` with
    **full-target-area normalisation** and a **coverage fraction** `f_d`; the
    global field is `(1 − Σ f_d)·background + Σ f_d·contribution_d`. The
-   background is the globe's own data instance (reference ice, or an ice
-   history). Overlapping domains are resolved by owner weights, not by call
-   order. Volumes are checked (`coupler_integral`) and logged.
+   background is the globe's own datasrc, a par group and not an instance
+   (reference ice, or an ice history). Overlapping domains are resolved by
+   owner weights, not by call order. Volumes are checked
+   (`coupler_integral`) and logged. The gather may carry host-resolved terms
+   (VILMA2: weighted ice, ocean function and flotation terms, resolved on the
+   ice grid with the ice model's own flotation) and not only `con`-remapped
+   fields.
 2. `update`: the global instance integrates once per run step. For
    FastIsostasy the global part is only the barystatic sum
    `bsl += Σ_d ΔV_d / A_ocn` (order-independent, unlike today's sequential
-   mutation).
+   mutation; with two domains gated by the domain order swap and the budget
+   `bsl(t) − bsl(0) = −Σ_d Σ ΔV_d / A_ocn`, phase 3).
 3. `scatter`: each domain imports the global exports on its hub, as anomalies
-   (`dz_bed`, `dz_ss`) added to the hub reference, or as remapped fields
-   (ocean `T`, climate anomalies).
+   (`dz_bed`, `dz_ss`) added to the hub reference (`z_sl = dphi + dz_ss`), or as
+   remapped fields (ocean `T`, climate anomalies).
 
 The globe keeps a global geometry hub (reference topography with the domain
 references spliced in, merged ice) so that global components see a complete
-Earth; a run with no global instance has an empty globe and pays nothing.
+Earth; a run with no global instance has an empty globe and pays nothing. The
+reference a global component starts from is built from the same code: the
+background plus each domain's present day (`dta%pd`, the ice instance's static
+exports), gathered as in an update step, and not the hub reference.
 
 What is necessarily regional: anything whose physics is defined on the ice
 domain's projected grid (ice dynamics, shelf melt, SMB columns). What is
@@ -312,7 +321,7 @@ components. Candidates, in the order to do them:
 |---|---|---|
 | 1 | `fesm_log` / `fesm_error(proc, msg, detail [, stat])` + `to_str` | ten private copies; the team's own "fifth module" rule is exceeded |
 | 2 | `fesm_fields`: `field_t`, `field_state_t` (`dp` buffers, units, grid tag, validity, time semantics, conservation flag, handles) | nothing exists; the exchange of section 5 |
-| 3 | `coupler` extensions: coverage fraction and full-target-area normalisation in `map_field`, `coupler_merge`/`coupler_split`/`coupler_integral`, Gauss cell bounds from Gauss weights, grid hash in the cache key, identity shortcut, mask/fill pass-through, no fixed `GRID_MAX`/`MAP_MAX` | the global ↔ regional gaps of `study/fesm-utils.md` section 2.7; removes VILMA2's rescale |
+| 3 | `coupler` extensions (**done**: merge, split, integral, `coupler_set_area`, Gaussian grid; phase 4 review): coverage fraction and full-target-area normalisation in `map_field`, `coupler_merge`/`coupler_split`/`coupler_integral`, Gauss cell bounds from Gauss weights, grid hash in the cache key, identity shortcut, mask/fill pass-through, no fixed `GRID_MAX`/`MAP_MAX` | the global ↔ regional gaps of `study/fesm-utils.md` section 2.7; removes VILMA2's rescale |
 | 4 | `fesm_clock`: integer-tick `clock_t` + `cadence_t` with a convenient, well-documented interface (decision 8); `tstep_class` and `timeout` become views on it | section 7 |
 | 5 | `datasrc_t` on `varslice`; varslice reads the time axis and units from the file | section 8 |
 | 6 | restart bundle helper (paths + manifest) | yelmox convention made reusable |
@@ -365,22 +374,30 @@ on the Levante test cases.
    `yelmox_Antarctica` and `yelmox_North` (NH-32KM). Narrowed 2026-10-29 to
    the science case (VILMA2 global + NH and ANT domains); the other yelmox
    bases (GRP, LIS, PYR, SRG, esm, rembo), `data` backends beyond what the
-   coupling needs and the `dp` hub are deferred; smb_simple is back in scope
-   (science-case surface option)
+   coupling needs and the `dp` hub are deferred; smb_simple is back in scope, as a
+   phase 3 package (science-case surface option)
    (`docs/dev/phase2-plan.md`; smbpal dropped: deprecated, chion is its
    successor).
 3. Globe: N domains in one run (two for the science case: NH-32KM and
-   ANT-32KM), shared `forcing`, the `bsl` reduction, N-domain output and
-   restart, output precision (ncio rounding; restarts lossless). Narrowed
-   2026-10-29: `ocean = obm` and `yelmox_bipolar` come much later
-   (`docs/dev/phase3-plan.md`).
-4. `geo = vilma2` (VILMA2's own gaps: export `u` and `N` separately,
-   barystatic definition, `libvilma.a`, FesmData viscosity format). The
+   ANT-32KM), shared `forcing`, the `bsl` reduction, `smb_simple`,
+   forcing-increment bundles, N-domain output and restart, output precision
+   (ncio rounding; restarts lossless). Target: NH-32KM + ANT in one kryos run,
+   gated by kryos self-consistency against the single-domain gates (no yelmox
+   reference). Narrowed 2026-10-29: `ocean = obm`, freshwater and
+   `yelmox_bipolar` move to a later phase (after phase 4); the globe grid and
+   hub parts of §6 stay with phase 4 (`docs/dev/phase3-plan.md`).
+4. `geo = vilma2` (dependencies: `vilma2:main` with its host terms and
+   `libvilma.a`, SHTns from fesm-utils, the FesmData viscosity file). The
    global reference topography is assembled at runtime, not a FesmData
    product: the background dataset of the globe (a run input on a global
    grid) with the domain references gathered onto it exactly as in an update
    step (§6 mechanism, item 1); background PaleoMIST (0 ka reference,
-   history back to 80 ka). Target (the science case): VILMA2 global + Yelmo
+   history back to 80 ka). The global geometry hub (grids, footprints,
+   assembly, checks, output) is phase 4; the cold start has two passes (the
+   t0 load is final only after the domains' state); the Gauss grid is named
+   and built by kryos (`GAUSS-L<lmax>`, not FesmData's `GLOBAL-T170`, which
+   is 512 × 256); output is rounded (ncio), restarts lossless;
+   FastIsostasy together with VILMA2 is a later package. Target (the science case): VILMA2 global + Yelmo
    NH-32KM + ANT-32KM, climate and surface from snapshots + tsgen + chion or
    smb_simple (`docs/dev/phase4-plan.md`). Global GIA is
    built in kryos only; yelmox gets none (its VILMA2 plan,
@@ -430,7 +447,7 @@ rejected.
    plus `bsl`. The domain owns the reference topography: on the hub, and on
    every component grid as a copy made once at init by the same conservative
    map. Each consumer forms full fields on its own grid,
-   `z_bed = z_bed_ref(grid) + remap(dz_bed)` and `z_sl = bsl + remap(dz_ss)`,
+   `z_bed = z_bed_ref(grid) + remap(dz_bed)` and `z_sl = dphi + remap(dz_ss)`,
    all in one absolute datum (the geoid of the reference topography). `geo` is
    initialised from the domain reference, so the yelmox reference check becomes
    a check that `geo` and hub agree. Yelmo's internal `z_bed_ref` is set from
@@ -445,7 +462,8 @@ rejected.
    holds as its present day, otherwise excluded ice causes spurious uplift;
    this also keeps today's yelmox behaviour. The hub keeps the domain
    reference. Under `vilma2` the anomalies
-   arrive on the global grid and are split onto each hub; under `geo = data` a
+   arrive on the global grid and are split onto each domain's geo grid (the ice
+   grid by default; the hub follows through the ice); under `geo = data` a
    bed or rsl history is differenced against the reference so it enters as
    anomalies too (the reference for a data history is a slice of the same
 dataset at the reference time, not the domain's reference topography, so
@@ -462,7 +480,9 @@ displacements are long-wavelength and survive
    `dz_ss` on a domain grid, or on the global grid for VILMA2) and a global
    part (global load, the solve, `bsl`), stepped gather → update → scatter.
    FastIsostasy's global part is only the order-independent barystatic
-   reduction; VILMA2's domain part is a copy. The `bsl` source is a component
+   reduction; VILMA2's domain part is a regional port that holds the split
+   anomalies and the scalar `dphi` (the uniform sea-surface shift; FastIsostasy
+   exports `dphi = bsl`) and is a copy. The `bsl` source is a component
    option (`own | file | const`), so bed from FastIsostasy with sea level from
    a curve stays expressible. Why one component: the sea-level equation
    produces `u`, `N` and `bsl` from one solve, so two components would have
@@ -521,8 +541,8 @@ displacements are long-wavelength and survive
    for those contracts anyway; the lifecycle contract will change during
    phases 1–3 and must not require a fesm-utils release and pin bumps across
    the stack each time; fesm-utils keeps its mechanisms-only principle.
-   Revisit at phase 3 and promote (one module move) if a second host wants
-   it. Rejected for now: `fesm_component` from the start, which would freeze
+   Settled at the phase 3 review (2026-10-29): it stays in kryos unless
+   CLIMBER-X asks (one module move then). Rejected for now: `fesm_component` from the start, which would freeze
    the contract before any backend implements it.
 10. **Driver**: decided (2026-10-24), one program. The program is a few
     lines (`run_init`, loop `run_step`, `run_end`); the coupling sequence is

@@ -101,6 +101,15 @@ optional, C capability), yelmox counterpart and the adapter's conversion.
 | `ux_s`, `uy_s` | m yr-1 | 2 | I | int | O | `dyn%now%ux_s`, `uy_s` at cell centres |
 | `dz_bed_dt_corr` | m yr-1 | 2 | I | int | O | `bnd%dzbdt_corr` |
 | `z_bed_ref` | m | 2 | I | int | O | `bnd%z_bed_ref` (reference check, §5.3) |
+| `footprint` | 1 | 2 | I | int | O | static: 1 where Yelmo holds ice, `mask_ice /= MASK_ICE_NONE` at the end of init (phase 4, gather source) |
+| `H_ice_pd` | m | 2 | I | int | O | static: `dta%pd%H_ice` (phase 2 WP3, phase 4); not `bnd%H_ice_ref`, which recon and `ice_bnd` overwrite |
+
+Binding (phase 4): `flotation(H, z_bed, z_sl) → f_grnd` (capability
+`has_flotation`, wrapper `ice_flotation(ice, ...)` like the others), implemented
+by the yelmo adapter with Yelmo's own routines (`calc_H_grnd`,
+`calc_f_grnd_subgrid_area` or `_linear` per `gl_sep`) on the instance grid with
+the run's `rho_ice`, `rho_sw`; the core uses it for ice outside the footprint
+and in the reference, never Yelmo itself.
 
 ### 2.2 geo (regional part; fastisostasy) and its global part
 
@@ -116,12 +125,40 @@ optional, C capability), yelmox counterpart and the adapter's conversion.
 | `dz_bed` | m | 2 | I | int | R | `out%w + out%we`, sum in `sp` |
 | `dz_ss` | m | 2 | I | int | R | `out%z_ss - now%bsl`, in `sp` |
 | `bsl` | m | 0 | I | int | R | the global `bsl` this domain last solved with (set by `geo_scatter`, §6) |
+| `dphi` | m | 0 | I | int | R | the uniform sea-surface shift: `dz_ss` is relative to it, `z_sl = dphi + dz_ss` at the ice; fastisostasy `dphi = bsl` (bit-neutral; phase 4) |
 | `dV_bsl` | m3 | 0 | I | ext | O | `now%deltaV_bsl` of this update; 0-D gather source |
 | `z_bed_ref` | m | 2 | I | int | R | `out%z_bed - out%w - out%we` (reference check) |
 | `dz_bed_dt` | m yr-1 | 2 | I | int | O | `now%dwdt`; no consumer in phase 1 |
 
 Global part (0-D, INSTANT): exports `bsl` [m] (`bsl_class%bsl_now`), `A_ocn`
 [m2] (`A_ocean_now`); import `dV_bsl` [m3], the gathered sum (§6).
+
+**`vilma2` (phase 4)**, two types (§3.3). The global part (`vilma_earth_t`) is
+rank 2 on its own Gauss grid `GAUSS-L<lmax>`, the weighted fields per unit
+Gauss-cell area; the imports are filled by the core's gather (§6), not by rows:
+
+| Global imports | units | rank | tsem | req | filled by |
+|---|---|---|---|---|---|
+| `H_ice_ext` | m | 2 | I | R | globe: external ice, mean over the `1 − w` part |
+| `host_w` | 1 | 2 | I | R | gather: Σ over domains of the coverage of the host region |
+| `host_Ig`, `host_C`, `host_F` | m, 1, m | 2 | I | R | gather: `w·H·f_g`, `w·(1 − f_g)`, `w·ζ⁽⁰⁾(C − C_ref)` |
+| `z_bed_ref`, `H_ice_ref` | m | 2 | I | R | globe: background on the Gauss grid (static) |
+| `host_Ig_ref`, `host_C_ref` | m, 1 | 2 | I | R | gather, once (reference host terms; static) |
+
+| Global exports | units | rank | tsem | req | meaning |
+|---|---|---|---|---|---|
+| `dz_bed` | m | 2 | I | R | `u`, the bed change |
+| `dz_ss` | m | 2 | I | R | `N`, the sea-surface change relative to `dphi` |
+| `dphi` | m | 0 | I | R | the uniform shift `Δφ` |
+| `bsl` | m | 0 | I | R | ocean mean of `C·rsl` (diagnostic and scattered scalar) |
+| `C_ocn` | 1 | 2 | I | O | total ocean function (diagnostic) |
+| `bsl_ive`, `A_ocn`, `mass_resid` | m, m2, 1 | 0 | I | O | diagnostics |
+
+The regional port (`vilma_geo_t`, stateless) imports `dz_bed`, `dz_ss`, `dphi`,
+`bsl` (scattered from the global part) and the static `z_bed_ref`,
+`H_ice_ref`; it has no `H_ice` import (the row `ice.H_ice → geo.H_ice` is then
+inactive) and no `dV_bsl`; it exports `dz_bed`, `dz_ss`, `dphi`, `bsl`,
+`z_bed_ref` on the geo grid.
 
 ### 2.3 climate (regional; snapshots)
 
@@ -143,10 +180,11 @@ Global part (0-D, INSTANT): exports `bsl` [m] (`bsl_class%bsl_now`), `A_ocn`
 | `to_shlf`, `so_shlf`, `dto_shlf`, `dso_shlf` | K, psu, K, psu | 2 | I | int | C `has_ocn_shelf` | `T_shlf`, `S_shlf`, `dT_shlf`, `dS_shlf` (esm, phase 2) |
 | `smb`, `T_srf` | kg m-2 yr-1, K | 2 | M | ext, int | C `has_smb` | `smb` [mm/a], `tsrf` (esm/rembo, phase 2) |
 | `Qd` | m3 s-1 | 2 | I | ext | C `has_Qd` | `Qd` (esm, phase 2) |
+| `tsl_ann` | K | 2 | I | int | C `has_tsl_ann` | `now%tsl_ann` (snapshots; consumer `smb_simple`, phase 3 WP2) |
 | `<derived>` | K | 0 | I | int | C | `factor*mean(tsl_ann - ref%tsl_ann, region)` per derived coefficient `from = air_anomaly` (yelmox_climate.f90:338) |
 
-`tsl_ann` (smb_simple), `ta_ann`/`ref%ta_ann` (glacial smb) and `pr_ann` are
-not exported in phase 1 (§10). Capability flags live in `caps_t` (§3.1);
+`tsl_ann` (smb_simple) is exported from phase 3 (WP2); `ta_ann`/`ref%ta_ann`
+(glacial smb) and `pr_ann` are not exported in phase 1 (§10). Capability flags live in `caps_t` (§3.1);
 `has_ocn` is new (yelmox implied it by `.not. has_ocn_shelf`).
 
 ### 2.4 surface (regional; chion)
@@ -397,7 +435,7 @@ without editing kryos. Experiments reach `ice%c` only by `select type`.
 
 | Module | Abstract type, slot | Extra bindings and wrappers | Handles (exports / imports, §2) | Phase 1 backend; constraints |
 |---|---|---|---|---|
-| `kryos_geo` | `geo_t`, `geo_slot_t`; one type for both scopes, declaration by `scope` | `reduce(st)` (default no-op; global part), wrappers `geo_reduce`, `geo_scatter` (§6) | regional `h_dz_bed`, `h_dz_ss`, `h_bsl`, `h_dV_bsl`, `h_z_bed_ref`, `h_dz_bed_dt` / `hi_H_ice`, `hi_dz_bed_dt_corr`, `hi_bsl`, `hi_A_ocn`; global `h_bsl`, `h_A_ocn` / `hi_dV_bsl` | `fastisostasy`: two extension types in one file, `fastiso_geo_t` (regional, `isos_class`) and `fastiso_bsl_t` (global, `bsl_class`); the factory picks by (backend, scope); regional and global allowed, one global instance |
+| `kryos_geo` | `geo_t`, `geo_slot_t`; one type for both scopes, declaration by `scope` | `reduce(st)` (default no-op; global part), wrappers `geo_reduce`, `geo_scatter` (§6) | regional `h_dz_bed`, `h_dz_ss`, `h_bsl`, `h_dV_bsl`, `h_z_bed_ref`, `h_dz_bed_dt` / `hi_H_ice`, `hi_dz_bed_dt_corr`, `hi_bsl`, `hi_A_ocn`; global `h_bsl`, `h_A_ocn` / `hi_dV_bsl` | `fastisostasy`: two extension types in one file, `fastiso_geo_t` (regional, `isos_class`) and `fastiso_bsl_t` (global, `bsl_class`); the factory picks by (backend, scope); regional and global allowed, one global instance. Phase 4 `vilma2`: `vilma_earth_t` (global, rank-2 on the Gauss grid, `max_instances = 1`) and `vilma_geo_t` (regional port, `restart = .false.`), also picked by (backend, scope); handles add `h_dphi` / `hi_dphi` and the rank-2 global set of §2.2 |
 | `kryos_climate` | `climate_t`, `climate_slot_t` | — | `h_tas`, `h_pr`, `h_z_srf_clim`, `h_lapse`, `h_beta_p`, ocean and capability handles, `h_derived(:)` / geometry `hi_*`, `hi_coef(:)` with `coef_names(:)` | `snapshots`; regional |
 | `kryos_surface` | `surface_t`, `surface_slot_t` | `init_state` used (chion spin-up in `PASS_BOUNDARY`, one cycle in `PASS_FINAL`) | `h_smb`, `h_T_srf`, optionals / `hi_z_srf`, `hi_H_ice`, `hi_z_bed`, `hi_z_sl`, `hi_tas`, `hi_pr` | `chion` (`chion=1`) |
 | `kryos_shelf` | `shelf_t`, `shelf_slot_t` | — | `h_bmb_shlf`, `h_T_shlf`, `h_tf_shlf` / geometry, set A, set B | `marine_shelf` |
@@ -489,6 +527,24 @@ rules: the destination's declared names select the rows (a climate import
 `coef_alpha` reads forcing `alpha`; a forcing import `dTo` reads the climate
 export `dTo`). Not in phase 1: `climate.smb, T_srf → surface` (backend
 `surface = "climate"`), `shelf.tf_shlf → ice.tf_shlf`, all of §10.
+
+Phase 4 (`geo = vilma2`), added or changed rows:
+
+| src | field | dst | field | method | lag | transform |
+|---|---|---|---|---|---|---|
+| globe geo | `dz_bed`, `dz_ss` | geo | same | bilin (anomalies) | 0 | rank 2, `coupler_split` |
+| globe geo | `dphi` | geo | `dphi` | — | 0 | |
+| geo | `dz_ss` | ice | `z_sl` | auto | 0 | ADD_SCALAR, aux `dphi` (was `bsl`; fastisostasy exports `dphi = bsl`, bit-neutral) |
+| ice | `H_ice`, `f_grnd`, `z_bed`, `z_sl` | globe geo | `host_w`, `host_Ig`, `host_C`, `host_F` | — | 1 | `T_GIA` (gather) |
+| ice | `z_bed_ref`, `H_ice_pd`, `footprint` | globe geo | `host_Ig_ref`, `host_C_ref` | — | I | `T_GIA` (gather) |
+
+`T_GIA` rows exist so that `wire_resolve` finds a producer for every required
+import, logs them and checks the lags; `wire_exchange` never runs them (it
+stops if asked): the arithmetic is the core's `gia_gather`, which needs
+flotation, the external ice and the merge. The imports `H_ice_ext`,
+`z_bed_ref`, `H_ice_ref` of the global geo have no component producer;
+`wire_resolve` skips the gap check for the imports of a global geo that
+declares `opt%host` and logs "filled by gia_gather / globe_ice".
 
 ### 4.3 `wire_exchange`
 
@@ -632,9 +688,12 @@ computes `bsl - real(dV_1, sp)/A` (`real` exact), the same `sp` expression, so
 the reduced `bsl` equals `isos%now%bsl` and `z_sl` at the ice equals
 `isos%now%bsl + dz_ss_y`. For N > 1 the sum is order-independent; each
 domain's `z_ss` saw only its own contribution within the step (the others'
-arrive one step later; logged when N > 1). VILMA2 (phase 4) uses the same
-calls: `geo_update` no-op, gather merges `H_ice` (`coupler_merge_*`),
-`geo_reduce` solves, scatter rows split `dz_bed`, `dz_ss` (`coupler_split`).
+arrive one step later; logged when N > 1). VILMA2 (phase 4) follows the same
+two levels with a different gather and scatter: the gather is the core's
+`gia_gather` (host-resolved terms merged with `coupler_merge_*`, §4.2), the
+global `update` is the solve, `geo_reduce` finds no `dV_bsl` source and returns,
+and the scatter rows split `dz_bed`, `dz_ss` (`coupler_split`) into the
+regional ports, with the scalar `dphi` beside `bsl`.
 
 ## 7. forcing
 
@@ -648,8 +707,9 @@ calls: `geo_update` no-op, gather merges `H_ice` (`coupler_merge_*`),
   same `[coef_<name>]` group and exports a 0-D field named like the
   coefficient. The climate uses its own value inside its update (yelmox
   `coefs_set`, then `terms_eval(derived=.true.)`), so the forcing's lag-1 copy
-  serves other consumers (OBM, phase 3). Two producing domains: init stop
-  until phase 3.
+  serves other consumers (OBM, Later). Two producing domains: init stop,
+  kept in phase 3 (the message names the coefficient and suggests one of its
+  own per domain; a test is added).
 - Snapshots: its terms name coefficients in `init` (`self%coef_names`); the
   climate layer declares 0-D imports `coef_<name>` (`hi_coef(:)`); the forcing
   rule wires them, a missing one is a named gap ("climate `clim_grl` term
@@ -725,11 +785,11 @@ dp` for the hub is a declaration change.
 | cold-start recipes (recon, marine ice, kill shelves) | only `init_equil_time` (core §3.2) | plugins at `HOOK_COLD_POST_STATE` (core §3.9) |
 | thermal equilibration (`init_time_thrm`) | dropped | yelmo key `init_time_thrm` in `PASS_SPINUP` (WP1) |
 | `ice_bnd` (`H_ice_ref`, `mask_ice`, `tau_relax` from a history, coef-scaled) | dropped | yelmo plugin reading a `datasrc_t` |
-| smb_simple (`tsl_ann`; Yelmo `H_ice_ref` reach-in) | dropped | backend; climate export `tsl_ann`; mask from `refs(surface)%H_ice` |
+| smb_simple (`tsl_ann`; Yelmo `H_ice_ref` reach-in) | dropped | phase 3 WP2: backend; climate export `tsl_ann`; mask from `refs(surface)%H_ice` |
 | `surface = "climate"` (`has_smb`), esm (`has_ocn_shelf`, `has_Qd`, `Qd`), rembo, smbpal | dropped | backends; `Qd` per-cell units revisited with esm |
 | `shelf.tf_shlf → ice` | no row | with CISM/PISM (decision 6) |
 | bsl `mixed` (file + accumulated fastiso) | not offered (unused in every yelmox config) | only if a run needs it |
-| OBM: Yelmo → fwf, `obm_north/south` derived coefficients | — | phase 3, `ocean` component from ice exports `mb_net`, `smb`, `bmb`, `cmb`, `dHidt` |
+| OBM: Yelmo → fwf, `obm_north/south` derived coefficients | — | Later (not scheduled, after phase 4; `phase3-plan.md` §7), `ocean` component from ice exports `mb_net`, `smb`, `bmb`, `cmb`, `dHidt` |
 | CMIP output, `isos_ts` framework diagnostics, climate `ref` anomaly output | — | post-processing; backend streams |
 | `with_* = False` | — | `data` backends |
 

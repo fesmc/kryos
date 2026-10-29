@@ -179,11 +179,22 @@ passes `cnst` (the duplicate in `[domain]` and `[yelmo]` goes, study §4.2).
 | `H_ice`, `z_srf`, `f_ice`, `f_grnd` | INSTANT t1 | `tpo%now%...` | widen |
 | `z_bed`, `z_sl` | INSTANT t1 | `bnd%z_bed`, `bnd%z_sl` as used | widen (the hub mirror needs these, A7) |
 | `z_bed_ref`, `H_ice_ref` | INSTANT, at init | `bnd%z_bed_ref`, `bnd%H_ice_ref` | widen; for the hub anomaly (`kryos_coupling.f90:565`) and section 2.5 |
+| `footprint` (opt, phase 4) | INSTANT, at `PASS_INIT` (static) | `mask_ice /= MASK_ICE_NONE` at the end of init | 1 / 0; compared by the core against every later gather |
+| `H_ice_pd` (opt, phase 2 WP3, phase 4) | INSTANT, at `PASS_INIT` (static) | `dta%pd%H_ice` (not `bnd%H_ice_ref`, which recon and `ice_bnd` overwrite) | widen |
 | `dHidt`, `smb`, `bmb`, `cmb`, `mb_net` | MEAN [t0,t1] | `tpo%now%...` (Yelmo's mean over the call) | `real(x, dp) * real(bnd%c%rho_ice, dp)` (Yelmo's own density) |
 | `ux_s`, `uy_s` (opt) | INSTANT | `dyn%now%ux_s/uy_s` averaged to aa | not used in phase 1 |
 | `m_ice` (scalar) | INSTANT t1 | `reg%V_ice * bnd%c%rho_ice * 1e-3` in `sp` | widen; the forcing feedback variable [Gt], today `yelmox.f90:185` |
 
 The `bmb` export keeps Yelmo's sign (melt < 0 is "+ = gain" already).
+
+**`flotation` binding (phase 4, capability `has_flotation`).**
+`flotation(H, z_bed, z_sl, f_grnd)` on the instance grid, with Yelmo's own
+routines and the run's densities (`bnd%c%rho_ice`, `rho_sw`): `calc_H_grnd` (no
+`f_ice`) and `calc_f_grnd_subgrid_area` or `_linear` per the run's `gl_sep`.
+It serves the global gather for cells outside the `footprint` and for the
+reference; the test is that on Yelmo's own geometry it reproduces `tpo%f_grnd`
+bit for bit where Yelmo uses no pinning points (otherwise the differences are
+listed).
 
 ### 2.2 `init`
 
@@ -723,7 +734,54 @@ ice, geo, climate, surface ANT-32KM.
 | geothermal `f_stdev` | `geothermal.f90:86-94` | dropped | 2 if needed (datasrc perturbation) |
 | `series_<name>_restart.nc` fallback | `kryos_forcing.f90:361-370` | dropped | never |
 
-## 12. Open questions for Alex
+## 12. `geo = vilma2` (phase 4)
+
+Design in `phase4-plan.md` (§3, §6-§8); this section is the adapter view. Two
+extensions of `geo_t` in `src/backends/geo/kryos_geo_vilma2.f90`, picked by the
+factory by scope (as section 3): `vilma_earth_t` (global, `max_instances = 1`,
+`prec = dp`: VILMA2 is `real64`, no narrowing anywhere) holding `type(solid_earth)
+:: se`, and `vilma_geo_t` (regional port, stateless, `restart = .false.`). The
+stub (`vilma=0`) keeps the names and stops with "rebuild with `vilma=1`".
+Vocabulary: `contracts-design.md` §2.2.
+
+```
+&globe     geo = "geo_glob"  forcing = "forcing" /
+&geo_glob  backend = "vilma2"  dt = 10.0  vilma = "vilma"  ice_bg = "globe_ice" /
+&vilma     lmax = 170  earth = "PREM"  l_visc_3d = .true.  pre_spinup_1d = .true. ... /   ! overrides only
+&geo_nh    backend = "vilma2" /          &geo_ant  backend = "vilma2" /                    ! the ports
+```
+
+**Global part.**
+
+| Binding | Action |
+|---|---|
+| `init` | `vilma_par_load` (group `[vilma]`, defaults `input/vilma_defaults.nml`); densities `rho_ice`, `rho_water` set from the run's `cnst` and logged; `phys_const_compare` for `r_earth`, `g`; require `solver = "v2"`, `sle_fixed_ocean = .false.`; build `GAUSS-L<lmax>` (`grid_init_gaussian`, `nlat = 2 lmax + 2`, `nphi = 4 lmax`; planet default "Spherical Earth", so the cell areas are the quadrature areas); declare the rank-2 fields |
+| `init_state(PASS_GEOMETRY)` | after the core's `gia_reference`: `solid_earth_init` at the reference (`z_bed_eq = z_bed_ref`, `h_ice_eq = H_ice_ref`, `w`, `I_g`, `C` = reference host terms); stop if VILMA2 built a remap (`se%remap`: the grid is not its Gauss grid); put the exports at the reference (zero anomalies) |
+| `init_state(PASS_STATE)` | cold only: `solid_earth_spinup` (a no-op unless `equil_time_max > 0` or `pre_spinup_1d`), then `solid_earth_update(..., dt = 0, ...)` (the seed), put the exports |
+| `update(st)` | `dt = st%t1 - st%t0`; `solid_earth_update(se, H_ice_ext, dt, host_w, host_Ig, host_C, host_F)`; put `dz_bed = gg%dz_bed`, `dz_ss = gg%dz_ss - se%dphi`, `dphi`, `bsl`, `bsl_ive`, `A_ocn`, `C_ocn`, `mass_resid` at `t1` |
+| `restart_write/read` | `vilma_restart_write(se, se%time, filename = "<name>_restart.nc", folder = dir)`; read the last slice into the model built by `PASS_GEOMETRY` (VILMA2 checks the reference, `check_reference`); `PASS_RESTART` puts nothing (A5) |
+| `write_output` | default writer for the exports; backend streams `gia` and `vilma` (VILMA2's own diagnostics, rounded: `prec` column and lossless restart path in VILMA2) |
+| `end` | `solid_earth_finalize(se)` |
+
+**Regional port.** `init` takes its cadence from the global geo (a `dt` that
+differs stops). `PASS_GEOMETRY` puts the reference exports; `PASS_STATE` and
+`update` copy the imports `dz_bed`, `dz_ss`, `dphi`, `bsl` to the exports with
+their validity, and `z_bed_ref` from its import; the core has filled the
+imports with the scatter rows just before. No `H_ice` import, no `dV_bsl`.
+
+**Core procedures** (`kryos_run_gia`): `gia_reference`, `gia_gather` (per
+domain on its ice grid: `H_tot = m·H + (1 - m)·ext`, `f_g = m·f_grnd + (1 -
+m)·flotation(...)`, merged to the Gauss grid with `coupler_merge_*`),
+`gia_seed`, `gia_scatter` (`coupler_split`, bilinear); the adapter never sees a
+domain. Restart and the bundle: `phase4-plan.md` §8.
+
+**Init-time contract checks** (named stops): a domain geo with `vilma2` needs the
+global geo with `vilma2` and the reverse; the global geo needs every domain's
+`ice` to declare `has_flotation` and the `footprint`, `H_ice_pd` exports;
+footprints must not overlap; `fastisostasy` with `vilma2` stops ("later
+package").
+
+## 13. Open questions for Alex
 
 1. **The isostasy reference (D4 versus today).** Today FastIsostasy's
    reference is Yelmo's *processed* present-day geometry
