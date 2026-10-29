@@ -584,3 +584,7 @@ else, no output file and no field of any instance differs). Not bit for bit by t
 After the rebase onto main 1f8a7b8 (p3-out, p3-smb merged): `make check` and `make check-long` pass; the long test found a latent crash in the climate init of
 a domain without terms (`size` of an unallocated coefficient table; the Antarctica single run segfaulted), fixed in f4866ae (the table is empty, no value
 changes). The Levante gates above ran on 99589d0 (before the rebase and the fix; the code paths they exercise are unchanged).
+
+Accepted (Alex, 2026-10-29, option a): `clock.time_const = 0.0` in the merged file. The four differing values of the clock check (`time_init`, `time_prev` of
+`forcing_alpha_restart.nc` in the bundles at 500 and 1000) are the stored clock constant, which enters no physics: an accepted difference
+(`regression-design.md` §1.6). The science configuration will set the clock explicitly ("in the future it will be right": the real transient clock).

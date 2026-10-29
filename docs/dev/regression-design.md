@@ -200,6 +200,11 @@ closes to round-off; a non-lossless run (`write_lossless` off) against the same
 run lossless (restarts identical, every rounded file within its table row's
 tolerance). No yelmox side, no variable map.
 
+Accepted difference (phase 3, Alex, 2026-10-29): the merged two-domain par file has one `[clock]`, so `clock.time_const` is 0.0 where the NH base has
+-21e3. NH alone at 0.0 against the `nor` gate cont (-21e3) differs in exactly four stored values, `time_init` and `time_prev` of
+`forcing_alpha_restart.nc` in the bundles at 500 and 1000: the clock constant itself, which enters no physics (1247 of 1251 variables, every output
+file and field, are bit-identical). The science configuration will set the clock explicitly (the real transient clock).
+
 ## 2. Configuration migration
 
 ### 2.1 Tool
