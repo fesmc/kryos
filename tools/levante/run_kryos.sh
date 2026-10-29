@@ -2,21 +2,28 @@
 # Update kryos on Levante, build kryos.x with the gate flags, stage and submit a kryos gate run.
 # The job template is that of the base gate (ant-cf, ant-full: ant).
 #   [STACK=S5] [SRC=<git url>] [BUNDLE=kryos.bundle] [REF=main] [MAPS=$G/maps/S] run_kryos.sh <gate> cont|cont2|chunk|base   (STACK default S3)
+# Environment: K = the kryos checkout (default $G/kryos); KSHA = commit to check out in it (then SRC, REF are not fetched);
+# with another K the build log is $K/build.log.
 # cont2: a second cont run (determinism). The code is the REF branch of SRC (default $G/bundles/$BUNDLE;
 # SRC=git@github.com:fesmc/kryos.git pulls from origin). MAPS is the folder linked as <rundir>/maps.
 # chunk: c00 0 -> 500, c01 500 -> 1000 from c00/restart-500 (afterok), as submit_ref.sh.
 set -euo pipefail
-G=/work/ba1442/robinson/kryos-gate; K=$G/kryos
+G=/work/ba1442/robinson/kryos-gate; K=${K:-$G/kryos}
 GATE=$1; RUN=$2; STACK=${STACK:-S3}   # stack the kryos dependency links point at
 BUNDLE=${BUNDLE:-kryos.bundle}; REF=${REF:-main}; SRC=${SRC:-$G/bundles/$BUNDLE}; MAPS=${MAPS:-$G/maps/S}
 GF="-O2 -fp-model precise -march=znver3 -traceback"
 CM="env PYTHONPATH=$G/tools/configme-src/src python3 -m configme"
 cd $K
-git fetch -q $SRC $REF:refs/remotes/bundle/main
-git checkout -q --detach bundle/main
+if [ -n "${KSHA:-}" ]; then
+    git checkout -q --detach $KSHA
+else
+    git fetch -q $SRC $REF:refs/remotes/bundle/main
+    git checkout -q --detach bundle/main
+fi
 SHA=$(git rev-parse --short=7 HEAD)
 $CM config kryos --only -m dkrz_levante -c ifx > /dev/null; $CM deps . > /dev/null
-make kryos openmp=1 DFLAGS_NODEBUG="$GF" > $G/stacks/kryos-build-$SHA.log 2>&1 || { tail -30 $G/stacks/kryos-build-$SHA.log; exit 1; }
+BLOG=$G/stacks/kryos-build-$SHA.log; [ "$K" = "$G/kryos" ] || BLOG=$K/build.log
+make kryos openmp=1 DFLAGS_NODEBUG="$GF" > $BLOG 2>&1 || { tail -30 $BLOG; exit 1; }
 OUT=$G/runs/$GATE/kx-$SHA/$STACK/$RUN
 [ -e $OUT ] && { echo "exists: $OUT"; exit 1; }
 
