@@ -182,10 +182,10 @@ inactive) and no `dV_bsl`; it exports `dz_bed`, `dz_ss`, `dphi`, `bsl`,
 | `to_shlf`, `so_shlf`, `dto_shlf`, `dso_shlf` | K, psu, K, psu | 2 | I | int | C `has_ocn_shelf` | `T_shlf`, `S_shlf`, `dT_shlf`, `dS_shlf` (esm, phase 2) |
 | `smb`, `T_srf` | kg m-2 yr-1, K | 2 | M | ext, int | C `has_smb` | `smb` [mm/a], `tsrf` (esm/rembo, phase 2) |
 | `Qd` | m3 s-1 | 2 | I | ext | C `has_Qd` | `Qd` (esm, phase 2) |
-| `tsl_ann` | K | 2 | I | int | C `has_tsl_ann` | `now%tsl_ann` (snapshots; consumer `smb_simple`, phase 3 WP2) |
+| `tsl_ann` | K | 2 | I | int | C `has_tsl_ann` | `now%tsl_ann` (snapshots; consumer `smb_simple`; exported since phase 3 WP2) |
 | `<derived>` | K | 0 | I | int | C | `factor*mean(tsl_ann - ref%tsl_ann, region)` per derived coefficient `from = air_anomaly` (yelmox_climate.f90:338) |
 
-`tsl_ann` (smb_simple) is exported from phase 3 (WP2); `ta_ann`/`ref%ta_ann`
+`tsl_ann` is exported by `snapshots` (`has_tsl_ann`, phase 3 WP2); `ta_ann`/`ref%ta_ann`
 (glacial smb) and `pr_ann` are not exported in phase 1 (§10). Capability flags live in `caps_t` (§3.1);
 `has_ocn` is new (yelmox implied it by `.not. has_ocn_shelf`).
 
@@ -194,7 +194,12 @@ inactive) and no `dV_bsl`; it exports `dz_bed`, `dz_ss`, `dphi`, `bsl`,
 | Imports | units | rank | tsem | req | source |
 |---|---|---|---|---|---|
 | `z_srf`, `H_ice`, `z_bed`, `z_sl` | m | 2 | I | R | hub |
-| `tas`, `pr` | K, kg m-2 yr-1 | 3 (month) | I | R | climate, lapse transforms (§4.1) |
+| `tas`, `pr` | K, kg m-2 yr-1 | 3 (month) | I | R | climate, lapse transforms (§4.1); not with `smb_simple` (`opt%atm`) |
+| `tsl_ann` | K | 2 | I | `smb_simple` | climate (bilin) |
+| `H_ice_ref` | m | 2 | I | `smb_simple`, no `mask_file` | ice (bilin; put every step) |
+
+`surface_opt_t` selects the import set: `atm` (`tas`, `pr`) and `geom` (`H_ice`, `z_bed`, `z_sl`) on for a column model (chion), off
+for `smb_simple`, which adds `tsl_ann` and `H_ice_ref`.
 
 | Exports | units | rank | tsem | cons | req | yelmox (`surface_chion%ann`) |
 |---|---|---|---|---|---|---|
@@ -511,6 +516,8 @@ run this step; 1: from the previous step; I: once at init.
 | hub | `z_srf`, `H_ice`, `z_bed`, `f_grnd`, `z_sl` | climate | same | auto | 0 | | coupling:430-434 |
 | hub | `z_srf_ref` | climate | `z_srf_ref` | auto | I | | coupling:435 (static) |
 | hub | `z_srf`, `H_ice`, `z_bed`, `z_sl` | surface | same | auto | 0 | | coupling:487-490 |
+| climate | `tsl_ann` | surface | `tsl_ann` | bilin | 0 | | coupling:481 (smb_simple) |
+| ice | `H_ice_ref` | surface | `H_ice_ref` | bilin | 0 | | coupling:483 (smb_simple) |
 | hub | `H_ice`, `z_bed`, `f_grnd`, `z_sl`, `z_srf` | shelf | same | bilin | 0 | | coupling:592-596 |
 | climate | `tas` | surface | `tas` | bilin | 0 | LAPSE_T | coupling:527-535 |
 | climate | `pr` | surface | `pr` | bilin | 0 | LAPSE_P | coupling:528-536 |
@@ -793,7 +800,7 @@ dp` for the hub is a declaration change.
 | cold-start recipes (recon, marine ice, kill shelves) | only `init_equil_time` (core §3.2) | plugins at `HOOK_COLD_POST_STATE` (core §3.9) |
 | thermal equilibration (`init_time_thrm`) | dropped | yelmo key `init_time_thrm` in `PASS_SPINUP` (WP1) |
 | `ice_bnd` (`H_ice_ref`, `mask_ice`, `tau_relax` from a history, coef-scaled) | dropped | yelmo plugin reading a `datasrc_t` |
-| smb_simple (`tsl_ann`; Yelmo `H_ice_ref` reach-in) | dropped | phase 3 WP2: backend; climate export `tsl_ann`; mask from `refs(surface)%H_ice` |
+| smb_simple (`tsl_ann`; Yelmo `H_ice_ref` reach-in) | backend `smb_simple` (phase 3 WP2) | climate export `tsl_ann`; mask from the ice export `H_ice_ref` (put every step) |
 | `surface = "climate"` (`has_smb`), esm (`has_ocn_shelf`, `has_Qd`, `Qd`), rembo, smbpal | dropped | backends; `Qd` per-cell units revisited with esm |
 | `shelf.tf_shlf → ice` | no row | with CISM/PISM (decision 6) |
 | bsl `mixed` (file + accumulated fastiso) | not offered (unused in every yelmox config) | only if a run needs it |

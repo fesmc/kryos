@@ -178,7 +178,8 @@ passes `cnst` (the duplicate in `[domain]` and `[yelmo]` goes, study §4.2).
 |---|---|---|---|
 | `H_ice`, `z_srf`, `f_ice`, `f_grnd` | INSTANT t1 | `tpo%now%...` | widen |
 | `z_bed`, `z_sl` | INSTANT t1 | `bnd%z_bed`, `bnd%z_sl` as used | widen (the hub mirror needs these, A7) |
-| `z_bed_ref`, `H_ice_ref` | INSTANT, at init | `bnd%z_bed_ref`, `bnd%H_ice_ref` | widen; for the hub anomaly (`kryos_coupling.f90:565`) and section 2.5 |
+| `z_bed_ref` | INSTANT, at init | `bnd%z_bed_ref` | widen; for the hub anomaly (`kryos_coupling.f90:565`) and section 2.5 |
+| `H_ice_ref` | INSTANT t1, with the geometry (put every step, phase 3 WP2; before: at init) | `bnd%H_ice_ref` | widen; as `z_bed_ref`, and the mask of `surface = smb_simple` (section 5a); the value changes only where recon or `ice_bnd` overwrite it |
 | `footprint` (opt, phase 4) | INSTANT, at `PASS_INIT` (static) | `mask_ice /= MASK_ICE_NONE` at the end of init | 1 / 0; compared by the core against every later gather |
 | `H_ice_pd` (opt, phase 2 WP3, phase 4) | INSTANT, at `PASS_INIT` (static) | `dta%pd%H_ice` (not `bnd%H_ice_ref`, which recon and `ice_bnd` overwrite) | widen |
 | `H_grnd` (opt, phase 2 WP3) | INSTANT t1, with the geometry | `tpo%now%H_grnd` | widen |
@@ -458,7 +459,8 @@ requires (design §7).
 | `z_srf` | m | `out%now%z_srf` (the surface the atmosphere refers to) | widen |
 | `beta_p` | K-1 | `out%now%beta_p` | widen |
 | `lapse` (month) | K m-1 | `out%lapse(m)` spread over the grid | widen |
-| `tsl_ann`, `ta_ann` | K | `out%now` | widen (consumers in phase 2: smb_simple, glacial smb) |
+| `tsl_ann` | K | `out%now%tsl_ann` (after the mods; `has_tsl_ann`, phase 3 WP2) | widen; consumer `surface = smb_simple` |
+| `ta_ann` | K | `out%now` | not exported (glacial smb: later) |
 | `T_ocn`, `S_ocn` (depth) | K, psu | `out%now%to_ann`, `so_ann` | widen; axis `depth` = `out%now%depth` (A8) |
 | `dT_ocn` (depth) | K | `out%now%to_ann - out%ref%to_ann` in `sp` | widen (today `kryos_coupling.f90:612`, computed on the climate grid before the remap; exporting `to_ref` and differencing on the shelf grid would not be bit-identical in Antarctica) |
 | `dTo` (scalar, derived) | K | the table value | widen; the core's `climate -> forcing` row calls `forcing_set` (section 8) |
@@ -533,6 +535,32 @@ state + `ann_*`, today `chion_restart.nc`, `kryos_startup.f90:431-432,
 518-519`); a file without `ann_*` stops (1.4). `write_output(2D)`:
 `<instance>.nc` with the 13 annual fields of `surface_chion_write_step`
 (`kryos_output.f90:326-361`), same units and precision. `end`: `chion_end`.
+
+## 5a. `surface = smb_simple` (phase 3 WP2)
+
+The synthetic-elevation SMB `syn` of yelmox `libs/smb_simple.f90` (5ac89c8): `kryos_smb_simple` holds its kernels
+(expressions unchanged; the class, the loader and the unwired TG24 scheme are left out) and
+`smb_simple_surface_t` extends `surface_t`. No library, so no stub.
+
+```
+&surface_nor  backend = "smb_simple"  grid = "NH-32KM"  smb_simple = "smb_simple" /   ! group [smb_simple]
+```
+
+- **Stateless**: every call computes `smb`, `T_srf` from the imports; `constraints_t(restart=.false.)`, no backend file.
+  `init_state` runs on `PASS_BOUNDARY` and `PASS_FINAL` (the two `step_surface` of the cold start; the
+  second sees the recon `H_ice_ref`), nothing on `PASS_RESTART`.
+- **Imports** (`surface_opt_t`: `atm = .false.`, `geom = .false.`; no `tas`, `pr`, `H_ice`, `z_bed`, `z_sl`):
+  `z_srf` (hub, as chion), `tsl_ann` (climate, bilin: yelmox `clim%now%tsl_ann`,
+  `kryos_coupling.f90:481`) and `H_ice_ref` (ice, bilin, lag 0: `bnd%H_ice_ref`, `:483`; the ice puts it every step, so it follows
+  recon). The core runs `exchange(ice, surface)` before each surface pass. Narrowed once to `sp`; the mask is `H_ice_ref > 0`.
+- **`mask_file`** (LIS): the slice `mask_idx` of `mask_var` on the surface grid, `{domain}` and `{grid_name}` replaced, read once at init
+  (yelmox re-reads the same file at every call); `H_ice_ref` is then not imported.
+- **Parameters**: the keys of yelmox `[smb_simple]` (template `&smb_simple` of `input/kryos_defaults.nml`: module defaults);
+  `rho_ice`, `g` from the run's constants. `scheme = "tg24"` stops at init.
+- **Exports**: `smb` [kg m-2 yr-1 = mm w.e./yr, the number yelmox lands on Yelmo before its factor], `T_srf`, MEAN over [t0, t1]; default writer.
+- **Bit-identity**: `tests/test_surface_smb_simple.f90` runs the yelmox module (verbatim copy) and the backend on the same fields
+  (kernels, the class chain, mask file, recon-like mask change); `tests/test_run_sequence.f90` (`smb_round_trip`): the chain with
+  the backend, cont = chunk. The run-level anchor is gate `sci-smb` (phase 3 plan).
 
 ## 6. `shelf = marine_shelf` (incl. `bmb_method = "pico"`)
 
@@ -740,7 +768,7 @@ ice, geo, climate, surface ANT-32KM.
 | `isos.nc`, `mshlf.nc`, `chion.nc`, `snap.nc` names | framework writers | instance names | 1 |
 | `bsl method = "mixed"` | barysealevel | refused | 3 (per-domain accumulator) |
 | `dzbdt_corr -> isos` | `step_isostasy:147` | not wired (no effect, 3.1) | when FastIsostasy reads it |
-| esm, rembo; smbpal, smb_simple, `surface_method = "climate"` | yelmox_climate, kryos.f90 | not in phase 1 | 2 |
+| esm, rembo; smbpal, `surface_method = "climate"` | yelmox_climate, kryos.f90 | not in phase 1 | 2 (smb_simple: phase 3 WP2, section 5a) |
 | geothermal `f_stdev` | `geothermal.f90:86-94` | dropped | 2 if needed (datasrc perturbation) |
 | `series_<name>_restart.nc` fallback | `kryos_forcing.f90:361-370` | dropped | never |
 

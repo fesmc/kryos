@@ -157,8 +157,13 @@ against yelmox's expressions plus `sci-smb`; phase 2 WP7 moves here**; the text 
   export** (bilin ice → surface; follows recon, bit-identical); the yelmo adapter puts
   `H_ice_ref` every step (today once, static). With no `mask_file` (the NH case) this is the path
   that matters: after recon `H_ice_ref` is the recon ice (phase 2 WP4 re-publishes it).
-- NH parameters: the `[smb_simple]` group of `yelmox_LIS.nml` (the only shipped use) or of the
-  Greenland base; chosen in WP0.
+- NH parameters: **the `[smb_simple]` group of `yelmox_North.nml`** (the NH base itself: `mask_file = ""`, mask from
+  `H_ice_ref`; identical to the Greenland group; LIS differs only in `co2_const` 190, inert with `a3 = 0`, and its
+  Batchelor `mask_file`/`mask_idx`). Both shipped values of `a1`, `beta0`, `c0`, `L_acc` are the LIS tuning ("tuned to NH smbpal (LGM)").
+  The converter carries the group when `comps.surface_method = "smb_simple"` (`sci-smb` is `nor`/`sci` with that override).
+- **Done (branch `p3-smb`)**: backend `kryos_surface_smb_simple.f90` (kernels `kryos_smb_simple`), `tsl_ann` export, `H_ice_ref` put
+  every step, rows `climate.tsl_ann` and `ice.H_ice_ref` into the surface, converter, `tests/test_surface_smb_simple.f90`
+  (bit-identical to the verbatim yelmox module) and the `smb_round_trip` of `test_run_sequence` (cont = chunk, GRL-16KM). `sci-smb` not run.
 - Anchor (Q17): no yelmox run of smb_simple on NH-32KM exists and the LIS gate is deferred, so the gate is
   unit tests against the literal yelmox expressions plus `sci-smb`; a later LIS gate gives the run-level anchor.
 - Depends: phase 2 WP4 (recon and `H_ice_ref`). Gate: unit tests, `sci-smb` (§3.2).
