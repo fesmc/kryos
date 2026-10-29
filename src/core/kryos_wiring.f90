@@ -41,13 +41,17 @@ module kryos_wiring
     integer, parameter, public :: T_GIA        = 6   ! the core's gather into a host-resolved global geo (phase 4)
     integer, parameter, public :: LAG_INIT     = -1  ! exchanged once after init (static fields)
 
+    ! The other sources of the T_GIA rows: the step terms, and the reference terms.
+    character(len=FIELD_NAME_LEN), parameter :: GIA_STEP(3) = [character(len=FIELD_NAME_LEN) :: "f_grnd", "z_bed", "z_sl"]
+    character(len=FIELD_NAME_LEN), parameter :: GIA_REF(2)  = [character(len=FIELD_NAME_LEN) :: "z_bed_ref", "footprint"]
+
     ! Table rules: the destination's declared names select the rows (section 4.2).
     character(len=*), parameter, public :: RULE_COEF = "<coef>", RULE_DERIVED = "<derived>"
 
     type, public :: wire_t                           ! kinds: ice geo climate surface shelf geothermal sediments hub;
         character(len=16) :: src_kind = "", dst_kind = ""      ! globe: forcing, geo_g (global part of geo)
-        character(len=FIELD_NAME_LEN) :: src_field = "", dst_field = "", aux = ""   ! aux: ref field, 0-D src field, or
-                                                                                   ! (T_GIA) the other source fields
+        character(len=FIELD_NAME_LEN) :: src_field = "", dst_field = "", aux = ""   ! aux: ref field or 0-D src field
+        character(len=FIELD_NAME_LEN), allocatable :: srcs(:)   ! T_GIA: the other source fields the core reads
         character(len=8)  :: method = ""             ! "" (from cons) | con | bilin | auto
         integer           :: lag = 0, transform = T_NONE   ! lag: 0 | 1 | LAG_INIT
         logical           :: gather = .false.        ! N domains -> one global 0-D field, summed (wire_gather)
@@ -58,7 +62,7 @@ module kryos_wiring
         character(len=32) :: mres = ""               ! method after resolution; "" for identity and 0-D rows
         integer           :: hs = 0, hd = 0, ha = 0, prec_src = 0, prec_dst = 0
         integer           :: hl(4) = 0               ! lapse rows: src z_srf_clim, beta_p, lapse; dst z_srf
-        integer, allocatable :: hx(:)                   ! T_GIA rows: handles of the other source fields (aux)
+        integer, allocatable :: hx(:)                   ! T_GIA rows: handles of the other source fields (srcs)
         logical           :: done = .false.          ! LAG_INIT row exchanged
         real(dp), allocatable :: work(:,:,:), pre(:,:,:)       ! persistent workspaces
         real(dp), allocatable :: zc(:,:,:), bp(:,:,:), lp(:,:,:) ! lapse: remapped z_srf_clim, beta_p, lapse
@@ -87,9 +91,9 @@ contains
     ! Rows and the table
     ! =========================================================================
 
-    pure function wire(src_kind, src_field, dst_kind, dst_field, method, lag, transform, aux, gather) result(w)
+    pure function wire(src_kind, src_field, dst_kind, dst_field, method, lag, transform, aux, gather, srcs) result(w)
         character(len=*), intent(in)           :: src_kind, src_field, dst_kind, dst_field
-        character(len=*), intent(in), optional :: method, aux
+        character(len=*), intent(in), optional :: method, aux, srcs(:)
         integer,          intent(in), optional :: lag, transform
         logical,          intent(in), optional :: gather
         type(wire_t) :: w
@@ -98,6 +102,7 @@ contains
         w%dst_kind = dst_kind;  w%dst_field = dst_field
         if (present(method))    w%method    = method
         if (present(aux))       w%aux       = aux
+        if (present(srcs))      w%srcs      = srcs
         if (present(lag))       w%lag       = lag
         if (present(transform)) w%transform = transform
         if (present(gather))    w%gather    = gather
@@ -120,12 +125,13 @@ contains
         call add(t, "geo_g", "dz_bed", "geo", "dz_bed", "bilin")
         call add(t, "geo_g", "dz_ss", "geo", "dz_ss", "bilin")
         call add(t, "geo_g", "dphi", "geo", "dphi")
-        call add(t, "ice", "H_ice", "geo_g", "host_w", lag=1, transform=T_GIA, aux="f_grnd z_bed z_sl")
-        call add(t, "ice", "H_ice", "geo_g", "host_Ig", lag=1, transform=T_GIA, aux="f_grnd z_bed z_sl")
-        call add(t, "ice", "H_ice", "geo_g", "host_C", lag=1, transform=T_GIA, aux="f_grnd z_bed z_sl")
-        call add(t, "ice", "H_ice", "geo_g", "host_F", lag=1, transform=T_GIA, aux="f_grnd z_bed z_sl")
-        call add(t, "ice", "H_ice_pd", "geo_g", "host_Ig_ref", lag=LAG_INIT, transform=T_GIA, aux="z_bed_ref footprint")
-        call add(t, "ice", "H_ice_pd", "geo_g", "host_C_ref", lag=LAG_INIT, transform=T_GIA, aux="z_bed_ref footprint")
+        ! (src_field is the principal source, srcs the others the gather reads)
+        call add(t, "ice", "H_ice", "geo_g", "host_w", lag=1, transform=T_GIA, srcs=GIA_STEP)
+        call add(t, "ice", "H_ice", "geo_g", "host_Ig", lag=1, transform=T_GIA, srcs=GIA_STEP)
+        call add(t, "ice", "H_ice", "geo_g", "host_C", lag=1, transform=T_GIA, srcs=GIA_STEP)
+        call add(t, "ice", "H_ice", "geo_g", "host_F", lag=1, transform=T_GIA, srcs=GIA_STEP)
+        call add(t, "ice", "H_ice_pd", "geo_g", "host_Ig_ref", lag=LAG_INIT, transform=T_GIA, srcs=GIA_REF)
+        call add(t, "ice", "H_ice_pd", "geo_g", "host_C_ref", lag=LAG_INIT, transform=T_GIA, srcs=GIA_REF)
         ! geo -> ice: bed and sea level in one datum
         call add(t, "geo", "dz_bed", "ice", "z_bed", "auto", transform=T_ADD_REF, aux="z_bed")
         call add(t, "geo", "dz_ss", "ice", "z_sl", "auto", transform=T_ADD_SCALAR, aux="dphi")
@@ -156,13 +162,13 @@ contains
         call add(t, "forcing", RULE_COEF, "climate", RULE_COEF)
     end function wiring_table
 
-    subroutine add(t, src_kind, src_field, dst_kind, dst_field, method, lag, transform, aux, gather)
+    subroutine add(t, src_kind, src_field, dst_kind, dst_field, method, lag, transform, aux, gather, srcs)
         type(wire_t), allocatable, intent(inout) :: t(:)
         character(len=*), intent(in)           :: src_kind, src_field, dst_kind, dst_field
-        character(len=*), intent(in), optional :: method, aux
+        character(len=*), intent(in), optional :: method, aux, srcs(:)
         integer,          intent(in), optional :: lag, transform
         logical,          intent(in), optional :: gather
-        call append(t, wire(src_kind, src_field, dst_kind, dst_field, method, lag, transform, aux, gather))
+        call append(t, wire(src_kind, src_field, dst_kind, dst_field, method, lag, transform, aux, gather, srcs))
     end subroutine add
 
     subroutine add_set(t, src_kind, fields, dst_kind, method, lag)
@@ -492,37 +498,31 @@ contains
     end function bind_row
 
     function gia_sources(w, node, fs) result(msg)
-        ! The other source fields of a T_GIA row (aux, blank separated): their
-        ! handles into w%hx. msg = "" when the producer exports them all, on the
-        ! grid of the principal source fs; else the reason the row is inactive
-        ! (the first one it does not export), or, led by "!", a declaration error
-        ! (one that is not rank 2 on that grid).
+        ! The other source fields of a T_GIA row (w%srcs): their handles into
+        ! w%hx. msg = "" when the producer exports them all, on the grid of the
+        ! principal source fs; else the reason the row is inactive (the first one
+        ! it does not export), or, led by "!", a declaration error (one that is
+        ! not rank 2 on that grid).
         type(wire_t),      intent(inout) :: w
         type(wire_node_t), intent(in)    :: node
         type(field_t),     intent(in)    :: fs
         character(len=:), allocatable :: msg
 
-        character(len=FIELD_NAME_LEN) :: nm
-        integer :: p0, p1, h
+        integer :: k, h
 
         msg = ""
         if (allocated(w%hx)) deallocate(w%hx)
         allocate(w%hx(0))
-        p0 = 1
-        do while (p0 <= len_trim(w%aux))
-            p1 = index(w%aux(p0:), " ")
-            if (p1 == 0) p1 = len_trim(w%aux) - p0 + 2
-            nm = w%aux(p0:p0+p1-2)
-            p0 = p0 + p1
-            if (len_trim(nm) == 0) cycle
-            if (.not. fields_has(node%exports, trim(nm))) then
-                msg = trim(w%src_name)//" does not export `"//trim(nm)//"`"
+        if (.not. allocated(w%srcs)) return
+        do k = 1, size(w%srcs)
+            if (.not. fields_has(node%exports, trim(w%srcs(k)))) then
+                msg = trim(w%src_name)//" does not export `"//trim(w%srcs(k))//"`"
                 return
             end if
-            h = fields_handle(node%exports, trim(nm))
+            h = fields_handle(node%exports, trim(w%srcs(k)))
             associate (f => node%exports%f(h))
                 if (f%rank /= 2 .or. trim(f%grid) /= trim(fs%grid) .or. f%nx /= fs%nx .or. f%ny /= fs%ny) then
-                    msg = "!source `"//trim(nm)//"` is not rank 2 on the grid of `"//trim(fs%name)//"` ("// &
+                    msg = "!source `"//trim(w%srcs(k))//"` is not rank 2 on the grid of `"//trim(fs%name)//"` ("// &
                           trim(fs%grid)//")"
                     return
                 end if
@@ -865,6 +865,7 @@ contains
     function transform_name(w) result(s)
         type(wire_t), intent(in) :: w
         character(len=:), allocatable :: s
+        integer :: k
         select case (w%transform)
         case (T_NONE);       s = merge("gather", "none  ", w%gather)
         case (T_ADD_REF);    s = "add_ref("//trim(w%aux)//")"
@@ -872,7 +873,15 @@ contains
         case (T_ADD_SCALAR); s = "add_scalar("//trim(w%aux)//")"
         case (T_LAPSE_T);    s = "lapse_t"
         case (T_LAPSE_P);    s = "lapse_p"
-        case (T_GIA);        s = "gia("//trim(w%aux)//")"
+        case (T_GIA)
+            s = "gia("
+            if (allocated(w%srcs)) then
+                do k = 1, size(w%srcs)
+                    if (k > 1) s = s//" "
+                    s = s//trim(w%srcs(k))
+                end do
+            end if
+            s = s//")"
         case default;        s = "?"
         end select
         s = trim(s)
@@ -894,7 +903,7 @@ contains
         !   * the aux 0-D field and the lapse fields were put in the same update,
         !     and the consumer's z_srf of a lapse row was exchanged;
         !   * a T_GIA row (run by the core's gather): the same for every source
-        !     field it reads (the principal one and aux).
+        !     field it reads (the principal one and srcs).
         type(wire_t),        intent(in) :: w
         type(field_state_t), intent(in) :: src, dst
         real(dp),            intent(in) :: t, t_last

@@ -251,14 +251,14 @@ contains
         call check("static rows: ref x2, z_srf_ref, Q_geo, H_sed, and the two T_GIA reference rows", n_init == 7)
         call check("six T_GIA rows, all into the global geo", &
                    count(t%transform == T_GIA) == 6 .and. all(t%dst_kind == "geo_g" .or. t%transform /= T_GIA))
-        call check("T_GIA step rows: ice.H_ice -> geo_g.host_w, host_Ig, host_C, host_F, lag 1, aux f_grnd z_bed z_sl", &
-                   has_row(t, "ice.H_ice -> geo_g.host_w", T_GIA, 1, "f_grnd z_bed z_sl") .and. &
-                   has_row(t, "ice.H_ice -> geo_g.host_Ig", T_GIA, 1, "f_grnd z_bed z_sl") .and. &
-                   has_row(t, "ice.H_ice -> geo_g.host_C", T_GIA, 1, "f_grnd z_bed z_sl") .and. &
-                   has_row(t, "ice.H_ice -> geo_g.host_F", T_GIA, 1, "f_grnd z_bed z_sl"))
-        call check("T_GIA reference rows: ice.H_ice_pd -> geo_g.host_Ig_ref, host_C_ref, LAG_INIT, aux z_bed_ref footprint", &
-                   has_row(t, "ice.H_ice_pd -> geo_g.host_Ig_ref", T_GIA, LAG_INIT, "z_bed_ref footprint") .and. &
-                   has_row(t, "ice.H_ice_pd -> geo_g.host_C_ref", T_GIA, LAG_INIT, "z_bed_ref footprint"))
+        call check("T_GIA step rows: ice.H_ice -> geo_g.host_w, host_Ig, host_C, host_F, lag 1, srcs f_grnd z_bed z_sl", &
+                   has_row(t, "ice.H_ice -> geo_g.host_w", T_GIA, 1, srcs=[character(len=FIELD_NAME_LEN) :: "f_grnd", "z_bed", "z_sl"]) .and. &
+                   has_row(t, "ice.H_ice -> geo_g.host_Ig", T_GIA, 1, srcs=[character(len=FIELD_NAME_LEN) :: "f_grnd", "z_bed", "z_sl"]) .and. &
+                   has_row(t, "ice.H_ice -> geo_g.host_C", T_GIA, 1, srcs=[character(len=FIELD_NAME_LEN) :: "f_grnd", "z_bed", "z_sl"]) .and. &
+                   has_row(t, "ice.H_ice -> geo_g.host_F", T_GIA, 1, srcs=[character(len=FIELD_NAME_LEN) :: "f_grnd", "z_bed", "z_sl"]))
+        call check("T_GIA reference rows: ice.H_ice_pd -> geo_g.host_Ig_ref, host_C_ref, LAG_INIT, srcs z_bed_ref footprint", &
+                   has_row(t, "ice.H_ice_pd -> geo_g.host_Ig_ref", T_GIA, LAG_INIT, srcs=[character(len=FIELD_NAME_LEN) :: "z_bed_ref", "footprint"]) .and. &
+                   has_row(t, "ice.H_ice_pd -> geo_g.host_C_ref", T_GIA, LAG_INIT, srcs=[character(len=FIELD_NAME_LEN) :: "z_bed_ref", "footprint"]))
         call check("globe -> port rows: dz_bed, dz_ss bilin, dphi, lag 0", &
                    has_row(t, "geo_g.dz_bed -> geo.dz_bed", T_NONE, 0, method="bilin") .and. &
                    has_row(t, "geo_g.dz_ss -> geo.dz_ss", T_NONE, 0, method="bilin") .and. &
@@ -410,7 +410,7 @@ contains
         call check("units are not compared (m -> m and m -> 1 alike): host_C, host_w resolve", &
                    w(row_of(w, "ice.H_ice -> geo_g.host_C"))%active .and. w(row_of(w, "ice.H_ice -> geo_g.host_w"))%active)
         k = row_of(w, "ice.H_ice_pd -> geo_g.host_C_ref")
-        call check("T_GIA reference row: active, LAG_INIT, aux z_bed_ref, footprint", &
+        call check("T_GIA reference row: active, LAG_INIT, srcs z_bed_ref, footprint", &
                    w(k)%active .and. w(k)%lag == LAG_INIT .and. size(w(k)%hx) == 2 .and. &
                    w(k)%hs == fields_handle(ice_x, "H_ice_pd"))
         w2 = pack(w, w%transform == T_GIA)
@@ -577,12 +577,12 @@ contains
     end subroutine build
 
 
-    logical function has_row(t, label, transform, lag, aux, method)
-        ! The table holds a row with this label, transform and lag (and aux, method when given).
+    logical function has_row(t, label, transform, lag, aux, method, srcs)
+        ! The table holds a row with this label, transform and lag (and aux, method, srcs when given).
         type(wire_t),     intent(in) :: t(:)
         character(len=*), intent(in) :: label
         integer,          intent(in) :: transform, lag
-        character(len=*), intent(in), optional :: aux, method
+        character(len=*), intent(in), optional :: aux, method, srcs(:)
         integer :: i
 
         has_row = .false.
@@ -594,6 +594,11 @@ contains
             end if
             if (present(method)) then
                 if (trim(t(i)%method) /= method) cycle
+            end if
+            if (present(srcs)) then
+                if (.not. allocated(t(i)%srcs)) cycle
+                if (size(t(i)%srcs) /= size(srcs)) cycle
+                if (any(t(i)%srcs /= srcs)) cycle
             end if
             has_row = .true.
             return

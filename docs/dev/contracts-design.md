@@ -456,11 +456,13 @@ integer, parameter :: T_SUB_REF = 2       ! dst = remap(src - ref_src%<aux>)    
 integer, parameter :: T_ADD_SCALAR = 3    ! dst = src_state%<aux> (0-D) + remap(src)          (z_sl = bsl + dz_ss)
 integer, parameter :: T_LAPSE_T = 4       ! tas re-elevated to the consumer's z_srf
 integer, parameter :: T_LAPSE_P = 5       ! pr  re-elevated to the consumer's z_srf
+integer, parameter :: T_GIA = 6           ! the core's gather into a host-resolved global geo (phase 4; never exchanged)
 integer, parameter :: LAG_INIT = -1       ! exchanged once after init (static fields)
 
 type :: wire_t                            ! kryos_wiring; kinds: ice geo climate surface shelf
     character(len=16) :: src_kind = "", dst_kind = ""   ! geothermal sediments hub; globe: forcing geo
     character(len=FIELD_NAME_LEN) :: src_field = "", dst_field = "", aux = ""   ! aux: ref field or 0-D src field
+    character(len=FIELD_NAME_LEN), allocatable :: srcs(:)   ! T_GIA: the other source fields (src_field is the principal one)
     character(len=8)  :: method = ""      ! "" (from cons) | con | bilin | auto
     integer           :: lag = 0, transform = T_NONE    ! lag: 0 | 1 | LAG_INIT
     logical           :: gather = .false. ! N domains -> one global 0-D field, summed in domain-name order
@@ -468,7 +470,7 @@ type :: wire_t                            ! kryos_wiring; kinds: ice geo climate
     integer  :: hs = 0, hd = 0, ha = 0, prec_src = 0, prec_dst = 0
     real(dp), allocatable :: work(:,:,:), pre(:,:,:), aux3(:,:,:,:)   ! persistent workspaces
 end type
-pure function wire(src_kind, src_field, dst_kind, dst_field, method, lag, transform, aux, gather) result(w)
+pure function wire(src_kind, src_field, dst_kind, dst_field, method, lag, transform, aux, gather, srcs) result(w)
 ```
 
 A closed enum evaluated by `kryos_wiring`: no user code, no scale factors (the
@@ -543,8 +545,12 @@ import, logs them and checks the lags; `wire_exchange` never runs them (it
 stops if asked): the arithmetic is the core's `gia_gather`, which needs
 flotation, the external ice and the merge. The imports `H_ice_ext`,
 `z_bed_ref`, `H_ice_ref` of the global geo have no component producer;
-`wire_resolve` skips the gap check for the imports of a global geo that
-declares `opt%host` and logs "filled by gia_gather / globe_ice".
+`wire_resolve` skips the gap check for an import the node marks as filled by the core
+(these three, when the global geo declares `opt%host`) that no row names, and logs
+"filled by gia_gather / globe_ice".
+A `T_GIA` row is one per destination import: `src_field` is the principal source and `wire_t%srcs`
+lists the other source exports the gather reads (handles in `hx`; a missing one makes the row
+inactive, naming it; `wire_lag_status` checks every one). `aux` is not used.
 
 ### 4.3 `wire_exchange`
 
