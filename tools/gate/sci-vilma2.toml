@@ -1,0 +1,45 @@
+# Gate sci-vilma2 (phase 4 WP7, G3 and G4): the science case with geo = vilma2 (par/kryos_NH-ANT_vilma2.nml; NH-32KM + ANT-32KM,
+# VILMA2 at lmax 170 with the Bagge 3D viscosity, 1-D pre-spin-up), 400 yr from -80 ka (the start of PaleoMIST), rounded output, run by
+# tools/levante/run_vilma2.sh with the overrides of tools/levante/g34_vilma2.sh. No yelmox side: kryos against kryos. Checks (G4):
+# cont2 == cont and chunk == cont, bundles included (the global restart geo_glob_restart.nc is in the bundle).
+gate     = "sci-vilma2"
+kind     = "kryos"
+time_end = -79600.0
+chunks   = [-80000.0, -79800.0, -79600.0]
+restart_times = [-79800.0, -79600.0]
+domain_order  = ["North", "Antarctica"]
+skip     = []
+
+[domains.North.instances]
+domain     = "North"
+ice        = "ice_nor"
+geo        = "geo_nor"
+climate    = "climate_nor"
+surface    = "surface_nor"
+shelf      = "shelf_nor"
+geothermal = "ghf_nor"
+sediments  = "sed_nor"
+forcing    = "forcing"
+geo_glob   = "geo_glob"
+
+[domains.Antarctica.instances]
+domain     = "Antarctica"
+ice        = "ice_ant"
+geo        = "geo_ant"
+climate    = "climate_ant"
+surface    = "surface_ant"
+shelf      = "shelf_ant"
+geothermal = "ghf_ant"
+sediments  = "sed_ant"
+forcing    = "forcing"
+geo_glob   = "geo_glob"
+
+[[check]]
+type = "identical"
+ref  = "cont"
+run  = "cont2"
+
+[[check]]
+type = "chunks"
+ref  = "cont"
+run  = "chunk"
