@@ -139,6 +139,7 @@ ifeq ($(yelmo), 1)
     kryos_ice_yelmo_obj = $(objdir)/kryos_ice_yelmo.o
     kryos_exp_relax_obj = $(objdir)/kryos_exp_relax.o
     kryos_exp_opt_cb_ref_obj = $(objdir)/kryos_exp_opt_cb_ref.o
+    kryos_exp_opt_tf_obj = $(objdir)/kryos_exp_opt_tf.o
     INC_BACKENDS   += $(INC_YELMO)
     LIB_BACKENDS   += $(LIB_YELMO) $(LIB_FASTHYDRO) $(LIB_ELSA) $(LIB_TRACER)
     dep_archives   += $(YELMO_ARCHIVE)
@@ -150,6 +151,7 @@ else
     kryos_ice_yelmo_obj = $(objdir)/kryos_ice_yelmo_stub.o
     kryos_exp_relax_obj = $(objdir)/kryos_exp_relax_stub.o
     kryos_exp_opt_cb_ref_obj = $(objdir)/kryos_exp_opt_cb_ref_stub.o
+    kryos_exp_opt_tf_obj = $(objdir)/kryos_exp_opt_tf_stub.o
     test_skip += $(testdir)/test_run_sequence.f90
 endif
 

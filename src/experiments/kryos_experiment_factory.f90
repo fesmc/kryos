@@ -6,6 +6,7 @@ submodule (kryos_experiment) kryos_experiment_factory
 
     use kryos_exp_relax,      only: relax_exp_t
     use kryos_exp_opt_cb_ref, only: opt_cb_ref_exp_t
+    use kryos_exp_opt_tf,     only: opt_tf_exp_t
 
     implicit none
 
@@ -36,9 +37,12 @@ contains
         case ("opt_cb_ref")
             allocate(opt_cb_ref_exp_t :: slot%c)
             call experiment_identity(slot, ctx)
+        case ("opt_tf")
+            allocate(opt_tf_exp_t :: slot%c)
+            call experiment_identity(slot, ctx)
         case default
             call fesm_error("kryos_experiment::experiment_create", "unknown experiment kind '"//trim(ctx%kind)//"'", &
-                            "experiment "//trim(ctx%instance)//"; known: host, relax, opt_cb_ref")
+                            "experiment "//trim(ctx%instance)//"; known: host, relax, opt_cb_ref, opt_tf")
         end select
     end subroutine experiment_create
 

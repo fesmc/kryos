@@ -240,6 +240,7 @@ program test_run_sequence
     use yelmo_defs,      only: MASK_ICE_NONE
     use kryos_exp_relax, only: relax_exp_t
     use kryos_exp_opt_cb_ref, only: opt_cb_ref_exp_t
+    use kryos_exp_opt_tf, only: opt_tf_exp_t
     use kryos_climate_snapshots,  only: snapshots_climate_t
     use kryos_surface_chion,      only: chion_surface_t
     use kryos_shelf_marine_shelf, only: marshelf_shelf_t
@@ -351,6 +352,7 @@ contains
         call check(n == 2, "two steps to time_end = 20")
         call check_ice_static(run, "t = 20", 0.0_dp)
         call check_ice_flotation(run, "t = 20")
+        call check_dhidt(run, "t = 20")
         call run_end(run)
         call check_hooks_run()
 
@@ -559,20 +561,23 @@ contains
         character(len=*), intent(in) :: par_file
 
         type(run_t), target :: run
-        real(sp), allocatable :: cb0(:,:), cb60(:,:)
-        integer :: n, i, irel, icf, topo_rel0
+        real(sp), allocatable :: cb0(:,:), cb60(:,:), tf0(:,:), tf60(:,:)
+        integer :: n, i, irel, icf, itf, topo_rel0
         real(dp) :: t
-        logical :: ok, ok_cb, none_cf
+        logical :: ok, ok_cb, ok_tf, none_cf
 
         call run_init(run, par_file, protos=host_protos())
         write(*,'(a)') "--- plugin experiments"
-        irel = 0;  icf = 0;  none_cf = .false.
+        irel = 0;  icf = 0;  itf = 0;  none_cf = .false.
         do i = 1, size(run%exps(1)%s)
             select type (x => run%exps(1)%s(i)%c)
             type is (relax_exp_t)
                 irel = i
                 call check(x%topo_rel0 == 0 .and. x%topo_rel_tau0 == 10.0_sp, "relax: the par-file ytopo values recorded at init")
                 call check(x%wants(HOOK_STEP_BEGIN) .and. count(x%wants) == 1, "relax: wants STEP_BEGIN only")
+            type is (opt_tf_exp_t)
+                itf = i
+                call check(x%wants(HOOK_STEP_BEGIN) .and. count(x%wants) == 1, "opt_tf: wants STEP_BEGIN only")
             type is (opt_cb_ref_exp_t)
                 icf = i
                 none_cf = trim(x%method) == "none"
@@ -601,13 +606,25 @@ contains
             end select
         end if
 
+        if (itf > 0) tf0 = run%dom(1)%shelf%c%corr%tf_corr
         n = 0
         ok = .true.
         ok_cb = .true.
+        ok_tf = .true.
         do while (.not. run_done(run))
             call run_step(run)
             n = n + 1
             t = clock_time_elapsed(run%clk)
+            if (itf > 0) then
+                if (t == 60.0_dp) then
+                    tf60 = run%dom(1)%shelf%c%corr%tf_corr
+                    call check(any(tf60 /= tf0), "opt_tf: tf_corr has changed from its value at the start of the run, at elapsed 60 ("// &
+                               trim(itoa(count(tf60 /= tf0)))//" cells)")
+                else if (t > 60.0_dp) then
+                    ok_tf = ok_tf .and. all(run%dom(1)%shelf%c%corr%tf_corr == tf60)
+                end if
+            end if
+            call check_dhidt(run, "step "//trim(itoa(n)))
             select type (c => run%dom(1)%ice%c)
             type is (yelmo_ice_t)
                 if (irel > 0) then
@@ -636,6 +653,8 @@ contains
                                  "the par-file values after 60 ("//trim(itoa(n))//" steps)")
         if (icf > 0 .and. .not. none_cf .and. clock_time_elapsed(run%clk) > 60.0_dp) &
             call check(ok_cb, "opt_cb_ref: cb_ref unchanged after the window (elapsed 60)")
+        if (itf > 0 .and. clock_time_elapsed(run%clk) > 60.0_dp) &
+            call check(ok_tf, "opt_tf: tf_corr unchanged after the window (elapsed 60)")
         if (icf > 0 .and. none_cf) then
             select type (c => run%dom(1)%ice%c)
             type is (yelmo_ice_t)
@@ -762,9 +781,9 @@ contains
         vel = trim(root)//"/Greenland/GRL-16KM/GRL-16KM_VEL-J18.nc"
         has_vel = exists(vel)
         if (has_vel) then
-            names = [character(len=24) :: "exp_relax", "exp_cf"]
+            names = [character(len=24) :: "exp_relax", "exp_cf", "exp_tf"]
         else
-            names = [character(len=24) :: "exp_relax"]
+            names = [character(len=24) :: "exp_relax", "exp_tf"]
             call note(.false., "opt_cb_ref not run: no present-day velocity "//vel)
         end if
         call setup_run_dir(XC)
@@ -826,6 +845,9 @@ contains
             case ("exp_cf")
                 lines = [character(len=400) :: lines, "&exp_cf", "  kind = 'opt_cb_ref'", "  method = 'L21'", &
                          "  cf_time_init = 0.0", "  cf_time_end = 60.0", "  tau_c = 50.0", "/"]
+            case ("exp_tf")
+                lines = [character(len=400) :: lines, "&exp_tf", "  kind = 'opt_tf'", "  method = 'L21-points'", &
+                         "  tf_time_init = 0.0", "  tf_time_end = 60.0", "  tau_m = 20.0", "/"]
             case ("exp_cf0")
                 lines = [character(len=400) :: lines, "&exp_cf0", "  kind = 'opt_cb_ref'", "  method = 'none'", "/"]
             end select
@@ -1229,6 +1251,24 @@ contains
             call check(all(g <= f) .and. any(g < f), what//": a sea level 5 km higher floats ice that was grounded")
         end associate
     end subroutine check_ice_flotation
+
+    subroutine check_dhidt(run, what)
+        ! The dHidt export (MEAN over the ice call) is Yelmo's own tpo%now%dHidt, which is already the
+        ! mean over the call (every step the ice runs once): the calibration reads the export where
+        ! yelmox reads the instantaneous field (opt_tf, phase 2 WP3).
+        type(run_t), target, intent(in) :: run
+        character(len=*),    intent(in) :: what
+        real(dp), allocatable :: e(:,:)
+
+        select type (ice => run%dom(1)%ice%c)
+        type is (yelmo_ice_t)
+            e = get2(ice%exports, ice%h_dHidt)
+            call check(all(real(e, sp) == ice%ylmo%tpo%now%dHidt) .and. any(e /= 0.0_dp), &
+                       what//": dHidt export (MEAN) = Yelmo's tpo%now%dHidt, bit for bit")
+        class default
+            call check(.false., what//": the ice instance is Yelmo")
+        end select
+    end subroutine check_dhidt
 
     subroutine check_ice_static(run, what, t_put)
         ! footprint and H_ice_pd (contracts-design 2.1, phase 4): Yelmo's mask_ice
