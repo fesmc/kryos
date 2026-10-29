@@ -770,10 +770,12 @@ As implemented (C8, `kryos_output`, `kryos_outfile`, `component_write_output`):
   named by the par file) is written lossless. Units attribute = the export's;
   a table whose units, rank or third axis differ from the export stops.
 - Precision (phase 3, WP3): the table's `prec` column is the only source of
-  rounding. Backend streams that wrote with hard-coded precisions (FastIsostasy
-  `w`, `we`, snapshots, the hub where kryos owns the call) read their `prec`
-  from `kryos-variables-<component>-<backend>.md`, like the instance tables; a
-  backend variable without a row is lossless, as in the default writer. Time
+  rounding. Backend streams that wrote with hard-coded precisions (FastIsostasy,
+  snapshots and its transforms, chion, marine_shelf, the hub's `f_ice`) read their
+  `prec` from `kryos-variables-<component>-<backend>.md` (`kryos-variables-hub.md`),
+  like the instance tables (`outfile_prec`, `outfile_var2d/3d(table=)`); a backend
+  variable without a row is lossless, as in the default writer, and a row whose
+  unit differs from the data's stops. Time
   series (0-D, `*_ts.nc`, `forcing_ts.nc`, `timing.txt`), grids and debug output
   stay lossless; `[kryos] write_lossless` (`nc_set_lossless`) is the lossless
   override of every precision, which the gates set. Restarts and bundle field
@@ -830,9 +832,27 @@ named as in the par file (`scope`, `component`, `backend`, `grid`, `files`,
   (staging: §3.8).
   Continuation keeps `n_origin`, so `time_elapsed` runs on across chunks
   (yelmox restarts it per chunk: relax/opt windows differ, documented).
-- Forcing-increment bundles (`restart_every_df`, 0 in every shipped config):
-  phase 3 (WP4): the forcing exports `restart_due` and `run_step` writes a
-  bundle `restart-<n>` (counter as yelmox); the kill switch stays.
+- Forcing-increment bundles (`restart_every_df` of a tsgen coefficient, 0 in every
+  shipped config; phase 3, WP4), as implemented: the forcing's `restart_due`
+  binding (tsgen: some coefficient has moved by more than its `restart_every_df`
+  from its own mark, either direction; the marks start at the initial value and,
+  after a restore, at the restored value, as yelmox) and the counter of the
+  forcing component (`forcing_restart_due` counts, `forcing_restart_fldr` names
+  `restart-<n>`). `run_step` evaluates it after the step's output and the
+  restart schedule's bundle, only when `clock_restart_allowed` (the time is on
+  every cadence grid; a trigger that falls between is not consumed and fires on
+  the first step that is on the grid), and writes the same bundle as the schedule
+  to `<out_dir>/restart-<n>/`. The counter is stored in the bundles (tsgen: `<instance>_increment_restart.nc`,
+  declared in `restart_files` only when some coefficient has `restart_every_df`;
+  the schedule's bundle of a step holds the count of that step's increment bundle
+  too), so a run restored from `restart-3` numbers on from 4, and a bundle
+  without the file (a run without increments) counts from 0. The marks are not
+  stored: a restore resets them to the restored values, as yelmox. A bundle is never
+  overwritten: writing into an existing `restart-<n>` stops (a run restored from an
+  older bundle than the last of its `out_dir` needs another `out_dir`).
+  `restart_every_df` on a derived coefficient stops. A restore from `restart-<n>`
+  continues bit for bit (`tests/test_forcing_increment.f90`). The kill switch is
+  unchanged.
 
 ## 8. Errors, logging, describe
 

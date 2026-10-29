@@ -30,9 +30,10 @@ module kryos_forcing
         integer, allocatable :: hi_derived(:)       ! imports, per coefficient (0 unless derived)
         real(dp), allocatable :: t_set(:)           ! forcing_set: time of the last set
         integer :: hi_M_ice = 0
+        integer :: n_restart = 0                    ! forcing-increment bundles written (the n of restart-<n>)
     contains
         procedure :: kill        => forcing_kill_default          ! () -> logical: tsgen kill switch
-        procedure :: restart_due => forcing_restart_due_default   ! () -> logical: restart_every_df
+        procedure :: restart_due => forcing_restart_due_default   ! () -> logical: restart_every_df (moves the marks)
     end type forcing_t
 
     type, public :: forcing_slot_t                      ! what domain_t (or globe_t) holds
@@ -50,7 +51,7 @@ module kryos_forcing
     public :: forcing_create, forcing_adopt, forcing_present
     public :: forcing_init, forcing_init_state, forcing_update, forcing_restart_write, forcing_restart_read
     public :: forcing_restart_files
-    public :: forcing_write_output, forcing_end, forcing_kill, forcing_restart_due, forcing_set
+    public :: forcing_write_output, forcing_end, forcing_kill, forcing_restart_due, forcing_restart_fldr, forcing_set
 
 contains
 
@@ -160,7 +161,7 @@ contains
     end function forcing_kill_default
 
     logical function forcing_restart_due_default(self)
-        class(forcing_t), intent(in) :: self
+        class(forcing_t), intent(inout) :: self
         forcing_restart_due_default = .false.
         associate (unused => self%nx); end associate
     end function forcing_restart_due_default
@@ -172,10 +173,26 @@ contains
     end function forcing_kill
 
     logical function forcing_restart_due(forcing)
-        ! A forcing-increment restart bundle is due (restart_every_df).
-        type(forcing_slot_t), intent(in) :: forcing
+        ! A forcing-increment restart bundle is due: a coefficient has moved by more
+        ! than its restart_every_df since its own last mark (yelmox coefs_restart_due).
+        ! Moves the marks of the coefficients that fired and counts the bundle, so
+        ! the caller writes exactly one bundle per .true. (named by forcing_restart_fldr).
+        type(forcing_slot_t), intent(inout) :: forcing
         forcing_restart_due = forcing%c%restart_due()
+        if (forcing_restart_due) forcing%c%n_restart = forcing%c%n_restart + 1
     end function forcing_restart_due
+
+    function forcing_restart_fldr(forcing) result(fldr)
+        ! The folder of the bundle the last forcing_restart_due announced: restart-<n>,
+        ! n the number of bundles so far (yelmox coefs_restart_fldr). The count is
+        ! in the bundles (a backend with increments stores it), so a run restored
+        ! from restart-3 numbers on from 4; a bundle without it counts from 0.
+        type(forcing_slot_t), intent(in) :: forcing
+        character(len=:), allocatable :: fldr
+        character(len=16) :: cstr
+        write(cstr, '(i0)') forcing%c%n_restart
+        fldr = "restart-"//trim(adjustl(cstr))
+    end function forcing_restart_fldr
 
     subroutine forcing_set(forcing, name, value, t)
         ! Set the derived coefficient `name` at t (its import; the backend

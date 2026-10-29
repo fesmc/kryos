@@ -32,7 +32,7 @@ module kryos_run
     use kryos_component,  only: component_t, census_t, PASS_INIT, NAME_LEN
     use kryos_wiring,     only: wiring_describe
     use kryos_gia_check,  only: gia_check
-    use kryos_forcing,    only: forcing_present, forcing_kill
+    use kryos_forcing,    only: forcing_present, forcing_kill, forcing_restart_due, forcing_restart_fldr
     use kryos_geo,        only: geo_present
     use kryos_globe,      only: globe_t, globe_init, globe_init_state, globe_end, globe_nodes
     use kryos_domain,     only: domain_t, domain_init, domain_create, domain_wire, domain_component, &
@@ -187,11 +187,13 @@ contains
     subroutine run_step(run)
         ! core-design section 3.4: advance, sequence, output + restart at the new time.
         type(run_t), intent(inout), target :: run
+        logical :: increment
 
         call clock_advance(run%clk)
         call run_sequence(run)
 
-        ! 5. end of step: the kill switch (yelmox coefs_kill), output, restart
+        ! 5. end of step: the kill switch (yelmox coefs_kill), output, restart,
+        !    forcing-increment restart (yelmox coefs_restart_due)
         if (forcing_present(run%globe%forcing)) then
             if (forcing_kill(run%globe%forcing)) then
                 call log_msg(LOG_INFO, "kryos_run", "forcing kill switch tripped at time = "// &
@@ -201,9 +203,11 @@ contains
         end if
         call run_schedules_due(run)
         call output_write(run%out, run%clk)
+        increment = run_increment_due(run)           ! counts the bundle before any is written
         if (run%i_rst > 0) then
             if (run%due(run%i_rst)) call run_restart_write(run)
         end if
+        if (increment) call run_restart_increment(run)
         call timer_step(run%tmr, TT_OUTPUT)
 
         call log_msg(LOG_INFO, "kryos_run", "step "//to_str(clock_step_index(run%clk))// &
@@ -503,6 +507,44 @@ contains
         end if
         call restart_write(restart_dir(run%out_dir, clock_time(run%clk)), run%clk, run%globe, run%dom, run%exps)
     end subroutine run_restart_write
+
+    logical function run_increment_due(run)
+        ! Forcing-increment bundle (core-design section 7; yelmox coefs_restart_due):
+        ! a coefficient has moved by more than its restart_every_df since its last
+        ! mark. Only on a time that lies on the grid of every cadence
+        ! (clock_restart_allowed): the trigger is not evaluated on other steps, so it
+        ! fires on the first step that is. Counts the bundle (the bundle of the
+        ! restart schedule of this step then holds the count too). A run without
+        ! restart_every_df pays one function call per step.
+        type(run_t), intent(inout), target :: run
+        run_increment_due = .false.
+        if (.not. forcing_present(run%globe%forcing)) return
+        if (.not. clock_restart_allowed(run%clk)) return
+        run_increment_due = forcing_restart_due(run%globe%forcing)
+    end function run_increment_due
+
+    subroutine run_restart_increment(run)
+        ! Write the bundle <out_dir>/restart-<n>/ announced by run_increment_due (n from
+        ! the count in the bundle the run was restored from), the same state as the
+        ! bundle of the restart schedule, after this step's output. An existing
+        ! folder of that name stops the run: a bundle is never overwritten.
+        type(run_t), intent(inout), target :: run
+        character(len=:), allocatable :: fldr, dir
+        integer :: es
+
+        fldr = forcing_restart_fldr(run%globe%forcing)
+        dir  = trim(run%out_dir)//fldr
+        call execute_command_line("test -e '"//dir//"'", exitstat=es)
+        if (es == 0) then
+            call fesm_error("kryos_run::run_step", "the forcing-increment bundle "//dir//" exists", &
+                            "a restored run numbers its bundles on from the one it was restored from; "// &
+                            "restored from a bundle older than the last one of out_dir "//trim(run%out_dir)// &
+                            ", use another out_dir")
+        end if
+        call log_msg(LOG_INFO, "kryos_run", "forcing-increment restart "//fldr//" at time = "// &
+                     year_label(clock_time(run%clk))//" yr")
+        call restart_write(dir, run%clk, run%globe, run%dom, run%exps)
+    end subroutine run_restart_increment
 
     ! =========================================================================
     ! Helpers

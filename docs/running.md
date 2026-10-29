@@ -171,7 +171,8 @@ Rounded and lossless runs have identical restart bundles; a rounded file is
 within the tolerance of its row of the lossless one (the `sci-nl` gate checks it
 on the science configuration). The output files of the 80 yr GRL-16KM run of
 `test_run_sequence` (no Yelmo streams) are 37% smaller rounded (the instance
-files -24 to -57%; 22.3 MB lossless, 14.1 MB rounded); the bundles are the same size.
+files -24 to -57%; 22.3 MB lossless, 14.1 MB rounded; with the Yelmo streams
+`yelmo` and `yelmo_sm` -35%: 32.4 MB, 21.0 MB); the bundles are the same size.
 
 ## Restart
 
@@ -210,3 +211,16 @@ The restore stops, naming the instance, if the run's instances differ from
 the manifest's (scope, domain, component, backend, grid) or a listed file is
 missing; a changed `dt` is allowed. Restart times and `time_end` must be on
 every instance's cadence grid (checked at init).
+
+### Forcing-increment bundles
+
+A tsgen coefficient with `[coef_<name>] restart_every_df = <df>` (> 0; 0 = off, the
+default) also writes a bundle `<out_dir>/restart-<n>/` (`n` = 1, 2, ... in the order
+written; the same content as `restart-<time>`, its `manifest.nml` has the time) each
+time it has moved by more than `df` since its last bundle (either direction; the
+first mark is the initial value). It is written after the step's output, on a step
+whose time is on every cadence grid (a trigger between two such steps fires on the
+next one). The count is stored in the bundles: a run restored from `restart-3` numbers on from 4. A bundle
+is never overwritten: a run that would write into an existing `restart-<n>` (restored
+from an older bundle than the last in its `out_dir`) stops; give it another `out_dir`.
+A derived coefficient cannot carry `restart_every_df`.

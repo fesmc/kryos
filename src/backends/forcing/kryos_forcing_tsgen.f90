@@ -19,7 +19,7 @@ module kryos_forcing_tsgen
     use fesm_log,        only: LOG_INFO, log_msg, fesm_error, to_str
     use fesm_fields,     only: fields_get, fields_put
     use nml,             only: nml_read, nml_validate, nml_has_param
-    use ncio,            only: nc_create, nc_write_dim, nc_write, nc_open, nc_close, nc_time_index
+    use ncio,            only: nc_create, nc_write_dim, nc_write, nc_read, nc_open, nc_close, nc_time_index
     use tsgen,           only: tsgen_class, tsgen_init, tsgen_update, tsgen_restart_write, tsgen_restart_read
     use kryos_component, only: init_ctx_t, step_time_t, constraints_t, NAME_LEN, PATH_LEN, PASS_INIT
     use kryos_forcing,   only: forcing_t
@@ -38,6 +38,8 @@ module kryos_forcing_tsgen
     type, extends(forcing_t) :: tsgen_forcing_t
         type(tsgen_class), allocatable :: tsg(:)        ! one generator per coefficient (unused for derived)
         real(wp),          allocatable :: f(:)          ! the current value of each coefficient [sp]
+        real(wp),          allocatable :: every_df(:)   ! restart_every_df of each (0: off)
+        real(wp),          allocatable :: f_mark(:)     ! its value at the last forcing-increment mark
         character(len=32), allocatable :: from(:)       ! derived: its producer kind (air_anomaly, obm_*)
     contains
         procedure :: init          => tsgen_init_
@@ -48,6 +50,7 @@ module kryos_forcing_tsgen
         procedure :: restart_files => tsgen_restart_files_
         procedure :: write_output  => tsgen_write_output_
         procedure :: kill          => tsgen_kill_
+        procedure :: restart_due   => tsgen_restart_due_
     end type tsgen_forcing_t
 
 contains
@@ -71,7 +74,6 @@ contains
         character(len=512) :: gfile
         character(len=128) :: group
         character(len=32)  :: method
-        real(wp) :: every_df
         integer  :: k, n
 
         names = ""
@@ -81,8 +83,9 @@ contains
 
         self%prec = sp
         allocate(self%coef_names(n), self%coef_units(n), self%coef_derived(n))
-        allocate(self%tsg(n), self%f(n), self%from(n))
+        allocate(self%tsg(n), self%f(n), self%from(n), self%every_df(n), self%f_mark(n))
         self%coef_derived = .false.
+        self%every_df = 0.0_wp
         self%f    = 0.0_wp
         self%from = ""
 
@@ -99,16 +102,16 @@ contains
                           defaults_file=COEF_DEFAULTS, defaults_group="coef")
             call nml_read(trim(gfile), trim(group), "units", self%coef_units(k), init=.true., &
                           defaults_file=COEF_DEFAULTS, defaults_group="coef")
-            call nml_read(trim(gfile), trim(group), "restart_every_df", every_df, &
+            call nml_read(trim(gfile), trim(group), "restart_every_df", self%every_df(k), &
                           defaults_file=COEF_DEFAULTS, defaults_group="coef")
-            if (every_df > 0.0_wp) then
-                call fesm_error("kryos_forcing_tsgen::init", "["//trim(group)//"] restart_every_df > 0 is not supported", &
-                                "instance "//trim(self%name)//": the forcing-increment restart bundles come with phase 3 "// &
-                                "(core-design 7); only the kill switch is kept")
-            end if
 
             if (trim(method) == "derived") then
                 self%coef_derived(k) = .true.
+                if (self%every_df(k) > 0.0_wp) then
+                    call fesm_error("kryos_forcing_tsgen::init", "["//trim(group)//"] restart_every_df > 0 on a derived "// &
+                                    "coefficient", "instance "//trim(self%name)//": the forcing-increment restarts "// &
+                                    "follow tsgen coefficients only")
+                end if
                 call nml_read(trim(gfile), trim(group), "from", self%from(k), init=.true., &
                               defaults_file=COEF_DEFAULTS, defaults_group="coef")
                 select case (trim(self%from(k)))
@@ -131,6 +134,7 @@ contains
                              "instance "//trim(self%name))
             end if
         end do
+        self%f_mark = self%f                           ! coefs_init: the mark of a coefficient is its initial value
     end subroutine tsgen_init_
 
     subroutine tsgen_init_state_(self, st, pass)
@@ -188,6 +192,10 @@ contains
             if (self%coef_derived(k)) cycle
             call tsgen_restart_write(coef_restart_file(self, dir, k), self%tsg(k), t)
         end do
+        if (increments_on(self)) then                ! the bundle counter: a restored run numbers on from it
+            call nc_create(counter_file(self, dir))
+            call nc_write(counter_file(self, dir), "n_restart", self%n_restart)
+        end if
     end subroutine tsgen_restart_write_
 
     function tsgen_restart_files_(self) result(files)
@@ -203,6 +211,7 @@ contains
             if (self%coef_derived(k)) cycle
             files = [character(len=PATH_LEN) :: files, coef_restart_name(self, k)]
         end do
+        if (increments_on(self)) files = [character(len=PATH_LEN) :: files, counter_name(self)]
     end function tsgen_restart_files_
 
     subroutine tsgen_restart_read_(self, dir, t)
@@ -228,7 +237,13 @@ contains
             end if
             call tsgen_restart_read(self%tsg(k), file)
             self%f(k) = self%tsg(k)%f_now
+            self%f_mark(k) = self%f(k)                 ! coefs_restart_read: the mark restarts at the restored value
         end do
+        ! the bundle counter; a bundle of a run without restart_every_df has none: 0
+        self%n_restart = 0
+        file = counter_file(self, dir)
+        inquire(file=file, exist=found)
+        if (found) call nc_read(file, "n_restart", self%n_restart)
     end subroutine tsgen_restart_read_
 
     subroutine tsgen_write_output_(self, file, t, stream, init)
@@ -294,6 +309,22 @@ contains
         end do
     end function tsgen_kill_
 
+    logical function tsgen_restart_due_(self) result(due)
+        ! coefs_restart_due: a coefficient has moved by more than its restart_every_df
+        ! (either direction) since its own mark; its mark moves to its value. Called
+        ! after the step, so f is the value at t1.
+        class(tsgen_forcing_t), intent(inout) :: self
+        integer :: k
+        due = .false.
+        do k = 1, size(self%f)
+            if (self%every_df(k) <= 0.0_wp) cycle
+            if (abs(self%f(k) - self%f_mark(k)) > self%every_df(k)) then
+                self%f_mark(k) = self%f(k)
+                due = .true.
+            end if
+        end do
+    end function tsgen_restart_due_
+
     ! =========================================================================
     ! helpers
     ! =========================================================================
@@ -309,6 +340,25 @@ contains
         files(2:) = ctx%library
         gfile = nml_find_group(files, group, "&"//trim(ctx%instance)//" coefs")
     end function coef_file
+
+    logical function increments_on(self)
+        ! Some coefficient carries restart_every_df: the bundles hold the counter.
+        class(tsgen_forcing_t), intent(in) :: self
+        increments_on = any(self%every_df > 0.0_wp)
+    end function increments_on
+
+    function counter_name(self) result(name)
+        class(tsgen_forcing_t), intent(in) :: self
+        character(len=:), allocatable :: name
+        name = trim(self%name)//"_increment_restart.nc"
+    end function counter_name
+
+    function counter_file(self, dir) result(file)
+        class(tsgen_forcing_t), intent(in) :: self
+        character(len=*),       intent(in) :: dir
+        character(len=:), allocatable :: file
+        file = trim(dir)//"/"//counter_name(self)
+    end function counter_file
 
     function coef_restart_name(self, k) result(name)
         class(tsgen_forcing_t), intent(in) :: self
