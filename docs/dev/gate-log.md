@@ -456,3 +456,17 @@ R2: yelmox topo-prep (S5 checkout 5ac89c8, code-identical to 74f3a2b), `submit_r
 | K chunk vs K cont (`--chunks`) | PASS, 1722 variables |
 
 R2 chunk is not compared (yelmox restarts the window time per chunk). Relax and the cb_ref optimisation are bit-identical to yelmox.
+
+### Hub count 8385 vs 1313 (W4a, design Q8; closes the open item of the WP0 NOR notes)
+
+`tools/levante/wp4_hub_count.py` (offline, numpy, float32 in the order of `htopo_init`) on `NH-32KM_TOPO-GEBCO2026.nc`:
+
+| step | 0 < H < 1 | H < 0 | htopo count (H < 1, H /= 0) |
+|---|---:|---:|---:|
+| raw file | 1313 | 0 | 1313 |
+| after `remove_lakes` (the hub's order) | 1009 | 7376 | **8385** |
+
+Both hypotheses hold: `remove_lakes` runs before `H_ice_min` and rewrites 11423 cells (2600 lakes filled, 8823 erroneously
+thick reduced to `H = z_srf - z_bed`; 7376 of those are negative where `z_srf < z_bed`), and the logged count includes the
+negatives (`H < H_ice_min .and. H /= 0`). The hub field is the raw file on the same grid (NH-32KM, `remap = "con"`
+identity). Nothing to change: the 8385 is the log's counting rule, not extra ice removed.
