@@ -439,7 +439,8 @@ contains
     end subroutine exports_all
 
     subroutine exports_geometry(self, t1)
-        ! INSTANT: the state and the bed and sea level used.
+        ! INSTANT: the state and the bed and sea level used, and the reference ice H_ice_ref
+        ! (every put, not once: recon and ice_bnd overwrite it; smb_simple masks with it).
         class(yelmo_ice_t), intent(inout) :: self
         real(dp),           intent(in)    :: t1
 
@@ -451,16 +452,16 @@ contains
             call fields_put(self%exports, self%h_f_ice,  tpo%f_ice,  t1=t1)
             call fields_put(self%exports, self%h_f_grnd, tpo%f_grnd, t1=t1)
             call fields_put(self%exports, self%h_H_grnd, tpo%H_grnd, t1=t1)
+            call fields_put(self%exports, self%h_H_ice_ref, bnd%H_ice_ref, t1=t1)
         end associate
     end subroutine exports_geometry
 
     subroutine exports_reference(self, t1)
-        ! INSTANT, static: the reference Yelmo holds (processed by mask_ice).
+        ! INSTANT, static: the reference bed Yelmo holds (processed by mask_ice).
         class(yelmo_ice_t), intent(inout) :: self
         real(dp),           intent(in)    :: t1
 
         call fields_put(self%exports, self%h_z_bed_ref, self%ylmo%bnd%z_bed_ref, t1=t1)
-        call fields_put(self%exports, self%h_H_ice_ref, self%ylmo%bnd%H_ice_ref, t1=t1)
     end subroutine exports_reference
 
     subroutine exports_static(self, t1)
