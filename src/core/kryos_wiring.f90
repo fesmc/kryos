@@ -38,6 +38,7 @@ module kryos_wiring
     integer, parameter, public :: T_ADD_SCALAR = 3   ! dst = src_state%<aux> (0-D) + remap(src)     (z_sl = dphi + dz_ss)
     integer, parameter, public :: T_LAPSE_T    = 4   ! tas re-elevated to the consumer's z_srf
     integer, parameter, public :: T_LAPSE_P    = 5   ! pr  re-elevated to the consumer's z_srf
+    integer, parameter, public :: T_GIA        = 6   ! the core's gather into a host-resolved global geo (phase 4)
     integer, parameter, public :: LAG_INIT     = -1  ! exchanged once after init (static fields)
 
     ! Table rules: the destination's declared names select the rows (section 4.2).
@@ -45,7 +46,8 @@ module kryos_wiring
 
     type, public :: wire_t                           ! kinds: ice geo climate surface shelf geothermal sediments hub;
         character(len=16) :: src_kind = "", dst_kind = ""      ! globe: forcing, geo_g (global part of geo)
-        character(len=FIELD_NAME_LEN) :: src_field = "", dst_field = "", aux = ""   ! aux: ref field or 0-D src field
+        character(len=FIELD_NAME_LEN) :: src_field = "", dst_field = "", aux = ""   ! aux: ref field, 0-D src field, or
+                                                                                   ! (T_GIA) the other source fields
         character(len=8)  :: method = ""             ! "" (from cons) | con | bilin | auto
         integer           :: lag = 0, transform = T_NONE   ! lag: 0 | 1 | LAG_INIT
         logical           :: gather = .false.        ! N domains -> one global 0-D field, summed (wire_gather)
@@ -56,6 +58,7 @@ module kryos_wiring
         character(len=32) :: mres = ""               ! method after resolution; "" for identity and 0-D rows
         integer           :: hs = 0, hd = 0, ha = 0, prec_src = 0, prec_dst = 0
         integer           :: hl(4) = 0               ! lapse rows: src z_srf_clim, beta_p, lapse; dst z_srf
+        integer, allocatable :: hx(:)                   ! T_GIA rows: handles of the other source fields (aux)
         logical           :: done = .false.          ! LAG_INIT row exchanged
         real(dp), allocatable :: work(:,:,:), pre(:,:,:)       ! persistent workspaces
         real(dp), allocatable :: zc(:,:,:), bp(:,:,:), lp(:,:,:) ! lapse: remapped z_srf_clim, beta_p, lapse
@@ -100,8 +103,8 @@ contains
     end function wire
 
     function wiring_table() result(t)
-        ! The phase 1 table, contracts-design section 4.2, in table order (the
-        ! order the core runs the rows of one src -> dst pair).
+        ! The table, contracts-design section 4.2, in table order (the order the
+        ! core runs the rows of one src -> dst pair).
         type(wire_t), allocatable :: t(:)
 
         allocate(t(0))
@@ -111,6 +114,17 @@ contains
         call add(t, "geo_g", "bsl", "geo", "bsl")
         call add(t, "geo_g", "A_ocn", "geo", "A_ocn")
         call add(t, "geo", "dV_bsl", "geo_g", "dV_bsl", gather=.true.)
+        ! geo = vilma2 (phase 4): the scatter into the regional ports and the gather of the loads. The rows
+        ! exist for resolution, logging and lag checks; the arithmetic is the core's (gia_scatter, gia_gather).
+        call add(t, "geo_g", "dz_bed", "geo", "dz_bed", "bilin")
+        call add(t, "geo_g", "dz_ss", "geo", "dz_ss", "bilin")
+        call add(t, "geo_g", "dphi", "geo", "dphi")
+        call add(t, "ice", "H_ice", "geo_g", "host_w", lag=1, transform=T_GIA, aux="f_grnd z_bed z_sl")
+        call add(t, "ice", "H_ice", "geo_g", "host_Ig", lag=1, transform=T_GIA, aux="f_grnd z_bed z_sl")
+        call add(t, "ice", "H_ice", "geo_g", "host_C", lag=1, transform=T_GIA, aux="f_grnd z_bed z_sl")
+        call add(t, "ice", "H_ice", "geo_g", "host_F", lag=1, transform=T_GIA, aux="f_grnd z_bed z_sl")
+        call add(t, "ice", "H_ice_pd", "geo_g", "host_Ig_ref", lag=LAG_INIT, transform=T_GIA, aux="z_bed_ref footprint")
+        call add(t, "ice", "H_ice_pd", "geo_g", "host_C_ref", lag=LAG_INIT, transform=T_GIA, aux="z_bed_ref footprint")
         ! geo -> ice: bed and sea level in one datum
         call add(t, "geo", "dz_bed", "ice", "z_bed", "auto", transform=T_ADD_REF, aux="z_bed")
         call add(t, "geo", "dz_ss", "ice", "z_sl", "auto", transform=T_ADD_SCALAR, aux="dphi")
@@ -345,6 +359,7 @@ contains
         logical :: bad
 
         character(len=*), parameter :: proc = "kryos_wiring::wire_resolve"
+        character(len=:), allocatable :: msg
         integer :: is, id, k
 
         bad = .false.
@@ -415,6 +430,20 @@ contains
                     bad = failed(proc, "row "//wire_label(w)//": aux `"//trim(w%aux)//"` is not 0-D", "", stat)
                     return
                 end if
+            case (T_GIA)
+                if (fs%rank /= 2 .or. fd%rank /= 2) then
+                    bad = failed(proc, "row "//wire_label(w)//": a T_GIA row is rank 2 on both sides", "", stat)
+                    return
+                end if
+                msg = gia_sources(w, nodes(is), fs)
+                if (len(msg) > 0) then
+                    if (msg(1:1) == "!") then           ! declared, but not on the principal source's grid
+                        bad = failed(proc, "row "//wire_label(w)//": "//msg(2:), "", stat)
+                    else
+                        w%reason = msg                  ! the producer does not export one of them: inactive
+                    end if
+                    return
+                end if
             case (T_LAPSE_T, T_LAPSE_P)
                 if (fs%rank /= 3) then
                     bad = failed(proc, "row "//wire_label(w)//": a lapse row needs a rank-3 (monthly) field", "", stat)
@@ -454,6 +483,46 @@ contains
         w%active = .true.
         w%reason = ""
     end function bind_row
+
+    function gia_sources(w, node, fs) result(msg)
+        ! The other source fields of a T_GIA row (aux, blank separated): their
+        ! handles into w%hx. msg = "" when the producer exports them all, on the
+        ! grid of the principal source fs; else the reason the row is inactive
+        ! (the first one it does not export), or, led by "!", a declaration error
+        ! (one that is not rank 2 on that grid).
+        type(wire_t),      intent(inout) :: w
+        type(wire_node_t), intent(in)    :: node
+        type(field_t),     intent(in)    :: fs
+        character(len=:), allocatable :: msg
+
+        character(len=FIELD_NAME_LEN) :: nm
+        integer :: p0, p1, h
+
+        msg = ""
+        if (allocated(w%hx)) deallocate(w%hx)
+        allocate(w%hx(0))
+        p0 = 1
+        do while (p0 <= len_trim(w%aux))
+            p1 = index(w%aux(p0:), " ")
+            if (p1 == 0) p1 = len_trim(w%aux) - p0 + 2
+            nm = w%aux(p0:p0+p1-2)
+            p0 = p0 + p1
+            if (len_trim(nm) == 0) cycle
+            if (.not. fields_has(node%exports, trim(nm))) then
+                msg = trim(w%src_name)//" does not export `"//trim(nm)//"`"
+                return
+            end if
+            h = fields_handle(node%exports, trim(nm))
+            associate (f => node%exports%f(h))
+                if (f%rank /= 2 .or. trim(f%grid) /= trim(fs%grid) .or. f%nx /= fs%nx .or. f%ny /= fs%ny) then
+                    msg = "!source `"//trim(nm)//"` is not rank 2 on the grid of `"//trim(fs%name)//"` ("// &
+                          trim(fs%grid)//")"
+                    return
+                end if
+            end associate
+            w%hx = [w%hx, h]
+        end do
+    end function gia_sources
 
     function check_gaps(w, nodes, stat) result(bad)
         ! Step 1: producers of every import.
@@ -513,6 +582,8 @@ contains
         integer :: is, id
 
         bad = .false.
+        if (w%transform == T_GIA) return        ! the fields are related by the core's gather, not by value:
+                                                ! units, nature and masks are not compared
         is = node_index(nodes, w%src_kind)
         id = node_index(nodes, w%dst_kind)
         call fields_check_link(nodes(is)%exports, w%hs, nodes(id)%imports, w%hd)   ! stops by itself
@@ -634,6 +705,7 @@ contains
         w%prec_src = nodes(is)%prec
         w%prec_dst = nodes(id)%prec
         w%mres = ""
+        if (w%transform == T_GIA) return        ! no remap, no workspace: the core's gather (gia_gather)
         associate (fs => nodes(is)%exports%f(w%hs), fd => nodes(id)%imports%f(w%hd))
             if (fs%rank == 0) return
             if (trim(w%src_grid) /= trim(w%dst_grid)) then
@@ -714,10 +786,11 @@ contains
     end function wire_label
 
     logical function wire_runs(w, src_kind, dst_kind)
-        ! Is `w` an active exchange row src_kind -> dst_kind (not a gather row)?
+        ! Is `w` an active exchange row src_kind -> dst_kind (not a gather row,
+        ! not a T_GIA row: the core runs those itself)?
         type(wire_t),     intent(in) :: w
         character(len=*), intent(in) :: src_kind, dst_kind
-        wire_runs = w%active .and. .not. w%gather .and. trim(w%src_kind) == trim(src_kind) &
+        wire_runs = w%active .and. .not. w%gather .and. w%transform /= T_GIA .and. trim(w%src_kind) == trim(src_kind) &
                     .and. trim(w%dst_kind) == trim(dst_kind)
     end function wire_runs
 
@@ -739,7 +812,7 @@ contains
         call log_msg(lvl, who, "wiring: "//to_str(size(w))//" rows, "//to_str(count(w%active))//" active")
         do i = 1, size(w)
             associate (r => w(i))
-                if (r%active .and. len_trim(r%src_grid) == 0) then
+                if (r%transform == T_GIA .or. (r%active .and. len_trim(r%src_grid) == 0)) then
                     meth = "-"
                 else if (len_trim(r%mres) > 0) then
                     meth = method_word(r)//" ("//trim(r%mres)//")"
@@ -786,6 +859,7 @@ contains
         case (T_ADD_SCALAR); s = "add_scalar("//trim(w%aux)//")"
         case (T_LAPSE_T);    s = "lapse_t"
         case (T_LAPSE_P);    s = "lapse_p"
+        case (T_GIA);        s = "gia("//trim(w%aux)//")"
         case default;        s = "?"
         end select
         s = trim(s)
@@ -805,7 +879,9 @@ contains
         !   * cold start (init): every row counts as lag 0;
         !   * LAG_INIT rows: published, t1 <= t (static producers are not marked);
         !   * the aux 0-D field and the lapse fields were put in the same update,
-        !     and the consumer's z_srf of a lapse row was exchanged.
+        !     and the consumer's z_srf of a lapse row was exchanged;
+        !   * a T_GIA row (run by the core's gather): the same for every source
+        !     field it reads (the principal one and aux).
         type(wire_t),        intent(in) :: w
         type(field_state_t), intent(in) :: src, dst
         real(dp),            intent(in) :: t, t_last
@@ -823,25 +899,17 @@ contains
         if (i0 .and. lag == 1) lag = 0
 
         associate (fs => src%f(w%hs))
-            if (.not. fs%published) then
-                msg = "source `"//trim(src%owner)//"."//trim(fs%name)//"` was never published"
-                return
-            end if
-            if (w%lag == LAG_INIT) then
-                if (fs%t1 > t) msg = "published at t1 = "//to_str(fs%t1)//", after the exchange time t = "//to_str(t)
-            else if (.not. same_time(fs%t1, t_last)) then
-                msg = "published at t1 = "//to_str(fs%t1)//", but the producer's last update is at "//to_str(t_last)// &
-                      " (a put without cadence_mark, or a mark without a put)"
-            else if (fs%t1 > t) then
-                msg = "published at t1 = "//to_str(fs%t1)//", ahead of the exchange time t = "//to_str(t)
-            else if (lag == 0 .and. d .and. fs%t1 < t) then
-                msg = "published at t1 = "//to_str(fs%t1)//", expected "//to_str(t)// &
-                      " (lag 0, producer due): the row runs before the producer in the step"
-            else if (lag == 1 .and. fs%t1 >= t) then
-                msg = "published at t1 = "//to_str(fs%t1)//", expected before "//to_str(t)// &
-                      " (lag 1): the row runs after the producer in the step"
-            end if
+            msg = source_problem(fs)
             if (len(msg) > 0) return
+            if (w%transform == T_GIA .and. allocated(w%hx)) then
+                do k = 1, size(w%hx)
+                    msg = source_problem(src%f(w%hx(k)))
+                    if (len(msg) > 0) then
+                        if (index(msg, "never published") == 0) msg = "source `"//trim(src%f(w%hx(k))%name)//"`: "//msg
+                        return
+                    end if
+                end do
+            end if
 
             if (w%transform == T_ADD_SCALAR) then
                 msg = aux_problem(src%f(w%ha), fs)
@@ -856,6 +924,35 @@ contains
                 end if
             end if
         end associate
+
+    contains
+
+        function source_problem(f) result(m)
+            ! Published, and at a time that fits the row's lag.
+            type(field_t), intent(in) :: f
+            character(len=:), allocatable :: m
+
+            m = ""
+            if (.not. f%published) then
+                m = "source `"//trim(src%owner)//"."//trim(f%name)//"` was never published"
+                return
+            end if
+            if (w%lag == LAG_INIT) then
+                if (f%t1 > t) m = "published at t1 = "//to_str(f%t1)//", after the exchange time t = "//to_str(t)
+            else if (.not. same_time(f%t1, t_last)) then
+                m = "published at t1 = "//to_str(f%t1)//", but the producer's last update is at "//to_str(t_last)// &
+                    " (a put without cadence_mark, or a mark without a put)"
+            else if (f%t1 > t) then
+                m = "published at t1 = "//to_str(f%t1)//", ahead of the exchange time t = "//to_str(t)
+            else if (lag == 0 .and. d .and. f%t1 < t) then
+                m = "published at t1 = "//to_str(f%t1)//", expected "//to_str(t)// &
+                    " (lag 0, producer due): the row runs before the producer in the step"
+            else if (lag == 1 .and. f%t1 >= t) then
+                m = "published at t1 = "//to_str(f%t1)//", expected before "//to_str(t)// &
+                    " (lag 1): the row runs after the producer in the step"
+            end if
+        end function source_problem
+
     end function wire_lag_status
 
     function aux_problem(fa, fs) result(msg)
@@ -904,6 +1001,10 @@ contains
         end if
         if (w%gather) then
             call fesm_error(proc, "row "//wire_label(w)//" is a gather row", "use wire_gather", stat)
+            return
+        end if
+        if (w%transform == T_GIA) then
+            call fesm_error(proc, "row "//wire_label(w)//" is a T_GIA row", "the core's gia_gather runs it", stat)
             return
         end if
         if (w%lag == LAG_INIT .and. w%done) return

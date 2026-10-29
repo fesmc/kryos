@@ -54,6 +54,7 @@ program test_wiring
 
     call tc_table()
     call tc_domain()
+    call tc_gia()
     call tc_resolve_errors()
     call tc_identity()
     call tc_remap()
@@ -245,9 +246,23 @@ contains
             if (t(i)%gather) n_gather = n_gather + 1
             if (t(i)%lag == LAG_INIT) n_init = n_init + 1
         end do
-        call check("50 rows", size(t) == 50)
+        call check("59 rows", size(t) == 59)
         call check("two gather rows (dV_bsl, M_ice)", n_gather == 2)
-        call check("static rows: ref x2, z_srf_ref, Q_geo, H_sed", n_init == 5)
+        call check("static rows: ref x2, z_srf_ref, Q_geo, H_sed, and the two T_GIA reference rows", n_init == 7)
+        call check("six T_GIA rows, all into the global geo", &
+                   count(t%transform == T_GIA) == 6 .and. all(t%dst_kind == "geo_g" .or. t%transform /= T_GIA))
+        call check("T_GIA step rows: ice.H_ice -> geo_g.host_w, host_Ig, host_C, host_F, lag 1, aux f_grnd z_bed z_sl", &
+                   has_row(t, "ice.H_ice -> geo_g.host_w", T_GIA, 1, "f_grnd z_bed z_sl") .and. &
+                   has_row(t, "ice.H_ice -> geo_g.host_Ig", T_GIA, 1, "f_grnd z_bed z_sl") .and. &
+                   has_row(t, "ice.H_ice -> geo_g.host_C", T_GIA, 1, "f_grnd z_bed z_sl") .and. &
+                   has_row(t, "ice.H_ice -> geo_g.host_F", T_GIA, 1, "f_grnd z_bed z_sl"))
+        call check("T_GIA reference rows: ice.H_ice_pd -> geo_g.host_Ig_ref, host_C_ref, LAG_INIT, aux z_bed_ref footprint", &
+                   has_row(t, "ice.H_ice_pd -> geo_g.host_Ig_ref", T_GIA, LAG_INIT, "z_bed_ref footprint") .and. &
+                   has_row(t, "ice.H_ice_pd -> geo_g.host_C_ref", T_GIA, LAG_INIT, "z_bed_ref footprint"))
+        call check("globe -> port rows: dz_bed, dz_ss bilin, dphi, lag 0", &
+                   has_row(t, "geo_g.dz_bed -> geo.dz_bed", T_NONE, 0, method="bilin") .and. &
+                   has_row(t, "geo_g.dz_ss -> geo.dz_ss", T_NONE, 0, method="bilin") .and. &
+                   has_row(t, "geo_g.dphi -> geo.dphi", T_NONE, 0, method=""))
         call check("geo -> ice z_bed: ADD_REF z_bed, lag 0, auto", &
                    any([(wire_label(t(i)) == "geo.dz_bed -> ice.z_bed" .and. t(i)%transform == T_ADD_REF &
                          .and. t(i)%aux == "z_bed" .and. t(i)%lag == 0 .and. t(i)%method == "auto", i = 1, size(t))]))
@@ -281,7 +296,8 @@ contains
         call build(nodes)
         call wire_resolve(w, nodes, cpl, stat=stat)
         call check("resolves", stat == 0)
-        call check("43 of 50 rows active", count(w%active) == 43 .and. size(w) == 50)
+        call check("43 of 59 rows active (the phase 4 rows need a host-resolved global geo)", &
+                   count(w%active) == 43 .and. size(w) == 59)
         call check("rule rows expanded: coef_alpha and dTo", &
                    any([(wire_label(w(i)) == "forcing.alpha -> climate.coef_alpha" .and. w(i)%active, i = 1, size(w))]) &
                    .and. any([(wire_label(w(i)) == "climate.dTo -> forcing.dTo" .and. w(i)%active, i = 1, size(w))]))
@@ -310,6 +326,134 @@ contains
                    w(row_of(w, "ice.z_bed -> hub.dz_bed"))%transform == T_SUB_REF)
 
     end subroutine tc_domain
+
+    ! =========================================================================
+    ! geo = vilma2: the T_GIA rows and the rank-2 globe rows
+    ! =========================================================================
+
+    subroutine tc_gia()
+        ! A host-resolved global geo (rank 2 on its own grid), its regional port and the ice:
+        ! the T_GIA rows resolve like any row (sources, handles, lag) but have no map and no
+        ! workspace and are never exchanged (the core's gia_gather runs them).
+        character(len=*), parameter :: GG = "wt-gauss"
+        integer, parameter :: GNX = 8, GNY = 4
+        type(wire_t), allocatable :: w(:), w2(:)
+        type(wire_node_t) :: nodes(3)
+        type(field_state_t), target :: ice_x, ice_x2, ice_ei, gh_i, gh_e, pt_i, pt_e
+        character(len=FIELD_NAME_LEN), parameter :: step_src(4) = [character(len=FIELD_NAME_LEN) :: &
+            "H_ice", "f_grnd", "z_bed", "z_sl"]
+        integer :: h, i, k, stat, nrow
+        character(len=:), allocatable :: msg
+        character(len=32) :: gnames(9)
+
+        write(*,"(a)") "T_GIA rows and the globe rows of a host-resolved geo"
+        call fields_init(ice_ei, "ice:imports");  call fields_lock(ice_ei)
+        call fields_init(ice_x, "ice:exports")
+        do k = 1, 4
+            call st_add(ice_x, trim(step_src(k)), "m", I_, IT, GF)
+        end do
+        call st_add(ice_x, "z_bed_ref", "m", I_, IT, GF);  call st_add(ice_x, "H_ice_pd", "m", I_, IT, GF)
+        call st_add(ice_x, "footprint", "1", I_, IT, GF)
+        call fields_lock(ice_x)
+        ! the same without the footprint
+        call fields_init(ice_x2, "ice2:exports")
+        do k = 1, 4
+            call st_add(ice_x2, trim(step_src(k)), "m", I_, IT, GF)
+        end do
+        call st_add(ice_x2, "z_bed_ref", "m", I_, IT, GF);  call st_add(ice_x2, "H_ice_pd", "m", I_, IT, GF)
+        call fields_lock(ice_x2)
+
+        gnames = [character(len=32) :: "H_ice_ext", "host_w", "host_Ig", "host_C", "host_F", "z_bed_ref", "H_ice_ref", &
+                                       "host_Ig_ref", "host_C_ref"]
+        call fields_init(gh_i, "geo_glob:imports")
+        do k = 1, 9
+            call fields_add(gh_i, trim(gnames(k)), merge("1", "m", index(gnames(k), "_w") > 0 .or. index(gnames(k), "_C") > 0), &
+                            I_, IT, h, grid=GG, dims=[GNX, GNY])
+        end do
+        call fields_lock(gh_i)
+        call fields_init(gh_e, "geo_glob:exports")
+        call fields_add(gh_e, "dz_bed", "m", I_, IT, h, grid=GG, dims=[GNX, GNY])
+        call fields_add(gh_e, "dz_ss", "m", I_, IT, h, grid=GG, dims=[GNX, GNY])
+        call st_add(gh_e, "dphi", "m", I_, IT);  call st_add(gh_e, "bsl", "m", I_, IT)
+        call fields_lock(gh_e)
+        call fields_init(pt_i, "geo_nh:imports")
+        call st_add(pt_i, "dz_bed", "m", I_, IT, GF);  call st_add(pt_i, "dz_ss", "m", I_, IT, GF)
+        call st_add(pt_i, "dphi", "m", I_, IT);  call st_add(pt_i, "bsl", "m", I_, IT)
+        call fields_lock(pt_i)
+        call fields_init(pt_e, "geo_nh:exports");  call fields_lock(pt_e)
+
+        nodes(1) = wire_node_states("ice", "ice_nh", ice_ei, ice_x, sp, 10.0_dp, check=.false.)
+        nodes(2) = wire_node_states("geo_g", "geo_glob", gh_i, gh_e, dp, 10.0_dp, check=.false.)
+        nodes(3) = wire_node_states("geo", "geo_nh", pt_i, pt_e, dp, 10.0_dp)         ! the port: checked
+        call wire_resolve(w, nodes, cpl, stat=stat)
+        call check("resolves; the port's imports have a producer each (dz_bed, dz_ss, dphi, bsl)", stat == 0)
+        nrow = count(w%active)
+        call check("active: 4 globe -> port rows and 6 T_GIA rows", nrow == 10 .and. size(w) == 59)
+        call check("globe -> port rank 2: bilin (Gauss -> geo grid), none for the scalars", &
+                   w(row_of(w, "geo_g.dz_bed -> geo.dz_bed"))%mres == "bilin" .and. &
+                   w(row_of(w, "geo_g.dz_ss -> geo.dz_ss"))%mres == "bilin" .and. &
+                   w(row_of(w, "geo_g.dphi -> geo.dphi"))%mres == "" .and. w(row_of(w, "geo_g.bsl -> geo.bsl"))%active)
+        call check("the fastisostasy rows stay inactive (no H_ice import on the port, no dV_bsl)", &
+                   .not. w(row_of(w, "ice.H_ice -> geo.H_ice"))%active .and. &
+                   .not. w(row_of(w, "geo.dV_bsl -> geo_g.dV_bsl"))%active)
+
+        k = row_of(w, "ice.H_ice -> geo_g.host_Ig")
+        call check("T_GIA step row: active, lag 1, no remap, no workspace, three more sources", &
+                   w(k)%active .and. w(k)%transform == T_GIA .and. w(k)%lag == 1 .and. w(k)%mres == "" .and. &
+                   .not. allocated(w(k)%work) .and. .not. allocated(w(k)%pre) .and. allocated(w(k)%hx))
+        call check("its source handles are the exports f_grnd, z_bed, z_sl", &
+                   size(w(k)%hx) == 3 .and. w(k)%hs == fields_handle(ice_x, "H_ice"))
+        if (size(w(k)%hx) == 3) &
+            call check("  in that order", all(w(k)%hx == [fields_handle(ice_x, "f_grnd"), fields_handle(ice_x, "z_bed"), &
+                                                            fields_handle(ice_x, "z_sl")]))
+        call check("units are not compared (m -> m and m -> 1 alike): host_C, host_w resolve", &
+                   w(row_of(w, "ice.H_ice -> geo_g.host_C"))%active .and. w(row_of(w, "ice.H_ice -> geo_g.host_w"))%active)
+        k = row_of(w, "ice.H_ice_pd -> geo_g.host_C_ref")
+        call check("T_GIA reference row: active, LAG_INIT, aux z_bed_ref, footprint", &
+                   w(k)%active .and. w(k)%lag == LAG_INIT .and. size(w(k)%hx) == 2 .and. &
+                   w(k)%hs == fields_handle(ice_x, "H_ice_pd"))
+        w2 = pack(w, w%transform == T_GIA)
+        call wire_prime(w2, cpl)                 ! no pair of a T_GIA row is primed (the coupler knows no wt-gauss: it would stop)
+        call check("the T_GIA rows are never exchange rows", &
+                   .not. any([(wire_runs(w(i), "ice", "geo_g"), i = 1, size(w))]) .and. &
+                   wire_runs(w(row_of(w, "geo_g.dz_bed -> geo.dz_bed")), "geo_g", "geo"))
+        call wire_exchange(w(row_of(w, "ice.H_ice -> geo_g.host_Ig")), ice_x, gh_i, cpl, 10.0_dp, 10.0_dp, stat=stat)
+        call check("wire_exchange refuses a T_GIA row", stat /= 0)
+        call wiring_describe(w)
+
+        ! lag checks over every source field
+        k = row_of(w, "ice.H_ice -> geo_g.host_Ig")
+        call check("lag: a source never published", len(wire_lag_status(w(k), ice_x, gh_i, 20.0_dp, 10.0_dp)) > 0)
+        do i = 1, 4
+            call put3(ice_x, trim(step_src(i)), wave(NF, 1, 1.0_dp, 1.0_dp), sp, t1=10.0_dp)
+        end do
+        call check("lag 1: all four published at the producer's last update (10), read at 20", &
+                   len(wire_lag_status(w(k), ice_x, gh_i, 20.0_dp, 10.0_dp)) == 0)
+        call put3(ice_x, "z_sl", wave(NF, 1, 1.0_dp, 1.0_dp), sp, t1=0.0_dp)
+        msg = wire_lag_status(w(k), ice_x, gh_i, 20.0_dp, 10.0_dp)
+        call check("lag: an aux source out of step is named (z_sl)", index(msg, "z_sl") > 0 .and. index(msg, "last update") > 0)
+        call put3(ice_x, "z_sl", wave(NF, 1, 1.0_dp, 1.0_dp), sp, t1=10.0_dp)
+        call check("lag 1, read in the step the producer ran (consumer after producer)", &
+                   len(wire_lag_status(w(k), ice_x, gh_i, 10.0_dp, 10.0_dp)) > 0)
+        k = row_of(w, "ice.H_ice_pd -> geo_g.host_Ig_ref")
+        call put3(ice_x, "H_ice_pd", wave(NF, 1, 1.0_dp, 1.0_dp), sp, t1=0.0_dp)
+        call put3(ice_x, "z_bed_ref", wave(NF, 1, 1.0_dp, 1.0_dp), sp, t1=0.0_dp)
+        call check("LAG_INIT: the footprint never published is named", &
+                   index(wire_lag_status(w(k), ice_x, gh_i, 0.0_dp, -99.0_dp), "footprint") > 0)
+        call put3(ice_x, "footprint", wave(NF, 1, 1.0_dp, 1.0_dp), sp, t1=0.0_dp)
+        call check("LAG_INIT: the static sources published at 0, read at 0 and at 20 (any t_last)", &
+                   len(wire_lag_status(w(k), ice_x, gh_i, 0.0_dp, -99.0_dp)) == 0 .and. &
+                   len(wire_lag_status(w(k), ice_x, gh_i, 20.0_dp, 10.0_dp)) == 0)
+
+        ! an ice that does not export the footprint: the reference rows are inactive, naming it
+        nodes(1) = wire_node_states("ice", "ice_nh", ice_ei, ice_x2, sp, 10.0_dp, check=.false.)
+        call wire_resolve(w2, nodes, cpl, stat=stat)
+        call check("an ice without footprint resolves (the rows are inactive, not an error)", stat == 0)
+        k = row_of(w2, "ice.H_ice_pd -> geo_g.host_Ig_ref")
+        call check("reference rows inactive, naming the missing export", &
+                   .not. w2(k)%active .and. index(w2(k)%reason, "`footprint`") > 0)
+        call check("the step rows are unaffected", w2(row_of(w2, "ice.H_ice -> geo_g.host_F"))%active)
+    end subroutine tc_gia
 
     subroutine build(nodes)
         type(wire_node_t), intent(out) :: nodes(:)
@@ -412,6 +556,29 @@ contains
         nodes(10) = wire_node_states("forcing", "forcing", fo_i, fo_e, dp, 10.0_dp, check=.false.)
     end subroutine build
 
+
+    logical function has_row(t, label, transform, lag, aux, method)
+        ! The table holds a row with this label, transform and lag (and aux, method when given).
+        type(wire_t),     intent(in) :: t(:)
+        character(len=*), intent(in) :: label
+        integer,          intent(in) :: transform, lag
+        character(len=*), intent(in), optional :: aux, method
+        integer :: i
+
+        has_row = .false.
+        do i = 1, size(t)
+            if (wire_label(t(i)) /= label) cycle
+            if (t(i)%transform /= transform .or. t(i)%lag /= lag) cycle
+            if (present(aux)) then
+                if (trim(t(i)%aux) /= aux) cycle
+            end if
+            if (present(method)) then
+                if (trim(t(i)%method) /= method) cycle
+            end if
+            has_row = .true.
+            return
+        end do
+    end function has_row
 
     integer function row_of(w, label)
         type(wire_t), intent(in) :: w(:)
@@ -988,6 +1155,7 @@ contains
 
     subroutine tc_aborts()
         write(*,"(a)") "aborts (child processes)"
+        call expect_abort("gia_exchange", "is a T_GIA row")
         call expect_abort("lag_swapped", "runs before the producer")
         call expect_abort("lag_after", "runs after the producer")
         call expect_abort("lag_unmarked", "last update")
@@ -1034,6 +1202,14 @@ contains
         call fields_init(sx, "src:exports");  call st_add(sx, "a", "m", FIELD_INSTANT, FIELD_INTENSIVE, GF);  call fields_lock(sx)
         call fields_init(di, "dst:imports");  call st_add(di, "a", "m", FIELD_INSTANT, FIELD_INTENSIVE, GF);  call fields_lock(di)
         select case (trim(arg))
+        case ("gia_exchange")
+            call fields_init(sx, "src:exports")
+            call st_add(sx, "a", "m", FIELD_INSTANT, FIELD_INTENSIVE, GF);  call fields_lock(sx)
+            call fields_init(di, "dst:imports");  call st_add(di, "b", "m", FIELD_INSTANT, FIELD_INTENSIVE, GF)
+            call fields_lock(di)
+            call resolve1(w, wire("ice", "a", "geo", "b", transform=T_GIA, lag=1), sp, sp)
+            call put3(sx, "a", wave(NF, 1, 1.0_dp, 1.0_dp), sp, t1=10.0_dp)
+            call wire_exchange(w(1), sx, di, cpl, t=20.0_dp, t_last=10.0_dp)
         case ("lag_swapped")
             call resolve1(w, wire("ice", "a", "geo", "a"), sp, sp)
             call put3(sx, "a", wave(NF, 1, 1.0_dp, 1.0_dp), sp, t1=10.0_dp)

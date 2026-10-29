@@ -53,7 +53,7 @@ module kryos_domain
                                step_time_of, axis_find, kryos_mask, component_prepare_call, NAME_LEN, PATH_LEN
     use kryos_config,    only: config_t, config_read, config_validate, config_validate_instance, config_cadence
     use kryos_wiring,    only: wire_t, wire_node_t, wire_node, wire_node_states, wire_resolve, &
-                               wire_prime, wire_exchange, wire_runs, wire_label, LAG_INIT
+                               wire_prime, wire_exchange, wire_runs, wire_label, LAG_INIT, T_GIA
     use kryos_ice,       only: ice_slot_t, ice_create, ice_init, ice_init_state, ice_update, ice_end, &
                                ice_restart_write, ice_restart_read, ice_restart_files
     use kryos_geo,       only: geo_slot_t, geo_create, geo_init, geo_init_state, geo_update, geo_end, &
@@ -1068,7 +1068,8 @@ contains
 
         do i = 1, size(dom%wires)
             associate (w => dom%wires(i))
-                if (.not. (w%active .and. w%lag == LAG_INIT .and. .not. w%done .and. .not. w%gather)) cycle
+                if (.not. (w%active .and. w%lag == LAG_INIT .and. .not. w%done .and. .not. w%gather &
+                           .and. w%transform /= T_GIA)) cycle
             end associate
             call run_row(dom, i, t, clk, .true., s)
             if (s /= 0) then
