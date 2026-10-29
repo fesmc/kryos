@@ -4,11 +4,11 @@
 #   vilma_link_test.sh <stack-dir>        e.g. $G/stacks/S5      (log: <stack-dir>/vilma-link-test.log, job id on stdout)
 # Builds on the login node, runs in a short job (16 threads, 30 min, account ba1442). Tests: params (defaults file),
 # host_terms, host_bitident, restart_host (host API), io_prec (output precision), remap (Gauss grid from fesm-utils grid_init_gaussian),
-# coupling (lmax 16, 3D viscosity of input/bagge2021.nc) and test_visc_fesmdata (the FesmData Bagge2021_visc.nc, read only).
+# coupling (lmax 16, synthetic 3D viscosity) and, with REFV set, test_visc_fesmdata (the FesmData product against a lon-lat-r reference).
 set -euo pipefail
 S=$1; V=$S/vilma2; GF="-O2 -fp-model precise -march=znver3 -traceback"
 VISC=${VISC:-/work/ba1442/fesmdata-prepared/Bagge2021_visc/Bagge2021_visc.nc}
-REFV=${REFV:-$V/input/bagge2021.nc}      # vendored in vilma2 (isostasy_data has no bagge2021.nc)
+REFV=${REFV:-}                            # lon-lat-r reference (e.g. isostasy_data bagge2021.nc); unset: skipped
 T="test_params test_host_terms test_host_bitident test_restart_host test_remap test_coupling test_io_prec"
 cd $V
 make $T test_visc_fesmdata openmp=1 DFLAGS_NODEBUG="$GF" > $S/build-vilma2-tests.log 2>&1 || { tail -30 $S/build-vilma2-tests.log; exit 1; }
@@ -29,7 +29,11 @@ cd $V
 echo "libvilma.a: \$(ls -l libvilma/include/libvilma.a)"
 for t in $T; do echo "--- \$t ---"; ./bin/\$t.x || { echo "FAILED \$t"; exit 1; }; done
 echo "--- test_visc_fesmdata (read only: $VISC, $REFV) ---"
-./bin/test_visc_fesmdata.x $VISC $REFV 6 || echo "FAILED test_visc_fesmdata"
+if [ -n "$REFV" ] && [ -f "$REFV" ]; then
+    ./bin/test_visc_fesmdata.x $VISC $REFV 6 || echo "FAILED test_visc_fesmdata"
+else
+    echo "SKIPPED test_visc_fesmdata: no reference file (REFV)"
+fi
 echo "== all link tests done"
 JOB
 sbatch --parsable $S/vilma-link-test.job
