@@ -232,6 +232,11 @@ ifeq ($(need_lis_fftw), 1)
     dep_archives += $(LIS_ARCHIVE) $(FFTW_ARCHIVE)
 endif
 
+# Phase 3 WP1: the two-domain test needs what the sequence test needs.
+ifneq ($(findstring test_run_sequence.f90,$(test_skip)),)
+    test_skip += $(testdir)/test_run_domains.f90
+endif
+
 # Extra link flags. -Wl,-zmuldefs works around duplicate symbols in the static
 # deps (the default on Linux). A machine fragment can disable it by setting
 # `LFLAGS_EXTRA =` (macOS ld rejects -zmuldefs, so the macbook fragment does).
