@@ -241,6 +241,7 @@ program test_run_sequence
     use kryos_exp_relax, only: relax_exp_t
     use kryos_exp_opt_cb_ref, only: opt_cb_ref_exp_t
     use kryos_exp_opt_tf, only: opt_tf_exp_t
+    use kryos_exp_recon, only: recon_exp_t
     use kryos_climate_snapshots,  only: snapshots_climate_t
     use kryos_surface_chion,      only: chion_surface_t
     use kryos_shelf_marine_shelf, only: marshelf_shelf_t
@@ -563,19 +564,23 @@ contains
 
         type(run_t), target :: run
         real(sp), allocatable :: cb0(:,:), cb60(:,:), tf0(:,:), tf60(:,:)
-        integer :: n, i, irel, icf, itf, topo_rel0
+        integer :: n, i, irel, icf, itf, irec, topo_rel0
         real(dp) :: t
         logical :: ok, ok_cb, ok_tf, none_cf
 
         call run_init(run, par_file, protos=host_protos())
         write(*,'(a)') "--- plugin experiments"
-        irel = 0;  icf = 0;  itf = 0;  none_cf = .false.
+        irel = 0;  icf = 0;  itf = 0;  irec = 0;  none_cf = .false.
         do i = 1, size(run%exps(1)%s)
             select type (x => run%exps(1)%s(i)%c)
             type is (relax_exp_t)
                 irel = i
                 call check(x%topo_rel0 == 0 .and. x%topo_rel_tau0 == 10.0_sp, "relax: the par-file ytopo values recorded at init")
                 call check(x%wants(HOOK_STEP_BEGIN) .and. count(x%wants) == 1, "relax: wants STEP_BEGIN only")
+            type is (recon_exp_t)
+                irec = i
+                call check(x%wants(HOOK_COLD_POST_STATE) .and. count(x%wants) == 1, "recon: wants COLD_POST_STATE only")
+                call check(count(x%mask_recon) == size(x%mask_recon), "recon: the regions 'all' select every cell")
             type is (opt_tf_exp_t)
                 itf = i
                 call check(x%wants(HOOK_STEP_BEGIN) .and. count(x%wants) == 1, "opt_tf: wants STEP_BEGIN only")
@@ -586,6 +591,7 @@ contains
                            count(x%wants) == merge(1, 2, none_cf), "opt_cb_ref: the cold-start hook, STEP_BEGIN unless method = none")
             end select
         end do
+        if (irec > 0 .and. .not. run%clk%continued) call check_recon(run)
         if (irel > 0 .and. .not. run%clk%continued) then
             select type (c => run%dom(1)%ice%c)
             type is (yelmo_ice_t)
@@ -782,9 +788,9 @@ contains
         vel = trim(root)//"/Greenland/GRL-16KM/GRL-16KM_VEL-J18.nc"
         has_vel = exists(vel)
         if (has_vel) then
-            names = [character(len=24) :: "exp_relax", "exp_cf", "exp_tf"]
+            names = [character(len=24) :: "exp_recon", "exp_relax", "exp_cf", "exp_tf"]
         else
-            names = [character(len=24) :: "exp_relax", "exp_tf"]
+            names = [character(len=24) :: "exp_recon", "exp_relax", "exp_tf"]
             call note(.false., "opt_cb_ref not run: no present-day velocity "//vel)
         end if
         call setup_run_dir(XC)
@@ -840,6 +846,10 @@ contains
         allocate(lines(0))
         do i = 1, size(names)
             select case (trim(names(i)))
+            case ("exp_recon")
+                lines = [character(len=400) :: lines, "&exp_recon", "  kind = 'recon'", &
+                         "  recon_path = '"//trim(root)//"/{domain}/{grid_name}/{grid_name}_TOPO-ICE-6G_C.nc'", &
+                         "  recon_var = 'dz'", "  recon_time = -20000.0", "  recon_regions = 'all'", "/"]
             case ("exp_relax")
                 lines = [character(len=400) :: lines, "&exp_relax", "  kind = 'relax'", "  topo_rel = 3", "  tau1 = 100.0", &
                          "  tau2 = 2000.0", "  time1 = 20.0", "  time2 = 60.0", "  m = 2.0", "/"]
@@ -1252,6 +1262,30 @@ contains
             call check(all(g <= f) .and. any(g < f), what//": a sea level 5 km higher floats ice that was grounded")
         end associate
     end subroutine check_ice_flotation
+
+    subroutine check_recon(run)
+        ! After the cold start with recon: Yelmo's reference ice thickness is the recipe's clean field (not the
+        ! hub's prepared reference), the ice's H_ice_ref export is Yelmo's, the hub follows the ice (the refresh
+        ! inside the recipe and the cold start after it), the surface -> ice import is there.
+        type(run_t), target, intent(in) :: run
+        real(dp), allocatable :: e(:,:)
+
+        select type (ice => run%dom(1)%ice%c)
+        type is (yelmo_ice_t)
+            e = get2(ice%exports, ice%h_H_ice_ref)
+            call check(all(real(e, sp) == ice%ylmo%bnd%H_ice_ref), "recon: the H_ice_ref export = Yelmo's bnd%H_ice_ref")
+            call check(count(real(ice%ylmo%bnd%H_ice_ref, dp) /= run%dom(1)%refs(1)%H_ice) > 1000 .and. &
+                       sum(ice%ylmo%bnd%H_ice_ref) > 0.0_sp, "recon: the reference ice thickness is the reconstruction's, not the "// &
+                       "prepared present day ("//trim(itoa(count(real(ice%ylmo%bnd%H_ice_ref, dp) /= run%dom(1)%refs(1)%H_ice)))// &
+                       " cells differ)")
+            call check(all(get2(run%dom(1)%hub_exports, run%dom(1)%hh%h_H_ice) == get2(ice%exports, ice%h_H_ice)), &
+                       "recon: the hub follows the ice at the end of the cold start")
+            call check(ice%imports%f(ice%hi_smb)%published .and. ice%imports%f(ice%hi_smb)%t1 == clock_time(run%clk), &
+                       "recon: smb imported into the ice at the start time")
+        class default
+            call check(.false., "the ice instance is Yelmo")
+        end select
+    end subroutine check_recon
 
     subroutine check_publish(run)
         ! yelmo_ice_publish: after the state is changed outside a step, the INSTANT exports (geometry,
