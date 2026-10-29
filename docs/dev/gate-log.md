@@ -528,3 +528,24 @@ owner weights for overlapping domains, the hub output `globe_ice.nc` (rounded, l
 offline merge in Julia (`KryosTools.GlobeIce`). Mac, `make check` at every commit; `test_run_sequence` plain runs compared with
 `kryos-compare --restarts` against a build of the base: PASS at every commit; head against a fresh a6e91bf build: 1171 / 632 / 632 variables, 0 failing, 0 absent. G1b locally: hub closure 1e-15,
 order swap identical, offline merge equal to 1e-12. The run with and without `[globe_ice]` and the real-run offline merge are WP4/WP7.
+
+## Phase 3 WP1, WP5: two domains, local (2026-10-29)
+
+Branch `p3-dom` on main e6b44ed. Merge step `tools/bin/kryos-merge.jl` (`Convert.merge_par`): `par/kryos_NH-ANT.nml` (from `par/kryos_North.nml`, new, and
+`par/kryos_Antarctica.nml`) and `par/gate/sci.nml` (from the `nor` and `ant` gate files); 46 groups renamed and 46 keys repointed in each; the run-wide keys
+that differ are resolved explicitly (recorded in the file header): `clock.time_const` (-21e3 | 0.0) = 0.0, `barysealevel.sl_path` (read only by bsl `file`) =
+"none", for the base file also `clock.time_end`. Gate tooling: `tools/bin/kryos-gate-kk.jl`, `tools/gate/sci.toml`, `sci-const.toml`.
+`tests/test_run_domains.f90` (Mac, GRL-16KM + ANT-32KM, synthetic snapshots, 80 yr, bundles at 40 and 80, files from the merge step), all checks through
+`kryos-gate-kk.jl`:
+
+| check | result |
+|---|---|
+| bsl const: each domain of the two-domain run vs its single-domain run (every file, bundles at 40 and 80, globe files; skipped: `forcing_imports.nc:M_ice`, `geo_glob_imports.nc:dV_bsl` of the bundles) | PASS, Greenland 1144 variables, Antarctica 1097 |
+| bsl fastiso: domains swapped in `[kryos] domains` vs the original order (files and bundles) | PASS |
+| bsl fastiso: chunk 0 -> 40 -> 80 vs continuous (files after 40, bundles; `pc_tau_max` skipped as in `test_run_sequence`) | PASS |
+| bsl budget `bsl(t) - bsl(t-dt) = -sum_d dV_bsl_d / A_ocn` recomputed from the exports | closes: max residual / scale 2.9e-8 (0.25 eps of sp) |
+| recon (Greenland) + relax (Antarctica), const: each domain vs its single-domain run; chunk vs continuous | PASS |
+| derived `dTo` produced by both climates | stops at init: `run_check_producers` (new; `forcing_set`'s check was never reached) names the coefficient |
+
+`make check` passes; the `test_run_sequence` runs (cont, chunk c01) compared with `kryos-compare --restarts` against a build of main e6b44ed: PASS (1171 / 632
+variables, 0 failing). Levante gates `sci-const`, `sci`: pending.
