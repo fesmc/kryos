@@ -54,7 +54,9 @@ It holds kryos' own files and synchronised copies of the files the libraries
 read.
 
 kryos' own: `kryos_defaults.nml`, `forcing_defaults.nml`,
-`snapshots_defaults.nml`, `kryos-variables-<component>.md`, `phys_const.nml`
+`snapshots_defaults.nml`, `kryos-variables-<component>.md` and the tables of the
+backend streams (`kryos-variables-<component>-<backend>.md`,
+`kryos-variables-hub.md`; precisions of the output, see Output), `phys_const.nml`
 (the `[kryos] phys_const_file` default, read by `phys_const_load`; the run's
 one set of constants, passed to every backend), and the series of the
 configurations: `sl_deglaciation.dat` (Greenland `[barysealevel] sl_path`),
@@ -122,9 +124,54 @@ group (`out_2D`, `out_1D`, ... name schedule groups such as `[out_2D]`):
 | `<domain>_hub.nc` | the domain's hub topography (`[<domain>] out_2D`) |
 | `timing.txt` | timing table (on the first 1D schedule) |
 
-Instance names are unique in a run, so the files need no domain prefix. The
-variable tables are `input/kryos-variables-<component>.md`;
-`[kryos] write_lossless = True` writes full precision.
+Instance names are unique in a run, so the files need no domain prefix.
+
+### Precision
+
+Output is rounded per variable (ncio bit rounding, `float`), as yelmox does; the
+restart bundle is never rounded. The `prec` column of the variable tables in
+`input/` is the only source of rounding: `-` lossless, `1e-3` absolute (in the
+units of the variable), `1e-4r` relative, `1e-3,1e-4r` both. A variable a table
+does not list is written lossless; a row without a unit, a bad `prec` entry, or a
+unit that differs from the data's stops the run. The tables:
+
+| Table | Read by | Content |
+|---|---|---|
+| `kryos-variables-<component>.md` | the default writer (`component_write_output`) | exports of an instance of that component kind |
+| `kryos-variables-<component>-<backend>.md`, `kryos-variables-hub.md` | the backend's own writer | `geo-fastisostasy`, `climate-snapshots`, `surface-chion`, `shelf-marine_shelf`: the variables of that backend's 2D stream; `hub`: `f_ice` of the hub file |
+| `yelmo-variables-*.md` | Yelmo (synchronised copies) | the Yelmo streams |
+
+`[kryos] write_lossless = True` (ncio `nc_set_lossless`) ignores every precision:
+the gates set it, so their files are never rounded. The default tolerances are
+yelmox's: m 1e-3, m yr-1 1e-3 and 1e-4 relative or 1e-4 absolute (rates), K 1e-3,
+fractions 1e-4, mass balances 1e-1 kg m-2 yr-1, precipitation, insolation and
+degree days 1e-4 relative.
+
+Every file kryos writes, and its precision (audited against the yelmox writers
+of `libs/kryos_output.f90`, `yelmox_climate.f90`, `snapshots.f90`,
+`climate_mods.f90`: the values of the backend streams are identical):
+
+| File | Written by | Precision |
+|---|---|---|
+| `<instance>.nc` (ice, geothermal, sediments) | default writer | table of the component kind |
+| `<instance>_ts.nc` (0-D exports), `geo_glob_ts.nc` | default writer | lossless (`-` in every 0-D row) |
+| `forcing_ts.nc` | tsgen adapter (`nc_write`) | lossless |
+| `<instance>.nc` of a regional geo, fastisostasy (`z_bed`, `z_ss`, `w`, `we`) | FastIsostasy adapter | `geo-fastisostasy`: 1e-3 |
+| `<instance>_ts.nc` of a regional geo, fastisostasy | FastIsostasy adapter | lossless |
+| `<instance>.nc` of a climate, snapshots | snapshots adapter, snapshots and transform modules | `climate-snapshots`: temperature 1e-3, precipitation and salinity 1e-4 relative; static transform fields (`taper_w`, `bias_*_ann`) and `term_<name>` lossless |
+| `<instance>.nc` of a surface, chion | chion adapter | `surface-chion`: smb, melt, runoff, refreezing, snowpack 1e-1, T 1e-3, `pr`, `sf`, `S`, `PDDs` 1e-4 relative, albedo 1e-4, `mask` lossless |
+| `<instance>.nc` of a shelf, marine_shelf | marine_shelf adapter | `shelf-marine_shelf`: `bmb_shlf` 1e-4, `T_shlf`, `tf_shlf` 1e-3 |
+| `<domain>_hub.nc` | fesm-utils `htopo_write_step` (`z_bed`, `H_ice`, `z_srf`, `z_sl` 1e-3, `f_grnd` 1e-4, hard-coded in the library), kryos (`f_ice` 1e-4 from `hub`; `mask` lossless) | as listed |
+| `<instance>_yelmo.nc`, `<instance>_yelmo_sm.nc` | Yelmo | `yelmo-variables-*.md` |
+| `<instance>_yelmo_ts*.nc` (global and region series) | Yelmo | lossless |
+| `timing.txt` | timing table | text |
+| `restart-<time>/` (every file) | `fesm_fields` restart, backends | lossless (`dp`; Yelmo restart forced lossless; chion, marine_shelf, FastIsostasy restarts written without precision) |
+
+Rounded and lossless runs have identical restart bundles; a rounded file is
+within the tolerance of its row of the lossless one (the `sci-nl` gate checks it
+on the science configuration). The output files of the 80 yr GRL-16KM run of
+`test_run_sequence` (no Yelmo streams) are 37% smaller rounded (the instance
+files -24 to -57%; 22.3 MB lossless, 14.1 MB rounded); the bundles are the same size.
 
 ## Restart
 
