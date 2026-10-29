@@ -9,7 +9,7 @@ every backend library is optional behind a stub.
 ## Configure
 
 Dependencies are sibling checkouts or symlinks at the repo root:
-`fesm-utils`, `yelmo`, `FastIsostasy`, `chion`, `insol` (pinned in
+`fesm-utils`, `yelmo`, `FastIsostasy`, `chion`, `insol`, `vilma2` (pinned in
 `.configme/manifest.toml`; gitignored). `configme install kryos` clones them;
 for existing checkouts, symlink them (`ln -s ../fesm-utils fesm-utils`).
 
@@ -20,6 +20,13 @@ configme config kryos --only -m macbook -c gfortran
 This writes the root `Makefile` (template + compiler/machine fragments +
 netCDF) and `config/deps.mk` (needs configme >= 0.16). `--only` leaves the
 dependencies' own Makefiles alone.
+
+`vilma=1` (geo backend `vilma2`) needs `make vilma-static` in `vilma2/` (or
+`make vilma-static` here, which builds fesm-utils first) and the SHTns that
+fesm-utils builds once (`make -C fesm-utils shtns openmp=0|1`; `make deps-check`
+names it when missing). VILMA2, fesm-utils and kryos must use the same `openmp=`.
+`make check` needs the `vilma2` checkout whatever the switch: two of the
+synchronised copies in `input/` (`vilma_defaults.nml`, `vilma-variables.md`) come from it.
 
 ## Targets
 
@@ -55,7 +62,8 @@ builds it. Use `make deps-static` (or each dependency's own make) first.
 | `yelmo` | 1 | ice backend `yelmo`: adapter, `INC_YELMO`/`LIB_YELMO` (+ FastHydrology, elsa, tracer, LIS, FFTW) |
 | `fastisostasy` | 1 | geo backend `fastisostasy` (regional and global part): adapter, `INC_ISOSTASY`/`LIB_ISOSTASY` (+ LIS, FFTW); off: stub, and `tests/test_geo_fastisostasy.f90` is not built (`test_skip`) |
 | `chion`, `insol` | 1 | surface backend `chion`: `chion=1` compiles the chion host (with its orbit) into the adapter and needs `insol=1`; off: stub |
-| `cism`, `pism`, `vilma`, `rembo` | 0 | stop with the phase in which the adapter arrives |
+| `vilma` | 0 | geo backend `vilma2` (the global Earth and the regional port): adapter, `INC_VILMA`/`LIB_VILMA` (`libvilma.a` of `vilma2/`), SHTns of fesm-utils (`LIB_SHTNS`; LIS, FFTW); off: stub, and `tests/test_geo_vilma2.f90` is not built (`test_skip`), `tests/test_geo_vilma2_stub.f90` is |
+| `cism`, `pism`, `rembo` | 0 | stop with the phase in which the adapter arrives |
 
 Objects are stamped with the switch settings
 (`libkryos/include/.build-openmp1-...-rembo0`); changing any switch rebuilds

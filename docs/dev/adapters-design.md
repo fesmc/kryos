@@ -755,7 +755,7 @@ Vocabulary: `contracts-design.md` §2.2.
 
 | Binding | Action |
 |---|---|
-| `init` | `vilma_par_load` (group `[vilma]`, defaults `input/vilma_defaults.nml`); densities `rho_ice`, `rho_water` set from the run's `cnst` and logged; `phys_const_compare` for `r_earth`, `g`; require `solver = "v2"`, `sle_fixed_ocean = .false.`; build `GAUSS-L<lmax>` (`grid_init_gaussian`, `nlat = 2 lmax + 2`, `nphi = 4 lmax`; planet default "Spherical Earth", so the cell areas are the quadrature areas); declare the rank-2 fields |
+| `init` | `vilma_par_load` (group `[vilma]`, defaults `input/vilma_defaults.nml`; the group name is fixed, VILMA2 looks its defaults up under it, so key `vilma` must be `vilma`); densities `rho_ice`, `rho_water` set from the run's `cnst` (`rho_ice`, `rho_sw`) and logged; require `solver = "v2"`, `sle_fixed_ocean = .false.`; build `GAUSS-L<lmax>` (`grid_init_gaussian`, `nlat = 2 lmax + 2`, `nphi = 4 lmax`, the name gets `-<nphi>x<nlat>` when `[vilma]` sets them; planet default "Spherical Earth", so the cell areas are the quadrature areas), its description to `<map_fldr>/grid_<name>.txt` (written when absent, compared when present: a read-only map folder is fine); the grid's planet radius must agree with `r_earth` to 1e-4 (6371221 m against VILMA2's 6371000 m: 3.5e-5; logged); declare the rank-2 fields. `phys_const_compare` does not apply (the record has no `r_earth`, VILMA2's gravity comes from its Earth model): `g` of the run and of the Earth model are logged side by side at `PASS_GEOMETRY` (9.81 and 9.817) |
 | `init_state(PASS_GEOMETRY)` | after the core's `gia_reference`: `solid_earth_init` at the reference (`z_bed_eq = z_bed_ref`, `h_ice_eq = H_ice_ref`, `w`, `I_g`, `C` = reference host terms); stop if VILMA2 built a remap (`se%remap`: the grid is not its Gauss grid); put the exports at the reference (zero anomalies) |
 | `init_state(PASS_STATE)` | cold only: `solid_earth_spinup` (a no-op unless `equil_time_max > 0` or `pre_spinup_1d`), then `solid_earth_update(..., dt = 0, ...)` (the seed), put the exports |
 | `update(st)` | `dt = st%t1 - st%t0`; `solid_earth_update(se, H_ice_ext, dt, host_w, host_Ig, host_C, host_F)`; put `dz_bed = gg%dz_bed`, `dz_ss = gg%dz_ss - se%dphi`, `dphi`, `bsl`, `bsl_ive`, `A_ocn`, `C_ocn`, `mass_resid` at `t1` |
@@ -763,8 +763,9 @@ Vocabulary: `contracts-design.md` §2.2.
 | `write_output` | default writer for the exports; backend streams `gia` and `vilma` (VILMA2's own diagnostics, rounded: `prec` column and lossless restart path in VILMA2) |
 | `end` | `solid_earth_finalize(se)` |
 
-**Regional port.** `init` takes its cadence from the global geo (a `dt` that
-differs stops). `PASS_GEOMETRY` puts the reference exports; `PASS_STATE` and
+**Regional port.** Its cadence is the global geo's: a `dt` set in the port's
+group that differs from the global's stops (`gia_check`); the core steps the
+port with the Earth (WP4). `PASS_GEOMETRY` puts the reference exports; `PASS_STATE` and
 `update` copy the imports `dz_bed`, `dz_ss`, `dphi`, `bsl` to the exports with
 their validity, and `z_bed_ref` from its import; the core has filled the
 imports with the scatter rows just before. No `H_ice` import, no `dV_bsl`.
@@ -775,11 +776,13 @@ m)·flotation(...)`, merged to the Gauss grid with `coupler_merge_*`),
 `gia_seed`, `gia_scatter` (`coupler_split`, bilinear); the adapter never sees a
 domain. Restart and the bundle: `phase4-plan.md` §8.
 
-**Init-time contract checks** (named stops): a domain geo with `vilma2` needs the
-global geo with `vilma2` and the reverse; the global geo needs every domain's
-`ice` to declare `has_flotation` and the `footprint`, `H_ice_pd` exports;
-footprints must not overlap; `fastisostasy` with `vilma2` stops ("later
-package").
+**Init-time contract checks** (named stops; `kryos_gia_check`, called by
+`run_init` after `run_check_names`): a domain geo with `vilma2` needs the
+global geo with `vilma2` and the reverse (every domain needs a `vilma2` geo and
+an `ice`); the global geo needs every domain's `ice` to declare `has_flotation`
+and the `footprint`, `H_ice_pd` exports; `fastisostasy` with `vilma2` stops
+("later package"); a port's `dt`, when set, is the global's. Footprints must not
+overlap: checked where they are merged (`kryos_globe_ice`, WP3).
 
 ## 13. Open questions for Alex
 

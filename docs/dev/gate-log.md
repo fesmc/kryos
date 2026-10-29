@@ -427,3 +427,11 @@ imports. Mac, `make check` at every commit; `test_run_sequence` `plain` (cont, c
 `kryos-compare --restarts` against the base build: PASS at every commit (1151 / 620 / 620 variables, 0 failing, 0 absent),
 head against a fresh 79461c5 build too. Levante G1 (ant, nor, `K3-sci`) is WP7.
 
+## Phase 4 WP2: the vilma2 geo backend (2026-10-29)
+
+Report `gate-reports/p4-wp2.md`. Branch `p4-wp2` on main 21320db: `vilma=1` build (libvilma, SHTns, `vilma-static`, sync copies of
+`vilma_defaults.nml` and `vilma-variables.md`, `vilma2:main` pin), `vilma_earth_t` (global, Gauss grid `GAUSS-L<lmax>`) and `vilma_geo_t` (port),
+stub, factory, `[geo_vilma2]` template, `gia_check` (run-level contract checks). Mac, `make check` with `vilma=1` and `vilma=0` at every commit;
+the adapter equals `solid_earth_*` called directly, bit for bit (reference, seed, spin-up, steps, restart round trip). The `test_run_sequence`
+plain runs of both builds compared with `kryos-compare --restarts` against 21320db: PASS at every commit (1159 / 625 / 625 variables, 0 failing,
+0 absent). Open: planet radius 6371221 vs VILMA2's 6371000 m (tolerance 1e-4 chosen), fixed group name `vilma`, port cadence in WP4.

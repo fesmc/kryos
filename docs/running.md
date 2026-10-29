@@ -33,7 +33,9 @@ Groups and defaults:
   snapshot, term and coefficient groups from `snapshots_defaults.nml` and
   `forcing_defaults.nml`. Groups whose library has no defaults file (`[topo]`,
   `[regions]`, `[isos]`, `[barysealevel]`, `[marine_shelf]`) have no
-  template: set every key the library reads.
+  template: set every key the library reads. `[vilma]` (`geo = vilma2`) takes
+  its defaults from `input/vilma_defaults.nml`: the group sets overrides only,
+  and its name is fixed (VILMA2 looks the defaults up under it).
 - Named library groups (`snapshot_*`, `term_*`, `coef_*`, data field groups)
   are looked up in the par file, then in the files of `[kryos] library`
   (namelist files of such groups; kryos ships none, the converted par files
@@ -67,6 +69,7 @@ Synchronised copies, listed in `input/sync.txt` with their source:
 | `elsa_defaults.nml`, `tracer_defaults.nml` | `$(YELMOROOT)/elsa/input/`, `$(YELMOROOT)/tracer/input/` (read when Yelmo's tracers are on) |
 | `chion_defaults.nml` | `$(CHIONROOT)/input/` |
 | `datasrc_defaults.nml` | `$(FESMUTILSROOT)/par/` |
+| `vilma_defaults.nml`, `vilma-variables.md` | `$(VILMAROOT)/input/` (the `[vilma]` defaults and the variable table `vilma_io` reads, `geo = vilma2`) |
 | `LA2004.INSOLN.5Ma.txt`, `LA2004.INSOLP.1Ma.txt` | `$(INSOLROOT)/input/` (`[orbit] fldr`) |
 
 Yelmo reads `sec_year` from `input/yelmo_phys_const.nml`
