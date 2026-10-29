@@ -94,8 +94,11 @@ contains
                 call exchange_into(dom, "ice", t0, run%clk, init=.true.)          ! couple_to_yelmo
                 call domain_prepare(dom, C_ICE, run%clk, init=.true.)             ! imports -> Yelmo's bnd
 
-                ! c) the ice state: yelmo_init_state (robin-cold), then domain_init_ice
+                ! c) the ice state: yelmo_init_state (robin-cold), then domain_init_ice;
+                !    the experiments' hooks around the state (the cb_ref guess, recon, ...)
+                call run_hook(run, d, HOOK_COLD_PRE_STATE)
                 call domain_pass(dom, C_ICE, run%clk, PASS_STATE)
+                call run_hook(run, d, HOOK_COLD_POST_STATE)
                 call domain_pass(dom, C_ICE, run%clk, PASS_SPINUP)
 
                 ! d) the surface on the final initial geometry: one more cycle, no spin-up

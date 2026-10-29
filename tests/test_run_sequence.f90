@@ -17,6 +17,8 @@ module test_run_toys
     real(dp), public :: log_geo_t1(MAXLOG), log_ice_t1(MAXLOG), log_zbed_t1(MAXLOG)   ! publication times seen
     logical,  public :: log_prepared(MAXLOG) = .false.                              ! Yelmo's tick is the step's
     integer(8), public :: log_tick(MAXLOG)
+    real(dp), public :: log_tsum(MAXLOG)                    ! sum of Yelmo's T_ice: the state of the thermodynamics
+    logical,  public :: log_rates(MAXLOG) = .false.         ! the ice's dHidt export published (after PASS_SPINUP)
 
     type, extends(experiment_t), public :: recorder_t
     contains
@@ -37,8 +39,7 @@ contains
         type(exp_ctx_t),   intent(in)    :: ctx
         type(domain_t),    intent(in)    :: dom
         associate (u => ctx%time + len(dom%name)); end associate
-        self%wants(HOOK_STEP_BEGIN) = .true.
-        self%wants(HOOK_ICE_BND)    = .true.
+        self%wants = .true.
     end subroutine rec_init
 
     subroutine rec_hook(self, dom, id, st)
@@ -58,9 +59,11 @@ contains
         log_geo_t1(n_log)  = dom%geo%c%exports%f(dom%geo%c%h_dz_bed)%t1
         log_ice_t1(n_log)  = dom%ice%c%exports%f(dom%ice%c%h_H_ice)%t1
         log_zbed_t1(n_log) = dom%ice%c%imports%f(dom%ice%c%hi_z_bed)%t1
+        log_rates(n_log)   = dom%ice%c%exports%f(dom%ice%c%h_dHidt)%published
         select type (c => dom%ice%c)
         type is (yelmo_ice_t)
             log_prepared(n_log) = c%tick_prepared == st%clk%n
+            log_tsum(n_log)     = sum(real(c%ylmo%thrm%now%T_ice, dp))
         end select
     end subroutine rec_hook
 
@@ -172,7 +175,7 @@ program test_run_sequence
     use kryos_component, only: component_t, PATH_LEN
     use kryos_domain,    only: domain_component, NCOMP
     use kryos_run,       only: run_t, run_init, run_step, run_done, run_end
-    use kryos_experiment, only: experiment_proto_t, HOOK_STEP_BEGIN, HOOK_ICE_BND
+    use kryos_experiment, only: experiment_proto_t, HOOK_STEP_BEGIN, HOOK_ICE_BND, HOOK_COLD_PRE_STATE, HOOK_COLD_POST_STATE
     use test_run_toys
     use kryos_ice_yelmo, only: yelmo_ice_t
     use kryos_climate_snapshots,  only: snapshots_climate_t
@@ -352,8 +355,11 @@ contains
     end function host_protos
 
     subroutine check_hooks_run()
-        ! The recorder of a cold-started run, two steps (t = 10, 20): at every
-        ! step STEP_BEGIN before geo and the ice, ICE_BND after geo, the ice's
+        ! The recorder of a cold-started run, two steps (t = 10, 20). The cold
+        ! start: COLD_PRE_STATE and COLD_POST_STATE at t0 around the ice's state
+        ! (prepared boundary; thermodynamics set by PASS_STATE; the rates
+        ! exported only by PASS_SPINUP, after the second hook). At every step
+        ! STEP_BEGIN before geo and the ice, ICE_BND after geo, the ice's
         ! imports and prepare, before the ice update; the elapsed time of the
         ! clock (core-design 3.9). Restore runs no hook.
         integer :: n, k
@@ -361,11 +367,21 @@ contains
         logical :: ok
 
         write(*,'(a)') "--- experiment hooks (recorder)"
-        call check(n_log == 4, "recorder: STEP_BEGIN and ICE_BND at each of the two steps (no hook at the cold start yet)")
-        if (n_log /= 4) return
+        call check(n_log == 6, "recorder: two cold-start hooks, then STEP_BEGIN and ICE_BND at each of the two steps")
+        if (n_log /= 6) return
+
+        call check(log_id(1) == HOOK_COLD_PRE_STATE .and. log_id(2) == HOOK_COLD_POST_STATE, &
+                   "cold start: COLD_PRE_STATE, then COLD_POST_STATE")
+        call check(log_t0(1) == 0.0_dp .and. log_t1(1) == 0.0_dp .and. log_elapsed(1) == 0.0_dp .and. &
+                   log_t1(2) == 0.0_dp .and. log_dtt(1) == 10.0_dp, "cold start: t0 = t1 = time_init, elapsed 0, dtt = 10")
+        call check(log_zbed_t1(1) == 0.0_dp .and. log_prepared(1) .and. log_prepared(2), &
+                   "cold start: the ice's imports at t0 and its boundary prepared before PASS_STATE")
+        call check(log_tsum(1) /= log_tsum(2), "COLD_POST_STATE sees the thermodynamics PASS_STATE set")
+        call check(.not. log_rates(1) .and. .not. log_rates(2), "cold start: both hooks before PASS_SPINUP (rates not yet exported)")
+
         do n = 1, 2
             t = 10.0_dp*n
-            k = 2*n - 1
+            k = 2 + 2*n - 1
             ok = log_id(k) == HOOK_STEP_BEGIN .and. log_id(k+1) == HOOK_ICE_BND
             call check(ok, "step "//trim(itoa(n))//": STEP_BEGIN, then ICE_BND")
             call check(log_t1(k) == t .and. log_t0(k) == t - 10.0_dp .and. log_dtt(k) == 10.0_dp .and. &
@@ -373,11 +389,13 @@ contains
             call check(log_elapsed(k) == t .and. log_elapsed(k+1) == t, &
                        "step "//trim(itoa(n))//": elapsed time of the clock = t (origin at 0)")
             call check(log_geo_t1(k) == t - 10.0_dp .and. log_ice_t1(k) == t - 10.0_dp .and. &
-                       log_zbed_t1(k) == t - 10.0_dp, "step "//trim(itoa(n))//": STEP_BEGIN before geo, the ice rows and the ice update")
+                       log_zbed_t1(k) == t - 10.0_dp, &
+                       "step "//trim(itoa(n))//": STEP_BEGIN before geo, the ice rows and the ice update")
             call check(log_geo_t1(k+1) == t .and. log_zbed_t1(k+1) == t .and. log_ice_t1(k+1) == t - 10.0_dp, &
                        "step "//trim(itoa(n))//": ICE_BND after geo and the ice imports at t, before the ice update")
             call check(.not. log_prepared(k), "step "//trim(itoa(n))//": STEP_BEGIN: prepare not yet run for this step")
             call check(log_prepared(k+1), "step "//trim(itoa(n))//": ICE_BND: the ice's boundary prepared for this step")
+            call check(log_rates(k) .and. log_rates(k+1), "step "//trim(itoa(n))//": rates exported by the cold start")
         end do
     end subroutine check_hooks_run
 
