@@ -85,6 +85,15 @@ kvg(G, g) = Dict(k.name => NL.parse_value(k.raw) for k in G[g].keys)
         @test kv(G, "ytopo") == Dict("a" => 2.0, "b" => "x")
         @test kv(G, "yelmo")["restart"] == "None" && !haskey(kv(G, "yelmo"), "phys_const")
         @test kv(G, "marine_shelf")["restart"] == "None"          # was "none"
+        # the basins and thermal-forcing corrections belong to the shelf component's group
+        mk = keys(kv(G, "marine_shelf"))
+        @test !any(k -> k in ("basins", "corr_method", "corr_names", "corr_values", "corr_b1", "tf_correction", "tf_path", "tf_name"), mk)
+        sc = kv(G, "shelf_corr_tes")
+        @test sc["basins"] == "Zwally2012" && sc["corr_method"] == "tf" && sc["corr_names"] == ["b1", "b2"]
+        @test sc["corr_values"] == [0.3, -1.5] && sc["corr_b2"] == "Zwally2012:2" && sc["tf_correction"] === false
+        @test sc["tf_path"] == "ice_data/{domain}/{grid_name}/OCEAN.nc" && sc["tf_name"] == "dT_nl"
+        @test kv(G, "shelf_tes")["corr"] == "shelf_corr_tes"
+        @test findfirst(==("shelf_corr_tes"), names) > findfirst(==("marine_shelf"), names)
         @test kv(G, "isos")["restart"] == "None"
         @test kv(G, "chion")["model"] == "itm"
         @test kv(G, "itm_chion")["alb_ice"] === 0.31
@@ -105,6 +114,7 @@ kvg(G, g) = Dict(k.name => NL.parse_value(k.raw) for k in G[g].keys)
         @test d["relax.tau1"].status == :dropped && occursin("sim.relax = False", d["relax.tau1"].reason)
         @test d["opt.opt_cf"].status == :dropped && d["opt.tf_max"].status == :dropped
         @test d["yelmo.phys_const"].status == :dropped
+        @test d["marine_shelf.corr_values"].dst == "shelf_corr_tes.corr_values" && d["marine_shelf.basins"].dst == "shelf_corr_tes.basins"
         @test d["tm_1D.dt"].dst == "out_1D.dt"
         @test d["output.write_isos"].status == :default            # off: nothing to set
         # every key of every resolved group is accounted exactly once

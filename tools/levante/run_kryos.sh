@@ -1,5 +1,6 @@
 #!/bin/bash -l
 # Update kryos on Levante, build kryos.x with the gate flags, stage and submit a kryos gate run.
+# The job template is that of the base gate (ant-cf, ant-full: ant).
 #   [STACK=S5] [SRC=<git url>] [BUNDLE=kryos.bundle] [REF=main] [MAPS=$G/maps/S] run_kryos.sh <gate> cont|cont2|chunk|base   (STACK default S3)
 # cont2: a second cont run (determinism). The code is the REF branch of SRC (default $G/bundles/$BUNDLE;
 # SRC=git@github.com:fesmc/kryos.git pulls from origin). MAPS is the folder linked as <rundir>/maps.
@@ -31,7 +32,7 @@ stage () {   # stage <dir> <jobname> <set_nml args...>; echo the folder
     [ $# -gt 0 ] && python3 $G/tools/set_nml.py par.nml "$@"
     git -C $K rev-parse HEAD > kryos_commit.txt
     sed -e "s/--job-name=.*/--job-name=$name/" -e 's|^srun .*|srun ./kryos.x par.nml|' \
-        $G/ref/$GATE/yx-74f3a2b/S2/cont/job.submit > job.submit
+        $G/ref/${GATE%%-*}/yx-74f3a2b/S2/cont/job.submit > job.submit
 }
 case $RUN in
   cont|cont2)

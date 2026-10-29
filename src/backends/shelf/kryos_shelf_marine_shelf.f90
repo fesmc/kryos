@@ -90,7 +90,7 @@ contains
         call restart_key_check(self, ctx)
 
         call marshelf_init(self%mshlf, trim(ctx%par_file), trim(self%group), self%nx, self%ny, &
-                           trim(ctx%domain), trim(ctx%grid_name), ctx%reg, &
+                           trim(ctx%domain), trim(ctx%grid_name), ctx%reg, self%corr%basins, self%corr%bmb_corr, &
                            xc=real(ctx%grid%G%x, sp), yc=real(ctx%grid%G%y, sp), cnst=ctx%cnst)
 
         self%dx = real(ctx%grid%G%dx * ctx%grid%cs%xy_conv, sp)
@@ -126,7 +126,8 @@ contains
     end subroutine marshelf_update_
 
     subroutine marshelf_restart_write_(self, dir, t)
-        ! kryos_startup.f90:428; the file holds now, including tf_corr.
+        ! kryos_startup.f90:428; the file holds now. tf_corr and tf_corr_basin are the shelf
+        ! component's (its <instance>_corr_restart.nc).
         class(marshelf_shelf_t), intent(inout) :: self
         character(len=*),        intent(in)    :: dir
         real(dp),                intent(in)    :: t
@@ -226,7 +227,8 @@ contains
         call marshelf_update_shelf(self%mshlf, self%H_ice, self%z_bed, self%f_grnd, self%z_sl, &
                                    self%dx, self%depth, self%to, self%so, dto_ann=self%dto)
         call marshelf_update(self%mshlf, self%H_ice, self%z_bed, self%f_grnd, self%z_sl, &
-                             dx=self%dx, z_srf=self%z_srf)
+                             dx=self%dx, tf_corr=self%corr%tf_corr, tf_corr_basin=self%corr%tf_corr_basin, &
+                             z_srf=self%z_srf)
     end subroutine calc_shelf
 
     subroutine exports_put(self, st)

@@ -321,8 +321,17 @@ function par_text(; edits=Pair{String,String}[])
     alb_ice = 0.31
 /
 &marine_shelf
-    bmb_method = "lin"
-    restart    = "none"
+    bmb_method    = "lin"
+    restart       = "none"
+    basins        = "Zwally2012"
+    corr_method   = "tf"
+    corr_names    = "b1" "b2"
+    corr_values   = 0.3 -1.5
+    corr_b1       = "Zwally2012:1"
+    corr_b2       = "Zwally2012:2"
+    tf_correction = False
+    tf_path       = "ice_data/{domain}/{grid_name}/OCEAN.nc"
+    tf_name       = "dT_nl"
 /
 """
     for (a, b) in edits

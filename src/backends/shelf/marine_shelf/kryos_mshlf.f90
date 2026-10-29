@@ -14,7 +14,7 @@ module kryos_mshlf
 
     use kryos_mshlf_pico
     use phys_constants, only : phys_const_class, phys_const_require, phys_const_get
-    use regions,        only : regions_class, regions_select, regions_basin_ids
+    use regions,        only : regions_class, regions_select
 
     implicit none 
 
@@ -38,7 +38,6 @@ module kryos_mshlf
     integer, parameter :: mask_val_lake           = 5
 
     integer, parameter :: len_expr  = 1000
-    integer, parameter :: n_corr_max = 50
         
     type marshelf_param_class
 
@@ -54,19 +53,12 @@ module kryos_mshlf
         character(len=56)   :: obs_name 
         real(wp)            :: obs_scale, obs_lim
         ! Masks and basins from the regions (selection expressions)
-        character(len=56)       :: basins            ! basin ids: "<set>", "<set>.group", "None" or "domain" (one basin)
         character(len=len_expr) :: mask_ocean        ! mask_ocn_ref: ocean (else land)
         character(len=len_expr) :: mask_deep_ocean   ! mask_ocn_ref: deep ocean (over ocean)
         character(len=len_expr) :: mask_pico_deep    ! pico: bmb averaged with c_deep there
-        ! Corrections by region: corr_method = none, bmb or tf; value
-        ! corr_values(k) where the expression corr_<corr_names(k)> selects
-        character(len=56)       :: corr_method 
-        character(len=56),       allocatable :: corr_names(:)
-        character(len=len_expr), allocatable :: corr_exprs(:)
-        real(wp),                allocatable :: corr_values(:)
-        logical             :: tf_correction
-        character(len=512)  :: tf_path
-        character(len=56)   :: tf_name
+        ! (The basins and the thermal-forcing corrections tf_corr, tf_corr_basin, with their keys
+        ! corr_*, tf_*, are owned by the shelf component, kryos_shelf_ocean: marshelf_init and
+        ! marshelf_update take them as arguments.)
 
         real(wp)            :: bmb_max  
         real(wp)            :: c_deep
@@ -124,8 +116,6 @@ module kryos_mshlf
         
         real(wp), allocatable :: tf_shlf(:,:)           ! Thermal forcing at the ice-shelf interface
         real(wp), allocatable :: tf_basin(:,:)          ! Basin-average thermal forcing at the ice-shelf interface
-        real(wp), allocatable :: tf_corr(:,:)           ! Thermal correction at the ice-shelf interface by data (ismip6)
-        real(wp), allocatable :: tf_corr_basin(:,:)     ! Thermal correction at the ice-shelf interface by basin
         
         real(wp), allocatable :: z_base(:,:)            ! [m] Ice-base elevation relative to the datum (present-day sea level; bed where grounded)
         real(wp), allocatable :: slope_base(:,:)        ! Ice-shelf base slope (slope=sin(theta)=length/hypotenuse)
@@ -133,7 +123,7 @@ module kryos_mshlf
         integer,  allocatable :: mask_ocn_ref(:,:) 
         integer,  allocatable :: mask_ocn(:,:) 
 
-        real(wp), allocatable :: basins(:,:)            ! Basin ids (0 = no basin), from the regions
+        real(wp), allocatable :: basins(:,:)            ! Basin ids (0 = no basin), from the shelf component
         logical,  allocatable :: mask_pico_deep(:,:)    ! pico: bmb averaged with c_deep
         
     end type 
@@ -390,7 +380,7 @@ contains
 
     end subroutine marshelf_interp_shelf
 
-    subroutine marshelf_update(mshlf,H_ice,z_bed,f_grnd,z_sl,dx,z_srf)
+    subroutine marshelf_update(mshlf,H_ice,z_bed,f_grnd,z_sl,dx,tf_corr,tf_corr_basin,z_srf)
         
         implicit none
         
@@ -401,6 +391,9 @@ contains
         real(wp), intent(IN) :: z_sl(:,:) 
         !real(wp), intent(IN) :: depth(:),to_ann(:,:,:),dto_ann(:,:,:)
         real(wp), intent(IN) :: dx   ! grid resolution [m]
+        ! Thermal-forcing corrections of the shelf component (kryos_shelf_ocean), added to tf_shlf
+        real(wp), intent(IN) :: tf_corr(:,:)
+        real(wp), intent(IN) :: tf_corr_basin(:,:)
         ! Ice-surface elevation. When given, the ice-shelf base is z_srf-H_ice,
         ! the same definition Yelmo uses, rather than a flotation reconstruction.
         real(wp), intent(IN), optional :: z_srf(:,:)
@@ -470,14 +463,14 @@ contains
                 ! Determine tf_shlf via T_shlf - T_fp
 
                 mshlf%now%tf_shlf = (mshlf%now%T_shlf - mshlf%now%T_fp_shlf) &
-                            + mshlf%now%tf_corr + mshlf%now%tf_corr_basin
+                            + tf_corr + tf_corr_basin
 
             case(2)
                 ! Thermal forcing as the ocean temperature anomaly relative to a
                 ! reference state (tf_shlf == dT_shlf), as bmb_method='anom' needs
                 ! (marshelf_par_load requires tf_method=2 for it)
 
-                mshlf%now%tf_shlf = mshlf%now%dT_shlf + mshlf%now%tf_corr + mshlf%now%tf_corr_basin
+                mshlf%now%tf_shlf = mshlf%now%dT_shlf + tf_corr + tf_corr_basin
 
         end select 
         
@@ -625,9 +618,11 @@ contains
         
     end subroutine marshelf_update
 
-    subroutine marshelf_init(mshlf,filename,group,nx,ny,domain,grid_name,reg,xc,yc,cnst)
-        ! reg: the regions on the shelf grid, from which the masks, basins and
-        ! corrections of the parameters (selection expressions) are made here.
+    subroutine marshelf_init(mshlf,filename,group,nx,ny,domain,grid_name,reg,basins,bmb_corr,xc,yc,cnst)
+        ! reg: the regions on the shelf grid, from which the masks of the parameters
+        ! (selection expressions) are made here. basins: the basin ids and bmb_corr:
+        ! the bmb correction by region (the initial field), both made by the shelf
+        ! component (kryos_shelf_ocean) from its keys.
         ! xc, yc: the grid axes [km], written to the output; without them the
         ! output axes are the cell indices.
 
@@ -640,12 +635,14 @@ contains
         character(len=*), intent(IN)      :: domain
         character(len=*), intent(IN)      :: grid_name
         type(regions_class), intent(IN)   :: reg
+        real(wp), intent(IN)              :: basins(:,:)
+        real(wp), intent(IN)              :: bmb_corr(:,:)
         real(wp), intent(IN), optional    :: xc(:)   ! [km]
         real(wp), intent(IN), optional    :: yc(:)   ! [km]
         type(phys_const_class), intent(IN), optional :: cnst
 
         ! Local variables
-        integer  :: i, k
+        integer  :: i
         real(wp), parameter :: mv = -9999.0_wp   ! missing value marker
 
         ! Load parameters
@@ -724,27 +721,9 @@ contains
 
         end if 
 
-        ! Basins, and the corrections by region
-        mshlf%now%basins = real(regions_basin_ids(reg,mshlf%par%basins),wp)
-
-        mshlf%now%bmb_corr      = 0.0
-        mshlf%now%tf_corr_basin = 0.0
-
-        do k = 1, size(mshlf%par%corr_names)
-            select case(trim(mshlf%par%corr_method))
-                case("bmb")
-                    where (regions_select(reg,mshlf%par%corr_exprs(k))) mshlf%now%bmb_corr = mshlf%par%corr_values(k)
-                case("tf")
-                    where (regions_select(reg,mshlf%par%corr_exprs(k))) mshlf%now%tf_corr_basin = mshlf%par%corr_values(k)
-            end select
-        end do
-
-        ! Load tf_corr field from file if desired 
-        if (mshlf%par%tf_correction) then 
-
-            call nc_read(mshlf%par%tf_path,mshlf%par%tf_name,mshlf%now%tf_corr)
-
-        end if  
+        ! Basins and the bmb correction by region, from the shelf component
+        mshlf%now%basins   = basins
+        mshlf%now%bmb_corr = bmb_corr
 
         ! ==============================================
         ! Reference ocean mask: land, ocean (mask_ocean), deep ocean
@@ -789,8 +768,7 @@ contains
         if (trim(mshlf%par%restart) .ne. "none" .and. &
             trim(mshlf%par%restart) .ne. ""     .and. &
             trim(mshlf%par%restart) .ne. "None") then 
-            ! Load fields from restart file. This is mainly important for reloading
-            ! an already defined (optimized) tf_corr field from a previous run.
+            ! Load fields from restart file.
 
             call marshelf_restart_read(mshlf,mshlf%par%restart)
             
@@ -847,10 +825,6 @@ contains
         logical, optional :: init 
         logical :: init_pars 
 
-        character(len=56) :: names(n_corr_max)
-        real(wp)          :: values(n_corr_max)
-        integer           :: n, n_val, k
-
         init_pars = .FALSE.
         if (present(init)) init_pars = .TRUE. 
 
@@ -862,50 +836,11 @@ contains
         call nml_read(filename,group,"restart",        par%restart,        init=init_pars)
         call nml_read(filename,group,"extrap_shlf",    par%extrap_shlf,    init=init_pars)
         
-        call nml_read(filename,group,"basins",         par%basins,         init=init_pars)
         call nml_read(filename,group,"mask_ocean",     par%mask_ocean,     init=init_pars)
         call nml_read(filename,group,"mask_deep_ocean",par%mask_deep_ocean,init=init_pars)
         call nml_read(filename,group,"mask_pico_deep", par%mask_pico_deep, init=init_pars)
 
-        ! Corrections by region: corr_names, corr_values and one expression
-        ! corr_<name> per name
-        call nml_read(filename,group,"corr_method",    par%corr_method,    init=init_pars)   
-        ! (values: a marker for the entries not given, to count them)
-        names  = ""
-        values = huge(1.0_wp)
-        call nml_read(filename,group,"corr_names",     names,              init=init_pars)
-        call nml_read(filename,group,"corr_values",    values,             init=init_pars)
-        n     = count(len_trim(names) .gt. 0)
-        n_val = count(values .ne. huge(1.0_wp))
-        ! One value per name, in the same order. Without names (corr_names = "")
-        ! corr_values is a placeholder and not checked.
-        if (n .gt. 0) then
-            if (n_val .ne. n .or. any(len_trim(names(1:n)) .eq. 0) &
-                             .or. any(values(1:n) .eq. huge(1.0_wp))) then
-                write(error_unit,*) "marshelf_par_load:: Error: corr_names and corr_values must &
-                &have the same number of entries."
-                write(error_unit,*) "group = ", trim(group)
-                write(error_unit,*) "n(corr_names) = ", n, ", n(corr_values) = ", n_val
-                error stop 1
-            end if
-        end if
-        allocate(par%corr_names(n), par%corr_exprs(n), par%corr_values(n))
-        par%corr_names  = names(1:n)
-        par%corr_values = values(1:n)
-        do k = 1, n
-            call nml_read(filename,group,"corr_"//trim(par%corr_names(k)),par%corr_exprs(k),init=init_pars)
-        end do
-        select case(trim(par%corr_method))
-            case("none","bmb","tf")
-            case default
-                write(*,*) "marshelf_par_load:: Error: corr_method must be none, bmb or tf."
-                write(*,*) "corr_method = ", trim(par%corr_method)
-                stop
-        end select
-        call nml_read(filename,group,"tf_correction",  par%tf_correction,  init=init_pars)
-        call nml_read(filename,group,"tf_path",        par%tf_path,        init=init_pars)
-        call nml_read(filename,group,"tf_name",        par%tf_name,        init=init_pars)
- 
+
         call nml_read(filename,group,"bmb_max",        par%bmb_max,        init=init_pars)
         call nml_read(filename,group,"c_deep",         par%c_deep,         init=init_pars)
         call nml_read(filename,group,"depth_deep",     par%depth_deep,     init=init_pars)
@@ -938,7 +873,6 @@ contains
        
         ! Determine derived parameters
         call parse_path(par%obs_path,domain,grid_name)
-        call parse_path(par%tf_path,domain,grid_name)
         
         par%domain    = trim(domain)
         par%grid_name = trim(grid_name)
@@ -1725,8 +1659,6 @@ contains
  
         allocate(now%tf_shlf(nx,ny))
         allocate(now%tf_basin(nx,ny))
-        allocate(now%tf_corr(nx,ny))
-        allocate(now%tf_corr_basin(nx,ny))
 
         allocate(now%z_base(nx,ny))
         allocate(now%slope_base(nx,ny))
@@ -1751,8 +1683,6 @@ contains
 
         now%tf_shlf         = 0.0
         now%tf_basin        = 0.0
-        now%tf_corr         = 0.0
-        now%tf_corr_basin   = 0.0     
 
         now%z_base          = 0.0 
         now%slope_base      = 0.0 
@@ -1787,8 +1717,6 @@ contains
  
         if (allocated(now%tf_shlf))         deallocate(now%tf_shlf)
         if (allocated(now%tf_basin))        deallocate(now%tf_basin)
-        if (allocated(now%tf_corr))         deallocate(now%tf_corr)
-        if (allocated(now%tf_corr_basin))   deallocate(now%tf_corr_basin)       
  
         if (allocated(now%z_base))          deallocate(now%z_base)
         if (allocated(now%slope_base))      deallocate(now%slope_base)
@@ -1899,10 +1827,6 @@ contains
                                         dim1=xnm,dim2=ynm,dim3="time",ncid=ncid,grid_mapping=grid_mapping_name)
         call nc_write(filename,"tf_basin",mshlf%now%tf_basin(i1:i2,j1:j2),start=[1,1,n],units="K", &
                                         dim1=xnm,dim2=ynm,dim3="time",ncid=ncid,grid_mapping=grid_mapping_name)
-        call nc_write(filename,"tf_corr",mshlf%now%tf_corr(i1:i2,j1:j2),start=[1,1,n],units="K", &
-                                        dim1=xnm,dim2=ynm,dim3="time",ncid=ncid,grid_mapping=grid_mapping_name)
-        call nc_write(filename,"tf_corr_basin",mshlf%now%tf_corr_basin(i1:i2,j1:j2),start=[1,1,n],units="K", &
-                                        dim1=xnm,dim2=ynm,dim3="time",ncid=ncid,grid_mapping=grid_mapping_name)
         call nc_write(filename,"z_base",mshlf%now%z_base(i1:i2,j1:j2),start=[1,1,n],units="m", &
                                         dim1=xnm,dim2=ynm,dim3="time",ncid=ncid,grid_mapping=grid_mapping_name)
         call nc_write(filename,"slope_base",mshlf%now%slope_base(i1:i2,j1:j2),start=[1,1,n],units="1", &
@@ -2005,8 +1929,6 @@ contains
         call nc_read_interp(filename,"S_shlf_basin",mshlf%now%S_shlf_basin,ncid=ncid,start=[1,1,n],count=[nx,ny,1],map=mp)
         call nc_read_interp(filename,"tf_shlf",mshlf%now%tf_shlf,ncid=ncid,start=[1,1,n],count=[nx,ny,1],map=mp)
         call nc_read_interp(filename,"tf_basin",mshlf%now%tf_basin,ncid=ncid,start=[1,1,n],count=[nx,ny,1],map=mp)
-        call nc_read_interp(filename,"tf_corr",mshlf%now%tf_corr,ncid=ncid,start=[1,1,n],count=[nx,ny,1],map=mp)
-        call nc_read_interp(filename,"tf_corr_basin",mshlf%now%tf_corr_basin,ncid=ncid,start=[1,1,n],count=[nx,ny,1],map=mp)
         call nc_read_interp(filename,"z_base",mshlf%now%z_base,ncid=ncid,start=[1,1,n],count=[nx,ny,1],map=mp)
         call nc_read_interp(filename,"slope_base",mshlf%now%slope_base,ncid=ncid,start=[1,1,n],count=[nx,ny,1],map=mp)
         call nc_read_interp(filename,"mask_ocn_ref",mshlf%now%mask_ocn_ref,ncid=ncid,start=[1,1,n],count=[nx,ny,1],map=mp)

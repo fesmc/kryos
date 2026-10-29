@@ -190,6 +190,7 @@
     out_1D       = "none"
     out_vars     = ""
     marine_shelf = "marine_shelf"
+    corr         = "shelf_corr_grl"
 /
 
 &ghf_grl
@@ -464,16 +465,9 @@
     find_ocean      = True                                    ! Find which points are connected to open ocean (ie, ignore subglacial lakes)
     restart         = "None"                                  ! Load fields from a restart file?
     extrap_shlf     = False                                   ! Extrapolate ocean front values into the shelf
-    basins          = "Zwally2012.group"                      ! basin ids: <set>, <set>.group, None or domain (one basin)
     mask_ocean      = "zone:open_ocean"                       ! mask_ocn_ref: ocean (else land)
     mask_deep_ocean = "~region:Greenland | zone:open_ocean"   ! mask_ocn_ref: deep ocean (c_deep), over ocean
     mask_pico_deep  = "none"                                  ! pico only (bmb_method="pico"): bmb averaged with c_deep there
-    corr_method     = "none"                                  ! none, tf or bmb: corrections by region
-    corr_names      = ""
-    corr_values     = 0.0
-    tf_correction   = False
-    tf_path         = "none"
-    tf_name         = "dT_nl"
     bmb_max         = 0.0                                     ! [m/a] Maximum allowed bmb value (eg, for no refreezing, set bmb_max=0.0)
     c_deep          = -10.0                                   ! [m/yr] Melt rate in deep ocean, should be negative but not huge
     depth_deep      = 500.0                                   ! [m] Depth at which deep ocean is assumed
@@ -496,6 +490,16 @@
     obs_name        = "bm_eq_reese"
     obs_scale       = 1.0                                     ! [-] bmb_ref = obs_scale*bmb_obs
     obs_lim         = 100.0                                   ! [m/yr] Maximum magnitude of bmb_ref
+/
+
+&shelf_corr_grl
+    basins        = "Zwally2012.group"   ! basin ids: <set>, <set>.group, None or domain (one basin)
+    corr_method   = "none"               ! none, tf or bmb: corrections by region
+    corr_names    = ""
+    corr_values   = 0.0
+    tf_correction = False
+    tf_path       = "none"
+    tf_name       = "dT_nl"
 /
 
 &yelmo

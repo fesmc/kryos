@@ -1004,6 +1004,7 @@ contains
             end if
         end do
         call check(ok, bundle//": backend restart files of the stateful instances only")
+        call check_corr(b//"/Greenland/shelf_grl_corr_restart.nc", bundle)
 
         ok = .true.
         do i = 1, size(INSTANCES)
@@ -1012,6 +1013,22 @@ contains
         call check(ok, bundle//": manifest files of every instance = the declared lists (the 2 field files, then "// &
                    "the backend's)")
     end subroutine check_bundle
+
+    subroutine check_corr(file, what)
+        ! The shelf component's corrections file (kryos_shelf_ocean): tf_corr and tf_corr_basin on the
+        ! shelf grid; this configuration has no correction, so both are 0.
+        character(len=*), intent(in) :: file, what
+        real(sp), allocatable :: a(:,:,:), c(:,:,:)
+
+        if (.not. exists(file)) then
+            call check(.false., what//": the shelf's corrections file shelf_grl_corr_restart.nc")
+            return
+        end if
+        allocate(a(NX,NY,1), c(NX,NY,1))
+        call nc_read(file, "tf_corr", a)
+        call nc_read(file, "tf_corr_basin", c)
+        call check(all(a == 0.0_sp) .and. all(c == 0.0_sp), what//": shelf_grl_corr_restart.nc holds tf_corr, tf_corr_basin (0)")
+    end subroutine check_corr
 
     function declared_files(name) result(files)
         ! The files the manifest must list for an instance of the par file: its
@@ -1027,6 +1044,8 @@ contains
             files = [character(len=64) :: files, "forcing_alpha_restart.nc", "forcing_beta_restart.nc"]
         case ("climate_grl", "ghf_grl", "sed_grl")
             continue
+        case ("shelf_grl")                              ! the shelf's corrections file follows the backend's
+            files = [character(len=64) :: files, trim(name)//"_restart.nc", trim(name)//"_corr_restart.nc"]
         case default
             files = [character(len=64) :: files, trim(name)//"_restart.nc"]
         end select
@@ -1486,7 +1505,8 @@ contains
             "  snapshots = 'snapshots'", "  reference = 'pd'", "  terms = 'lgm' 'ocean'", "  out_2D = 'out_2D'", "/", &
             "&surface_grl", "  backend = 'chion'", "  clock = 'forcing'", "  surface_chion = 'surface_chion'", &
             "  chion = 'chion'", "  orbit = 'orbit'", "  out_2D = 'out_2D'", "/", &
-            "&shelf_grl", "  backend = 'marine_shelf'", "  marine_shelf = 'marine_shelf'", "  out_2D = 'out_2D'", "/", &
+            "&shelf_grl", "  backend = 'marine_shelf'", "  marine_shelf = 'marine_shelf'", "  corr = 'shelf_corr'", &
+            "  out_2D = 'out_2D'", "/", &
             "&ghf_grl", "  backend = 'data'", "  dt = -1.0", "  Q_geo = 'ghf_const'", "  out_2D = 'out_2D'", "/", &
             "&ghf_const", "  mode = 'const'", "  value = 0.05", "/", &
             "&"//sed_name, "  backend = 'data'", "  dt = -1.0", "  H_sed = 'sed_none'", "/", &
@@ -1555,14 +1575,15 @@ contains
         call w(u, [character(len=400) :: &
             "&marine_shelf", "  bmb_method = 'lin'", "  tf_method = 1", "  interp_depth = 'shlf'", &
             "  interp_method = 'interp'", "  find_ocean = True", "  restart = 'none'", "  extrap_shlf = False", &
-            "  basins = 'domain'", "  mask_ocean = 'all'", "  mask_deep_ocean = 'none'", "  mask_pico_deep = 'none'", &
-            "  corr_method = 'none'", "  corr_names = ''", "  corr_values = 0.0", "  tf_correction = False", &
-            "  tf_path = 'none'", "  tf_name = 'dT_nl'", "  bmb_max = 0.0", "  c_deep = -10.0", &
+            "  mask_ocean = 'all'", "  mask_deep_ocean = 'none'", "  mask_pico_deep = 'none'", &
+            "  bmb_max = 0.0", "  c_deep = -10.0", &
             "  depth_deep = 500.0", "  depth_const = 0.0", "  depth_min = 1100.0", "  depth_max = 1500.0", &
             "  lambda1 = -0.0575", "  lambda2 = 0.0832", "  lambda3 = 7.59e-4", "  gamma_lin = 630.0", &
             "  gamma_quad = 11100.0", "  gamma_quad_nl = 14500.0", "  gamma_prime = 100.0", "  kappa_grz = 10.0", &
             "  c_grz = 1.0", "  f_grz_shlf = 10.0", "  grz_length = 32.0", "  use_obs = False", &
-            "  obs_path = 'none'", "  obs_name = 'bm_eq_reese'", "  obs_scale = 1.0", "  obs_lim = 100.0", "/"])
+            "  obs_path = 'none'", "  obs_name = 'bm_eq_reese'", "  obs_scale = 1.0", "  obs_lim = 100.0", "/", &
+            "&shelf_corr", "  basins = 'domain'", "  corr_method = 'none'", "  corr_names = ''", "  corr_values = 0.0", &
+            "  tf_correction = False", "  tf_path = 'none'", "  tf_name = 'dT_nl'", "/"])
         close(u)
     end subroutine write_par
 

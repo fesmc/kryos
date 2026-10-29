@@ -180,6 +180,8 @@
 
 &shelf_marine_shelf
     marine_shelf = "marine_shelf"
+    corr         = "shelf_corr"                ! the shelf component's group of the thermal-forcing corrections and basins (kryos_shelf_ocean):
+                                               ! basins, corr_method, corr_names, corr_values, corr_<name>, tf_correction, tf_path, tf_name
 /
 
 &geothermal_data

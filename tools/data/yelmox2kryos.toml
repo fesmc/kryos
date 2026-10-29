@@ -325,6 +325,7 @@ sediments  = "data"
 "{surface}.orbit"        = "orbit"
 "{surface}.clock"        = "forcing"
 "{shelf}.marine_shelf"   = "marine_shelf"
+"{shelf}.corr"           = "shelf_corr_{sfx}"
 "{geothermal}.dt"        = -1.0
 "{geothermal}.Q_geo"     = "{Q_geo}"
 "{sediments}.dt"         = -1.0
@@ -446,6 +447,14 @@ library = true
 # and the groups whose `restart` key must be "None" (restarts come from the bundle).
 [drop_keys]
 "yelmo.phys_const" = "the run passes the one phys_const record of [kryos]"
+# Keys of a copied group that go to another group (the shelf component owns the basins and the
+# thermal-forcing corrections, kryos_shelf_ocean): `keys` a regex, `to` the group, `why` the note.
+[[move]]
+from = "marine_shelf"
+to   = "shelf_corr_{sfx}"
+keys = "^(basins|tf_correction|tf_path|tf_name|corr_\\w+)$"
+why  = "basins and thermal-forcing corrections: owned by the shelf component"
+
 [restart_none]
 groups = ["yelmo", "isos", "barysealevel", "marine_shelf", "chion"]
 

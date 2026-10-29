@@ -712,8 +712,21 @@ function physics_group!(S::State, name::AbstractString, rule)
     og = OutGroup(name, "", "physics", "", Tuple{String,String}[], OutKey[], name)
     drops = get(S.spec, "drop_keys", Dict())
     rst = Set(get(get(S.spec, "restart_none", Dict()), "groups", String[]))
+    moves = [m for m in get(S.spec, "move", []) if m["from"] == name]   # keys that go to another physics group
+    targets = Dict{String,OutGroup}()
     for k in rg.order
         e = rg.entries[k]
+        mi = findfirst(m -> occursin(Regex(m["keys"]), k), moves)
+        if mi !== nothing && !haskey(drops, "$name.$k")
+            tn = subst(S, moves[mi]["to"])
+            tog = get!(targets, tn) do
+                OutGroup(tn, "", "physics", "", Tuple{String,String}[], OutKey[], name)
+            end
+            cm = String(first(split(e.comment, '\n')))
+            push!(tog.keys, OutKey(k, e.raw, parse_exact(e.raw), "yelmox $name.$k", cm, e.value, true, nothing))
+            account!(S, name, k, e.source == "default" ? :default : :mapped, "$tn.$k", moves[mi]["why"], e.source)
+            continue
+        end
         if haskey(drops, "$name.$k")
             account!(S, name, k, :dropped, "", drops["$name.$k"], e.source)
             continue
@@ -731,6 +744,10 @@ function physics_group!(S::State, name::AbstractString, rule)
         account!(S, name, k, status, "$name.$k", why, e.source)
     end
     push!(S.groups, og)
+    for (_, tog) in sort!(collect(targets); by=first)
+        push!(S.groups, tog)
+        push!(S.notes, "[$name] keys moved to [$(tog.name)] ($(join((k.name for k in tog.keys), ", "))): the shelf component owns them")
+    end
 end
 
 parse_exact(raw) = NL.parse_value(raw)
@@ -862,7 +879,7 @@ end
 
 # order of the physics groups in the file
 const PHYSICS_ORDER = [r"^topo$", r"^regions$", r"^isos$", r"^barysealevel$", r"^snapshots$", r"^orbit$",
-                       r"^surface_chion$", r"^chion$", r"^chion_const$", r"^\w+_chion$", r"^marine_shelf$",
+                       r"^surface_chion$", r"^chion$", r"^chion_const$", r"^\w+_chion$", r"^marine_shelf$", r"^shelf_corr_\w+$",
                        r"^yelmo$", r"^y\w+$", r"^yelmo_\w+$", r"^coef_\w+$", r"^term_\w+$", r"^snapshot_\w+$"]
 function physics_rank(name)
     for (i, r) in enumerate(PHYSICS_ORDER)
@@ -1177,7 +1194,7 @@ function validate_conversion(conv::Conversion)
         elseif og.kind == "domain" && k.name == "out_2D"
             need(og.name, k.name, k.value)
         elseif og.kind == "instance"
-            if k.name in ("yelmo", "isos", "bsl", "snapshots", "surface_chion", "chion", "orbit", "marine_shelf", "Q_geo", "H_sed") ||
+            if k.name in ("yelmo", "isos", "bsl", "snapshots", "surface_chion", "chion", "orbit", "marine_shelf", "corr", "Q_geo", "H_sed") ||
                startswith(k.name, "out_") && k.name != "out_vars"
                 need(og.name, k.name, k.value)
             elseif k.name == "coefs"

@@ -2,12 +2,17 @@ module kryos_shelf
     ! The shelf component, sub-shelf melt (contracts-design sections 2.5, 3.3,
     ! decision 6): abstract shelf_t with the hub geometry and two alternative
     ! ocean inputs (profiles or shelf-base values), its slot, the wrappers and
-    ! the factory submodule kryos_shelf_factory.
+    ! the factory submodule kryos_shelf_factory. The thermal-forcing corrections
+    ! (tf_corr, tf_corr_basin) and the basins of the shelf grid are the component's
+    ! (shelf_t%corr, kryos_shelf_ocean); a backend takes them as inputs, and the
+    ! wrappers here make them, restart them and list their restart file.
 
     use precision,       only: dp
     use fesm_log,        only: fesm_error
     use fesm_fields,     only: fields_init, fields_add, fields_lock, FIELD_INSTANT, FIELD_MEAN, &
                                FIELD_INTENSIVE, FIELD_EXTENSIVE
+    use kryos_shelf_ocean, only: shelf_corr_t, shelf_corr_init, shelf_corr_file, shelf_corr_restart_write, &
+                                 shelf_corr_restart_read
     use kryos_component, only: component_t, PATH_LEN, init_ctx_t, step_time_t, census_t, constraints_t, &
                                component_identity, backend_admit, component_close, &
                                component_enter, component_leave, component_optional, component_axis, axis_find
@@ -27,6 +32,7 @@ module kryos_shelf
         integer :: hi_to_ann = 0, hi_so_ann = 0, hi_dto_ann = 0                    ! set A
         integer :: hi_to_shlf = 0, hi_so_shlf = 0, hi_dto_shlf = 0, hi_dso_shlf = 0 ! set B
         integer :: h_bmb_shlf = 0, h_T_shlf = 0, h_tf_shlf = 0
+        type(shelf_corr_t) :: corr                  ! thermal-forcing corrections and basins (made before the backend's init)
     end type shelf_t
 
     type, public :: shelf_slot_t                      ! what domain_t (or globe_t) holds
@@ -73,6 +79,7 @@ contains
         type(shelf_slot_t), intent(inout) :: shelf
         type(init_ctx_t),   intent(in)    :: ctx
         call component_enter(shelf%c)
+        call shelf_corr_init(shelf%c%corr, ctx)         ! the backend's init takes the basins from it
         call shelf%c%init(ctx)
         call shelf_declare(shelf%c, ctx)
         call component_leave()
@@ -105,9 +112,9 @@ contains
         type(shelf_slot_t), intent(inout) :: shelf
         character(len=*),   intent(in)    :: dir
         real(dp),           intent(in)    :: t
-        if (.not. shelf%c%con%restart) return             ! backend keeps no restart file
         call component_enter(shelf%c)
-        call shelf%c%restart_write(dir, t)
+        if (shelf%c%con%restart) call shelf%c%restart_write(dir, t)    ! (a backend may keep no restart file)
+        call shelf_corr_restart_write(shelf%c%corr, shelf%c%name, dir, t)
         call component_leave()
     end subroutine shelf_restart_write
 
@@ -115,18 +122,19 @@ contains
         type(shelf_slot_t), intent(inout) :: shelf
         character(len=*),   intent(in)    :: dir
         real(dp),           intent(in)    :: t
-        if (.not. shelf%c%con%restart) return
         call component_enter(shelf%c)
-        call shelf%c%restart_read(dir, t)
+        if (shelf%c%con%restart) call shelf%c%restart_read(dir, t)
+        call shelf_corr_restart_read(shelf%c%corr, shelf%c%name, dir)
         call component_leave()
     end subroutine shelf_restart_read
 
     function shelf_restart_files(shelf) result(files)
-        ! The base names the backend's restart_write creates in the bundle folder.
+        ! The base names the backend's restart_write creates in the bundle folder, then the
+        ! corrections' file (shelf_restart_write).
         type(shelf_slot_t), intent(in) :: shelf
         character(len=PATH_LEN), allocatable :: files(:)
         associate (c => shelf%c)                          ! (gfortran: ICE on a call through shelf%c itself)
-            files = c%restart_files()
+            files = [character(len=PATH_LEN) :: c%restart_files(), shelf_corr_file(c%name)]
         end associate
     end function shelf_restart_files
 

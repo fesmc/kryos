@@ -176,6 +176,14 @@ comp = "geo"
 [[restart.row]]
 ref = "marine_shelf.nc"
 run = "{domain}/{shelf}_restart.nc"
+exclude = ["tf_corr", "tf_corr_basin"]     # owned by the shelf component since phase 2 WP3 (next row)
+class = "E"
+comp = "shelf"
+
+[[restart.row]]
+ref = "marine_shelf.nc"                    # the thermal-forcing corrections: the shelf component's own restart file
+vars = ["tf_corr", "tf_corr_basin"]
+run = "{domain}/{shelf}_corr_restart.nc"
 class = "E"
 comp = "shelf"
 
