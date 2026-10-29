@@ -418,3 +418,12 @@ PASS, job 28542741). G0 (`--restarts`): K(S5, vilma=0) == K(S4) and R2(S5) == R2
 (jobs 28542775/77, 28542778/79). `$G/maps/S5` = S4 copy; Gauss and GLOBAL-0.5DEG maps pending (WP2/WP3 code).
 Data check: PaleoMIST 0.5DEG (0 ka = last record) and both Bagge files present; `fesmdata-prepared` is not a gate link.
 
+## Phase 4 WP1: contracts (2026-10-29)
+
+Report `gate-reports/p4-wp1.md`. Branch `p4-wp1` on main 79461c5: `dphi` (fastisostasy `dphi = bsl`), ice `footprint`,
+`H_ice_pd`, the `flotation` binding (Yelmo's own rule; == `tpo%f_grnd` bit for bit on grl), geo `host`/`port` options with
+the rank-2 global declaration, `T_GIA` rows (extra sources in `wire_t%srcs`) and the `wire_resolve` rule for core-filled
+imports. Mac, `make check` at every commit; `test_run_sequence` `plain` (cont, c00, c01) compared with
+`kryos-compare --restarts` against the base build: PASS at every commit (1151 / 620 / 620 variables, 0 failing, 0 absent),
+head against a fresh 79461c5 build too. Levante G1 (ant, nor, `K3-sci`) is WP7.
+
