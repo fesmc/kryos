@@ -119,6 +119,7 @@ module kryos_globe_ice
 
     public :: globe_ice_init, globe_ice_add_domain, globe_ice_end
     public :: globe_ice_reference_begin, globe_ice_reference_add, globe_ice_reference_end
+    public :: globe_ice_gather_begin, globe_ice_gather_add, globe_ice_gather_end
 
 contains
 
@@ -578,6 +579,188 @@ contains
         gi%in_ref = .false.
         gi%have_ref = .true.
     end subroutine globe_ice_reference_end
+
+    ! =========================================================================
+    ! A step (section 4.1)
+    ! =========================================================================
+
+    subroutine globe_ice_gather_begin(gi, cpl, t_load)
+        ! The external ice at the load time on the background grid,
+        ! H_ext = max(0, X + dH_hist) ("ref": X), and on the target grid
+        ! (H_ice_ext); opens the three accumulators. The history is evaluated at
+        ! min(t_load, ext_tref): held at its present day after it, a stop before
+        ! the first record.
+        type(globe_ice_t),   intent(inout) :: gi
+        type(coupler_class), intent(inout) :: cpl
+        real(dp),            intent(in)    :: t_load
+
+        character(len=*), parameter :: proc = "kryos_globe_ice::globe_ice_gather_begin"
+        real(dp), allocatable :: dH(:,:), raw(:,:)
+        integer :: k
+
+        call require_ready(gi, proc)
+        if (.not. gi%have_ref) call fesm_error(proc, "no reference yet", "run the reference first")
+        if (gi%in_ref .or. gi%in_gather) then
+            call fesm_error(proc, "a reference or a gather is open", "close it with its _end first")
+        end if
+        gi%t_load = t_load
+
+        gi%diag%clip_Gt = 0.0_dp
+        if (gi%has_ds_ext) then
+            allocate(dH(gi%nxb, gi%nyb), raw(gi%nxb, gi%nyb))
+            call datasrc_update(gi%ds_ext, min(t_load, gi%ext_tref))
+            call datasrc_get(gi%ds_ext, "ext_field", dH)
+            call check_bg(dH, "the history anomaly", proc)
+            raw = gi%H_X + dH
+            gi%H_ext = max(0.0_dp, raw)
+            gi%diag%clip_Gt = coupler_integral(cpl, trim(gi%bg), gi%H_ext - raw)*gi%rho_ice*KG_TO_GT
+        else
+            gi%H_ext = gi%H_X
+        end if
+        call ext_to_tgt(cpl, trim(gi%bg), trim(gi%tgt), gi%H_ext, gi%H_ice_ext)
+
+        call coupler_merge_begin(gi%acc_I, cpl, trim(gi%tgt), "extensive")
+        call coupler_merge_begin(gi%acc_C, cpl, trim(gi%tgt), "intensive")
+        call coupler_merge_begin(gi%acc_F, cpl, trim(gi%tgt), "extensive")
+        do k = 1, size(gi%dom)
+            gi%dom(k)%added = .false.
+        end do
+        gi%in_gather = .true.
+    end subroutine globe_ice_gather_begin
+
+    subroutine globe_ice_gather_add(gi, cpl, name, ice, H_ice, f_grnd, z_bed, z_sl, footprint)
+        ! Domain `name` at the load time: the ice model's thickness, grounded
+        ! fraction, bed and sea level (its exports of the previous step), and its
+        ! footprint (compared with the registered one: a change stops).
+        !   H_tot = m H + (1 - m) ext_i;  f_g = m f_Y + (1 - m) flot(H_tot, z_bed, z_sl)
+        !   I = H_tot f_g,  C = 1 - f_g,  F = zeta0 (f_g,ref - f_g),  zeta0 = z_bed_ref
+        type(globe_ice_t),   intent(inout) :: gi
+        type(coupler_class), intent(inout) :: cpl
+        character(len=*),    intent(in)    :: name
+        type(ice_slot_t),    intent(in)    :: ice
+        real(dp),            intent(in)    :: H_ice(:,:), f_grnd(:,:), z_bed(:,:), z_sl(:,:), footprint(:,:)
+
+        character(len=*), parameter :: proc = "kryos_globe_ice::globe_ice_gather_add"
+        real(dp), allocatable :: ext_i(:,:), H_tot(:,:), f_g(:,:), I(:,:), Cc(:,:), F(:,:)
+        integer :: d
+
+        if (.not. gi%in_gather) call fesm_error(proc, "no gather is open", "globe_ice_gather_begin first")
+        d = find_domain(gi, name, proc)
+        associate (dm => gi%dom(d))
+            if (dm%added) call fesm_error(proc, "domain `"//trim(name)//"` was already added", "")
+            call check_shape(H_ice,  dm, "H_ice",  proc)
+            call check_shape(f_grnd, dm, "f_grnd", proc)
+            call check_shape(z_bed,  dm, "z_bed",  proc)
+            call check_shape(z_sl,   dm, "z_sl",   proc)
+            call check_shape(footprint, dm, "footprint", proc)
+            call check_finite(H_ice,  dm, "H_ice",  proc)
+            call check_finite(f_grnd, dm, "f_grnd", proc)
+            call check_finite(z_bed,  dm, "z_bed",  proc)
+            call check_finite(z_sl,   dm, "z_sl",   proc)
+            if (any(footprint /= dm%footprint)) then
+                call fesm_error(proc, "the footprint of domain `"//trim(name)//"` changed ("// &
+                                to_str(count(footprint /= dm%footprint))//" cells differ from the one registered)", &
+                                "the footprint is fixed (phase4-plan 4.2)")
+            end if
+            if (any(H_ice < 0.0_dp)) then
+                call fesm_error(proc, "domain `"//trim(name)//"`: negative ice thickness (min "//to_str(minval(H_ice))//")", "")
+            end if
+
+            call ext_to_ice(cpl, trim(gi%bg), trim(dm%grid), gi%H_ext, ext_i)
+            call host_arrays(dm, ice, ext_i, H_ice, z_bed, z_sl, H_tot, f_g, f_grnd)
+            I  = H_tot*f_g
+            Cc = 1.0_dp - f_g
+            F  = dm%z_bed_ref*(dm%fg_ref - f_g)
+            call coupler_merge_add(gi%acc_I, cpl, trim(dm%grid), I)
+            call coupler_merge_add(gi%acc_C, cpl, trim(dm%grid), Cc)
+            call coupler_merge_add(gi%acc_F, cpl, trim(dm%grid), F)
+            dm%I_last = I
+            dm%V_src = coupler_integral(cpl, trim(dm%grid), I)
+            dm%added = .true.
+        end associate
+    end subroutine globe_ice_gather_add
+
+    subroutine globe_ice_gather_end(gi, cpl)
+        ! The host terms on the target grid (background 0: the weighted fields
+        ! per unit target area), the checks and the log of section 4.5, the
+        ! diagnostics in gi%diag.
+        type(globe_ice_t),   intent(inout) :: gi
+        type(coupler_class), intent(inout) :: cpl
+
+        character(len=*), parameter :: proc = "kryos_globe_ice::globe_ice_gather_end"
+        real(dp), allocatable :: zero(:,:), tmp(:,:), w(:,:), wc(:,:), wf(:,:), ext_d(:,:)
+        real(dp) :: v_src, v_tgt, v_ext_bg, v_ext_tgt, area_ocn
+        integer :: k, d, n
+        character(len=:), allocatable :: line
+
+        if (.not. gi%in_gather) call fesm_error(proc, "no gather is open", "globe_ice_gather_begin first")
+        call all_added(gi, gi%dom(:)%added, proc)
+
+        allocate(zero(gi%nxg, gi%nyg), w(gi%nxg, gi%nyg), wc(gi%nxg, gi%nyg), wf(gi%nxg, gi%nyg))
+        zero = 0.0_dp
+        call coupler_merge_end(gi%acc_I, cpl, zero, tmp, frac_tot=w,  overlap_tol=gi%overlap_tol)
+        gi%host_Ig = tmp
+        call coupler_merge_end(gi%acc_C, cpl, zero, tmp, frac_tot=wc, overlap_tol=gi%overlap_tol)
+        gi%host_C = tmp
+        call coupler_merge_end(gi%acc_F, cpl, zero, tmp, frac_tot=wf, overlap_tol=gi%overlap_tol)
+        gi%host_F = tmp
+
+        ! the coverage of the host region is fixed with the footprint (section 4.2)
+        if (maxval(abs(w - gi%host_w)) > W_TOL) then
+            call fesm_error(proc, "the coverage of the host region differs from the reference (max "// &
+                            to_str(maxval(abs(w - gi%host_w)))//")", "the footprints and grids are fixed")
+        end if
+        call check_host(gi, gi%host_Ig, gi%host_C, gi%host_w, "the gather at t = "//to_str(gi%t_load), proc)
+        if (.not. all(ieee_is_finite(gi%host_F))) then
+            call fesm_error(proc, "host_F is not finite at t = "//to_str(gi%t_load), "")
+        end if
+        if (.not. all(ieee_is_finite(gi%H_ice_ext)) .or. any(gi%H_ice_ext < 0.0_dp)) then
+            call fesm_error(proc, "H_ice_ext is not finite or negative at t = "//to_str(gi%t_load), "")
+        end if
+
+        ! conservation: the merged grounded ice against the sources, the external ice against its source grid
+        n = size(gi%ord)
+        v_src = 0.0_dp
+        do k = 1, n
+            v_src = v_src + gi%dom(gi%ord(k))%V_src
+        end do
+        v_tgt = coupler_integral(cpl, trim(gi%tgt), gi%host_Ig)
+        gi%diag%cons_I = abs(v_tgt - v_src)/max(abs(v_src), tiny(1.0_dp))
+        v_ext_bg  = coupler_integral(cpl, trim(gi%bg),  gi%H_ext)
+        v_ext_tgt = coupler_integral(cpl, trim(gi%tgt), gi%H_ice_ext)
+        gi%diag%cons_ext = abs(v_ext_tgt - v_ext_bg)/max(abs(v_ext_bg), tiny(1.0_dp))
+        if (gi%diag%cons_I > gi%cons_tol .or. gi%diag%cons_ext > gi%cons_tol) then
+            call fesm_error(proc, "the merge does not conserve the ice at t = "//to_str(gi%t_load), &
+                            "grounded ice: relative difference "//to_str(gi%diag%cons_I)//", external ice: "// &
+                            to_str(gi%diag%cons_ext)//", cons_tol = "//to_str(gi%cons_tol))
+        end if
+
+        ! per domain and external: grounded volume, mass and sea-level equivalent against the reference
+        if (allocated(gi%diag%name)) deallocate(gi%diag%name, gi%diag%V_g, gi%diag%dV_g, gi%diag%dM, gi%diag%esl)
+        allocate(gi%diag%name(n), gi%diag%V_g(n), gi%diag%dV_g(n), gi%diag%dM(n), gi%diag%esl(n))
+        gi%diag%nd = n
+        gi%diag%t  = gi%t_load
+        area_ocn = gi%area_ocn
+        line = "t = "//to_str(gi%t_load)//" yr, sea-level equivalent of the ice change [m]:"
+        do k = 1, n
+            d = gi%ord(k)
+            gi%diag%name(k) = gi%dom(d)%name
+            gi%diag%V_g(k)  = gi%dom(d)%V_src
+            gi%diag%dV_g(k) = gi%dom(d)%V_src - gi%dom(d)%V_ref
+            gi%diag%dM(k)   = gi%diag%dV_g(k)*gi%rho_ice*KG_TO_GT
+            gi%diag%esl(k)  = -(gi%rho_ice/gi%rho_sw)*gi%diag%dV_g(k)/area_ocn
+            line = line//" "//trim(gi%dom(d)%name)//" "//to_str(gi%diag%esl(k))
+        end do
+        ext_d = max(0.0_dp, 1.0_dp - gi%host_w)*(gi%H_ice_ext - gi%H_ice_ref)
+        gi%diag%ext_dV  = coupler_integral(cpl, trim(gi%tgt), ext_d)
+        gi%diag%ext_dM  = gi%diag%ext_dV*gi%rho_ice*KG_TO_GT
+        gi%diag%ext_esl = -(gi%rho_ice/gi%rho_sw)*gi%diag%ext_dV/area_ocn
+        line = line//", external "//to_str(gi%diag%ext_esl)//"; clipped external ice "//to_str(gi%diag%clip_Gt)// &
+               " Gt; merge closure "//to_str(max(gi%diag%cons_I, gi%diag%cons_ext))
+        call log_msg(LOG_INFO, "kryos_globe_ice", line)
+
+        gi%in_gather = .false.
+    end subroutine globe_ice_gather_end
 
     subroutine globe_ice_end(gi)
         type(globe_ice_t), intent(inout) :: gi
