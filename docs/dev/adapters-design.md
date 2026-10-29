@@ -181,6 +181,8 @@ passes `cnst` (the duplicate in `[domain]` and `[yelmo]` goes, study §4.2).
 | `z_bed_ref`, `H_ice_ref` | INSTANT, at init | `bnd%z_bed_ref`, `bnd%H_ice_ref` | widen; for the hub anomaly (`kryos_coupling.f90:565`) and section 2.5 |
 | `footprint` (opt, phase 4) | INSTANT, at `PASS_INIT` (static) | `mask_ice /= MASK_ICE_NONE` at the end of init | 1 / 0; compared by the core against every later gather |
 | `H_ice_pd` (opt, phase 2 WP3, phase 4) | INSTANT, at `PASS_INIT` (static) | `dta%pd%H_ice` (not `bnd%H_ice_ref`, which recon and `ice_bnd` overwrite) | widen |
+| `H_grnd` (opt, phase 2 WP3) | INSTANT t1, with the geometry | `tpo%now%H_grnd` | widen |
+| `H_grnd_pd` (opt, phase 2 WP3) | INSTANT, at `PASS_INIT` (static) | `dta%pd%H_grnd` | widen |
 | `dHidt`, `smb`, `bmb`, `cmb`, `mb_net` | MEAN [t0,t1] | `tpo%now%...` (Yelmo's mean over the call) | `real(x, dp) * real(bnd%c%rho_ice, dp)` (Yelmo's own density) |
 | `ux_s`, `uy_s` (opt) | INSTANT | `dyn%now%ux_s/uy_s` averaged to aa | not used in phase 1 |
 | `m_ice` (scalar) | INSTANT t1 | `reg%V_ice * bnd%c%rho_ice * 1e-3` in `sp` | widen; the forcing feedback variable [Gt], today `yelmox.f90:185` |
@@ -585,7 +587,15 @@ step later (lag 1 in the wiring, as today).
 ### 6.4 Restart, output, end
 
 `restart_write/read`: `marshelf_restart_write/read` (today `marine_shelf.nc`,
-`kryos_startup.f90:428, 514`; it holds `now`, incl. `tf_corr`).
+`kryos_startup.f90:428, 514`; it holds `now`, without `tf_corr` and `tf_corr_basin`: since phase 2 WP3
+the shelf component owns them (`shelf_t%corr`, module `kryos_shelf_ocean`, written by `shelf_restart_write`
+to `<instance>_corr_restart.nc`, listed after the backend's file in `restart_files`). The component makes
+them before the backend's `init` from the group named by the instance's `corr` key (`basins`,
+`corr_method`, `corr_names`, `corr_values`, `corr_<name>`, `tf_correction`, `tf_path`, `tf_name`: the keys
+the marine_shelf group had); marine_shelf takes the basins and the initial bmb correction at `init`
+(`corr_method = bmb`) and `tf_corr`, `tf_corr_basin` at each `marshelf_update`, adding
+`(T_shlf - T_fp) + tf_corr + tf_corr_basin` as before. The optimisation of `tf_corr` is the experiment
+`opt_tf`).
 `write_output(2D)`: `<instance>.nc` with `bmb_shlf` (m/yr, `prec_abs 1e-4`),
 `T_shlf`, `tf_shlf` (`kryos_output.f90:279-294`). `end`: `marshelf_end`.
 
@@ -717,7 +727,7 @@ ice, geo, climate, surface ANT-32KM.
 | Feature | Where today | Phase 1 | Returns |
 |---|---|---|---|
 | `relax` (ytopo ramp) | `step_relax`, `domain_relax_init` | dropped | 2, plugin on `yelmo_ice_t` (Antarctica gate, Q2) |
-| `opt` (cb_ref L21, tf_corr) | `step_optimize`, `domain_opt_init(_cb_ref)` | dropped; `tf_corr` stays in the shelf restart file | 2, plugins on `yelmo_ice_t` + `marshelf_shelf_t` (`tf_corr` plugin, D6) |
+| `opt` (cb_ref L21, tf_corr) | `step_optimize`, `domain_opt_init(_cb_ref)` | experiments `opt_cb_ref` (on `yelmo_ice_t`) and `opt_tf` (contract fields only); `tf_corr` is the shelf component's (`<instance>_corr_restart.nc`) | 2 (WP2, WP3) |
 | NEGIS cb_ref and its cold-start init (`use_negis`) | `negis_update_cb_ref`, `domain_negis_init` | dropped | 2, plugin |
 | glacial SMB scaling | `couple_surface_to_yelmo:326-330` | dropped | 2, plugin (needs climate `ta_ann`, exported already) |
 | `lim_pd_ice` (-4 m/yr) | `:334-337` | dropped | 2, plugin |

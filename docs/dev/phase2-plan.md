@@ -280,7 +280,11 @@ selected by `yelmo=0|1` in `config/common.mk`; all stateless
 - **dHidt**: Yelmo's `tpo%now%dHidt` is already the mean over the ice call,
   so the MEAN export equals it; asserted in `test_run_sequence`.
 
-Commit order: W0 docs; W1 experiment interface (x_init inout, identity, dt
+Status 2026-10-29: W0-W4e done on `p2-exp` (gate results in `gate-log.md`). Keys of the templates keep
+yelmox's names (`cf_time_init`, `tau_c`, `tf_time_init`, `recon_path`, ...); `method = "none"` of opt_cb_ref
+keeps yelmox's external cb_ref (`till_method = -1`, `cf_init`) without optimising. The shelf group of the
+corrections is `&shelf_corr_<sfx>`, named by the instance key `corr`; `corr_method = bmb` gives marine_shelf its
+initial bmb correction. Commit order: W0 docs; W1 experiment interface (x_init inout, identity, dt
 guard); W2a templates; W2b relax; W2c opt_cf; W2d converter relax/opt_cf +
 `ant-cf` gate file; then (after phase 4 WP1 is on main) W3a shelf corrections,
 W3b H_grnd exports, W3c opt_tf, W3d converter opt_tf + `ant-full`; W4a hub

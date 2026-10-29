@@ -494,6 +494,11 @@ elapsed time is the window time of the plugins: a continuation restart keeps
 the clock's origin (`clock_n_origin`), so it runs on across chunks; a branch
 restarts it. Nothing else is stored.
 
+`domain_refresh_boundary(dom, t, clk)` (recon's mid-recipe refresh, domain-local, no globe rows): the
+hub from the ice, the climate's `PASS_BOUNDARY`, the surface's `PASS_FINAL` and its rows into the ice, then
+`domain_prepare(ice, init)`. `domain_regions_load(reg, dom, cfg, grid)`: the domain's regions on a grid
+(what an instance's init context holds; recon selects its cells with them).
+
 Plugins of WP2-WP4 (`relax`, `opt_cb_ref`, `opt_tf`, `recon`; approved design
 in `phase2-plan.md`): each is a module `kryos_exp_<kind>` in
 `src/experiments/` with a `_stub.f90` twin selected by `yelmo=0|1`, all

@@ -103,6 +103,8 @@ optional, C capability), yelmox counterpart and the adapter's conversion.
 | `z_bed_ref` | m | 2 | I | int | O | `bnd%z_bed_ref` (reference check, §5.3) |
 | `footprint` | 1 | 2 | I | int | O | static: 1 where Yelmo holds ice, `mask_ice /= MASK_ICE_NONE` at the end of init (phase 4, gather source) |
 | `H_ice_pd` | m | 2 | I | int | O | static: `dta%pd%H_ice` (phase 2 WP3, phase 4); not `bnd%H_ice_ref`, which recon and `ice_bnd` overwrite |
+| `H_grnd` | m | 2 | I | int | O | `tpo%now%H_grnd`, with the geometry each step (phase 2 WP3; read by the calibration `opt_tf`) |
+| `H_grnd_pd` | m | 2 | I | int | O | static: `dta%pd%H_grnd` (phase 2 WP3, with `H_ice_pd`) |
 
 Binding (phase 4): `flotation(H, z_bed, z_sl) → f_grnd` (capability
 `has_flotation`, wrapper `ice_flotation(ice, ...)` like the others), implemented
@@ -784,7 +786,7 @@ dp` for the hub is a declaration change.
 | Field / edge (yelmox) | Phase 1 | Goes to (phase 2 unless noted) |
 |---|---|---|
 | `relax` (`ytopo topo_rel` ramp), `opt` cb_ref (`optimize_cb_ref`) | dropped (gate: `relax = opt = False`, regression Q1) | `experiments/relax`, `opt_cb_ref` (yelmo plugins; `HOOK_STEP_BEGIN`, cb_ref guess at `HOOK_COLD_PRE_STATE`) |
-| `opt` tf_corr (marine_shelf `tf_corr`; reads Yelmo `H_ice`, `H_grnd`, `dHidt`, pd `H_ice`) | dropped | marine_shelf plugin (decision 6); needs ice `dHidt`, `f_grnd` exports and pd data |
+| `opt` tf_corr (`tf_corr`; reads Yelmo `H_ice`, `H_grnd`, `dHidt`, pd `H_ice`, `H_grnd`) | `experiments/opt_tf` (phase 2 WP3), no `select type`: the ice exports `H_ice`, `H_grnd`, `dHidt`, `H_ice_pd`, `H_grnd_pd`, remapped ice -> shelf by the domain coupler, on the shelf component's `tf_corr` (`shelf_t%corr`, `kryos_shelf_ocean`); the `tf_corr`, `tf_corr_basin` and the basins moved from marine_shelf to the shelf component | |
 | NEGIS `cb_ref` | dropped | `experiments/negis` |
 | glacial smb scaling (`ta_ann` now/ref → ice smb) | dropped | `experiments/glacial_smb` on the surface → ice row; climate exports `ta_ann`, `ta_ann_ref` |
 | `lim_pd_ice` (−4 m ie/yr outside pd ice) | dropped | yelmo plugin at `HOOK_ICE_BND`, after `prepare` |
