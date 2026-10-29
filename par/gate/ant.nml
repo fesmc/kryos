@@ -1,6 +1,6 @@
 ! kryos par file, converted from yelmox by KryosTools.Convert v0.1 (tools/bin/yelmox2kryos.jl). Generated: do not edit; change the source and convert again.
 ! Fully expanded: every key of every group is set; the file needs no defaults and no library.
-! yelmox commit: 74f3a2bac47bd9ef73a9c56f651753c39bbf7080 (topo-prep)
+! yelmox commit: 5ac89c80c61e00c0e439fec043413066cc6a87e3 (topo-prep)
 ! source: yelmox/yelmox_Antarctica.nml
 ! -p: ctrl.time_end=1000 ctrl.write_lossless=True tm_2D.dt=100 tm_2Dsm.dt=10 tm_1D.dt=10 tm_rst.dt=500 sim.relax=False sim.opt=False
 ! sha256 of the input files the file names:
@@ -23,7 +23,7 @@
     out_dir         = "./"
     map_fldr        = "maps"
     phys_const      = "Earth"        ! yelmox domain.phys_const
-    phys_const_file = "input/yelmo_phys_const.nml"
+    phys_const_file = "input/phys_const.nml"
     library         = ""
     write_lossless  = True           ! yelmox ctrl.write_lossless
     log_level       = "info"
@@ -103,18 +103,19 @@
 /
 
 &Antarctica
-    grid_hub   = "ANT-16KM"     ! yelmox domain.grid_hub
-    topo       = "topo"
-    regions    = "regions"
-    basins     = "Zwally2012"   ! yelmox domain.basins
-    out_2D     = "out_2D"       ! yelmox output.write_htopo
-    ice        = "ice_ant"
-    geo        = "geo_ant"
-    climate    = "climate_ant"
-    surface    = "surface_ant"
-    shelf      = "shelf_ant"
-    geothermal = "ghf_ant"
-    sediments  = "sed_ant"
+    grid_hub    = "ANT-16KM"     ! yelmox domain.grid_hub
+    topo        = "topo"
+    regions     = "regions"
+    basins      = "Zwally2012"   ! yelmox domain.basins
+    out_2D      = "out_2D"       ! yelmox output.write_htopo
+    ice         = "ice_ant"
+    geo         = "geo_ant"
+    climate     = "climate_ant"
+    surface     = "surface_ant"
+    shelf       = "shelf_ant"
+    geothermal  = "ghf_ant"
+    sediments   = "sed_ant"
+    experiments = ""
 /
 
 &ice_ant
@@ -128,6 +129,7 @@
     out_vars        = ""
     yelmo           = "yelmo"
     init_equil_time = 10.0         ! yelmox sim.init_method = equil, sim.init_equil_time
+    init_time_thrm  = 0.0          ! yelmox sim.init_time_thrm
     out_yelmo       = "out_2D"     ! yelmox output.write_yelmo
     out_yelmo_sm    = "out_2Dsm"   ! yelmox output.write_yelmo
     out_yelmo_ts    = "out_1D"     ! yelmox output.write_yelmo

@@ -1,14 +1,16 @@
 #!/bin/bash -l
 # Update kryos on Levante, build kryos.x with the gate flags, stage and submit a kryos gate run.
-#   [STACK=S4] run_kryos.sh <gate> cont|chunk|base      (STACK default S3)
+#   [STACK=S4] [BUNDLE=kryos.bundle] [REF=main] run_kryos.sh <gate> cont|cont2|chunk|base   (STACK default S3)
+# cont2: a second cont run (determinism). The code is the REF branch of $G/bundles/$BUNDLE.
 # chunk: c00 0 -> 500, c01 500 -> 1000 from c00/restart-500 (afterok), as submit_ref.sh.
 set -euo pipefail
 G=/work/ba1442/robinson/kryos-gate; K=$G/kryos
 GATE=$1; RUN=$2; STACK=${STACK:-S3}   # stack the kryos dependency links point at
+BUNDLE=${BUNDLE:-kryos.bundle}; REF=${REF:-main}
 GF="-O2 -fp-model precise -march=znver3 -traceback"
 CM="env PYTHONPATH=$G/tools/configme-src/src python3 -m configme"
 cd $K
-git fetch -q $G/bundles/kryos.bundle main:refs/remotes/bundle/main
+git fetch -q $G/bundles/$BUNDLE $REF:refs/remotes/bundle/main
 git checkout -q --detach bundle/main
 SHA=$(git rev-parse --short=7 HEAD)
 $CM config kryos --only -m dkrz_levante -c ifx > /dev/null; $CM deps . > /dev/null
@@ -31,9 +33,9 @@ stage () {   # stage <dir> <jobname> <set_nml args...>; echo the folder
         $G/ref/$GATE/yx-74f3a2b/S2/cont/job.submit > job.submit
 }
 case $RUN in
-  cont)
-    stage $OUT $GATE-kx-cont
-    echo "$GATE cont $SHA $(cd $OUT && sbatch --parsable job.submit) $OUT" ;;
+  cont|cont2)
+    stage $OUT $GATE-kx-$RUN
+    echo "$GATE $RUN $SHA $(cd $OUT && sbatch --parsable job.submit) $OUT" ;;
   base)                                            # 15 kyr (regression-design 1.1), 2 h limit
     stage $OUT $GATE-kx-base clock.time_end=15000.0
     sed -i 's/--time=.*/--time=02:00:00/' $OUT/job.submit
