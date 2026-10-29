@@ -435,3 +435,24 @@ stub, factory, `[geo_vilma2]` template, `gia_check` (run-level contract checks).
 the adapter equals `solid_earth_*` called directly, bit for bit (reference, seed, spin-up, steps, restart round trip). The `test_run_sequence`
 plain runs of both builds compared with `kryos-compare --restarts` against 21320db: PASS at every commit (1159 / 625 / 625 variables, 0 failing,
 0 absent). Open: planet radius 6371221 vs VILMA2's 6371000 m (tolerance 1e-4 chosen), fixed group name `vilma`, port cadence in WP4.
+
+## Phase 2 WP2-WP4: experiments relax, opt cb_ref, opt tf, recon (2026-10-29)
+
+Branch `p2-exp` (design in `phase2-plan.md`, "WP2-WP4 approved design"). Mac: `make check` (`yelmo=1`; `yelmo=0` too, stubs) and
+the `plain` run of `test_run_sequence` (cont, c00, c01) compared with `kryos-compare --restarts` against a fresh build of the
+base commit at every step: PASS (0 failing, 0 absent); the plugin sets (`xr/`) check chunk == cont with the windows straddling the restart.
+
+### `ant-cf` (W2d, kryos `aeee5dd`, stack S5, kryos built with `vilma=0`)
+
+R2: yelmox topo-prep (S5 checkout 5ac89c8, code-identical to 74f3a2b), `submit_ref.sh S5 ant-cf cont`, shipped ANT with
+`opt.opt_tf=none` (relax + opt_cf on), `ref-S5/ant-cf/yx-5ac89c8/S5/cont`, job 28545775. K: `run_kryos_p2.sh ant-cf cont|cont2|chunk`
+(jobs 28545844, 28545861, 28545886/89), compared by `compare_p2.sh` (job 28547483, `julia +1.13`, outputs and restart bundles):
+
+| comparison | result |
+|---|---|
+| K cont vs R2 (mapped, `--restarts`) | PASS, 1036 variables, 0 failing, 0 absent, 14 new (N) |
+| K cont2 vs R2 | PASS, 1036 variables |
+| K cont2 vs K cont | PASS, 1350 variables |
+| K chunk vs K cont (`--chunks`) | PASS, 1722 variables |
+
+R2 chunk is not compared (yelmox restarts the window time per chunk). Relax and the cb_ref optimisation are bit-identical to yelmox.
