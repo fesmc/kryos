@@ -9,4 +9,5 @@ include("mini_yelmox.jl")
     include("test_compare.jl")
     include("test_convert.jl")
     include("test_gate.jl")
+    include("test_globe_ice.jl")
 end

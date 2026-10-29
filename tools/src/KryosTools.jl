@@ -9,6 +9,8 @@ Julia tooling of kryos phase 1 (regression-design.md §2-§4):
   (core-design.md §5), fully expanded, with its accounting.
 - `KryosTools.Gate`: the stack file, the gate's directories and `-p` lists,
   the `docs/gate.md` row.
+- `KryosTools.GlobeIce`: the offline merge of the global geometry hub (phase 4,
+  gate G1b (4)); script `tools/bin/kryos-globe-ice.jl`.
 
 Scripts: `tools/bin/kryos-compare.jl`, `tools/bin/yelmox2kryos.jl`. Plots
 (`Compare.plot_variable`) need `using CairoMakie` (a package extension), so
@@ -21,7 +23,8 @@ const TOOLS_DIR = normpath(joinpath(@__DIR__, ".."))
 include("Compare.jl")
 include("Convert.jl")
 include("Gate.jl")
+include("GlobeIce.jl")
 
-using .Compare, .Convert, .Gate
+using .Compare, .Convert, .Gate, .GlobeIce
 
 end # module

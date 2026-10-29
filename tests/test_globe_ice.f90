@@ -851,14 +851,15 @@ contains
     subroutine test_hub()
         ! The hub output (5.4, 9.1) and the observer-only pieces of gate G1b that need no run: the merged
         ! reference and ice conserve the volume, globe_ice.nc is rounded (lossless under the ncio switch),
-        ! the domain order of the registrations does not change the file.
+        ! the domain order of the registrations does not change the file, and the file equals the merge
+        ! computed offline in Julia from the inputs and the coupler's map files.
         type(scene_t) :: s1, s2
         real(dp), allocatable :: exact(:,:), cov(:,:), hf(:,:,:), zr(:,:), ca(:,:)
         real(dp) :: dmax
         character(len=*), parameter :: F1 = DIR//"globe_ice_r.nc", F2 = DIR//"globe_ice_l.nc", F3 = DIR//"globe_ice_o.nc"
         integer :: es
 
-        write(*,"(a)") "the hub: globe_ice.nc, conservation, order swap"
+        write(*,"(a)") "the hub: globe_ice.nc, conservation, order swap, offline merge"
         call build(s1, "def", with_2=.true.)
         call reference(s1)
         call check("the spliced reference conserves the volume (hub closure, 1e-12)", s1%gi%diag%hub_ref < 1.0e-12_dp)
@@ -899,9 +900,67 @@ contains
         call execute_command_line("cmp -s "//F2//" "//F3, exitstat=es)
         call check("globe_ice.nc: domain order swapped gives an identical file (cmp)", es == 0)
 
+        ! the merge offline
+        call offline_inputs(s1, DIR//"globe_ice_inputs.nc")
+        call run_julia(F2, DIR//"globe_ice_inputs.nc", "0", "lossless file equals the offline merge (Julia, 1e-12)")
+        call run_julia(F1, DIR//"globe_ice_inputs.nc", "1.0e-3", "rounded file equals the offline merge within its rounding (Julia)")
         call globe_ice_end(s1%gi)
         call globe_ice_end(s2%gi)
     end subroutine test_hub
+
+    subroutine offline_inputs(sc, file)
+        ! The inputs of the offline merge: the background's areas and external ice, per domain its model
+        ! areas, total ice of the last gather and owner weights, and the coupler's map file of its grid.
+        type(scene_t), intent(in) :: sc
+        character(len=*), intent(in) :: file
+        character(len=512) :: names
+        integer :: d
+        real(dp), allocatable :: ar(:,:)
+
+        call nc_create(file)
+        call nc_write_dim(file, "lon", x=2.0_dp, dx=4.0_dp, nx=NXB)
+        call nc_write_dim(file, "lat", x=-88.0_dp, dx=4.0_dp, nx=NYB)
+        ar = areas(sc%gbg)
+        call nc_write(file, "area_bg", ar, dim1="lon", dim2="lat")
+        call nc_write(file, "H_ext", sc%gi%H_ext, dim1="lon", dim2="lat")
+        names = ""
+        do d = 1, size(sc%gi%dom)
+            associate (dm => sc%gi%dom(d))
+                if (d > 1) names = trim(names)//","
+                names = trim(names)//trim(dm%name)
+                call nc_write_dim(file, "x_"//trim(dm%name), x=1.0_dp, dx=1.0_dp, nx=dm%nx)
+                call nc_write_dim(file, "y_"//trim(dm%name), x=1.0_dp, dx=1.0_dp, nx=dm%ny)
+                call nc_write(file, "H_"//trim(dm%name), dm%H_last, dim1="x_"//trim(dm%name), dim2="y_"//trim(dm%name))
+                if (trim(dm%name) == "A")  ar = areas(sc%ga)
+                if (trim(dm%name) == "A2") ar = areas(sc%g2)
+                if (trim(dm%name) == "B")  ar = areas(sc%gb)
+                call nc_write(file, "area_"//trim(dm%name), ar, dim1="x_"//trim(dm%name), dim2="y_"//trim(dm%name))
+                if (allocated(dm%owner)) call nc_write(file, "owner_"//trim(dm%name), dm%owner, &
+                                                       dim1="x_"//trim(dm%name), dim2="y_"//trim(dm%name))
+                call nc_write_attr(file, "map_"//trim(dm%name), FLD//"/scrip-con_"//trim(dm%grid)//"_"//BGN//".nc")
+            end associate
+        end do
+        call nc_write_attr(file, "domains", trim(names))
+    end subroutine offline_inputs
+
+    subroutine run_julia(globe, inputs, tol, what)
+        ! KryosTools' offline merge against a globe_ice.nc; OPEN (not failed) when Julia or the project is
+        ! not available ($KRYOS_TOOLS, else <repo>/tools).
+        character(len=*), intent(in) :: globe, inputs, tol, what
+        character(len=512) :: tools
+        integer :: es
+        call get_environment_variable("KRYOS_TOOLS", tools)
+        if (len_trim(tools) == 0) tools = "tools"
+        call execute_command_line("julia --project='"//trim(tools)//"' -e 'using KryosTools' > /dev/null 2>&1", exitstat=es)
+        if (es /= 0) then
+            write(*,"(a)") "  OPEN  offline merge not run (Julia or the project "//trim(tools)//" is not available): "//what
+            return
+        end if
+        call execute_command_line("julia --project='"//trim(tools)//"' "//trim(tools)//"/bin/kryos-globe-ice.jl "// &
+                                  globe//" "//inputs//" --tol-abs "//tol//" > "//DIR//"offline.log 2>&1", exitstat=es)
+        if (es /= 0) call execute_command_line("cat "//DIR//"offline.log")
+        call check(what, es == 0)
+    end subroutine run_julia
 
     subroutine test_no_domains()
         ! No domain: the host terms are zero, the reference is X, the ocean area is the background's.
