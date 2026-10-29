@@ -91,6 +91,55 @@
     ! Experiments a host program passes to run_init (experiment_proto_t): any key is the host's.
 /
 
+&experiment_relax
+    ! Relaxation of Yelmo's topography towards the reference, over the elapsed time (kryos_exp_relax).
+    ! Defaults: yelmox_Antarctica [relax].
+    topo_rel = 4                               ! ytopo.topo_rel mode while active (4: grounding line + grounding zone)
+    tau1     = 100.0                           ! [yr] relaxation timescale until time1
+    tau2     = 2000.0                          ! [yr] relaxation timescale at time2
+    time1    = 2e3                             ! [yr] end of the tau1 period
+    time2    = 6e3                             ! [yr] end of the relaxation (then the ytopo values apply)
+    m        = 2.0                             ! [1] non-linear exponent of the tau1 -> tau2 ramp
+/
+
+&experiment_opt_cb_ref
+    ! Optimisation of Yelmo's basal friction cb_ref (kryos_exp_opt_cb_ref); needs Yelmo's
+    ! present-day velocity (&yelmo_data pd_vel_load). Defaults: yelmox_Antarctica [opt].
+    method       = "L21"                       ! none (external cb_ref = cf_init or the till friction, no optimisation) | L21
+    cf_time_init = 0.0                         ! [yr] elapsed time: optimisation starts
+    cf_time_end  = 15e3                        ! [yr] elapsed time: optimisation stops
+    cf_init      = 1e-2                        ! cold start: cb_ref everywhere (<= 0: the till friction of the bed, cb_tgt)
+    tau_c        = 500.0                       ! [yr] L21: relaxation timescale
+    H0           = 100.0                       ! [m] L21: ice-thickness error scaling
+    sigma_err    = 50e3                        ! [m] smoothing radius of the error for the correction
+    sigma_vel    = 100.0                       ! [m yr-1] speed at which the smoothing diminishes to zero
+    fill_method  = "cf_min"                    ! nearest | analog | target | cf_min
+/
+
+&experiment_opt_tf
+    ! Optimisation of the shelf component's thermal-forcing correction tf_corr (kryos_exp_opt_tf).
+    ! Defaults: yelmox_Antarctica [opt].
+    method       = "L21-points"                ! L21 (one correction per basin) | L21-points
+    tf_time_init = 0.0                         ! [yr] elapsed time: optimisation starts
+    tf_time_end  = 15e3                        ! [yr] elapsed time: optimisation stops
+    H_grnd_lim   = 500.0                       ! [m] distance from the grounding line, as thickness above flotation
+    tf_sigma     = 50e3                        ! [m] L21-points: smoothing radius of the error
+    tau_m        = 100.0                       ! [yr] relaxation timescale
+    m_temp       = 10.0                        ! [m yr-1 degC-1] scaling value
+    tf_min       = -1.0                        ! [degC] minimum tf_corr
+    tf_max       = 1.0                         ! [degC] maximum tf_corr
+    tf_basins    = -1                          ! L21: basin numbers to optimise (-1: all)
+    basin_fill   = False                       ! L21-points: fill grounded basins with the ice-shelf mean tf_corr
+/
+
+&experiment_recon
+    ! Cold start from an ice reconstruction (kryos_exp_recon), after the ice state is initialised.
+    recon_path    = ""                         ! required: the reconstruction file ({domain}, {grid_name} of the ice grid)
+    recon_var     = ""                         ! required: its ice-thickness variable
+    recon_time    = 0.0                        ! [yr] model time of the state (nearest slice of the file)
+    recon_regions = ""                         ! required: where its ice is imposed (a regions selection expression)
+/
+
 &forcing_tsgen
     coefs = ""                                 ! [coef_<name>] groups
 /

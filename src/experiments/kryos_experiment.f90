@@ -41,6 +41,7 @@ module kryos_experiment
     type, public :: exp_ctx_t                       ! like init_ctx_t; built by experiments_create
         character(len=PATH_LEN) :: par_file = "", library(NLIB) = ""
         character(len=NAME_LEN) :: instance = "", kind = "", domain = ""   ! instance = the experiment's group
+        type(config_t)          :: cfg      ! the run's config: config_read(ctx%cfg, ctx%instance, key, v, "experiment", extra)
         type(phys_const_class)  :: cnst
         real(dp) :: time = 0.0_dp, time_rel = 0.0_dp, dtt = 0.0_dp, sec_year = 0.0_dp   ! at t0
         real(dp) :: dt_ice = 0.0_dp                 ! [yr] the domain's ice cadence step: dtt = every step, 0 = off or no ice
@@ -236,6 +237,7 @@ contains
             end do
             call config_validate_experiment(cfg, trim(names(i)), kind)
 
+            ctx%cfg      = cfg
             ctx%par_file = cfg%par_file
             ctx%library  = cfg%library
             ctx%instance = names(i)

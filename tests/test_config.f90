@@ -89,6 +89,7 @@ contains
         character(len=64) :: s, names(4)
         real(dp) :: x
         integer :: i
+        logical :: l
 
         call config_init(cfg, par)
 
@@ -120,6 +121,34 @@ contains
         names = "x"
         call config_read(cfg, "Bad_domain", "experiments", names, "domain")
         call check(all(len_trim(names) == 0), "domain experiments: default none")
+
+        ! the experiment templates: set values and the shipped yelmox defaults
+        call config_read(cfg, "exp_relax", "topo_rel", i, "experiment", "experiment_relax")
+        call check(i == 3, "relax: set integer")
+        call config_read(cfg, "exp_relax", "time2", x, "experiment", "experiment_relax")
+        call check(x == 8.0e3_dp, "relax: set dp")
+        call config_read(cfg, "exp_relax", "tau1", x, "experiment", "experiment_relax")
+        call check(x == 100.0_dp, "relax: default tau1 = 100")
+        call config_read(cfg, "exp_relax", "m", x, "experiment", "experiment_relax")
+        call check(x == 2.0_dp, "relax: default m = 2")
+        call config_read(cfg, "exp_cf", "method", s, "experiment", "experiment_opt_cb_ref")
+        call check(trim(s) == "none", "opt_cb_ref: set method")
+        call config_read(cfg, "exp_cf", "cf_init", x, "experiment", "experiment_opt_cb_ref")
+        call check(x == 1.0e-2_dp, "opt_cb_ref: default cf_init = 1e-2")
+        call config_read(cfg, "exp_cf", "cf_time_end", x, "experiment", "experiment_opt_cb_ref")
+        call check(x == 15.0e3_dp, "opt_cb_ref: default cf_time_end = 15e3")
+        call config_read(cfg, "exp_cf", "fill_method", s, "experiment", "experiment_opt_cb_ref")
+        call check(trim(s) == "cf_min", "opt_cb_ref: default fill_method")
+        call config_read(cfg, "exp_tf", "method", s, "experiment", "experiment_opt_tf")
+        call check(trim(s) == "L21-points", "opt_tf: default method")
+        call config_read(cfg, "exp_tf", "tf_max", x, "experiment", "experiment_opt_tf")
+        call check(x == 1.0_dp, "opt_tf: default tf_max = 1")
+        call config_read(cfg, "exp_tf", "basin_fill", l, "experiment", "experiment_opt_tf")
+        call check(.not. l, "opt_tf: default basin_fill = False")
+        call config_read(cfg, "exp_recon", "recon_regions", s, "experiment", "experiment_recon")
+        call check(trim(s) == "region:North_America", "recon: set regions")
+        call config_read(cfg, "exp_recon", "recon_path", s, "experiment", "experiment_recon")
+        call check(len_trim(s) == 0, "recon: path empty by default (the experiment requires it)")
 
         ! integer, logical, vector
         call config_read(cfg, "clock", "ticks_per_year", i, "clock")
@@ -185,6 +214,14 @@ contains
         call check(stat == 0 .and. trim(backend) == "fastisostasy", "validate: global geo instance")
         call config_validate_experiment(cfg, "exp_host", backend, stat)
         call check(stat == 0 .and. trim(backend) == "host", "validate: experiment of kind host")
+        call config_validate_experiment(cfg, "exp_relax", backend, stat)
+        call check(stat == 0 .and. trim(backend) == "relax", "validate: experiment of kind relax")
+        call config_validate_experiment(cfg, "exp_cf", backend, stat)
+        call check(stat == 0 .and. trim(backend) == "opt_cb_ref", "validate: experiment of kind opt_cb_ref")
+        call config_validate_experiment(cfg, "exp_tf", backend, stat)
+        call check(stat == 0 .and. trim(backend) == "opt_tf", "validate: experiment of kind opt_tf")
+        call config_validate_experiment(cfg, "exp_recon", backend, stat)
+        call check(stat == 0 .and. trim(backend) == "recon", "validate: experiment of kind recon")
     end subroutine test_validate
 
     subroutine test_errors()
@@ -230,6 +267,8 @@ contains
         ! experiments
         call config_validate_experiment(cfg, "exp_badkey", backend, stat)
         call check(stat == 1 .and. len_trim(backend) == 0, "unknown key in an experiment group")
+        call config_validate_experiment(cfg, "exp_relax_badkey", backend, stat)
+        call check(stat == 1, "a key of another kind (cf_init in a relax group)")
         call config_validate_experiment(cfg, "exp_nokind", backend, stat)
         call check(stat == 1, "experiment without kind key")
         call config_validate_experiment(cfg, "exp_emptykind", backend, stat)
@@ -316,6 +355,27 @@ contains
             '/', &
             '&exp_host', &
             '    kind = "host"', &
+            '/', &
+            '&exp_relax', &
+            '    kind     = "relax"', &
+            '    topo_rel = 3', &
+            '    time2    = 8e3', &
+            '/', &
+            '&exp_cf', &
+            '    kind   = "opt_cb_ref"', &
+            '    method = "none"', &
+            '/', &
+            '&exp_tf', &
+            '    kind      = "opt_tf"', &
+            '    tf_basins = 3 4', &
+            '/', &
+            '&exp_recon', &
+            '    kind          = "recon"', &
+            '    recon_regions = "region:North_America"', &
+            '/', &
+            '&exp_relax_badkey', &
+            '    kind    = "relax"', &
+            '    cf_init = 1.0', &
             '/', &
             '&exp_badkey', &
             '    kind  = "host"', &
