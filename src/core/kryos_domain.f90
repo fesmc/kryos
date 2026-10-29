@@ -50,7 +50,7 @@ module kryos_domain
     use htopo,           only: htopo_class, htopo_init, htopo_update, htopo_write_init, htopo_write_step
     use phys_constants,  only: phys_const_class
     use kryos_component, only: component_t, grid_ref_t, init_ctx_t, step_time_t, census_t, axis_t, &
-                               step_time_of, axis_find, kryos_mask, NAME_LEN, PATH_LEN
+                               step_time_of, axis_find, kryos_mask, component_prepare_call, NAME_LEN, PATH_LEN
     use kryos_config,    only: config_t, config_read, config_validate, config_validate_instance, config_cadence
     use kryos_wiring,    only: wire_t, wire_node_t, wire_node, wire_node_states, wire_resolve, &
                                wire_prime, wire_exchange, wire_runs, wire_label, LAG_INIT
@@ -144,7 +144,7 @@ module kryos_domain
 
     public :: domain_init, domain_create, domain_describe
     public :: domain_ref_index, domain_comp_index, domain_component, domain_present
-    public :: domain_time, domain_due, domain_pass, domain_update, domain_end
+    public :: domain_time, domain_due, domain_pass, domain_prepare, domain_update, domain_end
     public :: domain_restart_write, domain_restart_read, domain_restart_files
     public :: domain_nodes, domain_wire
     public :: exchange, exchange_into, exchange_static, domain_hub_update, domain_check_reference
@@ -524,6 +524,23 @@ contains
         case (C_SEDIMENTS);  call sediments_init_state(dom%sediments, st, pass)
         end select
     end subroutine domain_pass
+
+    subroutine domain_prepare(dom, k, clk, init)
+        ! <comp>_prepare of component k: its imports into the backend's
+        ! boundary, over its cadence interval (init: t0 = t1 = now, the cold
+        ! start). The run sequence calls it when the component is due, before
+        ! the experiment hook and domain_update. Absent: nothing.
+        type(domain_t), target, intent(inout) :: dom
+        integer,                intent(in)    :: k
+        type(clock_t),          intent(in)    :: clk
+        logical,                intent(in), optional :: init
+
+        class(component_t), pointer :: c
+
+        c => domain_component(dom, k)
+        if (.not. associated(c)) return
+        call component_prepare_call(c, domain_time(dom, k, clk, init))
+    end subroutine domain_prepare
 
     subroutine domain_update(dom, k, clk)
         ! <comp>_update of component k over its cadence interval, then the

@@ -112,6 +112,7 @@ module kryos_component
     contains
         procedure(c_init),   deferred :: init           ! (ctx): read group; set prec, nx, ny, caps, opt
         procedure                     :: init_state => component_init_state      ! (st, pass)
+        procedure                     :: prepare => component_prepare            ! (st): imports -> backend boundary
         procedure(c_update), deferred :: update         ! (st): integrate t0 -> t1; put every export
         procedure(c_rst),    deferred :: restart_write, restart_read             ! (dir, t)
         procedure                     :: restart_files => component_restart_files ! () -> base names restart_write creates
@@ -145,6 +146,7 @@ module kryos_component
     public :: component_axis, component_optional, month_axis, axis_find, axes_equal
     public :: census_count, kryos_mask
     public :: component_init_state, component_restart_files, component_write_output, component_end, component_output
+    public :: component_prepare, component_prepare_call
 
 contains
 
@@ -160,6 +162,17 @@ contains
         associate (unused => st%t1 + pass); end associate
         associate (unused => self%nx); end associate
     end subroutine component_init_state
+
+    subroutine component_prepare(self, st)
+        ! Default: nothing to prepare (the backend reads its imports in update).
+        ! A backend that converts its imports into a boundary of its own (yelmo:
+        ! bnd) does it here, so that an experiment hook can change that
+        ! boundary before update.
+        class(component_t), intent(inout) :: self
+        type(step_time_t),  intent(in)    :: st
+        associate (unused => st%t1); end associate
+        associate (unused => self%nx); end associate
+    end subroutine component_prepare
 
     function component_restart_files(self) result(files)
         ! The base names (no folder) of the files restart_write creates in the
@@ -368,6 +381,17 @@ contains
         call c%write_output(file, t, stream, init)
         call component_leave()
     end subroutine component_output
+
+    subroutine component_prepare_call(c, st)
+        ! The one call site of the prepare binding (domain_prepare, for any
+        ! component held as class(component_t)); puts no export, so no
+        ! window to close.
+        class(component_t), intent(inout) :: c
+        type(step_time_t),  intent(in)    :: st
+        call component_enter(c)
+        call c%prepare(st)
+        call component_leave()
+    end subroutine component_prepare_call
 
     subroutine component_end(self)
         ! Default: nothing to release.

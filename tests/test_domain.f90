@@ -11,8 +11,11 @@ module test_domain_toys
     private
 
     type, extends(ice_t), public :: toy_ice_t
+        integer  :: n_prepare = 0                        ! calls of prepare and the step of the last
+        real(dp) :: t0_prepare = -1.0_dp, t1_prepare = -1.0_dp
     contains
         procedure :: init => toy_ice_init
+        procedure :: prepare => toy_ice_prepare
         procedure :: update => toy_ice_update
         procedure :: restart_write => toy_ice_rw
         procedure :: restart_read => toy_ice_rr
@@ -43,6 +46,13 @@ contains
         self%ny = ctx%grid%G%ny
         self%opt%z_bed_ref = .true.
     end subroutine toy_ice_init
+    subroutine toy_ice_prepare(self, st)
+        class(toy_ice_t),  intent(inout) :: self
+        type(step_time_t), intent(in)    :: st
+        self%n_prepare  = self%n_prepare + 1
+        self%t0_prepare = st%t0
+        self%t1_prepare = st%t1
+    end subroutine toy_ice_prepare
     subroutine toy_ice_update(self, st)
         class(toy_ice_t),  intent(inout) :: self
         type(step_time_t), intent(in)    :: st
@@ -206,6 +216,7 @@ program test_domain
     call test_mirror_and_output()
     call test_anomaly_exchange_check()
     call test_no_ice()
+    call test_prepare()
 
     if (nfail > 0) then
         write(*,'(a,i0,a)') "test_domain: FAILED (", nfail, " checks)"
@@ -596,6 +607,41 @@ contains
         call domain_hub_update(d, 0.0_dp, clk, stat=stat)
         call check("an ice instance configured but not created is refused", stat /= 0)
     end subroutine test_no_ice
+
+    subroutine test_prepare()
+        ! domain_prepare: the prepare binding of the component over its cadence
+        ! interval, at the cold start over t0 = t1 = now; the default (geo)
+        ! and an absent component do nothing.
+        type(domain_t), target :: d
+        real(dp) :: t0, t1
+        integer  :: n
+
+        write(*,"(a)") "domain_prepare"
+        call setup(d, "Greenland", ice=.true., geo=.true.)
+        call domain_prepare(d, C_ICE, clk, init=.true.)
+        n = -1;  t0 = -1.0_dp;  t1 = -1.0_dp
+        select type (c => d%ice%c)
+        type is (toy_ice_t)
+            n = c%n_prepare;  t0 = c%t0_prepare;  t1 = c%t1_prepare
+        end select
+        call check("cold start: one call over t0 = t1 = time_init", n == 1 .and. t0 == 0.0_dp .and. t1 == 0.0_dp)
+
+        call clock_advance(clk)
+        call domain_prepare(d, C_ICE, clk)
+        select type (c => d%ice%c)
+        type is (toy_ice_t)
+            n = c%n_prepare;  t0 = c%t0_prepare;  t1 = c%t1_prepare
+        end select
+        call check("step: the cadence interval of the step", n == 2 .and. t0 == 0.0_dp .and. t1 == 10.0_dp)
+
+        call domain_prepare(d, C_GEO, clk)
+        call domain_prepare(d, C_SURFACE, clk)
+        select type (c => d%ice%c)
+        type is (toy_ice_t)
+            n = c%n_prepare
+        end select
+        call check("the default binding (geo) and an absent component (surface) do nothing", n == 2)
+    end subroutine test_prepare
 
     ! -------------------------------------------------------------------------
     ! Toy domains
