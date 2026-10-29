@@ -314,6 +314,10 @@ function check_refusals(R::Resolved, spec)
         end
     end
     for r in get(spec, "refuse", [])
+        if haskey(r, "when")                      # only when that key has that value
+            wv = getval(R, r["when"][1])
+            (wv !== nothing && same(wv, r["when"][2])) || continue
+        end
         ks = haskey(r, "keys") ? r["keys"] : [r["key"]]
         for k in ks
             v = getval(R, k)
@@ -760,6 +764,8 @@ function apply_groups!(S::State)
             apply_into_group!(S, name, subst(S, rule["dst"]))
         elseif act == "drop"
             drop_group!(S, name, rule["why"])
+        elseif act == "experiment"
+            # built by apply_experiments! (the keys of a group may go to several experiments)
         elseif act == "copy"
             rg = S.R.groups[name]
             if get(rule, "referenced", false) && !(name in S.referenced)
@@ -775,6 +781,83 @@ function apply_groups!(S::State)
             fail("[[group]] $(rule["src"]): unknown action $act")
         end
     end
+end
+
+# ---------- experiments ----------
+
+"Is the [[experiment]] row active? Returns (active, why-not)."
+function experiment_active(S::State, row)
+    if haskey(row, "when")
+        v = getval(S.R, row["when"][1], false)
+        same(v, row["when"][2]) || return false, "$(row["when"][1]) = $(NL.format_value(v))"
+    end
+    if haskey(row, "skip_if")
+        v = getval(S.R, row["skip_if"][1])
+        v !== nothing && same(v, row["skip_if"][2]) && return false, "$(row["skip_if"][1]) = $(NL.format_value(v))"
+    end
+    return true, ""
+end
+
+"""
+The experiment groups (core-design 3.9) of the [[experiment]] rows of the spec: one kryos group per
+active row (templates `[experiment]` + `[experiment_<kind>]`, `kind` set, the keys of the yelmox
+group carried by name or by the row's `map`), `{domain}.experiments` listing them in row order.
+A key of a yelmox group named by a row that no active row carries is dropped, with the reason of
+the inactive row that would have taken it.
+"""
+function apply_experiments!(S::State)
+    rows = get(S.spec, "experiment", [])
+    names = String[]
+    carried = Dict{String,Set{String}}()
+    why = Dict{String,String}()
+    for row in rows
+        from = row["from"]
+        haskey(S.R.groups, from) || begin
+            active, _ = experiment_active(S, row)
+            active && fail("experiment `$(row["kind"])` is active ($(row["when"][1]) = $(NL.format_value(row["when"][2]))) but the par file has no [$from] group")
+            continue
+        end
+        active, reason = experiment_active(S, row)
+        if !active
+            why[from] = get(why, from, "") * (isempty(get(why, from, "")) ? "" : "; ") * "no `$(row["kind"])` experiment ($reason)"
+            continue
+        end
+        name = subst(S, row["name"])
+        og = OutGroup(name, "", "experiment", "", Tuple{String,String}[], OutKey[], from)
+        add_template!(S, og, "kryos_defaults", "experiment")
+        add_template!(S, og, "kryos_defaults", "experiment_" * row["kind"])
+        push!(S.groups, og)
+        setval!(S, og, "kind", String(row["kind"]); origin="fixed")
+        rg = S.R.groups[from]
+        map = get(row, "map", nothing)
+        got = get!(carried, from, Set{String}())
+        for k in rg.order
+            kk = map === nothing ? k : get(map, k, nothing)
+            kk === nothing && continue
+            carry!(S, from, k, "$name.$kk")
+            push!(got, k)
+        end
+        push!(names, name)
+    end
+    for from in unique(String(r["from"]) for r in rows)
+        haskey(S.R.groups, from) || continue
+        rg = S.R.groups[from]
+        got = get(carried, from, Set{String}())
+        nfill = 0
+        for k in rg.order
+            k in got && continue
+            if rg.entries[k].source == "default"       # yelmox's own default, as in drop_group!
+                nfill += 1
+            else
+                account!(S, from, k, :dropped, "", get(why, from, "no experiment takes it"), rg.entries[k].source)
+            end
+        end
+        S.unfilled[from] = nfill
+    end
+    isempty(names) && return
+    dom = need_group(S, S.ctx["domain"])
+    setval!(S, dom, "experiments", names; origin="rule: experiments")
+    push!(S.notes, "experiments of the domain, in call order: " * join(names, ", "))
 end
 
 # order of the physics groups in the file
@@ -866,6 +949,7 @@ function convert_yelmox(; yelmox::AbstractString, par::AbstractString, overrides
     end
 
     apply_groups!(S)
+    apply_experiments!(S)
 
     # physics groups after the core ones, in a fixed order
     phys = [g for g in S.groups if g.kind == "physics"]
@@ -1088,7 +1172,7 @@ function validate_conversion(conv::Conversion)
             need(og.name, k.name, k.value)
         elseif og.kind == "globe" && og.name == conv.names["globe"]
             need(og.name, k.name, k.value)
-        elseif og.kind == "domain" && k.name in ("topo", "regions", "ice", "geo", "climate", "surface", "shelf", "geothermal", "sediments")
+        elseif og.kind == "domain" && k.name in ("topo", "regions", "ice", "geo", "climate", "surface", "shelf", "geothermal", "sediments", "experiments")
             need(og.name, k.name, k.value)
         elseif og.kind == "domain" && k.name == "out_2D"
             need(og.name, k.name, k.value)

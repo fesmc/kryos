@@ -2,7 +2,7 @@
 # Stage and submit one yelmox reference run of the kryos gate (regression-design §1).
 #   submit_ref.sh <stack> <gate> <run> [MAPS]
 #     stack: v24 | S | S2 | S3 | S4        (the stack under $G/stacks)
-#     gate:  grl | ant (phase 1) | grp | pyr | srg | nor | lis | rgrl | eant | egrl (phase 2, phase2-plan §3.1)
+#     gate:  grl | ant (phase 1) | ant-cf (phase 2 WP2, relax + opt cb_ref) | grp | pyr | srg | nor | lis | rgrl | eant | egrl (phase 2, phase2-plan §3.1)
 #     run:   cont | cont2 | chunk | mapgen | base (15 kyr, grl/ant only, regression-design 1.1)
 #     MAPS:  map folder linked as <rundir>/maps (default $G/maps/S for grl/ant, $G/maps/S4 for the phase 2 gates)
 # Environment: EXE (runme -e executable, default yelmox = libyelmox/bin/yelmox.x of the stack), PART (partition queue alias, default shared), WALL (hh:mm:ss, default 01:00:00),
@@ -26,6 +26,7 @@ RST=500; EXTRA=()
 case $GATE in
     grl)  PAR=yelmox/yelmox_Greenland.nml;        TG=ctrl;   TI=0;      TE=1000;   TM=500 ;;
     ant)  PAR=yelmox/yelmox_Antarctica.nml;       TG=ctrl;   TI=0;      TE=1000;   TM=500;   EXTRA=(sim.relax=False sim.opt=False) ;;
+    ant-cf) PAR=yelmox/yelmox_Antarctica.nml;     TG=ctrl;   TI=0;      TE=1000;   TM=500;   EXTRA=(opt.opt_tf=none) ;;
     grp)  PAR=yelmox/yelmox_GreenlandPaleo.nml;   TG=ctrl;   TI=0;      TE=1000;   TM=500 ;;
     nor)  PAR=yelmox/yelmox_North.nml;            TG=ctrl;   TI=0;      TE=1000;   TM=500 ;;
     lis)  PAR=yelmox/yelmox_LIS.nml;              TG=ctrl;   TI=0;      TE=1000;   TM=500 ;;

@@ -44,7 +44,7 @@ kvg(G, g) = Dict(k.name => NL.parse_value(k.raw) for k in G[g].keys)
         d = kv(G, "Testland")
         @test d["ice"] == "ice_tes" && d["sediments"] == "sed_tes" && d["grid_hub"] == "TST-16KM"
         @test d["out_2D"] == "out_2D" && d["basins"] == "Zwally2012"
-        @test d["experiments"] == ""                       # no experiment plugin yet: the template default
+        @test d["experiments"] == ""                       # sim.relax = sim.opt = False: no experiment
         @test kv(G, "globe") == Dict("forcing" => "forcing", "geo" => "geo_glob")
     end
 
@@ -80,7 +80,7 @@ kvg(G, g) = Dict(k.name => NL.parse_value(k.raw) for k in G[g].keys)
             @test g in names
         end
         @test !("tas_lgm" in names)                     # not named by any key
-        @test !("relax" in names) && !("smbpal" in names)
+        @test !("relax" in names) && !("opt" in names) && !("relax_tes" in names) && !("smbpal" in names)
         @test kv(G, "snapshots")["f_p"] === 0.06 && kv(G, "snapshots")["grid_global"] == "GLOBAL-1DEG"
         @test kv(G, "ytopo") == Dict("a" => 2.0, "b" => "x")
         @test kv(G, "yelmo")["restart"] == "None" && !haskey(kv(G, "yelmo"), "phys_const")
@@ -102,7 +102,8 @@ kvg(G, g) = Dict(k.name => NL.parse_value(k.raw) for k in G[g].keys)
         @test d["sim.init_method"].status == :mapped
         @test d["ghf.ghf_const"].status == :dropped
         @test d["ghf.obs_path"].dst == "Q_geo_tes.filename"
-        @test d["relax.tau1"].status == :dropped
+        @test d["relax.tau1"].status == :dropped && occursin("sim.relax = False", d["relax.tau1"].reason)
+        @test d["opt.opt_cf"].status == :dropped && d["opt.tf_max"].status == :dropped
         @test d["yelmo.phys_const"].status == :dropped
         @test d["tm_1D.dt"].dst == "out_1D.dt"
         @test d["output.write_isos"].status == :default            # off: nothing to set
@@ -152,9 +153,43 @@ end
 end
 
 
+@testset "Convert: experiments" begin
+    ovr = ["sim.relax=True", "sim.opt=True"]
+    conv = convert_mini(mini(); overrides=ovr)
+    out = joinpath(mktempdir(), "x.nml")
+    write_par(out, conv)
+    G = NL.read_namelist(out)
+    @test kv(G, "Testland")["experiments"] == ["relax_tes", "opt_cf_tes"]
+    r = kv(G, "relax_tes")
+    @test r["kind"] == "relax" && r["topo_rel"] === 4 && r["tau1"] === 100.0 && r["time1"] === 2000.0 && r["m"] === 2.0
+    o = kv(G, "opt_cf_tes")
+    @test o["kind"] == "opt_cb_ref" && o["method"] == "L21" && o["cf_init"] === 0.01 && o["sigma_err"] === 50e3
+    @test o["fill_method"] == "cf_min" && o["cf_time_end"] === 15e3
+    @test !haskey(o, "tf_min") && !haskey(o, "opt_cf")
+    @test !("relax" in [g.name for g in G]) && !("opt" in [g.name for g in G])
+    keyof(a) = "$(a.group).$(a.key)"
+    d = Dict(keyof(a) => a for a in conv.acc)
+    @test d["relax.tau2"].dst == "relax_tes.tau2" && d["opt.opt_cf"].dst == "opt_cf_tes.method"
+    @test d["opt.opt_tf"].status == :dropped && occursin("no experiment", d["opt.opt_tf"].reason)   # opt_tf: WP3
+    @test d["opt.tf_max"].status == :dropped
+    @test d["sim.relax"].status == :dropped && d["sim.opt"].status == :dropped
+    @test length(conv.acc) == length(unique(keyof.(conv.acc)))
+    @test any(occursin("experiments of the domain", n) for n in conv.notes)
+    # only relax
+    G1 = Dict(g.name => g for g in namelist(convert_mini(mini(); overrides=["sim.relax=True"])))
+    @test kvg(G1, "Testland")["experiments"] == "relax_tes" && !haskey(G1, "opt_cf_tes")
+    # opt_cf = none keeps the experiment (cb_ref from outside, no optimisation)
+    G2 = Dict(g.name => g for g in namelist(convert_mini(mini(); overrides=["sim.opt=True", "opt.opt_cf=none"])))
+    @test kvg(G2, "opt_cf_tes")["method"] == "none" && kvg(G2, "Testland")["experiments"] == "opt_cf_tes"
+    # a base that selects an experiment its par file does not have
+    msg = refused(() -> convert_mini(mini(edits=["relax             = False" => "relax             = True", "&relax" => "&relax_gone"])))
+    @test occursin("no [relax] group", msg)
+end
+
 @testset "Convert: refusals name the key and the phase" begin
     cases = [
-        (["sim.relax=True"] => "sim.relax = true"),
+        (["sim.lim_pd_ice=True"] => "sim.lim_pd_ice = true"),
+        (["sim.opt=True", "opt.opt_tf=L21"] => "opt.opt_tf"),
         (["sim.init_method=recon"] => "sim.init_method"),
         (["comps.climate=esm"] => "comps.climate"),
         (["comps.with_isostasy=False"] => "comps.with_isostasy"),
@@ -173,8 +208,10 @@ end
         @test occursin(lowercase(key), lowercase(msg)) && occursin("phase", msg)
     end
     # a refusal lists every reason, not only the first
-    msg = refused(() -> convert_mini(mini(); overrides=["sim.relax=True", "sim.opt=True"]))
-    @test occursin("sim.relax", msg) && occursin("sim.opt", msg)
+    msg = refused(() -> convert_mini(mini(); overrides=["sim.lim_pd_ice=True", "sim.use_negis=True"]))
+    @test occursin("sim.lim_pd_ice", msg) && occursin("sim.use_negis", msg)
+    # opt_tf is refused only when sim.opt selects it
+    @test convert_mini(mini(); overrides=["opt.opt_tf=L21"]) isa Conversion
     # a group of a rembo par file, and a suffixed group
     msg = refused(() -> convert_mini(mini(edits=["&relax" => "&rembo\n    a = 1.0\n/\n&relax"])))
     @test occursin("&rembo", msg) && occursin("phase 2", msg)
@@ -249,7 +286,8 @@ if isfile(joinpath(YELMOXROOT, ".runme", "info.json"))
     @testset "Convert: the yelmox bases ($YELMOXROOT)" begin
         base = joinpath(YELMOXROOT, "yelmox")
         gate_p = ["ctrl.time_end=1000", "ctrl.write_lossless=True", "tm_2D.dt=100", "tm_2Dsm.dt=10", "tm_1D.dt=10", "tm_rst.dt=500"]
-        for (par, extra) in (("yelmox_Greenland.nml", String[]), ("yelmox_Antarctica.nml", ["sim.relax=False", "sim.opt=False"]))
+        for (par, extra) in (("yelmox_Greenland.nml", String[]), ("yelmox_Antarctica.nml", ["sim.relax=False", "sim.opt=False"]),
+                             ("yelmox_Antarctica.nml", ["opt.opt_tf=none"]))
             isfile(joinpath(base, par)) || continue
             conv = convert_yelmox(; yelmox=YELMOXROOT, par="yelmox/$par", overrides=vcat(gate_p, extra), kryos=KRYOS)
             s = account_summary(conv)
@@ -277,7 +315,14 @@ if isfile(joinpath(YELMOXROOT, ".runme", "info.json"))
         # the shipped Antarctica base needs the plugins: refused without the gate's overrides
         if isfile(joinpath(base, "yelmox_Antarctica.nml"))
             msg = refused(() -> convert_yelmox(; yelmox=YELMOXROOT, par="yelmox/yelmox_Antarctica.nml", kryos=KRYOS))
-            @test occursin("sim.relax", msg) && occursin("sim.opt", msg)
+            @test occursin("opt.opt_tf", msg) && occursin("phase", msg)
+            # the interim gate ant-cf: relax and the cb_ref optimisation, without opt_tf
+            conv = convert_yelmox(; yelmox=YELMOXROOT, par="yelmox/yelmox_Antarctica.nml", overrides=vcat(gate_p, ["opt.opt_tf=none"]), kryos=KRYOS)
+            out = joinpath(mktempdir(), "ant.nml")
+            write_par(out, conv)
+            G = NL.read_namelist(out)
+            @test kv(G, "Antarctica")["experiments"] == ["relax_ant", "opt_cf_ant"]
+            @test kv(G, "relax_ant")["time2"] === 6000.0 && kv(G, "opt_cf_ant")["cf_init"] === 0.01
         end
     end
 else

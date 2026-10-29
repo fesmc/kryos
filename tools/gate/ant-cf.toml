@@ -1,0 +1,23 @@
+# Gate ant-cf (phase2-plan, WP2-WP4 design Q7): the shipped yelmox_Antarctica with relax and the
+# cb_ref optimisation (opt_cf = L21) on and the thermal-forcing optimisation off (opt_tf = none),
+# 1000 yr from a cold start, lossless output. The interim gate after WP2; ant-full (WP3) adds opt_tf.
+gate     = "ant-cf"
+base     = "yelmox/yelmox_Antarctica.nml"
+p        = ["ctrl.time_end=1000", "ctrl.write_lossless=True", "tm_2D.dt=100",
+            "tm_2Dsm.dt=10", "tm_1D.dt=10", "tm_rst.dt=500",
+            "opt.opt_tf=none"]
+time_end = 1000.0
+chunks   = [0.0, 500.0, 1000.0]
+restart_times = [500.0, 1000.0]
+
+[instances]
+domain     = "Antarctica"
+ice        = "ice_ant"
+geo        = "geo_ant"
+climate    = "climate_ant"
+surface    = "surface_ant"
+shelf      = "shelf_ant"
+geothermal = "ghf_ant"
+sediments  = "sed_ant"
+forcing    = "forcing"
+geo_glob   = "geo_glob"

@@ -246,7 +246,34 @@ function par_text(; edits=Pair{String,String}[])
     time   = 0.0
 /
 &relax
-    tau1 = 100.0
+    topo_rel = 4
+    tau1     = 100.0
+    tau2     = 2000.0
+    time1    = 2e3
+    time2    = 6e3
+    m        = 2.0
+/
+&opt
+    opt_cf       = "L21"
+    cf_time_init = 0.0
+    cf_time_end  = 15e3
+    cf_init      = 1e-2
+    tau_c        = 500.0
+    H0           = 100.0
+    sigma_err    = 50e3
+    sigma_vel    = 100.0
+    fill_method  = "cf_min"
+    opt_tf       = "none"
+    tf_time_init = 0.0
+    tf_time_end  = 15e3
+    H_grnd_lim   = 500.0
+    tf_sigma     = 50e3
+    tau_m        = 100.0
+    m_temp       = 10.0
+    tf_min       = -1.0
+    tf_max       = 1.0
+    tf_basins    = -1
+    basin_fill   = False
 /
 &isos
     method  = 2
