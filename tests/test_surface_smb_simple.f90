@@ -995,6 +995,9 @@ program test_surface_smb_simple
     !   kernels   calc_smb_simple_syn of yelmox and of kryos_smb_simple on the same fields
     !             (plastic and linear profile, units m / km / degrees, with and without
     !             accumulation latitude terms, a mask without boundary, isolated cells)
+    !   distance  compute_signed_distance of yelmox (the scan over all boundary cells) and of kryos (a
+    !             tree search) on a 276 x 276 grid of 32 km cells (NH-32KM) for ice masks of several
+    !             shapes: bit-identical d, and the timing of both
     !   backend   the component (surface_create, surface_init, PASS_BOUNDARY, update) against the
     !             yelmox call chain of step_surface (kryos_coupling.f90:477-484): smb_simple_init,
     !             smb_simple_set_mask(H_ice_ref), smb_simple_update(z_srf, tsl_ann); the mask
@@ -1012,8 +1015,9 @@ program test_surface_smb_simple
     use kryos_component,  only: init_ctx_t, step_time_t, census_t, PASS_BOUNDARY
     use kryos_surface,    only: surface_slot_t, surface_create, surface_init, surface_init_state, surface_update, surface_end
     use smb_simple_m,     only: y_class => smb_simple_class, y_init => smb_simple_init, y_mask => smb_simple_set_mask, &
-                                y_update => smb_simple_update, y_syn => calc_smb_simple_syn, y_par => smb_params_syn
-    use kryos_smb_simple, only: k_syn => calc_smb_simple_syn, k_par => smb_params_syn
+                                y_update => smb_simple_update, y_syn => calc_smb_simple_syn, y_par => smb_params_syn, &
+                                y_dist => compute_signed_distance
+    use kryos_smb_simple, only: k_syn => calc_smb_simple_syn, k_par => smb_params_syn, k_dist => compute_signed_distance
 
     implicit none
 
@@ -1042,6 +1046,7 @@ program test_surface_smb_simple
     call write_mask(href2)
 
     call test_kernels()
+    call test_distance_nh32()
     call test_backend("surface_nh", "smb_simple",     .false.)
     call test_backend("surface_lin", "smb_simple_lin", .false.)
     call test_backend("surface_file", "smb_simple_file", .true.)
@@ -1102,6 +1107,236 @@ contains
         call k_syn(ks, kt, z_srf, mask, x, y, lat, tsl, 190.0_sp, 494.5_sp, kp)
         call check("isolated ice cells: bit-identical", all(ys == ks) .and. all(yt == kt))
     end subroutine test_kernels
+
+    ! =========================================================================
+    ! The signed distance on an NH-32KM sized grid
+    ! =========================================================================
+
+    subroutine test_distance_nh32()
+        ! The scan of yelmox over all boundary cells against the tree search of kryos, on the
+        ! 276 x 276 grid of NH-32KM, masks of several shapes: the distance is the same bit for
+        ! bit (units m and km; degrees on two masks, its reference being slower), with the
+        ! timing of both.
+        integer, parameter :: n32 = 276, nshape = 6
+        character(len=32), parameter :: shape_name(nshape) = [character(len=32) :: &
+            "two ice sheets, ragged margin", "one ice sheet with lakes", "noise field, many margins", &
+            "ice sheet and islands", "one ice cell", "one ocean cell"]
+        type(grid_class) :: g
+        real(sp), allocatable :: xg(:,:), yg(:,:), lon_g(:,:), lat_g(:,:), dy_ref(:,:), dk(:,:)
+        logical,  allocatable :: mask(:,:)
+        character(len=16) :: units(3) = [character(len=16) :: "m", "km", "degrees"]
+        real(dp) :: t_ref, t_new, t0, t1, t_ref_all, t_new_all
+        integer  :: is, iu, nbnd, nice
+        logical  :: same
+
+        call grid_init(g, name="TEST-NH32", mtype="polar_stereographic", units="kilometers", planet="WGS84", &
+                       lambda=-45.0_dp, phi=70.0_dp, x0=-4900.0_dp, dx=32.0_dp, nx=n32, y0=-5400.0_dp, dy=32.0_dp, ny=n32)
+        allocate(xg(n32,n32), yg(n32,n32), lon_g(n32,n32), lat_g(n32,n32), dy_ref(n32,n32), dk(n32,n32), mask(n32,n32))
+        xg    = real(g%x * g%cs%xy_conv, sp)
+        yg    = real(g%y * g%cs%xy_conv, sp)
+        lon_g = real(g%lon, sp)
+        lat_g = real(g%lat, sp)
+
+        write(*,'(a)') "--- signed distance, 276 x 276 (NH-32KM sized): yelmox scan against kryos tree"
+        write(*,'(a)') "      shape                             units  ice cells  boundary   t yelmox (s)   t kryos (s)   speed-up"
+        t_ref_all = 0.0_dp;  t_new_all = 0.0_dp
+        do is = 1, nshape
+            call nh_mask(mask, is)
+            nice = count(mask)
+            nbnd = count_boundary(mask)
+            do iu = 1, merge(3, 2, is <= 2)
+                select case (iu)
+                case (1);  call run_pair(mask, xg*1.0e3_sp, yg*1.0e3_sp, "m", dy_ref, dk, t_ref, t_new)
+                case (2);  call run_pair(mask, xg, yg, "km", dy_ref, dk, t_ref, t_new)
+                case (3);  call run_pair(mask, lon_g, lat_g, "degrees", dy_ref, dk, t_ref, t_new)
+                end select
+                same = all(dy_ref == dk)
+                call check("shape '"//trim(shape_name(is))//"', units "//trim(units(iu))//": distance bit-identical", same)
+                write(*,'(6x,a32,1x,a7,2i11,2f15.3,f11.1)') shape_name(is), trim(units(iu)), nice, nbnd, t_ref, t_new, &
+                      t_ref/max(t_new, 1.0e-9_dp)
+                if (iu == 2) then
+                    t_ref_all = t_ref_all + t_ref;  t_new_all = t_new_all + t_new
+                end if
+            end do
+        end do
+        write(*,'(a,f9.3,a,f9.3,a,f7.1)') "      all shapes, units km:  yelmox ", t_ref_all, " s, kryos ", t_new_all, &
+              " s, speed-up ", t_ref_all/max(t_new_all, 1.0e-9_dp)
+
+        ! Irregular coordinates (jittered, with coincident points, longitudes across the date line):
+        ! no regular grid is assumed by either search.
+        block
+            integer, parameter :: mx = 70, my = 55
+            real(sp) :: xi(mx,my), yi(mx,my), di_ref(mx,my), di_new(mx,my)
+            real(dp) :: tr, tn
+            logical  :: mi(mx,my), ok_m, ok_d
+            integer  :: it, i, j
+            ok_m = .true.;  ok_d = .true.
+            do it = 1, 12
+                do j = 1, my
+                    do i = 1, mx
+                        xi(i,j) = 1.0e4_sp*real(i,sp) + 4.0e4_sp*(lcg() - 0.5_sp)*real(mod(it,3),sp)
+                        yi(i,j) = 1.0e4_sp*real(j,sp) + 4.0e4_sp*(lcg() - 0.5_sp)*real(mod(it,3),sp)
+                        mi(i,j) = lcg() < 0.15_sp*real(it,sp)/12.0_sp + 0.1_sp
+                        if (mod(i*j, 37) == 0) then;  xi(i,j) = xi(1,1);  yi(i,j) = yi(1,1);  end if
+                    end do
+                end do
+                call run_pair(mi, xi, yi, "m", di_ref, di_new, tr, tn)
+                ok_m = ok_m .and. all(di_ref == di_new)
+                do j = 1, my
+                    do i = 1, mx
+                        xi(i,j) = 170.0_sp + 0.4_sp*real(i,sp) + 0.5_sp*(lcg() - 0.5_sp)
+                        yi(i,j) = -80.0_sp + 3.0_sp*real(j,sp)*(1.0_sp + 0.1_sp*lcg())/2.0_sp
+                    end do
+                end do
+                xi = modulo(xi + 180.0_sp, 360.0_sp) - 180.0_sp
+                call run_pair(mi, xi, yi, "degrees", di_ref, di_new, tr, tn)
+                ok_d = ok_d .and. all(di_ref == di_new)
+            end do
+            call check("irregular coordinates, 12 random masks, units m: distance bit-identical", ok_m)
+            call check("irregular coordinates, 12 random masks, units degrees (date line): distance bit-identical", ok_d)
+        end block
+
+    end subroutine test_distance_nh32
+
+    subroutine run_pair(mk, xs, ys, u, d_ref, d_new, t_ref, t_new)
+        ! compute_signed_distance of yelmox and of kryos on the same input, with the wall time (s).
+        logical,          intent(in)  :: mk(:,:)
+        real(sp),         intent(in)  :: xs(:,:), ys(:,:)
+        character(len=*), intent(in)  :: u
+        real(sp),         intent(out) :: d_ref(:,:), d_new(:,:)
+        real(dp),         intent(out) :: t_ref, t_new
+        integer(8) :: c0, c1, cr
+        call system_clock(c0, cr)
+        call y_dist(d_ref, mk, xs, ys, u)
+        call system_clock(c1)
+        t_ref = real(c1 - c0, dp)/real(cr, dp)
+        call system_clock(c0)
+        call k_dist(d_new, mk, xs, ys, u)
+        call system_clock(c1)
+        t_new = real(c1 - c0, dp)/real(cr, dp)
+    end subroutine run_pair
+
+    integer function count_boundary(m) result(nb)
+        ! Cells with a 4-neighbour of the other value.
+        logical, intent(in) :: m(:,:)
+        integer :: i, j, nx_, ny_
+        nx_ = size(m, 1);  ny_ = size(m, 2)
+        nb = 0
+        do j = 1, ny_
+            do i = 1, nx_
+                if (i > 1) then
+                    if (m(i-1,j) .neqv. m(i,j)) then;  nb = nb + 1;  cycle;  end if
+                end if
+                if (i < nx_) then
+                    if (m(i+1,j) .neqv. m(i,j)) then;  nb = nb + 1;  cycle;  end if
+                end if
+                if (j > 1) then
+                    if (m(i,j-1) .neqv. m(i,j)) then;  nb = nb + 1;  cycle;  end if
+                end if
+                if (j < ny_) then
+                    if (m(i,j+1) .neqv. m(i,j)) nb = nb + 1
+                end if
+            end do
+        end do
+    end function count_boundary
+
+    subroutine nh_mask(m, kind)
+        ! Ice masks on the 276 x 276 grid: smooth domes with a ragged (angularly modulated, noisy)
+        ! margin, holes (lakes, ocean inlets), islands, a field of noise, a single cell.
+        logical, intent(out) :: m(:,:)
+        integer, intent(in)  :: kind
+        real(sp), allocatable :: f(:,:), g(:,:)
+        integer  :: i, j, k, nn
+        real(sp) :: r, th, rr, cx, cy, ph1, ph2, ph3
+
+        nn = size(m, 1)
+        allocate(f(nn,nn), g(nn,nn))
+        m = .false.
+        select case (kind)
+        case (1)    ! two ice sheets (a Laurentide- and a Eurasia-like), ragged margins, inlets and satellites
+            ph1 = 6.2832_sp*lcg();  ph2 = 6.2832_sp*lcg();  ph3 = 6.2832_sp*lcg()
+            do j = 1, nn
+                do i = 1, nn
+                    m(i,j) = dome(i, j, 95.0_sp, 105.0_sp, 62.0_sp, ph1, ph2, ph3) .or. &
+                             dome(i, j, 185.0_sp, 175.0_sp, 48.0_sp, ph2, ph3, ph1)
+                end do
+            end do
+            call speckle(m, 0.04_sp, 3)
+        case (2)    ! one big ice sheet with lakes and an ocean inlet
+            ph1 = 6.2832_sp*lcg();  ph2 = 6.2832_sp*lcg();  ph3 = 6.2832_sp*lcg()
+            do j = 1, nn
+                do i = 1, nn
+                    m(i,j) = dome(i, j, 138.0_sp, 138.0_sp, 90.0_sp, ph1, ph2, ph3)
+                    r = sqrt((real(i,sp) - 120.0_sp)**2 + (real(j,sp) - 150.0_sp)**2)
+                    if (r < 9.0_sp) m(i,j) = .false.
+                    r = sqrt((real(i,sp) - 160.0_sp)**2 + (real(j,sp) - 110.0_sp)**2)
+                    if (r < 6.0_sp) m(i,j) = .false.
+                    if (j > 138 .and. i > 138 .and. abs(real(j - i, sp)) < 3.0_sp) m(i,j) = .false.
+                end do
+            end do
+        case (3)    ! smoothed noise thresholded: many margins everywhere
+            do j = 1, nn
+                do i = 1, nn
+                    f(i,j) = lcg()
+                end do
+            end do
+            do k = 1, 3
+                g = f
+                do j = 2, nn - 1
+                    do i = 2, nn - 1
+                        f(i,j) = 0.2_sp*(g(i,j) + g(i-1,j) + g(i+1,j) + g(i,j-1) + g(i,j+1))
+                    end do
+                end do
+            end do
+            m = f > sum(f)/real(size(f), sp)
+        case (4)    ! an ice sheet and a scatter of islands and small caps
+            ph1 = 6.2832_sp*lcg();  ph2 = 6.2832_sp*lcg();  ph3 = 6.2832_sp*lcg()
+            do j = 1, nn
+                do i = 1, nn
+                    m(i,j) = dome(i, j, 110.0_sp, 130.0_sp, 55.0_sp, ph1, ph2, ph3)
+                end do
+            end do
+            do k = 1, 120
+                cx = 1.0_sp + lcg()*real(nn - 1, sp);  cy = 1.0_sp + lcg()*real(nn - 1, sp)
+                rr = 0.7_sp + 4.0_sp*lcg()
+                do j = 1, nn
+                    do i = 1, nn
+                        if ((real(i,sp) - cx)**2 + (real(j,sp) - cy)**2 < rr**2) m(i,j) = .true.
+                    end do
+                end do
+            end do
+        case (5)
+            m(100, 170) = .true.
+        case (6)
+            m = .true.
+            m(200, 40) = .false.
+        end select
+    end subroutine nh_mask
+
+    logical function dome(i, j, cx, cy, r0, p1, p2, p3)
+        ! Inside a margin radius r0*(1 + angular modulation + noise) around (cx, cy).
+        integer,  intent(in) :: i, j
+        real(sp), intent(in) :: cx, cy, r0, p1, p2, p3
+        real(sp) :: r, th, rm
+        r  = sqrt((real(i,sp) - cx)**2 + (real(j,sp) - cy)**2)
+        th = atan2(real(j,sp) - cy, real(i,sp) - cx)
+        rm = r0*(1.0_sp + 0.22_sp*sin(2.0_sp*th + p1) + 0.12_sp*sin(5.0_sp*th + p2) + 0.06_sp*sin(11.0_sp*th + p3)) &
+             + 2.0_sp*(lcg() - 0.5_sp)
+        dome = r < rm
+    end function dome
+
+    subroutine speckle(m, frac, rad)
+        ! Flip a fraction of cells to ice at a distance from the mask: satellites and nunataks.
+        logical,  intent(inout) :: m(:,:)
+        real(sp), intent(in)    :: frac
+        integer,  intent(in)    :: rad
+        integer :: i, j
+        do j = 1, size(m, 2)
+            do i = 1, size(m, 1)
+                if (lcg() < frac*0.05_sp) m(max(1,i-rad):min(size(m,1),i+rad), j) = .not. m(i,j)
+            end do
+        end do
+    end subroutine speckle
 
     subroutine params(ip, yp, kp)
         ! Four parameter sets: the module defaults, the NH set of yelmox_North.nml, linear profile
