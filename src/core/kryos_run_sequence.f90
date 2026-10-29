@@ -21,7 +21,7 @@ submodule (kryos_run) kryos_run_sequence
     use kryos_component, only: PASS_GEOMETRY, PASS_BOUNDARY, PASS_STATE, PASS_SPINUP, PASS_FINAL
     use kryos_wiring,    only: wire_node
     use kryos_geo,       only: geo_scatter
-    use kryos_globe,     only: gather_src_t, gather_src, gather_into, globe_update, globe_reduce, &
+    use kryos_globe,     only: gather_src_t, gather_src, gather_into, globe_update, globe_reduce, globe_pass, &
                                exchange_globe, exchange_to_globe
     use kryos_domain,    only: domain_present, domain_due, domain_prepare, domain_update, domain_time, exchange, exchange_into, &
                                domain_hub_update, domain_check_reference, &
@@ -52,6 +52,13 @@ contains
         integer :: d
 
         t0 = clock_time(run%clk)
+
+        ! phase 4 (plan 8.1): a host-resolved global geo is built before the domains' block a): the reference
+        ! from the domains' static exports and the background, VILMA2 initialised at it (exports: no anomaly)
+        if (run%globe%has_gi) then
+            call gia_reference(run)
+            call globe_pass(run%globe, "geo", run%clk, PASS_GEOMETRY)
+        end if
 
         ! a) bed and sea level (domain_init_isostasy): the geo state from the
         !    ice's reference and geometry and the global bsl
@@ -101,6 +108,21 @@ contains
                 call domain_pass(dom, C_ICE, run%clk, PASS_STATE)
                 call run_hook(run, d, HOOK_COLD_POST_STATE)
                 call domain_pass(dom, C_ICE, run%clk, PASS_SPINUP)
+            end associate
+        end do
+
+        ! the t0 load is final now (recon, equil, thermal): a host-resolved global geo spins up under it, is
+        ! seeded, and its anomalies land in the ports (no-op for any other geo)
+        call gia_seed(run)
+
+        do d = 1, run%n_dom
+            associate (dom => run%dom(d))
+                ! c') the domain on the Earth's solution: bed and sea level of the seed into the ice, its
+                !     diagnostics reconciled (the ice thickness is kept; z_srf follows the bed)
+                if (run%globe%has_gi) then
+                    call exchange(dom, "geo", "ice", t0, run%clk, init=.true.)
+                    call domain_pass(dom, C_ICE, run%clk, PASS_GEOMETRY)
+                end if
 
                 ! d) the surface on the final initial geometry: one more cycle, no spin-up
                 call domain_hub_update(dom, t0, run%clk, init=.true.)            ! couple_yelmo_to_htopo
@@ -147,6 +169,11 @@ contains
         integer  :: d, j, k
 
         dir = strip_slash(run%restart)
+        if (run%globe%has_gi) then
+            call fesm_error("kryos_run::run_restore", "a restore with a host-resolved global geo (vilma2) is not implemented yet", &
+                            "phase4-plan 8.2: the reference is rebuilt (gia_reference, PASS_GEOMETRY) and VILMA2 restored "// &
+                            "before the geo restore; start the run cold ([kryos] restart = ""None"")")
+        end if
 
         ! 1. clock and cadences
         call restart_read_clock(dir, run%clk, run%globe, run%dom)
@@ -233,7 +260,12 @@ contains
         ! 1. globe, start of the step: bsl_update(time_rel) (yelmox.f90:180),
         !    then coefs_update(time_rel, V_ice) (:185-186) on the previous step's
         !    ice mass and derived coefficients
-        if (geo_present(run%globe%geo)) call globe_update(run%globe, "geo", run%clk)
+        if (geo_present(run%globe%geo)) then
+            if (run%globe%has_gi) then                          ! the load of the previous step's ice (lag 1)
+                if (cadence_due(run%globe%geo%c%cadence, run%clk)) call gia_gather(run, init=.false.)
+            end if
+            call globe_update(run%globe, "geo", run%clk)
+        end if
         if (forcing_present(run%globe%forcing)) then
             call gather_forcing(run)
             do d = 1, run%n_dom
@@ -327,15 +359,18 @@ contains
     ! Globe <-> domain
     ! =========================================================================
 
-    subroutine bsl_to_geo(run, d, init)
-        ! The global geo's exports (bsl, A_ocn) into domain d's geo imports.
+    module subroutine bsl_to_geo(run, d, init)
+        ! The global geo's exports into domain d's geo imports: bsl and A_ocn; for the port of a
+        ! host-resolved global geo (vilma2) the rank-2 anomalies dz_bed and dz_ss (bilinear onto the geo
+        ! grid, the domain's coupler) and dphi as well: the scatter of the Earth's solution.
         type(run_t), target, intent(inout) :: run
         integer,             intent(in)    :: d
         logical,             intent(in)    :: init
 
         if (.not. geo_present(run%globe%geo)) return
         if (.not. domain_present(run%dom(d), C_GEO)) return
-        call exchange_globe(run%globe, "geo", run%dom(d)%wires, "geo", run%dom(d)%geo%c%imports, run%clk, init=init)
+        call exchange_globe(run%globe, "geo", run%dom(d)%wires, "geo", run%dom(d)%geo%c%imports, run%clk, init=init, &
+                            cpl=run%dom(d)%cpl)
     end subroutine bsl_to_geo
 
     subroutine reduce_bsl(run, t, ran, init)

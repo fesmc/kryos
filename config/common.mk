@@ -210,7 +210,7 @@ ifeq ($(vilma), 1)
     test_skip += $(testdir)/test_geo_vilma2_stub.f90
 else
     kryos_geo_vilma2_obj = $(objdir)/kryos_geo_vilma2_stub.o
-    test_skip += $(testdir)/test_geo_vilma2.f90
+    test_skip += $(testdir)/test_geo_vilma2.f90 $(testdir)/test_gia_sequence.f90
 endif
 
 # Backends whose adapters arrive in later phases (design section 14).
@@ -232,9 +232,9 @@ ifeq ($(need_lis_fftw), 1)
     dep_archives += $(LIS_ARCHIVE) $(FFTW_ARCHIVE)
 endif
 
-# Phase 3 WP1: the two-domain test needs what the sequence test needs.
+# Phase 3 WP1: the two-domain test needs what the sequence test needs; so does the VILMA2 sequence test (phase 4 WP4).
 ifneq ($(findstring test_run_sequence.f90,$(test_skip)),)
-    test_skip += $(testdir)/test_run_domains.f90
+    test_skip += $(testdir)/test_run_domains.f90 $(testdir)/test_gia_sequence.f90
 endif
 
 # Extra link flags. -Wl,-zmuldefs works around duplicate symbols in the static

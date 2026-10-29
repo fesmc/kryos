@@ -3,7 +3,11 @@ module kryos_globe
     ! 6, 7): the instances that belong to the run, not to a domain: the
     ! forcing (tsgen: coefficients on the forcing time) and the global part of
     ! geo (fastisostasy bsl: sea level and ocean area, the reduction of the
-    ! domains' volume changes). Phase 3 adds global grids and an ocean here.
+    ! domains' volume changes). A global geo that is resolved on the host's loads
+    ! (opt%host, vilma2) has its own grid: the globe owns the coupler of the global grids
+    ! (cpl: that grid, the background grid, the domains' ice grids) and the global ice
+    ! field gi (kryos_globe_ice); the domains' couplers get the grid by
+    ! globe_register_grid.
     !
     ! Plain type, free procedures. The globe never sees a domain: the
     ! exchanges are helpers on the rows a domain resolved (wire_resolve with
@@ -34,12 +38,14 @@ module kryos_globe
     use fesm_log,        only: LOG_INFO, log_msg, fesm_error, to_str
     use fesm_fields,     only: field_state_t
     use fesm_clock,      only: clock_t, cadence_due, cadence_mark, cadence_t_last, cadence_dt_years, &
-                               clock_time, clock_time_rel, clock_dtt
-    use coupler,         only: coupler_class
+                               clock_time, clock_time_rel, clock_time_init, clock_time_end, clock_dtt, &
+                               clock_to_years
+    use coupler,         only: coupler_class, coupler_init, coupler_add_grid
     use phys_constants,  only: phys_const_class
     use kryos_config,    only: config_t, config_read, config_validate, config_validate_instance, config_cadence
     use kryos_component, only: component_t, init_ctx_t, step_time_t, census_t, step_time_of, NAME_LEN, PATH_LEN
     use kryos_wiring,    only: wire_t, wire_node_t, wire_node, wire_exchange, wire_gather, wire_runs
+    use kryos_globe_ice, only: globe_ice_t, globe_ice_init, globe_ice_end, GI_NAME_LEN
     use kryos_forcing,   only: forcing_slot_t, forcing_create, forcing_init, forcing_init_state, &
                                forcing_update, forcing_end, forcing_present, forcing_restart_write, &
                                forcing_restart_read, forcing_restart_files
@@ -56,6 +62,10 @@ module kryos_globe
         type(geo_slot_t)     :: geo                     ! global part: fastisostasy bsl (scope "global")
         character(len=8)     :: clock_forcing = "model" ! the instances' `clock` key: model | forcing
         character(len=8)     :: clock_geo     = "model"
+        real(dp)             :: geo_dt = 0.0_dp, geo_phase = 0.0_dp   ! the geo's dt and phase keys (the regional ports take them)
+        type(coupler_class)  :: cpl                     ! global grids by name, map cache (a host-resolved geo)
+        type(globe_ice_t)    :: gi                      ! the global ice field (a host-resolved geo)
+        logical              :: has_gi = .false.        ! the global geo is host-resolved: cpl and gi are in use
     end type globe_t
 
     type, public :: gather_src_t                        ! one domain's contribution to a gather
@@ -66,7 +76,7 @@ module kryos_globe
 
     public :: globe_init, globe_init_state, globe_update, globe_time, globe_reduce, globe_end
     public :: globe_pass, globe_component, globe_restart_write, globe_restart_read, globe_restart_files
-    public :: globe_nodes
+    public :: globe_nodes, globe_register_grid
     public :: exchange_globe, exchange_to_globe, gather_src, gather_into
 
 contains
@@ -112,11 +122,48 @@ contains
             call globe_ctx(ctx, cfg, name, "geo", backend, clk, cnst)
             call geo_create(globe%geo, ctx, census)
             call geo_init(globe%geo, ctx)
-            call config_cadence(cfg, name, "geo", backend, clk, globe%geo%c%cadence, globe%clock_geo)
+            call config_cadence(cfg, name, "geo", backend, clk, globe%geo%c%cadence, globe%clock_geo, &
+                                dt_key=globe%geo_dt, phase_key=globe%geo_phase)
             call log_msg(LOG_INFO, "kryos_globe", "geo `"//trim(name)//"` ("//trim(backend)//", global), clock "// &
                          trim(globe%clock_geo)//", "//cadence_word(cadence_dt_years(globe%geo%c%cadence, clk)))
+            if (globe%geo%c%opt%host) call globe_gia_init(globe, cfg, clk, cnst, name, backend)
         end if
     end subroutine globe_init
+
+    subroutine globe_gia_init(globe, cfg, clk, cnst, name, backend)
+        ! The global ice field of a host-resolved geo (phase4-plan 3.4, 8.2): the coupler of the global grids
+        ! (its map folder is [kryos] map_fldr) and the group the instance's `ice_bg` names ([globe_ice]):
+        ! the datasrc of the background and of the external history, on the clock of the run (calendar year of
+        ! model time zero, the run's span). The domains' ice grids join at gia_reference.
+        type(globe_t),          intent(inout) :: globe
+        type(config_t),         intent(in)    :: cfg
+        type(clock_t),          intent(in)    :: clk
+        type(phys_const_class), intent(in)    :: cnst
+        character(len=*),       intent(in)    :: name, backend
+
+        character(len=GI_NAME_LEN) :: group
+
+        if (.not. allocated(globe%geo%c%grid_obj)) then
+            call fesm_error("kryos_globe::globe_init", "host-resolved geo `"//trim(name)//"` has no grid object", &
+                            "its init must set grid_obj with grid, nx and ny (opt%host)")
+        end if
+        group = "globe_ice"
+        call config_read(cfg, name, "ice_bg", group, "instance", "geo_"//trim(backend))
+        call coupler_init(globe%cpl, trim(cfg%map_fldr))
+        call globe_ice_init(globe%gi, cfg, globe%cpl, cnst, globe%geo%c%grid_obj, group=trim(group), &
+                            time_ref=clock_to_years(clk, clk%n_ref), time_span=[clock_time_init(clk), clock_time_end(clk)])
+        globe%has_gi = .true.
+    end subroutine globe_gia_init
+
+    subroutine globe_register_grid(globe, cpl)
+        ! The global geo's own grid (a host-resolved geo: GAUSS-L<lmax>) into the coupler of a domain, which
+        ! resolves the rows geo_g -> geo on it; no-op without one.
+        type(globe_t),       intent(in)    :: globe
+        type(coupler_class), intent(inout) :: cpl
+        if (.not. geo_present(globe%geo)) return
+        if (.not. allocated(globe%geo%c%grid_obj)) return
+        call coupler_add_grid(cpl, trim(globe%geo%c%grid), globe%geo%c%grid_obj)
+    end subroutine globe_register_grid
 
     subroutine globe_ctx(ctx, cfg, name, comp, backend, clk, cnst)
         ! The init_ctx_t of a global instance (no domain, no grid), at t0.
@@ -262,13 +309,17 @@ contains
         type(globe_t), intent(inout) :: globe
         if (forcing_present(globe%forcing)) call forcing_end(globe%forcing)
         if (geo_present(globe%geo)) call geo_end(globe%geo)
+        if (globe%has_gi) call globe_ice_end(globe%gi)
     end subroutine globe_end
 
     function globe_nodes(globe, clk) result(nodes)
-        ! The wire nodes of the present instances (forcing, geo_g), unchecked:
-        ! a domain's wire_resolve gets them next to its own nodes. The nodes
-        ! point into the globe's field states: `globe` must be a target at
-        ! the caller, and live as long as the rows.
+        ! The wire nodes of the present instances (forcing, geo_g), unchecked
+        ! (the core-filled and gathered imports of a global node are not any one
+        ! domain's to wire), except the host-resolved geo: its imports all have a
+        ! producer, a row or the core (wire_resolve's rule). A domain's
+        ! wire_resolve gets them next to its own nodes. The nodes point into the
+        ! globe's field states: `globe` must be a target at the caller, and live
+        ! as long as the rows.
         type(globe_t), target, intent(in) :: globe
         type(clock_t),         intent(in) :: clk
         type(wire_node_t), allocatable :: nodes(:)
@@ -277,7 +328,8 @@ contains
         if (forcing_present(globe%forcing)) &
             nodes = [nodes, wire_node(globe%forcing%c, cadence_dt_years(globe%forcing%c%cadence, clk), check=.false.)]
         if (geo_present(globe%geo)) &
-            nodes = [nodes, wire_node(globe%geo%c, cadence_dt_years(globe%geo%c%cadence, clk), check=.false.)]
+            nodes = [nodes, wire_node(globe%geo%c, cadence_dt_years(globe%geo%c%cadence, clk), &
+                                      check=globe%geo%c%opt%host)]
     end function globe_nodes
 
     ! =========================================================================
@@ -353,12 +405,15 @@ contains
     ! Exchanges
     ! =========================================================================
 
-    subroutine exchange_globe(globe, src_kind, wires, dst_kind, dst, clk, init)
+    subroutine exchange_globe(globe, src_kind, wires, dst_kind, dst, clk, init, cpl)
         ! The domain's resolved rows globe `src_kind` -> `dst_kind`, in table
         ! order: the published globe exports into the destination instance's
         ! imports `dst` (its field state). The lag check reads the globe
         ! instance's cadence (t_last, due) and the clock; init: cold start.
-        ! Rows are 0-D (every globe export is).
+        ! Rows are 0-D (every export of the forcing and of a barystatic geo)
+        ! or rank 2 (the anomalies of a host-resolved geo into a port: bilinear
+        ! onto the domain's grid): those remap through `cpl`, the domain's
+        ! coupler, in which wire_resolve primed the map.
         type(globe_t),       intent(in)    :: globe
         character(len=*),    intent(in)    :: src_kind     ! "forcing" | "geo"
         type(wire_t),        intent(inout) :: wires(:)     ! the domain's rows (domain%wires)
@@ -366,27 +421,38 @@ contains
         type(field_state_t), intent(inout) :: dst
         type(clock_t),       intent(in)    :: clk
         logical,             intent(in), optional :: init
+        type(coupler_class), intent(inout), optional :: cpl
 
-        type(coupler_class) :: cpl                         ! 0-D rows do not remap
+        type(coupler_class) :: cpl0                        ! 0-D rows do not remap
         character(len=16)   :: kind
         real(dp) :: t, t_last
-        logical  :: due
+        logical  :: due, rank2
         integer  :: i
 
         kind = globe_kind(src_kind)
         t = clock_time(clk)
         do i = 1, size(wires)
             if (.not. wire_runs(wires(i), kind, dst_kind)) cycle
-            call require_0d(dst, wires(i)%hd, wires(i)%src_kind, wires(i)%dst_kind)
+            rank2 = dst%f(wires(i)%hd)%rank > 0
+            if (rank2 .and. .not. present(cpl)) then
+                call fesm_error("kryos_globe", "row "//trim(wires(i)%src_kind)//" -> "//trim(wires(i)%dst_kind)// &
+                                ": import `"//trim(dst%f(wires(i)%hd)%name)//"` is not 0-D", &
+                                "a rank-2 row remaps: pass the domain's coupler (cpl)")
+            end if
             select case (trim(kind))
             case ("forcing")
+                call require_0d(dst, wires(i)%hd, wires(i)%src_kind, wires(i)%dst_kind)
                 t_last = cadence_t_last(globe%forcing%c%cadence, clk)
                 due    = cadence_due(globe%forcing%c%cadence, clk)
-                call wire_exchange(wires(i), globe%forcing%c%exports, dst, cpl, t, t_last, due=due, init=init)
+                call wire_exchange(wires(i), globe%forcing%c%exports, dst, cpl0, t, t_last, due=due, init=init)
             case ("geo_g")
                 t_last = cadence_t_last(globe%geo%c%cadence, clk)
                 due    = cadence_due(globe%geo%c%cadence, clk)
-                call wire_exchange(wires(i), globe%geo%c%exports, dst, cpl, t, t_last, due=due, init=init)
+                if (rank2) then
+                    call wire_exchange(wires(i), globe%geo%c%exports, dst, cpl, t, t_last, due=due, init=init)
+                else
+                    call wire_exchange(wires(i), globe%geo%c%exports, dst, cpl0, t, t_last, due=due, init=init)
+                end if
             end select
         end do
     end subroutine exchange_globe

@@ -462,7 +462,7 @@ contains
             if (keys(i)(1:n) /= KEY_PREFIX) cycle
             if (trim(keys(i)) == KEY_VARS) cycle
             if (any(names == keys(i)(n+1:))) cycle
-            names = [names, keys(i)(n+1:)]
+            names = [character(len=NAME_LEN) :: names, keys(i)(n+1:)]
         end do
     end function stream_names
 

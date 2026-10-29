@@ -340,17 +340,25 @@ contains
     ! Cadence of an instance
     ! =========================================================================
 
-    subroutine config_cadence(cfg, group, component, backend, clk, cadence, clock_mode)
+    subroutine config_cadence(cfg, group, component, backend, clk, cadence, clock_mode, dt_key, phase_key, &
+                              dt_in, phase_in, clock_in)
         ! The keys dt, phase and clock of an instance group (templates
         ! [instance] + [<component>_<backend>]): the instance's cadence on the
         ! clock (dt = 0: every step; dt > 0: the grid phase + k*dt; dt < 0: off)
         ! and its clock (model | forcing). Call after the instance's init and
         ! before clock_start (the cadence registers with the clock).
+        ! dt_key, phase_key: the values of the keys, returned (an instance that
+        ! another one follows hands them on). dt_in, phase_in, clock_in: the
+        ! instance takes these (as the keys read) instead of its own: a regional
+        ! port steps on the cadence of the global part it belongs to.
         type(config_t),   intent(in)    :: cfg
         character(len=*), intent(in)    :: group, component, backend
         type(clock_t),    intent(inout) :: clk
         type(cadence_t),  intent(inout) :: cadence
         character(len=*), intent(out)   :: clock_mode
+        real(dp),         intent(out), optional :: dt_key, phase_key
+        real(dp),         intent(in),  optional :: dt_in, phase_in
+        character(len=*), intent(in),  optional :: clock_in
 
         character(len=CFG_NAME_LEN) :: extra
         real(dp) :: dt, phase
@@ -360,6 +368,11 @@ contains
         call config_read(cfg, group, "dt",    dt,         "instance", extra)
         call config_read(cfg, group, "phase", phase,      "instance", extra)
         call config_read(cfg, group, "clock", clock_mode, "instance", extra)
+        if (present(dt_key))    dt_key    = dt
+        if (present(phase_key)) phase_key = phase
+        if (present(dt_in))     dt        = dt_in
+        if (present(phase_in))  phase     = phase_in
+        if (present(clock_in))  clock_mode = clock_in
 
         select case (trim(clock_mode))
         case ("model", "forcing")

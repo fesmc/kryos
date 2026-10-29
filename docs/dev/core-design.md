@@ -519,6 +519,34 @@ start, before `PASS_STATE`). Yelmo: `bnd_from_imports`, then records `st%tick` (
 tick at `t1`); `update` stops with a named error if its own `st%tick` differs
 (prepare skipped).
 
+### 3.10 Phase 4 WP4 as implemented (host-resolved global geo)
+
+- `globe_t` holds, for a global geo with `opt%host`, the coupler of the global grids (`globe%cpl`, the map folder of
+  `[kryos]`), the global ice field `globe%gi` (`kryos_globe_ice`, group `ice_bg` of the instance, default `[globe_ice]`:
+  background and history datasrc on the run's calendar year and span) and the geo's `dt` and `phase` keys. The
+  backend's own grid is `component_t%grid_obj` (with `grid`, `nx`, `ny`; `vilma_earth_t` builds `GAUSS-L<lmax>` with
+  `grid_init_gaussian(radius = r_earth)`, so the quadrature areas are VILMA2's and the adapter's radius check is
+  strict); `globe_register_grid` puts it in each domain's coupler, in which the rows `geo_g -> geo` are resolved and
+  primed. Its description file is written to the map folder as well (a read-back must agree, planet radius included).
+- `globe_nodes`: the host geo's node is resolved with `check = .true.` (every import has a row or is filled by the core);
+  the other global nodes stay unchecked. `gia_check` runs before the rows are resolved, so its messages come first.
+- `exchange_globe(..., cpl)`: rank-2 rows (the anomalies of a host geo into a port) remap through the domain's coupler
+  (`cpl`); without one a non-0-D destination stops as before.
+- A regional port (`opt%port`) steps on the cadence of the global part: `domain_create(..., port_dt, port_phase,
+  port_clock)` hands it the global geo's keys (`config_cadence(dt_in, phase_in, clock_in)`); `gia_check` stops on a `dt`
+  of its own that differs.
+- `kryos_run_gia` (submodule of `kryos_run`): `gia_reference` (statics of every ice -> `globe_ice` reference ->
+  imports `z_bed_ref`, `H_ice_ref`, `host_w`, `host_Ig_ref`, `host_C_ref` at t0), `gia_gather(init)` (the `T_GIA` rows
+  checked with `wire_lag_status` against the ice's last update, the load time is that update, imports `H_ice_ext`,
+  `host_w`, `host_Ig`, `host_C`, `host_F`), `gia_seed` (gather at t0, `PASS_STATE` of the global geo, the rows into the
+  ports, port `PASS_STATE`). The scatter at a step is the generic `bsl_to_geo` rows and the port's update of block 3:
+  the same code as for bsl. Cold start: `gia_reference` and the global `PASS_GEOMETRY` before block a), `gia_seed` after
+  block c) of every domain, block c') (rows geo -> ice, ice `PASS_GEOMETRY`) and block d) in a second domain loop (only
+  c') depends on the global geo; the split is neutral for the other runs). Step: `gia_gather` before the global update
+  when the global geo is due.
+- Not yet: the restore (a run with a host geo that is restarted stops naming this), the lon-lat output of the Earth's
+  rank-2 exports, `globe_ice` as an observer without `geo = vilma2`.
+
 ## 4. Timing, cadences, lags
 
 | Instance | Cadence (phase 1 configs) | `clock` | yelmox source |

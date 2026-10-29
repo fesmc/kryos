@@ -34,7 +34,7 @@ module kryos_run
     use kryos_gia_check,  only: gia_check
     use kryos_forcing,    only: forcing_present, forcing_kill, forcing_restart_due, forcing_restart_fldr
     use kryos_geo,        only: geo_present
-    use kryos_globe,      only: globe_t, globe_init, globe_init_state, globe_end, globe_nodes
+    use kryos_globe,      only: globe_t, globe_init, globe_init_state, globe_end, globe_nodes, globe_register_grid
     use kryos_domain,     only: domain_t, domain_init, domain_create, domain_wire, domain_component, domain_present, C_CLIMATE, &
                                 domain_pass, domain_end, domain_hub_write, exchange_static, &
                                 NCOMP, INIT_ORDER
@@ -97,6 +97,36 @@ module kryos_run
             ! core-design 3.4 steps 1-4 at the clock's (advanced) time.
             type(run_t), target, intent(inout) :: run
         end subroutine run_sequence
+
+        module subroutine bsl_to_geo(run, d, init)
+            ! The global geo's exports (bsl, A_ocn; for a port also the anomalies dz_bed, dz_ss and dphi)
+            ! into domain d's geo imports.
+            type(run_t), target, intent(inout) :: run
+            integer,             intent(in)    :: d
+            logical,             intent(in)    :: init
+        end subroutine bsl_to_geo
+    end interface
+
+    interface                                               ! submodule kryos_run_gia
+        module subroutine gia_reference(run)
+            ! phase4-plan 5.1: the reference of a host-resolved global geo, from the domains' static
+            ! exports and the background; its imports (z_bed_ref, H_ice_ref, host_w, host_Ig_ref,
+            ! host_C_ref) at t0. After run_pass_init, before the cold start or the restore.
+            type(run_t), target, intent(inout) :: run
+        end subroutine gia_reference
+
+        module subroutine gia_gather(run, init)
+            ! phase4-plan 4.1: the load of the domains' ice (the exports of the previous step; init: the
+            ! cold start's final ice at t0) into the host terms of the global geo's imports.
+            type(run_t), target, intent(inout) :: run
+            logical,             intent(in)    :: init
+        end subroutine gia_gather
+
+        module subroutine gia_seed(run)
+            ! phase4-plan 8.1: gather at t0, the global geo's spin-up and seed (PASS_STATE), the anomalies
+            ! into the ports (rows geo_g -> geo, port PASS_STATE).
+            type(run_t), target, intent(inout) :: run
+        end subroutine gia_seed
     end interface
 
 contains
@@ -138,13 +168,23 @@ contains
                          " in the par file: the run has no global instances")
         end if
 
-        ! 4. domains: groups, grids, hub, refs; instances; rows (with the globe's nodes)
+        ! 4. domains: groups, grids, hub, refs; instances; rows (with the globe's nodes). A host-resolved
+        !    global geo (vilma2): the regional ports step on its cadence, and its grid is known to each
+        !    domain's coupler (the rows geo_g -> geo are resolved on it)
         run%n_dom = size(run%cfg%domains)
         allocate(run%dom(run%n_dom))
         do d = 1, run%n_dom
             call domain_init(run%dom(d), run%cfg, trim(run%cfg%domains(d)), run%cnst, clock_time(run%clk))
-            call domain_create(run%dom(d), run%cfg, run%clk, run%cnst, run%census)
+            if (run%globe%has_gi) then
+                call domain_create(run%dom(d), run%cfg, run%clk, run%cnst, run%census, &
+                                   port_dt=run%globe%geo_dt, port_phase=run%globe%geo_phase, &
+                                   port_clock=run%globe%clock_geo)
+                call globe_register_grid(run%globe, run%dom(d)%cpl)
+            else
+                call domain_create(run%dom(d), run%cfg, run%clk, run%cnst, run%census)
+            end if
         end do
+        call gia_check(run%globe, run%dom, run%cfg)      ! vilma2: which instances go together, what the ice offers
         do d = 1, run%n_dom
             call domain_wire(run%dom(d), run%clk, extra=globe_nodes(run%globe, run%clk))
         end do
@@ -158,7 +198,6 @@ contains
         end do
         call run_check_names(run)
         call run_check_producers(run)
-        call gia_check(run%globe, run%dom, run%cfg)      ! vilma2: which instances go together, what the ice offers
         run%dom_order = name_order(run%dom)
 
         ! 5. schedules: the run's (restart), the output streams (instances, hubs, timing)

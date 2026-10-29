@@ -348,7 +348,7 @@ contains
                               grid_name=trim(dom%grid_hub), grid=grid, verbose=.false.)
     end subroutine domain_regions_load
 
-    subroutine domain_create(dom, cfg, clk, cnst, census)
+    subroutine domain_create(dom, cfg, clk, cnst, census, port_dt, port_phase, port_clock)
         ! The instances of the domain (core-design 3.1 step 4), in INIT_ORDER:
         ! each present component's init_ctx_t (instance_ctx), its factory
         ! (admission against the run's census), <comp>_init, its cadence on
@@ -356,11 +356,17 @@ contains
         ! and its field states. The axes an instance declares (the climate's
         ! month and depth) reach the instances made after it in ctx%axes.
         ! Call after domain_init and before domain_wire and clock_start.
+        ! port_dt, port_phase, port_clock: the dt and phase keys and the clock of the global geo
+        ! (kryos_globe); a geo instance that is the regional port of a host-resolved global part
+        ! (opt%port) steps on that cadence whatever its own keys say (kryos_gia_check stops on a dt
+        ! that differs).
         type(domain_t),  target, intent(inout) :: dom
         type(config_t),          intent(in)    :: cfg
         type(clock_t),           intent(inout) :: clk
         type(phys_const_class),  intent(in)    :: cnst
         type(census_t),          intent(inout) :: census
+        real(dp),                intent(in), optional :: port_dt, port_phase
+        character(len=*),        intent(in), optional :: port_clock
 
         type(init_ctx_t) :: ctx
         type(axis_t), allocatable :: axes(:)
@@ -376,7 +382,16 @@ contains
             call create_init(dom, k, ctx, census)
 
             c => domain_component(dom, k)
-            call config_cadence(cfg, dom%inst(k), trim(COMP_NAME(k)), dom%backend(k), clk, c%cadence, dom%clock(k))
+            if (k == C_GEO .and. present(port_dt) .and. present(port_phase) .and. present(port_clock)) then
+                if (dom%geo%c%opt%port) then
+                    call config_cadence(cfg, dom%inst(k), trim(COMP_NAME(k)), dom%backend(k), clk, c%cadence, &
+                                        dom%clock(k), dt_in=port_dt, phase_in=port_phase, clock_in=port_clock)
+                else
+                    call config_cadence(cfg, dom%inst(k), trim(COMP_NAME(k)), dom%backend(k), clk, c%cadence, dom%clock(k))
+                end if
+            else
+                call config_cadence(cfg, dom%inst(k), trim(COMP_NAME(k)), dom%backend(k), clk, c%cadence, dom%clock(k))
+            end if
             if (allocated(c%axes)) then
                 do i = 1, size(c%axes)
                     if (axis_find(axes, c%axes(i)%name) == 0) axes = [axes, c%axes(i)]
