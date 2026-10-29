@@ -105,6 +105,7 @@ contains
 
         terms%who = who
         terms%n   = count(len_trim(names) > 0)
+        if (.not. allocated(coefs%coef)) allocate(coefs%coef(0))    ! no term: an empty table (size() of an unallocated one is undefined)
         if (allocated(terms%term)) deallocate(terms%term)
         allocate(terms%term(terms%n))
 
