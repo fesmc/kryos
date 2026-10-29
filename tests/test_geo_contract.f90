@@ -107,6 +107,7 @@ program test_geo_contract
     use fesm_fields,     only: field_t, fields_has, fields_put, FIELD_INSTANT
     use kryos_component, only: init_ctx_t, step_time_t, census_t, constraints_t
     use kryos_geo,       only: geo_t, geo_slot_t, geo_adopt, geo_init, geo_scatter
+    use kryos_wiring,    only: wire_node_t, wire_node
     use test_geo_toys,   only: toy_reg_t, toy_port_t, toy_host_t, toy_nogrid_t, GNX, GNY
 
     implicit none
@@ -237,7 +238,8 @@ contains
     end subroutine test_port
 
     subroutine test_host()
-        type(geo_slot_t) :: g
+        type(geo_slot_t), target :: g, r
+        type(wire_node_t) :: n, nr
         character(len=*), parameter :: G_ = "GAUSS-TOY"
 
         write(*,"(a)") "global part with opt%host"
@@ -265,6 +267,14 @@ contains
                            any(g%c%core_imports == "z_bed_ref") .and. any(g%c%core_imports == "H_ice_ref"))
             end if
         end associate
+
+        ! the wire node carries the marking to wire_resolve (the global part is kind geo_g)
+        call make_geo(r, "reg", "regional")
+        n  = wire_node(g%c, 10.0_dp)
+        nr = wire_node(r%c, 10.0_dp)
+        call check("wire_node of the host part: kind geo_g, the three names", trim(n%kind) == "geo_g" .and. &
+                   associated(n%core) .and. size(n%core) == 3 .and. any(n%core == "H_ice_ext"))
+        call check("wire_node of a regional geo: nothing marked", .not. associated(nr%core))
     end subroutine test_host
 
     subroutine test_scatter()

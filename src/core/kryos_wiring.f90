@@ -74,6 +74,7 @@ module kryos_wiring
         type(field_state_t), pointer :: imports => null(), exports => null()
         type(axis_t),        pointer :: axes(:) => null()
         character(len=FIELD_NAME_LEN), pointer :: opt(:) => null()   ! imports that may stay unwired
+        character(len=FIELD_NAME_LEN), pointer :: core(:) => null()  ! imports the core fills outside the rows
     end type wire_node_t
 
     public :: wire, wiring_table, wire_node, wire_node_states
@@ -216,9 +217,10 @@ contains
         n%exports => c%exports
         if (allocated(c%axes))        n%axes => c%axes
         if (allocated(c%opt_imports)) n%opt  => c%opt_imports
+        if (allocated(c%core_imports)) n%core => c%core_imports
     end function wire_node
 
-    function wire_node_states(kind, name, imports, exports, prec, dt, check, axes, opt) result(n)
+    function wire_node_states(kind, name, imports, exports, prec, dt, check, axes, opt, core) result(n)
         ! A node from bare field states (the hub; toy states). The actual
         ! arguments must have the target attribute.
         character(len=*),            intent(in) :: kind, name
@@ -228,6 +230,7 @@ contains
         logical,                     intent(in), optional :: check
         type(axis_t), target,        intent(in), optional :: axes(:)
         character(len=FIELD_NAME_LEN), target, intent(in), optional :: opt(:)
+        character(len=FIELD_NAME_LEN), target, intent(in), optional :: core(:)
         type(wire_node_t) :: n
 
         n%kind = kind
@@ -239,6 +242,7 @@ contains
         n%exports => exports
         if (present(axes)) n%axes => axes
         if (present(opt))  n%opt  => opt
+        if (present(core)) n%core => core
     end function wire_node_states
 
     integer function node_index(nodes, kind) result(k)
@@ -263,7 +267,10 @@ contains
         ! reach). Each row is active iff both fields are declared, else inactive
         ! with a reason. Then, stopping with a named message on failure:
         !   1. every required import of a checked node has exactly one active
-        !      row, an optional one at most one (gaps, duplicates);
+        !      row, an optional one at most one (gaps, duplicates); an import the
+        !      node says the core fills (the global geo's external ice and
+        !      background reference, filled by gia_gather / globe_ice) that no
+        !      row of the table names is no gap, and is logged;
         !   2. fields_check_link per active row; rank 3: same zdim, identical axis;
         !   3. no masked field across two grids; MEAN -> INSTANT rows need equal
         !      cadences;
@@ -534,7 +541,7 @@ contains
         character(len=*), parameter :: proc = "kryos_wiring::wire_resolve"
         character(len=:), allocatable :: who, rows, why
         integer :: n, h, i, nact, nany
-        logical :: optional_
+        logical :: optional_, core_
 
         bad = .false.
         do n = 1, size(nodes)
@@ -543,6 +550,8 @@ contains
                 associate (nm => nodes(n)%imports%f(h)%name)
                     optional_ = .false.
                     if (associated(nodes(n)%opt)) optional_ = any(trim(nm) == nodes(n)%opt)
+                    core_ = .false.
+                    if (associated(nodes(n)%core)) core_ = any(trim(nm) == nodes(n)%core)
                     nact = 0;  nany = 0
                     rows = "";  why = ""
                     do i = 1, size(w)
@@ -556,6 +565,10 @@ contains
                         end if
                     end do
                     who = trim(nodes(n)%kind)//" `"//trim(nodes(n)%name)//"` import `"//trim(nm)//"`"
+                    if (core_ .and. nany == 0) then     ! no row feeds it: the core does
+                        call log_msg(LOG_INFO, proc, who//": no wiring row, filled by gia_gather / globe_ice")
+                        cycle
+                    end if
                     if (nact == 0 .and. .not. optional_ .and. nodes(n)%check) then
                         if (nany == 0) why = "no row of the wiring table feeds it"
                         if (nm(1:min(5, len(nm))) == "coef_") why = trim(why)//"; is the coefficient in `[forcing] coefs`?"

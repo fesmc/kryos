@@ -345,6 +345,7 @@ contains
         integer :: h, i, k, stat, nrow
         character(len=:), allocatable :: msg
         character(len=32) :: gnames(9)
+        character(len=FIELD_NAME_LEN), target :: core_names(3)
 
         write(*,"(a)") "T_GIA rows and the globe rows of a host-resolved geo"
         call fields_init(ice_ei, "ice:imports");  call fields_lock(ice_ei)
@@ -453,6 +454,25 @@ contains
         call check("reference rows inactive, naming the missing export", &
                    .not. w2(k)%active .and. index(w2(k)%reason, "`footprint`") > 0)
         call check("the step rows are unaffected", w2(row_of(w2, "ice.H_ice -> geo_g.host_F"))%active)
+
+        ! the global part checked for gaps: the imports of the core (the external ice, the background
+        ! reference: no row of the table names them) are not gaps when the node says so
+        core_names = [character(len=FIELD_NAME_LEN) :: "H_ice_ext", "z_bed_ref", "H_ice_ref"]
+        nodes(1) = wire_node_states("ice", "ice_nh", ice_ei, ice_x, sp, 10.0_dp, check=.false.)
+        nodes(2) = wire_node_states("geo_g", "geo_glob", gh_i, gh_e, dp, 10.0_dp, check=.true., core=core_names)
+        call wire_resolve(w, nodes, cpl, stat=stat)
+        call check("checked host part: H_ice_ext, z_bed_ref, H_ice_ref filled by the core, the rest by rows", stat == 0)
+        nodes(2) = wire_node_states("geo_g", "geo_glob", gh_i, gh_e, dp, 10.0_dp, check=.true.)
+        call wire_resolve(w, nodes, cpl, stat=stat)
+        call check("the same node without the marking: a gap (H_ice_ext has no producer)", stat /= 0)
+        nodes(2) = wire_node_states("geo_g", "geo_glob", gh_i, gh_e, dp, 10.0_dp, check=.true., core=core_names)
+        nodes(1) = wire_node_states("ice", "ice_nh", ice_ei, ice_x2, sp, 10.0_dp, check=.false.)
+        call wire_resolve(w, nodes, cpl, stat=stat)
+        call check("marked, but the T_GIA rows into host_Ig_ref, host_C_ref are inactive (no footprint): a gap", stat /= 0)
+        nodes(1) = wire_node_states("ice", "ice_nh", ice_ei, ice_x, sp, 10.0_dp, check=.false.)
+        call wire_resolve(w, nodes, cpl, table=[wire("ice", "z_bed", "geo_g", "z_bed_ref", "bilin"), &
+                                                wire("ice", "z_bed_ref", "geo_g", "z_bed_ref", "bilin")], stat=stat)
+        call check("two rows into a marked import stop (duplicates)", stat /= 0)
     end subroutine tc_gia
 
     subroutine build(nodes)
@@ -1156,6 +1176,7 @@ contains
     subroutine tc_aborts()
         write(*,"(a)") "aborts (child processes)"
         call expect_abort("gia_exchange", "is a T_GIA row")
+        call expect_abort("host_unmarked", "geo_g `geo_glob` import `H_ice_ext` has no producer")
         call expect_abort("lag_swapped", "runs before the producer")
         call expect_abort("lag_after", "runs after the producer")
         call expect_abort("lag_unmarked", "last update")
@@ -1202,6 +1223,14 @@ contains
         call fields_init(sx, "src:exports");  call st_add(sx, "a", "m", FIELD_INSTANT, FIELD_INTENSIVE, GF);  call fields_lock(sx)
         call fields_init(di, "dst:imports");  call st_add(di, "a", "m", FIELD_INSTANT, FIELD_INTENSIVE, GF);  call fields_lock(di)
         select case (trim(arg))
+        case ("host_unmarked")                  ! a checked global geo whose external ice is not marked as the core's
+            call fields_init(sx, "ice:exports");  call st_add(sx, "H_ice", "m", FIELD_INSTANT, FIELD_INTENSIVE, GF)
+            call fields_lock(sx)
+            call fields_init(di, "geo_glob:imports");  call st_add(di, "H_ice_ext", "m", FIELD_INSTANT, FIELD_INTENSIVE, GF)
+            call fields_lock(di)
+            nodes(1) = wire_node_states("ice", "ice_nh", ei, sx, sp, 10.0_dp, check=.false.)
+            nodes(2) = wire_node_states("geo_g", "geo_glob", di, ee, dp, 10.0_dp)
+            call wire_resolve(w, nodes, cpl, table=[wire("ice", "H_ice", "geo", "H_ice")])    ! no row names H_ice_ext
         case ("gia_exchange")
             call fields_init(sx, "src:exports")
             call st_add(sx, "a", "m", FIELD_INSTANT, FIELD_INTENSIVE, GF);  call fields_lock(sx)
