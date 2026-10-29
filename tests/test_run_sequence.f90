@@ -219,6 +219,7 @@ program test_run_sequence
     !     test_run_sequence.x restored <par file>     a restored chunk + checks
     !     test_run_sequence.x hooks <par file>        a restored chunk with the recorder experiment + checks
     !     test_run_sequence.x counter <par file>      a restored chunk with a stateful experiment + checks
+    !     test_run_sequence.x xexp <par file>         a run (cold or restored) with the plugin experiments + checks
     !     test_run_sequence.x require <folder> <file> restart_require_files of one file
     ! Built only with yelmo=1 fastisostasy=1 chion=1 (config/common.mk).
 
@@ -237,6 +238,7 @@ program test_run_sequence
     use kryos_ice,       only: ice_flotation
     use kryos_ice_yelmo, only: yelmo_ice_t
     use yelmo_defs,      only: MASK_ICE_NONE
+    use kryos_exp_relax, only: relax_exp_t
     use kryos_climate_snapshots,  only: snapshots_climate_t
     use kryos_surface_chion,      only: chion_surface_t
     use kryos_shelf_marine_shelf, only: marshelf_shelf_t
@@ -261,7 +263,7 @@ program test_run_sequence
 
     call get_command_argument(1, arg)
     select case (trim(arg))
-    case ("run", "plain", "restored", "hooks", "counter", "require")
+    case ("run", "plain", "restored", "hooks", "counter", "xexp", "require")
         call get_command_argument(2, par_arg)
         select case (trim(arg))
         case ("require")
@@ -274,6 +276,7 @@ program test_run_sequence
         case ("restored"); call restored_child(trim(par_arg))
         case ("hooks");    call hooks_child(trim(par_arg))
         case ("counter");  call counter_child(trim(par_arg))
+        case ("xexp");     call xexp_child(trim(par_arg))
         end select
         stop 0
     end select
@@ -296,6 +299,7 @@ program test_run_sequence
 
     call round_trip()
     call manifest_mismatch()
+    call exp_round_trip()
 
     if (nfail > 0) then
         write(*,'(a,i0,a)') "test_run_sequence: FAILED (", nfail, " checks)"
@@ -533,6 +537,71 @@ contains
         write(*,'(a)') "test_run_sequence (hooks): OK"
     end subroutine hooks_child
 
+    subroutine xexp_child(par_file)
+        ! A run (cold start, or restored from a bundle) with the plugin experiments
+        ! of the xr/ set (relax; core-design 3.9): after every step the topography
+        ! relaxation of Yelmo is what relax_update gives for the elapsed time of the
+        ! clock (continuous across chunks), then the par-file values after time2.
+        character(len=*), intent(in) :: par_file
+
+        type(run_t), target :: run
+        integer :: n, topo_rel0
+        real(dp) :: t
+        logical :: ok
+
+        call run_init(run, par_file, protos=host_protos())
+        write(*,'(a)') "--- plugin experiments (relax)"
+        select type (x => run%exps(1)%s(1)%c)
+        type is (relax_exp_t)
+            call check(x%topo_rel0 == 0 .and. x%topo_rel_tau0 == 10.0_sp, "relax: the par-file ytopo values recorded at init")
+            call check(x%wants(HOOK_STEP_BEGIN) .and. count(x%wants) == 1, "relax: wants STEP_BEGIN only")
+        class default
+            call check(.false., "the first experiment is relax")
+        end select
+        select type (c => run%dom(1)%ice%c)
+        type is (yelmo_ice_t)
+            if (.not. run%clk%continued) call check(c%ylmo%tpo%par%topo_rel == 0, "cold start: no relaxation before the first step")
+        end select
+
+        n = 0
+        ok = .true.
+        do while (.not. run_done(run))
+            call run_step(run)
+            n = n + 1
+            t = clock_time_elapsed(run%clk)
+            select type (c => run%dom(1)%ice%c)
+            type is (yelmo_ice_t)
+                topo_rel0 = c%ylmo%tpo%par%topo_rel
+                if (t <= 60.0_dp) then
+                    ok = ok .and. topo_rel0 == 3 .and. &
+                         abs(c%ylmo%tpo%par%topo_rel_tau - real(tau_expected(t), sp)) <= 1e-5_sp*real(tau_expected(t), sp)
+                else
+                    ok = ok .and. topo_rel0 == 0 .and. c%ylmo%tpo%par%topo_rel_tau == 10.0_sp
+                end if
+                if (.not. ok) write(*,'(a,f8.1,a,i0,a,es12.4)') "  at elapsed ", t, ": topo_rel = ", topo_rel0, &
+                                                                 ", tau = ", c%ylmo%tpo%par%topo_rel_tau
+            end select
+        end do
+        call check(ok, "relax: topo_rel = 3 and the tau ramp (100 -> 2000, 20 -> 60 yr, m = 2) of the elapsed time, "// &
+                   "the par-file values after 60 ("//trim(itoa(n))//" steps)")
+        call run_end(run)
+        if (nfail > 0) then
+            write(*,'(a,i0,a)') "test_run_sequence (xexp): FAILED (", nfail, " checks)"
+            error stop 1
+        end if
+        write(*,'(a)') "test_run_sequence (xexp): OK"
+    end subroutine xexp_child
+
+    real(dp) function tau_expected(t)
+        ! relax_update's ramp: tau1 until time1, then tau1 + (tau2 - tau1)*((t - time1)/(time2 - time1))**m
+        real(dp), intent(in) :: t
+        if (t <= 20.0_dp) then
+            tau_expected = 100.0_dp
+        else
+            tau_expected = 100.0_dp + 1900.0_dp*((t - 20.0_dp)/40.0_dp)**2
+        end if
+    end function tau_expected
+
     ! =========================================================================
     ! C10: restart round trip, manifest checks
     ! =========================================================================
@@ -614,19 +683,69 @@ contains
         call same_record(CONT//"ice_grl.nc", C01//"ice_grl.nc", "H_ice", T_END, "output ice_grl.nc H_ice at 80")
         call same_record(CONT//"surface_grl.nc", C01//"surface_grl.nc", "smb", T_END, "output surface_grl.nc smb at 80")
 
-        call compare_tool()
+        call compare_tool("")
     end subroutine round_trip
 
-    subroutine compare_tool()
+    subroutine exp_round_trip()
+        ! The plugin experiments (xr/ set): the same restart round trip as above,
+        ! cont 0 -> 80 against chunks 0 -> 40 -> 80, with relax active (window time
+        ! 20-60 yr: the ramp straddles the restart). Each run checks its own state
+        ! (xexp_child); the comparison tool checks chunk = cont bit for bit.
+        character(len=:), allocatable :: d
+        character(len=*), parameter :: X = "xr/", XC = "xr/cont/", X0 = "xr/chunk/c00/", X1 = "xr/chunk/c01/"
+        character(len=24) :: names(1)
+        logical :: ok
+
+        write(*,'(a)') "--- plugin experiments: restart round trip with relax"
+        d = trim(repo)//"/"//DIR
+        names = [character(len=24) :: "exp_relax"]
+        call setup_run_dir(XC)
+        call setup_run_dir(X0)
+        call setup_run_dir(X1)
+        call write_par(d//XC//PAR, "None", 0.0_dp, T_END, T_MID, explist=names, xlines=exp_lines(names))
+        call write_par(d//X0//PAR, "None", 0.0_dp, T_MID, T_MID, explist=names, xlines=exp_lines(names))
+        call write_par(d//X1//PAR, "../c00/restart-40", T_MID, T_END, T_MID, explist=names, xlines=exp_lines(names))
+        ok = child(XC, "xexp "//PAR, "run.log")
+        call sh("grep -E '^  (ok|FAIL|OPEN)|^---' '"//d//XC//"run.log'")
+        call check(ok, "continuous run 0 -> 80 with relax ("//DIR//XC//"run.log)")
+        ok = child(X0, "xexp "//PAR, "run.log")
+        call check(ok, "chunk 0 -> 40 with relax ("//DIR//X0//"run.log)")
+        ok = child(X1, "xexp "//PAR, "run.log")
+        call sh("grep -E '^  (ok|FAIL|OPEN)|^---' '"//d//X1//"run.log'")
+        call check(ok, "chunk 40 -> 80 with relax: the ramp continues on the elapsed time ("//DIR//X1//"run.log)")
+        if (nfail > 0) return
+        call compare_tool(X)
+    end subroutine exp_round_trip
+
+    function exp_lines(names) result(lines)
+        ! The par-file groups of the plugin experiments named in `names` (test values: relax
+        ! with a ramp inside the 80 yr of the run).
+        character(len=*), intent(in) :: names(:)
+        character(len=400), allocatable :: lines(:)
+        integer :: i
+
+        allocate(lines(0))
+        do i = 1, size(names)
+            select case (trim(names(i)))
+            case ("exp_relax")
+                lines = [character(len=400) :: lines, "&exp_relax", "  kind = 'relax'", "  topo_rel = 3", "  tau1 = 100.0", &
+                         "  tau2 = 2000.0", "  time1 = 20.0", "  time2 = 60.0", "  m = 2.0", "/"]
+            end select
+        end do
+    end function exp_lines
+
+    subroutine compare_tool(sub)
         ! tools/bin/kryos-compare.jl --chunks: every file of cont against the
         ! chunk folders c00, c01 (records after their start) and the bundles
-        ! at 40 and 80, class E. Julia project: $KRYOS_TOOLS, else <repo>/tools.
+        ! at 40 and 80, class E, of the run set tmp/test_run_sequence/<sub>.
+        ! Julia project: $KRYOS_TOOLS, else <repo>/tools.
+        character(len=*), intent(in) :: sub
         character(len=512) :: tools
         character(len=:), allocatable :: d, cmd
         integer :: u, es, es2
         character(len=*), parameter :: PC_TAU_MAX = "c01/restart-80/Greenland/ice_grl_restart.nc:pc_tau_max"
 
-        d = trim(repo)//"/"//DIR
+        d = trim(repo)//"/"//DIR//sub
         call get_environment_variable("KRYOS_TOOLS", tools)
         if (len_trim(tools) == 0) tools = trim(repo)//"/tools"
         call execute_command_line("julia --project='"//trim(tools)//"' -e 'using KryosTools' > /dev/null 2>&1", &
@@ -662,7 +781,7 @@ contains
         if (es /= 0) call sh("grep -E '^# |^- |^## |\| fail \|' '"//d//"compare.md' | head -n 60; "// &
                              "tail -n 20 '"//d//"compare.log'")
         call check(es == 0, "kryos-compare --chunks: every record after 40 and the bundles at 40, 80 equal to cont "// &
-                   "(report "//DIR//"compare.md)")
+                   "(report "//DIR//sub//"compare.md)")
     end subroutine compare_tool
 
     subroutine manifest_mismatch()
@@ -1204,18 +1323,21 @@ contains
         call nc_write(file, "so",    s,                dim1="xc", dim2="yc", dim3="depth")
     end subroutine write_data
 
-    subroutine write_par(file, restart, time_init, time_end, dt_rst, sed, exps)
+    subroutine write_par(file, restart, time_init, time_end, dt_rst, sed, exps, explist, xlines, vel)
         ! The Greenland par file of the run: kryos groups (core-design 5), the
         ! hub's groups (ice_data), and the backend groups (yelmox_Greenland.nml
         ! values where they matter; library defaults otherwise). The clock
         ! runs time_init -> time_end with restart bundles every dt_rst (and at
         ! time_end); `sed` renames the sediments instance (default sed_grl).
+        ! `exps`: one host experiment of that name; `explist`: the groups named by the
+        ! domain's `experiments` (their lines in `xlines`); `vel`: Yelmo's
+        ! present-day velocity file (pd_vel_load).
         character(len=*), intent(in) :: file, restart
         real(dp),         intent(in) :: time_init, time_end, dt_rst
-        character(len=*), intent(in), optional :: sed, exps
+        character(len=*), intent(in), optional :: sed, exps, explist(:), xlines(:), vel
 
-        character(len=:), allocatable :: topo, basins, sed_name, exp_key
-        integer :: u
+        character(len=:), allocatable :: topo, basins, sed_name, exp_key, vel_load, vel_path
+        integer :: u, i
 
         topo   = trim(root)//"/{domain}/{grid_name}/{grid_name}_TOPO-M17-v5.nc"
         basins = trim(root)//"/{domain}/{grid_name}/{grid_name}_BASINS-nasa.nc"
@@ -1223,6 +1345,18 @@ contains
         if (present(sed)) sed_name = sed
         exp_key = ""
         if (present(exps)) exp_key = "  experiments = '"//exps//"'"      ! a host experiment of that name
+        if (present(explist)) then
+            exp_key = "  experiments ="
+            do i = 1, size(explist)
+                exp_key = exp_key//" '"//trim(explist(i))//"'"
+            end do
+        end if
+        vel_load = "  pd_vel_load = False"
+        vel_path = ""
+        if (present(vel)) then
+            vel_load = "  pd_vel_load = True"
+            vel_path = "  pd_vel_path = '"//vel//"'"
+        end if
 
         open(newunit=u, file=file, status="replace", action="write")
         call w(u, [character(len=400) :: &
@@ -1258,6 +1392,11 @@ contains
             "&"//sed_name, "  backend = 'data'", "  dt = -1.0", "  H_sed = 'sed_none'", "/", &
             "&sed_none", "  mode = 'const'", "  value = 0.0", "/"])
         if (present(exps)) write(u,'(a)') "&"//exps, "  kind = 'host'", "/"
+        if (present(xlines)) then
+            do i = 1, size(xlines)
+                write(u,'(a)') trim(xlines(i))
+            end do
+        end if
         ! forcing coefficients
         call w(u, [character(len=400) :: &
             "&coef_alpha", "  method = 'const'", "  f_min = 0.5", "/", &
@@ -1287,7 +1426,7 @@ contains
             "&yelmo_masks", "  basins = 'None'", "  mask_ice_dynamic = 'all'", "  mask_rmse = 'all'", "/", &
             "&yelmo_init_topo", "/", &
             "&yelmo_data", "  pd_topo_load = False", "  pd_tsrf_load = False", "  pd_smb_load = False", &
-            "  pd_vel_load = False", "  pd_age_load = False", "/"])
+            vel_load, vel_path, "  pd_age_load = False", "/"])
         ! FastIsostasy and the global bsl (yelmox_Greenland.nml; constant ocean area)
         call w(u, [character(len=400) :: &
             "&isos", "  heterogeneous_ssh = .true.", "  interactive_sealevel = .true.", "  include_elastic = .true.", &
