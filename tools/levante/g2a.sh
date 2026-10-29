@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=64
 #SBATCH --exclusive
 #SBATCH --job-name=g2a
-# G2a: tests/g2a_cap.f90 (the VILMA2 adapter on a land-ice cap, lmax 170, the science-case &vilma) and vilma.x on the same load,
+# G2a: tests/g2a_cap.f90 (env G2A_SPINUP=0: no spin-up in both runs) (the VILMA2 adapter on a land-ice cap, lmax 170, the science-case &vilma) and vilma.x on the same load,
 # then g2a_compare.jl. sbatch --export=ALL,NSTEP=6,TAG=cap g2a.sh. Run folder $G/runs/g2a/kx-<sha>/S6/<TAG>.
 set -uo pipefail
 module load python3 >/dev/null 2>&1 || true

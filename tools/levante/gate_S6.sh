@@ -6,18 +6,19 @@
 set -euo pipefail
 G=/work/ba1442/robinson/kryos-gate; S=$G/stacks/S6; KSHA=cd85c14; P=$G/p4w7
 RK=${RK:-$P/levante/run_kryos.sh}; RKK=${RKK:-$P/levante/run_kryos_kk.sh}
+M=${MAPS:-$G/maps/S5}      # the maps of the fastiso configurations: the S5 files (maps/S6 = maps/S5 + the new pairs)
 case ${1:-} in
   id)
     for g in grl ant; do
-        K=$S/kryos-v0 KSHA=$KSHA VILMA=0 STACK=S6 RLABEL=S6-v0 MAPS=$G/maps/S5 $RK $g cont
+        K=$S/kryos-v0 KSHA=$KSHA VILMA=0 STACK=S6 RLABEL=S6-v0 MAPS=$M $RK $g cont
         OUTROOT=$G/ref-S6 $G/tools/submit_ref.sh S6 $g cont $G/maps/S5 | sed "s/^/R2 $g /"
     done ;;
   g1)
     for g in grl ant ant-full nor; do
-        K=$S/kryos KSHA=$KSHA VILMA=1 STACK=S6 MAPS=$G/maps/S6 $RK $g cont
+        K=$S/kryos KSHA=$KSHA VILMA=1 STACK=S6 MAPS=$M $RK $g cont
     done
     for g in sci sci-const; do
-        K=$S/kryos KSHA=$KSHA VILMA=1 STACK=S6 MAPS=$G/maps/S6 TOOLS=$P/kryos $RKK $g cont
+        K=$S/kryos KSHA=$KSHA VILMA=1 STACK=S6 MAPS=$M TOOLS=$P/kryos $RKK $g cont
     done ;;
   *) echo "usage: gate_S6.sh id|g1"; exit 1 ;;
 esac

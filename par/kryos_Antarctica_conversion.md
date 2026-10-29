@@ -34,8 +34,8 @@ Not counted: 28 keys that yelmox fills from its defaults in dropped groups (coef
 | `comps.with_shelf` | a component runs iff the domain names an instance (all present) |
 | `sim.init_marine_H` | experiment or cold-start plugin (phase 2), off |
 | `sim.init_kill_shelves` | experiment or cold-start plugin (phase 2), off |
-| `sim.relax` | experiment or cold-start plugin (phase 2), off |
-| `sim.opt` | experiment or cold-start plugin (phase 2), off |
+| `sim.relax` | selects the experiment(s) of the [[experiment]] rows that name it |
+| `sim.opt` | selects the experiment(s) of the [[experiment]] rows that name it |
 | `sim.use_negis` | experiment or cold-start plugin (phase 2), off |
 | `sim.scale_glacial_smb` | experiment or cold-start plugin (phase 2), off |
 | `sim.lim_pd_ice` | experiment or cold-start plugin (phase 2), off |
@@ -44,32 +44,6 @@ Not counted: 28 keys that yelmox fills from its defaults in dropped groups (coef
 | `forcing.var_defs` | the library groups are copied into the file (fully expanded; --keep-library keeps the references) |
 | `coef_alpha.method` | not read by yelmox: no key of the resolved configuration names it |
 | `coef_alpha.series_file` | not read by yelmox: no key of the resolved configuration names it |
-| `relax.topo_rel` | plugin (phase 2); [sim] relax = False |
-| `relax.tau1` | plugin (phase 2); [sim] relax = False |
-| `relax.tau2` | plugin (phase 2); [sim] relax = False |
-| `relax.time1` | plugin (phase 2); [sim] relax = False |
-| `relax.time2` | plugin (phase 2); [sim] relax = False |
-| `relax.m` | plugin (phase 2); [sim] relax = False |
-| `opt.opt_cf` | plugin (phase 2); [sim] opt = False |
-| `opt.cf_time_init` | plugin (phase 2); [sim] opt = False |
-| `opt.cf_time_end` | plugin (phase 2); [sim] opt = False |
-| `opt.cf_init` | plugin (phase 2); [sim] opt = False |
-| `opt.tau_c` | plugin (phase 2); [sim] opt = False |
-| `opt.H0` | plugin (phase 2); [sim] opt = False |
-| `opt.sigma_err` | plugin (phase 2); [sim] opt = False |
-| `opt.sigma_vel` | plugin (phase 2); [sim] opt = False |
-| `opt.fill_method` | plugin (phase 2); [sim] opt = False |
-| `opt.opt_tf` | plugin (phase 2); [sim] opt = False |
-| `opt.tf_time_init` | plugin (phase 2); [sim] opt = False |
-| `opt.tf_time_end` | plugin (phase 2); [sim] opt = False |
-| `opt.H_grnd_lim` | plugin (phase 2); [sim] opt = False |
-| `opt.tf_sigma` | plugin (phase 2); [sim] opt = False |
-| `opt.tau_m` | plugin (phase 2); [sim] opt = False |
-| `opt.m_temp` | plugin (phase 2); [sim] opt = False |
-| `opt.tf_min` | plugin (phase 2); [sim] opt = False |
-| `opt.tf_max` | plugin (phase 2); [sim] opt = False |
-| `opt.tf_basins` | plugin (phase 2); [sim] opt = False |
-| `opt.basin_fill` | plugin (phase 2); [sim] opt = False |
 | `sed.obs_path` | unused: method = 0 |
 | `sed.obs_name` | unused: method = 0 |
 | `ghf.obs_err_name` | ensemble perturbation of the heat flux (f_stdev = 0) |
@@ -141,8 +115,34 @@ Not counted: 28 keys that yelmox fills from its defaults in dropped groups (coef
 | `pico.rho_star` | unused: bmb_method is not pico |
 | `pico.gamma_tstar` | unused: bmb_method is not pico |
 | `pico.C_over` | unused: bmb_method is not pico |
+| `relax.topo_rel` | no `relax` experiment (sim.relax = False) |
+| `relax.tau1` | no `relax` experiment (sim.relax = False) |
+| `relax.tau2` | no `relax` experiment (sim.relax = False) |
+| `relax.time1` | no `relax` experiment (sim.relax = False) |
+| `relax.time2` | no `relax` experiment (sim.relax = False) |
+| `relax.m` | no `relax` experiment (sim.relax = False) |
+| `opt.opt_cf` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.cf_time_init` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.cf_time_end` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.cf_init` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.tau_c` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.H0` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.sigma_err` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.sigma_vel` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.fill_method` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.opt_tf` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.tf_time_init` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.tf_time_end` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.H_grnd_lim` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.tf_sigma` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.tau_m` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.m_temp` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.tf_min` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.tf_max` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.tf_basins` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
+| `opt.basin_fill` | no `opt_cb_ref` experiment (sim.opt = False); no `opt_tf` experiment (sim.opt = False) |
 
-Groups dropped (all their keys, listed above): coef_alpha, relax, opt, smbpal, smb_simple, itm, pico.
+Groups dropped (all their keys, listed above): sim, coef_alpha, smbpal, smb_simple, itm, pico, relax, opt.
 
 ## Carried
 
@@ -181,7 +181,7 @@ Groups dropped (all their keys, listed above): coef_alpha, relax, opt, smbpal, s
 | `surface_chion` | 8 | 8 | 0 | `&surface_chion` |
 | `chion` | 8 | 2 | 6 | `&chion` |
 | `pdd_chion` | 7 | 7 | 0 | `&pdd_chion` |
-| `marine_shelf` | 43 | 43 | 0 | `&marine_shelf` |
+| `marine_shelf` | 43 | 43 | 0 | `&marine_shelf`, `&shelf_corr_ant` |
 | `ytrc` | 16 | 0 | 16 | `&ytrc` |
 | `racmo23p2_1981_2010_tas` | 5 | 5 | 0 | `&racmo23p2_1981_2010_tas` |
 | `racmo23p2_1981_2010_pr` | 5 | 5 | 0 | `&racmo23p2_1981_2010_pr` |
@@ -199,6 +199,17 @@ Keys with a conversion or a remark:
 | `sed.method` | `H_sed_ant.mode` | const 0 m (no sediments) |
 | `ghf.use_obs` | `Q_geo_ant.mode` | static field |
 | `marine_shelf.restart` | `marine_shelf.restart` | restart forced to "None" (restarts come from the bundle); was "none" |
+| `marine_shelf.basins` | `shelf_corr_ant.basins` | basins and thermal-forcing corrections: owned by the shelf component |
+| `marine_shelf.corr_method` | `shelf_corr_ant.corr_method` | basins and thermal-forcing corrections: owned by the shelf component |
+| `marine_shelf.corr_names` | `shelf_corr_ant.corr_names` | basins and thermal-forcing corrections: owned by the shelf component |
+| `marine_shelf.corr_values` | `shelf_corr_ant.corr_values` | basins and thermal-forcing corrections: owned by the shelf component |
+| `marine_shelf.corr_b1` | `shelf_corr_ant.corr_b1` | basins and thermal-forcing corrections: owned by the shelf component |
+| `marine_shelf.corr_b12` | `shelf_corr_ant.corr_b12` | basins and thermal-forcing corrections: owned by the shelf component |
+| `marine_shelf.corr_b14` | `shelf_corr_ant.corr_b14` | basins and thermal-forcing corrections: owned by the shelf component |
+| `marine_shelf.corr_b15` | `shelf_corr_ant.corr_b15` | basins and thermal-forcing corrections: owned by the shelf component |
+| `marine_shelf.tf_correction` | `shelf_corr_ant.tf_correction` | basins and thermal-forcing corrections: owned by the shelf component |
+| `marine_shelf.tf_path` | `shelf_corr_ant.tf_path` | basins and thermal-forcing corrections: owned by the shelf component |
+| `marine_shelf.tf_name` | `shelf_corr_ant.tf_name` | basins and thermal-forcing corrections: owned by the shelf component |
 
 Core keys (every `[kryos]`, `[clock]`, schedule, `[globe]`, domain, instance and field group), by origin:
 
@@ -218,7 +229,7 @@ Core keys (every `[kryos]`, `[clock]`, schedule, `[globe]`, domain, instance and
 | `&geo_ant` | 6 | 2 | 4 |
 | `&climate_ant` | 6 | 2 | 3 |
 | `&surface_ant` | 3 | 4 | 4 |
-| `&shelf_ant` | 2 | 2 | 5 |
+| `&shelf_ant` | 2 | 3 | 5 |
 | `&ghf_ant` | 0 | 4 | 6 |
 | `&sed_ant` | 0 | 3 | 6 |
 | `&Q_geo_ant` | 0 | 5 | 13 |
@@ -256,6 +267,7 @@ Keys set by the converter, not from a yelmox key (fixed by the schema or by a ru
 - `surface_ant.orbit` = "orbit"
 - `shelf_ant.backend` = "marine_shelf"
 - `shelf_ant.marine_shelf` = "marine_shelf"
+- `shelf_ant.corr` = "shelf_corr_ant"
 - `ghf_ant.backend` = "data"
 - `ghf_ant.dt` = -1.0
 - `ghf_ant.Q_geo` = "Q_geo_ant"
@@ -271,12 +283,13 @@ Keys set by the converter, not from a yelmox key (fixed by the schema or by a ru
 - `H_sed_ant.mode` = "const"
 - `H_sed_ant.value` = 0.0
 
-Physics groups copied unchanged (fully expanded from the yelmox defaults files): `&topo`, `&regions`, `&isos`, `&barysealevel`, `&snapshots`, `&orbit`, `&surface_chion`, `&chion`, `&chion_const`, `&pdd_chion`, `&marine_shelf`, `&yelmo`, `&ytopo`, `&ycalv`, `&ydyn`, `&ytill`, `&yhyd`, `&ymat`, `&ytherm`, `&yelmo_masks`, `&yelmo_init_topo`, `&yelmo_data`, `&ytrc`, `&snapshot_pd`, `&racmo23p2_1981_2010_tas`, `&racmo23p2_1981_2010_pr`, `&racmo23p2_1981_2010_zs`, `&ismip7_to`, `&ismip7_so`.
+Physics groups copied unchanged (fully expanded from the yelmox defaults files): `&topo`, `&regions`, `&isos`, `&barysealevel`, `&snapshots`, `&orbit`, `&surface_chion`, `&chion`, `&chion_const`, `&pdd_chion`, `&marine_shelf`, `&shelf_corr_ant`, `&yelmo`, `&ytopo`, `&ycalv`, `&ydyn`, `&ytill`, `&yhyd`, `&ymat`, `&ytherm`, `&yelmo_masks`, `&yelmo_init_topo`, `&yelmo_data`, `&ytrc`, `&snapshot_pd`, `&racmo23p2_1981_2010_tas`, `&racmo23p2_1981_2010_pr`, `&racmo23p2_1981_2010_zs`, `&ismip7_to`, `&ismip7_so`.
 
 ## Notes
 
 - tm_1D.dt = 1.0 is below dtt = 10.0: [out_1D] dt = 10.0 gives the same output times (fesm_clock rejects dt < dtt)
 - [marine_shelf] restart "none" -> "None"
+- [marine_shelf] keys moved to [shelf_corr_ant] (basins, corr_method, corr_names, corr_values, corr_b1, corr_b12, corr_b14, corr_b15, tf_correction, tf_path, tf_name): the shelf component owns them
 
 ## Warnings
 
@@ -300,7 +313,7 @@ None.
 - &geo_ant: 12 keys against kryos_defaults&instance + kryos_defaults&geo_fastisostasy
 - &climate_ant: 11 keys against kryos_defaults&instance + kryos_defaults&climate_snapshots
 - &surface_ant: 11 keys against kryos_defaults&instance + kryos_defaults&surface_chion
-- &shelf_ant: 9 keys against kryos_defaults&instance + kryos_defaults&shelf_marine_shelf
+- &shelf_ant: 10 keys against kryos_defaults&instance + kryos_defaults&shelf_marine_shelf
 - &ghf_ant: 10 keys against kryos_defaults&instance + kryos_defaults&geothermal_data
 - &sed_ant: 9 keys against kryos_defaults&instance + kryos_defaults&sediments_data
 - &Q_geo_ant: 18 keys against datasrc_defaults&datasrc_field
@@ -316,6 +329,7 @@ None.
 - &chion_const: 70 keys against yelmox input/chion_defaults.nml&chion_const
 - &pdd_chion: 7 keys against yelmox input/chion_defaults.nml&pdd
 - &marine_shelf: no schema file (not validated)
+- &shelf_corr_ant: no schema file (not validated)
 - &yelmo: 43 keys against yelmox input/yelmo_defaults.nml&yelmo
 - &ytopo: 28 keys against yelmox input/yelmo_defaults.nml&ytopo
 - &ycalv: 27 keys against yelmox input/yelmo_defaults.nml&ycalv
@@ -335,7 +349,7 @@ None.
 - &ismip7_to: no schema file (not validated)
 - &ismip7_so: no schema file (not validated)
 - all 37 validated groups: every key declared; required keys set; schedules on the clock ticks; named groups present
-- round trip: 735 keys of 48 groups read back equal (type and value), mapped keys equal the resolved yelmox value
+- round trip: 736 keys of 49 groups read back equal (type and value), mapped keys equal the resolved yelmox value
 
 ## Files a run directory needs
 

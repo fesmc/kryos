@@ -154,7 +154,7 @@ function main(args)
     mode         = "transient"
     anomaly_ref  = "slice"
     ref_time     = 0.0                  ! [yr] = ext_tref
-    out_of_range = "hold"               ! after the last record (the gather holds it; before the first: an error)
+    out_of_range = "error"              ! the gather itself holds the history after ext_tref; a run before the first record stops
 /""", "\n"))
 
     open(args[2], "w") do io

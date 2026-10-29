@@ -16,7 +16,7 @@ cat <<'BLOCK'
     z_bed_ref = "X_z_bed"
     H_ice_ref = "X_H_ice"
     target    = "GAUSS-L170"         ! the global grid of the host terms (observer: no VILMA2)
-    ext       = "file"               ! X + the history's anomaly (the run is after the history's last record: it is held, anomaly 0)
+    ext       = "file"               ! X + the history's anomaly (the run is after the history's last record: the gather holds it, anomaly 0)
     ext_field = "X_dH_ice"
     ext_tref  = 0.0
     out_2D    = "out_2D"             ! globe_ice.nc every 100 yr
@@ -40,7 +40,7 @@ cat <<'BLOCK'
     mode         = "transient"
     anomaly_ref  = "slice"
     ref_time     = 0.0
-    out_of_range = "hold"
+    out_of_range = "error"             ! the gather holds the history after ext_tref itself
 /
 BLOCK
 } > par/gate/sci-hub.nml

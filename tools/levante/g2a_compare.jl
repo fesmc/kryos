@@ -17,7 +17,7 @@ function main(args)
     println(io, "|---|---|---|---|---|")
     for (kn, vn) in pairs
         haskey(v, vn) || (println(io, "| ", vn, " | absent in vilma_out.nc | | | |"); continue)
-        a = Array(k[kn][:, :, :] .* 1.0); b = Array(v[vn][:, :, :] .* 1.0)
+        a = Float64.(Array(k[kn])); b = Float64.(Array(v[vn]))
         a = ndims(a) == 1 ? reshape(a, 1, 1, :) : a
         b = ndims(b) == 1 ? reshape(b, 1, 1, :) : b
         n = min(size(a, 3), size(b, 3))
@@ -30,7 +30,7 @@ function main(args)
     end
     println(io, "\nper record, dz_bed and dz_ss (max abs diff / max abs standalone):\n")
     for (kn, vn) in pairs[1:2]
-        a = k[kn][:, :, :]; b = v[vn][:, :, :]
+        a = Float64.(Array(k[kn])); b = Float64.(Array(v[vn]))
         println(io, "- ", kn, ": ", join([@sprintf("%.1e", maximum(abs.(a[:, :, r] .- b[:, :, r])) / max(maximum(abs.(b[:, :, r])), eps())) for r in 1:min(size(a, 3), size(b, 3))], " "))
     end
     s = String(take!(io)); print(s)

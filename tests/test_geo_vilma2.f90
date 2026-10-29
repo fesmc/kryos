@@ -1,3 +1,14 @@
+module test_geo_vilma2_state
+    ! The arrays of the reference and the load, as module variables: with ifx (-qopenmp) the internal procedures of the main
+    ! program and its body did not see the same storage for whole-array assignments (Levante, ifx 2023.2: the reference was
+    ! zero in the body, so the direct calls and the adapter got different references).
+    use precision, only: dp
+    implicit none
+    integer, parameter :: NPHI = 64, NLAT = 34
+    real(dp) :: lat(NPHI,NLAT), lon(NPHI,NLAT)
+    real(dp) :: z_ref(NPHI,NLAT), H_ref(NPHI,NLAT), w(NPHI,NLAT), Ig_ref(NPHI,NLAT), C_ref(NPHI,NLAT)
+end module test_geo_vilma2_state
+
 program test_geo_vilma2
     ! The VILMA2 geo adapter against VILMA2 driven directly (phase 4 plan 13.1), with
     ! prescribed host terms and no ice instance: the global part (vilma_earth_t) through
@@ -33,9 +44,10 @@ program test_geo_vilma2
                                solid_earth_finalize
     use vilma_sht,       only: sht_grid_surface_integral
 
+    use test_geo_vilma2_state
     implicit none
 
-    integer, parameter :: LMAX = 16, NPHI = 64, NLAT = 34, NXP = 6, NYP = 5
+    integer, parameter :: LMAX = 16, NXP = 6, NYP = 5
     real(dp), parameter :: DTT = 10.0_dp
     character(len=*), parameter :: DIR = "tmp/test_geo_vilma2/", PAR = DIR//"par.nml", PAR_SP = DIR//"par_sp.nml", &
                                    PAR_BAD = DIR//"par_bad.nml", RST = DIR//"rst", MAPS = DIR//"maps", errfile = DIR//"abort.err"
@@ -45,8 +57,6 @@ program test_geo_vilma2
     type(census_t)   :: census, census2, census3         ! one global part per census (max_instances = 1)
     type(geo_slot_t) :: glob, glob2, spin
     type(solid_earth) :: dse, dsp
-    real(dp) :: lat(NPHI,NLAT), lon(NPHI,NLAT)
-    real(dp) :: z_ref(NPHI,NLAT), H_ref(NPHI,NLAT), w(NPHI,NLAT), Ig_ref(NPHI,NLAT), C_ref(NPHI,NLAT)
     real(dp) :: t
     integer  :: n
 

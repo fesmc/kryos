@@ -58,8 +58,10 @@ export MKL_NUM_THREADS=$THREADS
 ulimit -s unlimited
 ulimit -v unlimited
 echo "node \$(hostname) \$(date -Is)"
-/usr/bin/time -v srun ./kryos.x par.nml
-echo "end \$(date -Is)"
+/usr/bin/time -v -o time.txt srun ./kryos.x par.nml
+rc=\$?
+echo "end \$(date -Is) exit \$rc"
+exit \$rc
 JOB
 }
 case $RUN in

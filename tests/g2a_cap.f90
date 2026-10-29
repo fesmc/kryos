@@ -1,4 +1,4 @@
-program g2a_cap
+module g2a_mod
     ! Gate G2a (phase4-plan 13.2): the VILMA2 geo adapter (vilma_earth_t through the component wrappers, as the core drives
     ! it) against the standalone driver vilma.x on the same analytic load on the Gauss grid GAUSS-L<lmax>: a grounded land-ice
     ! cap inside a land box (the host region, w = 1; no coast, no external ice), growing by 25 % of its first size per step.
@@ -31,17 +31,22 @@ program g2a_cap
     real(dp), parameter :: CLON = 90.0_dp, CLAT = 58.0_dp, RC = 12.0_dp, H0 = 2000.0_dp
     real(dp), parameter :: BOX(4) = [40.0_dp, 140.0_dp, 40.0_dp, 75.0_dp]      ! lon0 lon1 lat0 lat1 of the host region
 
-    type(init_ctx_t) :: ctx
-    type(census_t)   :: census
-    type(geo_slot_t) :: glob
-    real(dp) :: lat(NPHI,NLAT), lon(NPHI,NLAT), z_ref(NPHI,NLAT), w(NPHI,NLAT), zero(NPHI,NLAT)
-    real(dp), allocatable :: o_bed(:,:,:), o_ss(:,:,:), o_C(:,:,:), o_s(:,:), tt(:), forc(:,:,:)
-    character(len=64) :: arg
-    integer :: nstep, n
-    integer(8) :: c0, c1, rate
+    type(init_ctx_t), save :: ctx
+    type(census_t),   save :: census
+    type(geo_slot_t), save :: glob
+    real(dp), allocatable, save :: lat(:,:), lon(:,:), z_ref(:,:), w(:,:), zero(:,:)
+    real(dp), allocatable, save :: o_bed(:,:,:), o_ss(:,:,:), o_C(:,:,:), o_s(:,:), tt(:), forc(:,:,:)
+    integer, save :: nstep
+    integer(8), save :: c0, c1, rate
 
+contains
+
+    subroutine run()
+        integer :: n
+        character(len=64) :: arg
     call get_command_argument(1, arg)
     read(arg, *) nstep
+    allocate(lat(NPHI,NLAT), lon(NPHI,NLAT), z_ref(NPHI,NLAT), w(NPHI,NLAT), zero(NPHI,NLAT))
     allocate(o_bed(NPHI,NLAT,0:nstep), o_ss(NPHI,NLAT,0:nstep), o_C(NPHI,NLAT,0:nstep), o_s(4,0:nstep), tt(0:nstep), &
              forc(NPHI,NLAT,0:nstep))
     call system_clock(count_rate=rate)
@@ -92,7 +97,8 @@ program g2a_cap
     call write_outputs()
     call write_standalone_inputs()
 
-contains
+    end subroutine run
+
 
     real(dp) function cap(k, i, j)
         integer, intent(in) :: k, i, j
@@ -103,7 +109,7 @@ contains
     end function cap
 
     subroutine terms()
-        integer :: i, j
+        integer :: i, j, n
         w = 0.0_dp; z_ref = -3000.0_dp
         do j = 1, NLAT
             do i = 1, NPHI
@@ -168,19 +174,30 @@ contains
 
     subroutine vilma_group(u)
         integer, intent(in) :: u
+        character(len=32) :: v
         write(u,'(a)') "&vilma", " lmax = 170", ' earth = "PREM"', " n_layer = 11", &
             " r_bot = 6291.0e3, 6151.0e3, 5971.0e3, 5771.0e3, 5701.0e3, 5600.0e3, 4943.0e3, 4287.0e3, 3630.0e3, 3480.0e3, 0.0", &
             " r_top = 6371.0e3, 6291.0e3, 6151.0e3, 5971.0e3, 5771.0e3, 5701.0e3, 5600.0e3, 4943.0e3, 4287.0e3, 3630.0e3, 3480.0e3", &
             " eta = 1.0e40, 4.0e20, 4.0e20, 4.0e20, 4.0e20, 1.0e22, 1.0e22, 1.0e22, 1.0e22, 1.0e22, 0.0", &
             " rheology = 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2", " l_visc_3d = .true.", &
             ' visc_3d_file = "fesmdata/Global/GLOBAL-T170/GLOBAL-T170_SolidEarth-Bagge2021.nc"', " visc_3d_structure = 6", &
-            " pre_spinup_1d = .true."
+            " pre_spinup_1d = "//merge(".true. ", ".false.", spinup_on())
+        call get_environment_variable("G2A_RATE_TOL", v)          ! equil_rate_tol [m/yr] of the spin-up in both runs
+        if (len_trim(v) > 0) write(u,'(a)') " equil_rate_tol = "//trim(v)
     end subroutine vilma_group
+
+    logical function spinup_on()
+        ! G2A_SPINUP=0: no spin-up (the seed only), in both runs
+        character(len=8) :: v
+        call get_environment_variable("G2A_SPINUP", v)
+        spinup_on = trim(v) /= "0"
+    end function spinup_on
 
     subroutine par_write()
         integer :: u
         open(newunit=u, file=PAR, status="replace", action="write")
-        write(u,'(a)') "&geo_glob", ' backend = "vilma2"', ' vilma = "vilma"', "/"
+        write(u,'(a)') "&geo_glob", ' backend = "vilma2"', ' vilma = "vilma"', &
+            ' allow_no_spinup = '//merge(".false.", ".true. ", spinup_on()), "/"
         call vilma_group(u)
         write(u,'(a)') "/"
         close(u)
@@ -229,4 +246,10 @@ contains
         close(u)
     end subroutine write_standalone_inputs
 
+end module g2a_mod
+
+program g2a_cap
+    use g2a_mod, only: run
+    implicit none
+    call run()
 end program g2a_cap
