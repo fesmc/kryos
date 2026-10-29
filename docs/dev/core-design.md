@@ -529,7 +529,8 @@ Templates in `input/kryos_defaults.nml` (one key per line in the file):
 | `[clock]` | `method` ("rel"), `time_ref` (1950), `calendar` ("365_day"), `year` ("tropical"); `time_init`, `time_end`, `dtt` required |
 | `[schedule]` | `method` ("none"), `dt`, `times`, `file` (fesm_clock keys) |
 | `[globe]` | `forcing` (""), `geo` ("") |
-| `[domain]` | `grid_hub`, `topo` ("topo"), `regions` ("regions"), `basins`, `out_2D` ("none"); one key per component (`ice` … `sediments`, "" = absent) |
+| `[domain]` | `grid_hub`, `topo` ("topo"), `regions` ("regions"), `basins`, `out_2D` ("none"); one key per component (`ice` … `sediments`, "" = absent); `experiments` ("", the experiment groups in call order, §3.9) |
+| `[experiment]` | `kind` (required); with `[experiment_<kind>]` for the keys of the kind (`[experiment_host]`: none declared) |
 | `[instance]` | `backend`, `grid` ("" = chain), `dt` (0), `phase` (0), `clock` ("model"), `out_2D`, `out_1D` ("none"), `out_vars` ("" = all exports) |
 
 `dt = 0`: every step; `dt > 0`: that cadence grid; `dt < 0`: never after

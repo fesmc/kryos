@@ -118,6 +118,11 @@ Sizes: S ≲ 300 lines, M ≲ 1000, L more (ported yelmox lines in brackets).
 
 ### WP1 Experiment plugin mechanism (core) — M
 
+**Status (2026-10-29): done on branch `wp1`, not merged.** Mechanism, hooks,
+`prepare`, `PASS_SPINUP`, `init_time_thrm`, restart of stateful experiments;
+unit tests and the bit-neutral gate pass (grl and ant K == R2, cont, cont2,
+chunk, `gate-log.md` "WP1"). Next: WP2 (relax, opt cb_ref) and WP3 (opt tf).
+
 What: `src/experiments/`, hooks in `kryos_run_sequence` (today "hooks: none",
 `src/core/kryos_run_sequence.f90:233`).
 

@@ -372,3 +372,41 @@ Scope narrowed to the science case (VILMA2 global + NH-32KM + ANT,
   links; no links made. Three yelmox series files are only in the stack's
   `input/` (PYR, GRP, rGRL: deferred bases).
 - Julia compares on Levante need `julia +1.13`.
+
+## WP1: experiment plugin mechanism (2026-10-29)
+
+Branch `wp1`, commits as listed in `phase2-plan.md` WP1 (hooks, `prepare`,
+`PASS_SPINUP`, `step_time_t%tick`, `init_time_thrm`, experiment lists, restart).
+No experiment is active in grl or ant: every list is empty.
+
+- Local, `make check` at every commit; `test_run_sequence` `plain` (cont, c00,
+  c01) compared with `kryos-compare --restarts` (outputs and bundles, 1151
+  variables) against the previous commit's build: PASS after each of
+  PASS_SPINUP, `init_time_thrm` (off), `prepare`, `tick`, the config
+  templates, the step hooks, the cold-start hooks and the restart commit. A
+  cont run with `init_equil_time = 5` (the equilibration, which the test does
+  not exercise) is identical to the build before the refactor.
+- Guard: a host experiment that resets Yelmo's recorded tick at `ICE_BND`
+  makes `update` stop with `kryos_ice_yelmo::update ... was not prepared`
+  (`test_run_sequence`, child process).
+- Levante, kryos `f81e004` (wp1 as a bundle, never pushed) on stack S4,
+  `par/gate/{grl,ant}.nml` regenerated from yelmox `topo-prep` 5ac89c8 (new keys
+  `experiments = ""`, `init_time_thrm = 0.0`, `phys_const_file`; same values
+  otherwise). Jobs (`run_kryos_wp1.sh`, COMPLETED, 2-3.5 min): grl cont 28537662,
+  cont2 28537678, chunk 28537684 + 28537686; ant cont 28537688, cont2 28537689,
+  chunk 28537691 + 28537692. Compares with `compare_wp1.sh` (`julia +1.13`),
+  reports in `$G/reports/WP1`, `gate-reports/*-K-f81e004-*`:
+
+| comparison | grl | ant |
+|---|---|---|
+| K cont vs R2 (yx-74f3a2b S2; mapped, `--restarts`) | PASS, 924 vars | PASS, 1036 vars |
+| K cont2 vs R2 (same) | PASS, 924 vars | PASS, 1036 vars |
+| K cont2 vs K cont (`--restarts`) | PASS, 1249 vars | PASS, 1341 vars |
+| K chunk vs K cont (`--chunks`) | PASS, 1470 vars | PASS, 1710 vars |
+
+  First divergence none in all eight; 12 kryos-only variables (N) in the
+  mapped compares, as in phase 1. K chunk == R2 follows from the last two rows.
+- The kryos checkout on Levante had an untracked `input/yelmo_phys_const.nml`
+  (now a tracked synchronised copy); moved to
+  `$G/yelmo_phys_const.nml.untracked-in-K`.
+
