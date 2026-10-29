@@ -42,6 +42,8 @@ module kryos_globe
                                clock_to_years
     use coupler,         only: coupler_class, coupler_init, coupler_add_grid
     use phys_constants,  only: phys_const_class
+    use coords,          only: grid_class, grid_cdo_read_desc
+    use nml,             only: nml_has_group
     use kryos_config,    only: config_t, config_read, config_validate, config_validate_instance, config_cadence
     use kryos_component, only: component_t, init_ctx_t, step_time_t, census_t, step_time_of, NAME_LEN, PATH_LEN
     use kryos_wiring,    only: wire_t, wire_node_t, wire_node, wire_exchange, wire_gather, wire_runs
@@ -65,7 +67,9 @@ module kryos_globe
         real(dp)             :: geo_dt = 0.0_dp, geo_phase = 0.0_dp   ! the geo's dt and phase keys (the regional ports take them)
         type(coupler_class)  :: cpl                     ! global grids by name, map cache (a host-resolved geo)
         type(globe_ice_t)    :: gi                      ! the global ice field (a host-resolved geo)
-        logical              :: has_gi = .false.        ! the global geo is host-resolved: cpl and gi are in use
+        logical              :: has_gi = .false.        ! the global ice field is in use (cpl, gi): the global geo is host-resolved
+                                                        ! (host_gi), or [globe_ice] is present and it only observes (the hub)
+        logical              :: host_gi = .false.       ! gi feeds the global geo (vilma2): reference, gather, seed
     end type globe_t
 
     type, public :: gather_src_t                        ! one domain's contribution to a gather
@@ -128,6 +132,12 @@ contains
                          trim(globe%clock_geo)//", "//cadence_word(cadence_dt_years(globe%geo%c%cadence, clk)))
             if (globe%geo%c%opt%host) call globe_gia_init(globe, cfg, clk, cnst, name, backend)
         end if
+
+        ! the global geometry hub as an observer (phase4-plan 5.4, gate G1b): [globe_ice] without a host-resolved geo
+        ! assembles the reference and the merged ice and writes globe_ice.nc; nothing feeds back
+        if (.not. globe%has_gi .and. nml_has_group(trim(cfg%par_file), "globe_ice")) then
+            call globe_gia_init(globe, cfg, clk, cnst, "", "")
+        end if
     end subroutine globe_init
 
     subroutine globe_gia_init(globe, cfg, clk, cnst, name, backend)
@@ -141,17 +151,35 @@ contains
         type(phys_const_class), intent(in)    :: cnst
         character(len=*),       intent(in)    :: name, backend
 
-        character(len=GI_NAME_LEN) :: group
+        character(len=GI_NAME_LEN) :: group, tgt_name
+        type(grid_class) :: g
 
-        if (.not. allocated(globe%geo%c%grid_obj)) then
-            call fesm_error("kryos_globe::globe_init", "host-resolved geo `"//trim(name)//"` has no grid object", &
-                            "its init must set grid_obj with grid, nx and ny (opt%host)")
-        end if
         group = "globe_ice"
-        call config_read(cfg, name, "ice_bg", group, "instance", "geo_"//trim(backend))
         call coupler_init(globe%cpl, trim(cfg%map_fldr))
-        call globe_ice_init(globe%gi, cfg, globe%cpl, cnst, globe%geo%c%grid_obj, group=trim(group), &
-                            time_ref=clock_to_years(clk, clk%n_ref), time_span=[clock_time_init(clk), clock_time_end(clk)])
+        if (len_trim(name) > 0) then                      ! host-resolved: the target is the Earth's own grid
+            if (.not. allocated(globe%geo%c%grid_obj)) then
+                call fesm_error("kryos_globe::globe_init", "host-resolved geo `"//trim(name)//"` has no grid object", &
+                                "its init must set grid_obj with grid, nx and ny (opt%host)")
+            end if
+            call config_read(cfg, name, "ice_bg", group, "instance", "geo_"//trim(backend))
+            call globe_ice_init(globe%gi, cfg, globe%cpl, cnst, globe%geo%c%grid_obj, group=trim(group), &
+                                time_ref=clock_to_years(clk, clk%n_ref), &
+                                time_span=[clock_time_init(clk), clock_time_end(clk)])
+            globe%host_gi = .true.
+        else                                              ! observer: the target is a grid of the map folder
+            call config_validate(cfg, trim(group), "globe_ice")
+            tgt_name = ""
+            call config_read(cfg, trim(group), "target", tgt_name, "globe_ice")
+            if (len_trim(tgt_name) == 0) then
+                call fesm_error("kryos_globe::globe_init", "[globe_ice] without a host-resolved geo needs `target`", &
+                                "the global grid the host terms are merged onto, a grid_<name>.txt of the map folder "// &
+                                trim(cfg%map_fldr)//"; par file "//trim(cfg%par_file))
+            end if
+            call grid_cdo_read_desc(g, trim(tgt_name), trim(cfg%map_fldr))
+            call globe_ice_init(globe%gi, cfg, globe%cpl, cnst, g, group=trim(group), &
+                                time_ref=clock_to_years(clk, clk%n_ref), &
+                                time_span=[clock_time_init(clk), clock_time_end(clk)])
+        end if
         globe%has_gi = .true.
     end subroutine globe_gia_init
 

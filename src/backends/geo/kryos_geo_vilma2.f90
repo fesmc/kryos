@@ -16,13 +16,16 @@ module kryos_geo_vilma2
     use fesm_log,        only: LOG_INFO, log_msg, fesm_error, to_str
     use fesm_fields,     only: fields_get, fields_put
     use nml,             only: nml_read, nml_has_param
+    use ncio,            only: nc_open, nc_write, nc_close
+    use variable_io,     only: var_io_type, var_io_write
+    use kryos_outfile,   only: outfile_dims_lonlat, outfile_open, outfile_row, outfile_table_file
     use kryos_component, only: init_ctx_t, step_time_t, constraints_t, NAME_LEN, PATH_LEN, &
-                               PASS_GEOMETRY, PASS_STATE
+                               PASS_GEOMETRY, PASS_STATE, component_write_output
     use kryos_geo,       only: geo_t, geo_opt_t
     use vilma_params,    only: vilma_par_load
     use vilma_coupling,  only: solid_earth, solid_earth_init, solid_earth_update, solid_earth_spinup, &
                                solid_earth_finalize, solid_earth_host_check
-    use vilma_io,        only: vilma_restart_write, vilma_restart_read, vilma_io_set_table
+    use vilma_io,        only: vilma_restart_write, vilma_restart_read, vilma_io_set_table, vilma_write_step
     use vilma_sht,       only: sht_grid_surface_integral
 
     implicit none
@@ -53,6 +56,7 @@ module kryos_geo_vilma2
         procedure :: update        => earth_update_
         procedure :: restart_write => earth_restart_write_
         procedure :: restart_read  => earth_restart_read_
+        procedure :: write_output  => earth_write_output_
         procedure :: end           => earth_end_
     end type vilma_earth_t
 
@@ -382,6 +386,54 @@ contains
         end if
         call vilma_restart_read(self%se, file)
     end subroutine earth_restart_read_
+
+    subroutine earth_write_output_(self, file, t, stream, init)
+        ! Streams 2D and 1D: the default writer (the exports on lon, lat; rounded by the table `geo`). `gia`: the global
+        ! ice field VILMA2 got (the host imports, table `geo-vilma2`). `vilma`: VILMA2's own diagnostics file
+        ! (vilma_write_step, rounded by its own table; the ice, sea level, bed, ocean function and the
+        ! scalar series: not the viscoelastic memory).
+        class(vilma_earth_t), intent(inout) :: self
+        character(len=*),     intent(in)    :: file, stream
+        real(dp),             intent(in)    :: t
+        logical,              intent(in)    :: init
+
+        character(len=*), parameter :: DIMS_LL(3) = [character(len=32) :: "lon", "lat", "time"]
+        character(len=*), parameter :: VARS_VILMA(9) = [character(len=12) :: "h_ice", "rsl", "z_bed", "C_ocean", &
+            "dz_bed", "dz_ss", "bsl", "dphi", "bsl_ive"]
+        type(var_io_type) :: row
+        real(dp), allocatable :: a(:,:)
+        integer :: hs(5), i, ncid, n
+        logical :: found
+        character(len=12), parameter :: NAMES(5) = [character(len=12) :: "H_ice_ext", "host_w", "host_Ig", "host_C", "host_F"]
+
+        select case (trim(stream))
+        case ("gia")
+            call require_built(self, "write_output")
+            hs = [self%hi_H_ice_ext, self%hi_host_w, self%hi_host_Ig, self%hi_host_C, self%hi_host_F]
+            if (.not. self%imports%f(hs(1))%published) return                ! nothing gathered yet
+            if (init) call outfile_dims_lonlat(file, self%grid_obj%G%x, self%grid_obj%G%y, t)
+            call outfile_open(file, t, ncid, n)
+            call nc_write(file, "t_load", self%imports%f(hs(1))%t1, dim1="time", start=[n], count=[1], ncid=ncid, &
+                          units="year", long_name="time of the ice the host terms stand for")
+            allocate(a(self%nx, self%ny))
+            do i = 1, size(hs)
+                call fields_get(self%imports, hs(i), a)
+                call outfile_row("geo-vilma2", trim(NAMES(i)), row, found)
+                if (.not. found) then
+                    call fesm_error("kryos_geo_vilma2::write_output", "variable `"//trim(NAMES(i))//"` has no row in "// &
+                                    outfile_table_file("geo-vilma2"), "instance "//trim(self%name))
+                end if
+                row%units = self%imports%f(hs(i))%units
+                call var_io_write(file, row, a, n, ncid=ncid, dims=DIMS_LL)
+            end do
+            call nc_close(ncid)
+        case ("vilma")
+            call require_built(self, "write_output")
+            call vilma_write_step(self%se, file, t, nms=VARS_VILMA, init=init)
+        case default
+            call component_write_output(self, file, t, stream, init)
+        end select
+    end subroutine earth_write_output_
 
     subroutine earth_end_(self)
         class(vilma_earth_t), intent(inout) :: self

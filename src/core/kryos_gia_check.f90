@@ -47,6 +47,15 @@ contains
             any_port = any_port .or. trim(dom(d)%backend(C_GEO)) == VILMA2
             any_f    = any_f    .or. trim(dom(d)%backend(C_GEO)) == FASTISO
         end do
+        if (globe%has_gi .and. .not. globe%host_gi) then       ! the observing hub: the ice offers what the gather reads
+            do d = 1, size(dom)
+                if (.not. ice_present(dom(d)%ice)) then
+                    call fesm_error(proc, "domain `"//trim(dom(d)%name)//"` has no ice instance", &
+                                    "[globe_ice] gathers the ice of every domain")
+                end if
+                call check_ice(dom(d))
+            end do
+        end if
         if (.not. (glob_v .or. any_port)) return
 
         if ((glob_v .and. any_f) .or. (any_port .and. glob_f)) then
@@ -112,6 +121,28 @@ contains
             call fesm_error(proc, who//" has no ice instance", &
                             "the global geo is vilma2: its load is gathered from every domain's ice")
         end if
+        call check_ice(dom)
+
+        if (geo_present(globe%geo) .and. config_has(cfg, trim(dom%inst(C_GEO)), "dt")) then
+            call config_read(cfg, trim(dom%inst(C_GEO)), "dt", dt_port, "instance")
+            call config_read(cfg, trim(globe%geo%c%name), "dt", dt_glob, "instance")
+            if (dt_port /= dt_glob) then
+                call fesm_error(proc, "dt of geo instance `"//trim(dom%inst(C_GEO))//"` ("//to_str(dt_port)// &
+                                " yr) differs from the global geo `"//trim(globe%geo%c%name)//"` ("//to_str(dt_glob)// &
+                                " yr)", "a port steps with the Earth it belongs to: leave `dt` out of its group "// &
+                                "or give it the global part's value")
+            end if
+        end if
+    end subroutine check_domain
+
+    subroutine check_ice(dom)
+        ! What the gather reads of a domain's ice: the flotation binding, the static footprint and H_ice_pd.
+        type(domain_t), intent(in) :: dom
+
+        character(len=*), parameter :: proc = "kryos_gia_check::gia_check"
+        character(len=:), allocatable :: who
+
+        who = "domain `"//trim(dom%name)//"`"
         associate (ice => dom%ice%c)
             if (.not. ice%caps%has_flotation) then
                 call fesm_error(proc, "ice instance `"//trim(ice%name)//"` ("//trim(ice%backend)//") of "//who// &
@@ -129,17 +160,6 @@ contains
                                 "ice of every domain")
             end if
         end associate
-
-        if (geo_present(globe%geo) .and. config_has(cfg, trim(dom%inst(C_GEO)), "dt")) then
-            call config_read(cfg, trim(dom%inst(C_GEO)), "dt", dt_port, "instance")
-            call config_read(cfg, trim(globe%geo%c%name), "dt", dt_glob, "instance")
-            if (dt_port /= dt_glob) then
-                call fesm_error(proc, "dt of geo instance `"//trim(dom%inst(C_GEO))//"` ("//to_str(dt_port)// &
-                                " yr) differs from the global geo `"//trim(globe%geo%c%name)//"` ("//to_str(dt_glob)// &
-                                " yr)", "a port steps with the Earth it belongs to: leave `dt` out of its group "// &
-                                "or give it the global part's value")
-            end if
-        end if
-    end subroutine check_domain
+    end subroutine check_ice
 
 end module kryos_gia_check

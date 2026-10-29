@@ -28,12 +28,13 @@ program test_gia_sequence
     !     test_gia_sequence.x plain <par file>               the run as the driver does it
 
     use precision,       only: sp, dp
-    use ncio,            only: nc_create, nc_write_dim, nc_write, nc_write_attr, nc_read
+    use ncio,            only: nc_create, nc_write_dim, nc_write, nc_write_attr, nc_read, nc_size
     use coords,          only: grid_class, grid_init, grid_cdo_read_desc, grid_cdo_write_desc_short
     use coupler,         only: coupler_class, coupler_init, coupler_add_grid, remap
     use fesm_fields,     only: fields_get
     use fesm_clock,      only: clock_time, clock_to_years, clock_time_init, clock_time_end, clock_dtt, cadence_dt_years
     use kryos_run,       only: run_t, run_init, run_step, run_done, run_end
+    use kryos_ice,       only: ice_flotation
     use kryos_component, only: NAME_LEN
     use kryos_domain,    only: C_ICE, C_GEO
     use kryos_globe_ice, only: globe_ice_t, globe_ice_init, globe_ice_add_domain, globe_ice_reference_begin, &
@@ -43,8 +44,10 @@ program test_gia_sequence
     implicit none
 
     character(len=*), parameter :: DIR = "tmp/test_gia_sequence/"
-    character(len=*), parameter :: BGN = "TBG-4DEG"
+    character(len=*), parameter :: BGN = "TBG-4DEG", TGN = "TTG-8DEG"
     integer, parameter :: NZ = 5, NDOM = 2, NXB = 90, NYB = 45
+    logical  :: fastiso = .false.                 ! the par file being written has FastIsostasy (barysealevel) instead of VILMA2
+    logical  :: lossless = .true.                  ! [kryos] write_lossless of the par file being written
     logical  :: allow_nospin = .true.              ! allow_no_spinup in the par file being written (the runs without VILMA2's spin-up)
     real(dp) :: restart_dt = 0.0_dp                ! > 0: the restart schedule of the par file being written, every restart_dt yr
     real(dp) :: dt_geo = 10.0_dp                    ! [yr] cadence of the Earth in the par file being written
@@ -100,11 +103,12 @@ program test_gia_sequence
     call write_data(2, d//"clim_ant.nc")
     call write_background()
 
-    call greenland_ref()                                 ! one domain, ice outside the footprint = X (ext = "ref")
-    call greenland_slow()                                ! the Earth every second step
-    call no_spinup_stop()                                ! no VILMA2 spin-up, no opt-out: the run stops at init
+    if (sel("greenland")) call greenland_ref()           ! one domain, ice outside the footprint = X (ext = "ref")
+    if (sel("greenland")) call greenland_slow()          ! the Earth every second step
+    if (sel("greenland")) call no_spinup_stop()          ! no VILMA2 spin-up, no opt-out: the run stops at init
     if (have_tools) then
-        call two_domains()                               ! both, an external history that thins; spin-up; the order swap
+        if (sel("two")) call two_domains()               ! both, an external history that thins; spin-up; the order swap
+        if (sel("observer")) call observer_set()         ! the hub without VILMA2
     else
         write(*,'(a)') "test_gia_sequence: OPEN: Julia or the project "//trim(tools)//" is not available (the merge "// &
                        "step and the comparison need it; set KRYOS_TOOLS): the two-domain runs are skipped"
@@ -122,16 +126,55 @@ contains
     ! The run sets
     ! =========================================================================
 
+    logical function sel(set)
+        ! The run set `set` is run: all of them, or the one named by the first argument ("only <set>": a development aid).
+        character(len=*), intent(in) :: set
+        character(len=64) :: a1, a2
+        call get_command_argument(1, a1)
+        call get_command_argument(2, a2)
+        sel = trim(a1) /= "only" .or. trim(a2) == set
+    end function sel
+
     subroutine greenland_ref()
         ! Greenland alone, X outside the footprint, 3 steps: the checks of the inspecting child.
         write(*,'(a)') "--- Greenland, ext = ref"
         call setup_run_dir("g1")
-        call write_domain_par(d//"g1/grl.nml", 1, 0.0_dp, 30.0_dp, "None")
+        restart_dt = 40.0_dp
+        call write_domain_par(d//"g1/grl.nml", 1, 0.0_dp, 40.0_dp, "None")
         call sh("cp '"//d//"g1/grl.nml' '"//d//"g1/par.nml'")
         call append_globe(d//"g1/par.nml", "ref", 0.0_dp)
-        ok = child("g1", "inspect par.nml 3 10 nospin", "run.log")
+        ok = child("g1", "inspect par.nml 4 10 nospin", "run.log")
         call check(ok, "inspecting run g1 (checks in "//DIR//"g1/run.log)")
+        call greenland_rounded()
     end subroutine greenland_ref
+
+    subroutine greenland_rounded()
+        ! The same run with the outputs rounded (write_lossless = False): the Earth's files (lon, lat; rounded by the
+        ! tables geo, geo-vilma2 and VILMA2's own) agree with the lossless ones within the tables' precision and
+        ! are rounded; the restart bundle is lossless (identical, file for file).
+        write(*,'(a)') "--- Greenland, rounded output"
+        call setup_run_dir("g1r")
+        lossless = .false.
+        call write_domain_par(d//"g1r/grl.nml", 1, 0.0_dp, 40.0_dp, "None")
+        lossless = .true.
+        restart_dt = 0.0_dp
+        call sh("cp '"//d//"g1r/grl.nml' '"//d//"g1r/par.nml'")
+        call append_globe(d//"g1r/par.nml", "ref", 0.0_dp)
+        ok = child("g1r", "plain par.nml", "run.log")
+        call check(ok, "run g1r with rounded output ("//DIR//"g1r/run.log)")
+        call compare_round("geo_glob.nc", "dz_bed", 1.0e-3_dp)
+        call compare_round("geo_glob.nc", "dz_ss", 1.0e-3_dp)
+        call compare_round("geo_glob.nc", "C_ocn", 1.0e-4_dp)
+        call compare_round("geo_glob_gia.nc", "host_Ig", 1.0e-3_dp)
+        call compare_round("geo_glob_gia.nc", "host_C", 1.0e-4_dp)
+        call compare_round("geo_glob_gia.nc", "H_ice_ext", 1.0e-3_dp)
+        call compare_round("geo_glob_vilma.nc", "rsl", 1.0e-3_dp)
+        call compare_round("geo_glob_vilma.nc", "dz_bed", 1.0e-3_dp)
+        call check_lossless_file()
+        call check_axes("g1/geo_glob.nc")
+        call check_axes("g1/geo_glob_gia.nc")
+        call check_restart_bundle()
+    end subroutine greenland_rounded
 
     subroutine no_spinup_stop()
         ! gia_check: without pre_spinup_1d / equil_time_max the run stops unless allow_no_spinup (plan 7.4).
@@ -177,6 +220,52 @@ contains
         call chunks_set()
     end subroutine two_domains
 
+    subroutine observer_set()
+        ! The global geometry hub without VILMA2 (gate G1b): the two-domain FastIsostasy run with [globe_ice] (observer: it
+        ! assembles the reference and the merged ice and writes globe_ice.nc, nothing feeds back) is bit identical to the
+        ! run without it, in either domain order; globe_ice.nc is there. (The merge against the offline one: test_globe_ice.)
+        write(*,'(a)') "--- the hub as an observer (FastIsostasy)"
+        fastiso = .true.
+        call two_run_t("o0",   0.0_dp, 40.0_dp, "None", "plain par.nml", spin=.false., observer=0)
+        call two_run_t("o1",   0.0_dp, 40.0_dp, "None", "plain par.nml", spin=.false., observer=1)
+        call two_run_t("o1sw", 0.0_dp, 40.0_dp, "None", "plain par.nml", spin=.false., observer=1, swap=.true.)
+        ! restarts with the observer: the hub has no restart, its reference is rebuilt and its ice gathered again
+        restart_dt = 20.0_dp
+        call two_run_t("oc",        0.0_dp, 40.0_dp, "None",           "plain par.nml", spin=.false., observer=1)
+        call two_run_t("ochunk/c00", 0.0_dp, 20.0_dp, "None",          "plain par.nml", spin=.false., observer=1)
+        call two_run_t("ochunk/c01", 20.0_dp, 40.0_dp, "../c00/restart-20", "plain par.nml", spin=.false., observer=1)
+        restart_dt = 0.0_dp
+        fastiso = .false.
+        call write_gate("gate_obs.toml", checks= &
+            [character(len=400) :: &
+             '[[check]]', 'type = "identical"', 'ref = "o0"', 'run = "o1"', &
+             '[[check]]', 'type = "identical"', 'ref = "o1"', 'run = "o1sw"'], &
+            chunks="[0.0, 40.0]", rtimes="[]")
+        call gate_check("gate_obs.toml", "obs", "the observing hub changes nothing (bit identical), in either domain order")
+        call write_gate("gate_obsc.toml", checks= &
+            [character(len=400) :: '[[check]]', 'type = "chunks"', 'ref = "oc"', 'run = "ochunk"'], &
+            chunks="[0.0, 20.0, 40.0]", rtimes="[20.0, 40.0]")
+        call gate_check("gate_obsc.toml", "obsc", "the observing hub restarts: chunks == continuous run (globe_ice.nc included)")
+        call check(exists(d//"o1/globe_ice.nc") .and. .not. exists(d//"o0/globe_ice.nc"), "globe_ice.nc is written by the run with [globe_ice]")
+        call check(in_file(d//"o1/run.log", "the merged ice at t = 30") .and. in_file(d//"o1/run.log", "conserves the ice"), &
+                   "the merged ice conserves the volume at every output (logged; the run stops above 1e-12)")
+        call check_hub_file()
+    end subroutine observer_set
+
+    subroutine check_hub_file()
+        ! globe_ice.nc: 5 records (0 .. 40 yr), the ice of the domains merged into the background: the volume of a record
+        ! is the external ice plus the domains' grounded and floating ice, positive.
+        integer :: nx, ny, nt
+        real(sp), allocatable :: h(:,:,:), zr(:,:)
+        nx = nc_size(d//"o1/globe_ice.nc", "lon"); ny = nc_size(d//"o1/globe_ice.nc", "lat")
+        nt = nc_size(d//"o1/globe_ice.nc", "time")
+        allocate(h(nx,ny,nt), zr(nx,ny))
+        call nc_read(d//"o1/globe_ice.nc", "H_ice", h)
+        call nc_read(d//"o1/globe_ice.nc", "z_bed_ref", zr)
+        call check(nt == 5 .and. nx == NXB .and. ny == NYB .and. minval(h) >= 0.0_sp .and. maxval(h(:,:,nt)) > 1000.0_sp, &
+                   "globe_ice.nc: 5 records on the background grid, the merged ice holds the ice sheets")
+    end subroutine check_hub_file
+
     subroutine chunks_set()
         ! Restarts: the continuous run -100 -> -60 against the chunks -100 -> -80 -> -60 (the bundle at -80: VILMA2's
         ! restart file, the Earth's imports and exports on the Gauss grid, the ports, the domains), with VILMA2's
@@ -199,21 +288,31 @@ contains
                         "at -80 and -60 (KryosTools.Gate)")
     end subroutine chunks_set
 
-    subroutine two_run_t(sub, t0, t1, restart, args, spin)
-        ! Greenland + Antarctica (ext = file) over [t0, t1] from `restart`, run as `args`.
+    subroutine two_run_t(sub, t0, t1, restart, args, spin, observer, swap)
+        ! Greenland + Antarctica (ext = file) over [t0, t1] from `restart`, run as `args`. observer: the par file is
+        ! FastIsostasy's, with the hub as an observer (1) or without (0); swap: the domains in the other order.
         character(len=*), intent(in) :: sub, restart, args
         real(dp),         intent(in) :: t0, t1
         logical,          intent(in) :: spin
+        integer,          intent(in), optional :: observer
+        logical,          intent(in), optional :: swap
         integer :: es
+        logical :: sw
+        sw = .false.
+        if (present(swap)) sw = swap
         call setup_run_dir(sub)
         call write_domain_par(d//sub//"/grl.nml", 1, t0, t1, restart)
         call write_domain_par(d//sub//"/ant.nml", 2, t0, t1, restart)
         call execute_command_line("cd '"//d//sub//"' && julia --project='"//trim(tools)//"' '"//trim(repo)// &
-                                  "/tools/bin/kryos-merge.jl' grl.nml ant.nml --out par.nml --report merge.md > merge.log 2>&1", &
-                                  exitstat=es)
+                                  "/tools/bin/kryos-merge.jl' grl.nml ant.nml --out par.nml --report merge.md"// &
+                                  trim(merge(" --swap", "       ", sw))//" > merge.log 2>&1", exitstat=es)
         if (es /= 0) call sh("tail -n 20 '"//d//sub//"/merge.log'")
         call check(es == 0, "merge of the two single-domain par files ("//DIR//sub//"/merge.log)")
-        call append_globe(d//sub//"/par.nml", "file", t0, spin=spin)
+        if (present(observer)) then
+            if (observer == 1) call append_globe(d//sub//"/par.nml", "ref", t0, observer=.true.)
+        else
+            call append_globe(d//sub//"/par.nml", "file", t0, spin=spin)
+        end if
         ok = child(sub, args, "run.log")
         call check(ok, "two-domain run "//sub//" ("//DIR//sub//"/run.log)")
     end subroutine two_run_t
@@ -235,6 +334,63 @@ contains
         call check(ok, "two-domain run "//sub//trim(merge(" (domains swapped)", "                  ", swap))// &
                    " ("//DIR//sub//"/run.log)")
     end subroutine two_run
+
+    subroutine compare_round(file, var, tol)
+        ! `var` of `file` in the lossless run g1 and the rounded run g1r: the same size, the difference within the
+        ! table's precision, and not zero (the rounding acted).
+        character(len=*), intent(in) :: file, var
+        real(dp),         intent(in) :: tol
+        real(sp), allocatable :: a(:,:,:), b(:,:,:)
+        real(dp) :: dmax
+        integer :: nx, ny, nt
+        if (.not. (exists(d//"g1/"//file) .and. exists(d//"g1r/"//file))) then
+            call check(.false., file//": written by both runs")
+            return
+        end if
+        nx = nc_size(d//"g1/"//file, "lon"); ny = nc_size(d//"g1/"//file, "lat"); nt = nc_size(d//"g1/"//file, "time")
+        allocate(a(nx,ny,nt), b(nx,ny,nt))
+        call nc_read(d//"g1/"//file, var, a)
+        call nc_read(d//"g1r/"//file, var, b)
+        dmax = maxval(abs(real(a, dp) - real(b, dp)))
+        call check(dmax <= tol .and. maxval(abs(a)) > 0.0_sp, file//" "//var//": rounded within "//trim(adjustl(num(tol)))// &
+                   " of the lossless (max "//trim(adjustl(num(dmax)))//")")
+        call check(any(a /= b), file//" "//var//": the rounding acted (the files differ)")
+    end subroutine compare_round
+
+    subroutine check_lossless_file()
+        ! write_lossless: the Earth's file holds the export as it is (single precision of the double), the last record
+        ! against the bundle's exports (written lossless in double).
+        real(sp), allocatable :: a(:,:,:)
+        real(dp), allocatable :: e(:,:)
+        integer :: nt
+        nt = nc_size(d//"g1/geo_glob.nc", "time")
+        allocate(a(64,34,nt), e(64,34))
+        call nc_read(d//"g1/geo_glob.nc", "dz_bed", a)
+        call nc_read(d//"g1/restart-40/geo_glob_exports.nc", "dz_bed", e)
+        call check(all(a(:,:,nt) == real(e, sp)), "lossless output: dz_bed of the last record is the export, bit for bit")
+    end subroutine check_lossless_file
+
+    subroutine check_axes(path)
+        ! The lon, lat axes of an Earth file are the Gauss grid's: 64 longitudes from 0, 34 ascending latitudes.
+        character(len=*), intent(in) :: path
+        real(dp), allocatable :: lon(:), lat(:)
+        integer :: nx, ny
+        nx = nc_size(d//path, "lon"); ny = nc_size(d//path, "lat")
+        allocate(lon(nx), lat(ny))
+        call nc_read(d//path, "lon", lon)
+        call nc_read(d//path, "lat", lat)
+        call check(nx == 64 .and. ny == 34 .and. lon(1) == 0.0_dp .and. lat(1) < lat(ny) .and. abs(lat(1) + lat(ny)) < 1.0e-9_dp, &
+                   path//": lon, lat are the axes of GAUSS-L16")
+    end subroutine check_axes
+
+    subroutine check_restart_bundle()
+        ! The bundles of g1 (lossless output) and g1r (rounded output) are the same, file for file.
+        integer :: es
+        call execute_command_line("cd '"//d//"' && for f in g1/restart-40/*.nc g1/restart-40/*/*.nc; do "// &
+                                  "cmp -s ""$f"" ""g1r/${f#g1/}"" || { echo ""differs: $f""; exit 1; }; done", exitstat=es)
+        call check(es == 0 .and. exists(d//"g1/restart-40/geo_glob_restart.nc"), &
+                   "the restart bundles of the lossless and the rounded run are identical (restarts stay lossless)")
+    end subroutine check_restart_bundle
 
     subroutine write_gate(file, checks, chunks, rtimes)
         ! A kryos-against-kryos gate file for the runs of this test.
@@ -302,6 +458,7 @@ contains
         call standalone_init(run, gi2, cpl2)
 
         call check_cold_start(run, cpl3, spin)
+        call check_flotation(run, "t0")
         dtt = clock_dtt(run%clk)
         t_geo = clock_time(run%clk)                                          ! the Earth's last solution
         do k = 1, nsteps
@@ -313,6 +470,7 @@ contains
                 call check_gather(run, gi2, k)
             end if
             call check_scatter(run, cpl3, k, t_geo)
+            call check_flotation(run, "step "//trim(adjustl(itoa(k))))
         end do
         call check_moved(run)
         call run_end(run)
@@ -511,6 +669,27 @@ contains
         end associate
     end subroutine check_scatter
 
+    subroutine check_flotation(run, what)
+        ! The ice's flotation binding on its own exports (H_ice, z_bed, z_sl: what Yelmo's last diagnostic used) is the
+        ! exported f_grnd, bit for bit, in every domain: the rule the gather applies outside the footprint is the ice's.
+        type(run_t), target, intent(in) :: run
+        character(len=*),    intent(in) :: what
+        real(dp), allocatable :: H(:,:), zb(:,:), zs(:,:), f(:,:), g(:,:)
+        integer :: i
+        do i = 1, run%n_dom
+            associate (ice => run%dom(i)%ice%c)
+                allocate(H(ice%nx, ice%ny), zb(ice%nx, ice%ny), zs(ice%nx, ice%ny), f(ice%nx, ice%ny), g(ice%nx, ice%ny))
+                call fields_get(ice%exports, ice%h_H_ice, H)
+                call fields_get(ice%exports, ice%h_z_bed, zb)
+                call fields_get(ice%exports, ice%h_z_sl, zs)
+                call fields_get(ice%exports, ice%h_f_grnd, g)
+                call ice_flotation(run%dom(i)%ice, H, zb, zs, f)
+                call check(all(f == g), trim(what)//": "//trim(run%dom(i)%name)//": flotation = the exported f_grnd, bit for bit")
+                deallocate(H, zb, zs, f, g)
+            end associate
+        end do
+    end subroutine check_flotation
+
     subroutine check_moved(run)
         ! The Earth responded to the load of the run: a bed change on the ice grids and a sea-level shift.
         type(run_t), target, intent(in) :: run
@@ -616,6 +795,9 @@ contains
         call grid_init(g, name=BGN, mtype="latlon", units="degrees", planet="Spherical Earth", &
                        x0=2.0_dp, dx=4.0_dp, nx=NXB, y0=-88.0_dp, dy=4.0_dp, ny=NYB)
         call grid_cdo_write_desc_short(g, d//"maps")
+        call grid_init(g, name=TGN, mtype="latlon", units="degrees", planet="Spherical Earth", &
+                       x0=4.0_dp, dx=8.0_dp, nx=45, y0=-86.0_dp, dy=8.0_dp, ny=22)       ! the observer's target grid
+        call grid_cdo_write_desc_short(g, d//"maps")
         ages = [150.0_dp, 100.0_dp, 50.0_dp, 0.0_dp]
         do k = 1, 4
             do j = 1, NYB
@@ -645,23 +827,30 @@ contains
         gc_deg = acos(max(-1.0_dp, min(1.0_dp, sin(a)*sin(b) + cos(a)*cos(b)*cos(dl))))*180.0_dp/PI
     end function gc_deg
 
-    subroutine append_globe(file, ext, tref, spin)
+    subroutine append_globe(file, ext, tref, spin, observer)
         ! The groups of the global part (VILMA2 at lmax 16, the global ice field on the synthetic background) after the
         ! domains' groups. ext = "ref": the ice outside the footprints is X; "file": X plus the history's anomaly.
         character(len=*), intent(in) :: file, ext
         real(dp),         intent(in) :: tref       ! [yr] unused for ref; the window starts here
         logical,          intent(in), optional :: spin   ! VILMA2's own spin-up before the seed (pre_spinup_1d)
+        logical,          intent(in), optional :: observer   ! the hub without VILMA2: [globe_ice] target, output
         integer :: u
+        logical :: obs
         associate (unused => tref); end associate
+        obs = .false.
+        if (present(observer)) obs = observer
         open(newunit=u, file=file, status="old", position="append", action="write")
-        write(u,'(a)') "&vilma", "  lmax = 16"
-        if (present(spin)) then
-            if (spin) write(u,'(a)') "  pre_spinup_1d = .true."
+        if (.not. obs) then
+            write(u,'(a)') "&vilma", "  lmax = 16"
+            if (present(spin)) then
+                if (spin) write(u,'(a)') "  pre_spinup_1d = .true."
+            end if
+            write(u,'(a)') "/"
         end if
-        write(u,'(a)') "/"
         call w(u, [character(len=400) :: &
             "&globe_ice", "  grid = '"//BGN//"'", "  z_bed_ref = 'gi_X_zb'", "  H_ice_ref = 'gi_X_H'", &
-            "  ext = '"//trim(ext)//"'", "  ext_field = 'gi_hist'", "  ext_tref = 0.0", "/", &
+            "  ext = '"//trim(ext)//"'", "  ext_field = 'gi_hist'", "  ext_tref = 0.0", &
+            obs_line(obs), "/", &
             "&gi_X_zb", "  filename = '"//d//"{grid_name}_IceHistory-TEST.nc'", "  name = 'z_bed'", &
             "  mode = 'transient'", "/", &
             "&gi_X_H", "  filename = '"//d//"{grid_name}_IceHistory-TEST.nc'", "  name = 'H_ice'", &
@@ -781,7 +970,7 @@ contains
         open(newunit=u, file=file, status="replace", action="write")
         call w(u, [character(len=400) :: &
             "&kryos", "  domains = '"//nm//"'", "  restart = '"//restart//"'", "  restart_out = '"//trim(merge("out_rst", "none   ", restart_dt > 0.0_dp))//"'", &
-            "  write_lossless = True", "  log_level = 'info'", "/", &
+            "  write_lossless = "//trim(merge("True ", "False", lossless)), "  log_level = 'info'", "/", &
             "&clock", "  method = 'const'", "  time_const = 0.0", "  time_init = "//ftoa(time_init), &
             "  time_end = "//ftoa(time_end), "  dtt = 10.0", "/", &
             "&out_2D", "  method = 'const'", "  dt = 10.0", "/", &
@@ -789,8 +978,7 @@ contains
             "&out_rst", "  method = 'const'", "  dt = "//ftoa(max(restart_dt, 1.0_dp)), "/", &
             "&globe", "  forcing = 'forcing'", "  geo = 'geo_glob'", "/", &
             "&forcing", "  backend = 'tsgen'", "  clock = 'forcing'", coefs, "  out_1D = 'out_1D'", "/", &
-            "&geo_glob", "  backend = 'vilma2'", "  dt = "//ftoa(dt_geo), "  allow_no_spinup = "//trim(merge("True ", "False", allow_nospin)), &
-            "  out_1D = 'out_1D'", "/", &
+            geo_glob_lines(), &
             "&"//nm, "  grid_hub = '"//grid//"'", "  topo = 'topo'", "  regions = 'regions'", &
             "  basins = 'basin'", "  out_2D = 'out_2D'", "  ice = 'ice_"//sx//"'", "  geo = 'geo_"//sx//"'", &
             "  climate = 'climate_"//sx//"'", "  surface = 'surface_"//sx//"'", "  shelf = 'shelf_"//sx//"'", &
@@ -800,7 +988,7 @@ contains
             "&regions", "  layers = 'basin'", "  path_basin = '"//basins//"'", "/", &
             "&ice_"//sx, "  backend = 'yelmo'", "  yelmo = 'yelmo'", "  init_equil_time = 0.0", &
             "  out_2D = 'out_2D'", "  out_1D = 'out_1D'", "/", &
-            "&geo_"//sx, "  backend = 'vilma2'", "  out_2D = 'out_2D'", "  out_1D = 'out_1D'", "/", &
+            geo_port_lines(sx), &
             "&climate_"//sx, "  backend = 'snapshots'", "  clock = 'forcing'", "  dt = 20.0", &
             "  snapshots = 'snapshots'", "  reference = 'pd'", terms, "  out_2D = 'out_2D'", "/", &
             "&surface_"//sx, "  backend = 'chion'", "  clock = 'forcing'", "  surface_chion = 'surface_chion'", &
@@ -856,6 +1044,18 @@ contains
             "&yelmo_init_topo", "/", &
             "&yelmo_data", "  pd_topo_load = False", "  pd_tsrf_load = False", "  pd_smb_load = False", &
             "  pd_vel_load = False", "  pd_age_load = False", "/"])
+        if (fastiso) call w(u, [character(len=400) :: &
+            "&isos", "  heterogeneous_ssh = .true.", "  interactive_sealevel = .true.", "  include_elastic = .true.", &
+            "  correct_compression = .true.", "  correct_distortion = .false.", "  method = 2", &
+            "  dt_diagnostics = 10.", "  pad = 512.", "  mantle = 'uniform'", "  lithosphere = 'uniform'", &
+            "  layering = 'equalized'", "  lumping = 'min'", "  viscosity_scaling_method = 'none'", &
+            "  viscosity_scaling = 1.", "  nl = 1", "  zl = 88.", "  viscosities = 1.e21", "  ref_viscosity = 1.e21", &
+            "  tau = 3000.0", "  litho_thickness_scaling = 1.0", "  E = 66.0", "  nu = 0.28", "  rho_litho = 3200.0", &
+            "  r_earth = 6.378e3", "  m_earth = 5.972e24", "  restart = 'None'", "  mask_file = 'None'", &
+            "  rheology_file = 'None'", "  dt_method = 'tsit54'", "  dt_init = 1.0", "  dt_min = 1e-10", &
+            "  dt_max = 10.0", "  rtol = 1e-4", "  atol = 1e-2", "  q = 1.0", "/", &
+            "&barysealevel", "  method = 'fastiso'", "  bsl_init = 0.0", "  sl_path = 'None'", "  sl_name = 'none'", &
+            "  A_ocean_pd = 3.625e14", "  A_ocean_path = 'None'", "  restart = 'None'", "/"])
         ! chion and its host (a short spin-up), the orbit of 1950
         call w(u, [character(len=400) :: &
             "&orbit", "  method = 'fixed_orbit'", "/", &
@@ -882,6 +1082,57 @@ contains
             "  tf_correction = False", "  tf_path = 'none'", "  tf_name = 'dT_nl'", "/"])
         close(u)
     end subroutine write_domain_par
+    function obs_line(obs) result(l)
+        ! The keys of the observing hub in [globe_ice] (a blank line, which `w` skips, without); one key per line.
+        logical, intent(in) :: obs
+        character(len=400) :: l(2)
+        l = ""
+        if (obs) then
+            l(1) = "  target = '"//TGN//"'"
+            l(2) = "  out_2D = 'out_2D'"
+        end if
+    end function obs_line
+
+    function geo_glob_lines() result(l)
+        ! The group of the global geo: VILMA2 (the Earth's streams on the 2D schedule), or FastIsostasy's bsl.
+        character(len=400) :: l(9)
+        l = ""
+        if (fastiso) then
+            l(1) = "&geo_glob"
+            l(2) = "  backend = 'fastisostasy'"
+            l(3) = "  clock = 'forcing'"
+            l(4) = "  bsl = 'barysealevel'"
+            l(5) = "  out_1D = 'out_1D'"
+        else
+            l(1) = "&geo_glob"
+            l(2) = "  backend = 'vilma2'"
+            l(3) = "  dt = "//ftoa(dt_geo)
+            l(4) = "  allow_no_spinup = "//trim(merge("True ", "False", allow_nospin))
+            l(5) = "  out_1D = 'out_1D'"
+            l(6) = "  out_2D = 'out_2D'"
+            l(7) = "  out_gia = 'out_2D'"
+            l(8) = "  out_vilma = 'out_2D'"
+        end if
+        l(9) = "/"
+    end function geo_glob_lines
+
+    function geo_port_lines(sx) result(l)
+        character(len=*), intent(in) :: sx
+        character(len=400) :: l(7)
+        l = ""
+        l(1) = "&geo_"//sx
+        if (fastiso) then
+            l(2) = "  backend = 'fastisostasy'"
+            l(3) = "  dt = 10.0"
+            l(4) = "  isos = 'isos'"
+        else
+            l(2) = "  backend = 'vilma2'"
+        end if
+        l(5) = "  out_2D = 'out_2D'"
+        l(6) = "  out_1D = 'out_1D'"
+        l(7) = "/"
+    end function geo_port_lines
+
     subroutine field(u, id, group, name, units)
         integer,          intent(in) :: u, id
         character(len=*), intent(in) :: group, name, units
@@ -946,6 +1197,12 @@ contains
         character(len=*), intent(in) :: file
         inquire(file=file, exist=exists)
     end function exists
+
+    function num(x) result(s)
+        real(dp), intent(in) :: x
+        character(len=24) :: s
+        write(s, '(es10.3)') x
+    end function num
 
     function ftoa(x) result(s)
         real(dp), intent(in) :: x

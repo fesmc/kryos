@@ -332,6 +332,9 @@ terms" and `doc/design.md` §15; no merge to wait for); `vilma2`'s own manifest 
 &geo_ant  backend = "vilma2"   /
 ```
 
+As built (WP4/WP5): `[geo_vilma2]` also has `out_gia` and `out_vilma` (schedules of `<inst>_gia.nc`, the host imports as VILMA2 got them, and
+`<inst>_vilma.nc`, VILMA2's own diagnostics) and `allow_no_spinup`; `[globe_ice]` has `target` (the global grid of the host terms for the
+observer without VILMA2; with `geo = vilma2` it is the Gauss grid). The Earth's 2D files are written on `lon`, `lat`.
 The densities are not keys: they are the run's (`phys_const`). `[globe_ice]` follows a new
 template `[globe_ice]`; the three field groups follow `datasrc_defaults.nml`:
 

@@ -14,3 +14,6 @@ lossless (`-`): time series stay lossless.
 |  6 | A_ocn     |            | m2     | Ocean area                                         | -     |
 |  7 | dV_bsl    |            | m3     | Volume change contributing to barystatic sea level | -     |
 |  8 | dphi      |            | m      | Uniform sea-surface shift (dz_ss is relative to it) | -     |
+|  9 | C_ocn     | xc, yc     | 1      | Ocean function (global part, host-resolved Earth)  | 1e-4  |
+| 10 | bsl_ive   |            | m      | Ice-volume equivalent sea level (global part)      | -     |
+| 11 | mass_resid |           | 1      | Worst sea-level-equation mass residual of the step | -     |

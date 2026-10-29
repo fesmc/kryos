@@ -226,6 +226,7 @@
     grid        = ""                           ! required: background grid, e.g. "GLOBAL-0.5DEG"
     z_bed_ref   = ""                           ! required: field group of the background bed X [m]
     H_ice_ref   = ""                           ! required: field group of the background ice X [m]
+    target      = ""                           ! without geo = vilma2 (observer): the global grid of the host terms (map folder)
     ext         = "ref"                        ! "ref" | "file": ice outside the footprints (X, or X + history anomaly)
     ext_field   = ""                           ! ext = "file": field group of the history H_ice (anomaly)
     ext_tref    = 0.0                          ! [yr] model time of the history's present day (X, anomaly reference)

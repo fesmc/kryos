@@ -417,8 +417,10 @@ contains
                     [character(len=16) :: "m", "m", "m", "m", "1", "1", "m yr-1", "kg m-2 yr-1", "kg m-2 yr-1", &
                             "kg m-2 yr-1", "kg m-2 yr-1", "Gt", "m yr-1", "m yr-1", "m yr-1", "m", "m", "1", "m", "m", "m"], &
                     [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2])
-        call expect("geo", [character(len=16) :: "dz_bed", "dz_ss", "z_bed_ref", "dz_bed_dt", "bsl", "A_ocn", "dV_bsl", "dphi"], &
-                    [character(len=16) :: "m", "m", "m", "m yr-1", "m", "m2", "m3", "m"], [2, 2, 2, 2, 0, 0, 0, 0])
+        call expect("geo", [character(len=16) :: "dz_bed", "dz_ss", "z_bed_ref", "dz_bed_dt", "bsl", "A_ocn", "dV_bsl", "dphi", &
+                            "C_ocn", "bsl_ive", "mass_resid"], &
+                    [character(len=16) :: "m", "m", "m", "m yr-1", "m", "m2", "m3", "m", "1", "m", "1"], &
+                    [2, 2, 2, 2, 0, 0, 0, 0, 2, 0, 0])
         call expect("climate", [character(len=16) :: "tas", "pr", "z_srf_clim", "lapse", "beta_p", "to_ann", "so_ann", &
                             "dto_ann", "to_shlf", "so_shlf", "dto_shlf", "dso_shlf", "smb", "T_srf", "Qd", "tsl_ann"], &
                     [character(len=16) :: "K", "kg m-2 yr-1", "m", "K m-1", "K-1", "K", "psu", "K", "K", "psu", "K", &

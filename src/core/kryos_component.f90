@@ -21,7 +21,7 @@ module kryos_component
                               clock_time_rel, clock_dtt
     use ncio,           only: nc_close, nc_write
     use variable_io,    only: var_io_type, var_io_write
-    use kryos_outfile,  only: outfile_row, outfile_table_file, outfile_dims_2d, outfile_dims_ts, &
+    use kryos_outfile,  only: outfile_row, outfile_table_file, outfile_dims_2d, outfile_dims_lonlat, outfile_dims_ts, &
                               outfile_axis, outfile_open
 
     implicit none
@@ -202,7 +202,8 @@ contains
     subroutine component_write_output(self, file, t, stream, init)
         ! Default writer (core-design section 6): the exports listed in out_vars
         ! (unset: all), unpublished ones skipped. Stream 2D: the rank-2 and rank-3
-        ! exports on the native grid (xc, yc [km], time; rank 3 also its axis),
+        ! exports on the native grid (xc, yc [km], time; rank 3 also its axis; an
+        ! instance that owns a global grid, grid_obj, writes lon, lat [degrees]),
         ! file <instance>.nc. Stream 1D: the 0-D exports, file <instance>_ts.nc.
         ! Values are written as float with the precision of the component
         ! kind's table input/kryos-variables-<kind>.md (lossless under
@@ -220,7 +221,8 @@ contains
         character(len=*), parameter :: proc = "kryos_component::write_output"
         type(var_io_type) :: row
         integer, allocatable :: hs(:)
-        logical :: ts, found
+        character(len=32), parameter :: DIMS_LL(3) = [character(len=32) :: "lon", "lat", "time"]
+        logical :: ts, found, lonlat
         integer :: i, h, ncid, n
         real(sp), allocatable :: a2(:,:), a3(:,:,:)
         real(sp) :: a0
@@ -245,9 +247,12 @@ contains
             return
         end if
 
+        lonlat = allocated(self%grid_obj)
         if (init) then
             if (ts) then
                 call outfile_dims_ts(file, t)
+            else if (lonlat) then
+                call outfile_dims_lonlat(file, self%grid_obj%G%x, self%grid_obj%G%y, t)
             else
                 if (.not. (allocated(self%xkm) .and. allocated(self%ykm))) then
                     call fesm_error(proc, "instance "//trim(self%name)//" has no grid axes for "//trim(file), &
@@ -285,7 +290,11 @@ contains
                 case (2)
                     allocate(a2(f%nx, f%ny))
                     call fields_get(self%exports, h, a2)
-                    call var_io_write(file, row, a2, n, ncid=ncid)
+                    if (lonlat) then
+                        call var_io_write(file, row, a2, n, ncid=ncid, dims=DIMS_LL)
+                    else
+                        call var_io_write(file, row, a2, n, ncid=ncid)
+                    end if
                     deallocate(a2)
                 case (3)
                     allocate(a3(f%nx, f%ny, f%nz))

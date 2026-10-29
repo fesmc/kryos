@@ -61,7 +61,7 @@ module kryos_outfile
     end interface outfile_var3d
 
     public :: outfile_set_table_dir, outfile_table_file, outfile_load, outfile_row, outfile_prec
-    public :: outfile_path, outfile_dims_2d, outfile_dims_ts, outfile_axis, outfile_open, outfile_var2d
+    public :: outfile_path, outfile_dims_2d, outfile_dims_lonlat, outfile_dims_ts, outfile_axis, outfile_open, outfile_var2d
     public :: outfile_var3d
 
 contains
@@ -238,6 +238,17 @@ contains
         call nc_write_dim(file, "yc", x=y, units="km")
         call nc_write_dim(file, "time", x=t, dx=1.0_dp, nx=1, units="year", unlimited=.true.)
     end subroutine outfile_dims_2d
+
+    subroutine outfile_dims_lonlat(file, lon, lat, t)
+        ! A new 2D file of a global lon-lat grid (a Gaussian grid included): lon, lat [degrees] and the
+        ! unlimited time axis [year] at `t`.
+        character(len=*), intent(in) :: file
+        real(dp),         intent(in) :: lon(:), lat(:), t
+        call nc_create(file)
+        call nc_write_dim(file, "lon", x=lon, units="degrees_east")
+        call nc_write_dim(file, "lat", x=lat, units="degrees_north")
+        call nc_write_dim(file, "time", x=t, dx=1.0_dp, nx=1, units="year", unlimited=.true.)
+    end subroutine outfile_dims_lonlat
 
     subroutine outfile_dims_ts(file, t)
         ! A new time series file: the unlimited time axis [year] at `t`.

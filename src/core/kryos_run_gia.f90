@@ -75,13 +75,15 @@ contains
             end do
             call globe_ice_reference_end(gi, cpl)
 
-            associate (c => run%globe%geo%c)
-                call fields_put(c%imports, c%hi_z_bed_ref,   gi%z_bed_ref,   t1=t0)
-                call fields_put(c%imports, c%hi_H_ice_ref,   gi%H_ice_ref,   t1=t0)
-                call fields_put(c%imports, c%hi_host_w,      gi%host_w,      t1=t0)
-                call fields_put(c%imports, c%hi_host_Ig_ref, gi%host_Ig_ref, t1=t0)
-                call fields_put(c%imports, c%hi_host_C_ref,  gi%host_C_ref,  t1=t0)
-            end associate
+            if (run%globe%host_gi) then                     ! the Earth's imports (the observing hub feeds nothing)
+                associate (c => run%globe%geo%c)
+                    call fields_put(c%imports, c%hi_z_bed_ref,   gi%z_bed_ref,   t1=t0)
+                    call fields_put(c%imports, c%hi_H_ice_ref,   gi%H_ice_ref,   t1=t0)
+                    call fields_put(c%imports, c%hi_host_w,      gi%host_w,      t1=t0)
+                    call fields_put(c%imports, c%hi_host_Ig_ref, gi%host_Ig_ref, t1=t0)
+                    call fields_put(c%imports, c%hi_host_C_ref,  gi%host_C_ref,  t1=t0)
+                end associate
+            end if
         end associate
         associate (unused => proc); end associate
     end subroutine gia_reference
@@ -134,13 +136,15 @@ contains
             end do
             call globe_ice_gather_end(gi, cpl)
 
-            associate (c => run%globe%geo%c)
-                call fields_put(c%imports, c%hi_H_ice_ext, gi%H_ice_ext, t1=t_load)
-                call fields_put(c%imports, c%hi_host_w,    gi%host_w,    t1=t_load)
-                call fields_put(c%imports, c%hi_host_Ig,   gi%host_Ig,   t1=t_load)
-                call fields_put(c%imports, c%hi_host_C,    gi%host_C,    t1=t_load)
-                call fields_put(c%imports, c%hi_host_F,    gi%host_F,    t1=t_load)
-            end associate
+            if (run%globe%host_gi) then
+                associate (c => run%globe%geo%c)
+                    call fields_put(c%imports, c%hi_H_ice_ext, gi%H_ice_ext, t1=t_load)
+                    call fields_put(c%imports, c%hi_host_w,    gi%host_w,    t1=t_load)
+                    call fields_put(c%imports, c%hi_host_Ig,   gi%host_Ig,   t1=t_load)
+                    call fields_put(c%imports, c%hi_host_C,    gi%host_C,    t1=t_load)
+                    call fields_put(c%imports, c%hi_host_F,    gi%host_F,    t1=t_load)
+                end associate
+            end if
         end associate
     end subroutine gia_gather
 
@@ -158,6 +162,10 @@ contains
         integer :: i
 
         t_last = cadence_t_last(run%dom(d)%ice%c%cadence, run%clk)
+        if (.not. run%globe%host_gi) then                   ! the observing hub has no rows: the same check on the exports
+            call observer_check(run%dom(d), t, t_last, init)
+            return
+        end if
         do i = 1, size(run%dom(d)%wires)
             associate (w => run%dom(d)%wires(i))
                 if (w%transform /= T_GIA .or. trim(w%dst_field) /= "host_w") cycle
@@ -178,6 +186,31 @@ contains
                         "the wiring table's T_GIA rows (ice -> geo_g)")
     end function gia_row_check
 
+    subroutine observer_check(dom, t, t_last, init)
+        ! The ice's exports H_ice, f_grnd, z_bed, z_sl (what a T_GIA row reads) were published at its last update,
+        ! before t (lag 1) or at t at most (the cold start).
+        type(domain_t), intent(in) :: dom
+        real(dp),       intent(in) :: t, t_last
+        logical,        intent(in) :: init
+
+        integer :: k, h(4)
+
+        h = [dom%ice%c%h_H_ice, dom%ice%c%h_f_grnd, dom%ice%c%h_z_bed, dom%ice%c%h_z_sl]
+        do k = 1, 4
+            associate (f => dom%ice%c%exports%f(h(k)))
+                if (.not. f%published) then
+                    call fesm_error("kryos_run::gia_gather", "domain "//trim(dom%name)//": the ice's `"//trim(f%name)// &
+                                    "` was never published", "t = "//to_str(t))
+                else if (f%t1 /= t_last .or. f%t1 > t .or. (.not. init .and. f%t1 >= t)) then
+                    call fesm_error("kryos_run::gia_gather", "domain "//trim(dom%name)//": the ice's `"//trim(f%name)// &
+                                    "` was published at t1 = "//to_str(f%t1)//", the ice's last update is at "// &
+                                    to_str(t_last)//" and the load is read at "//to_str(t), &
+                                    "the gather reads the previous step's exports (lag 1)")
+                end if
+            end associate
+        end do
+    end subroutine observer_check
+
     ! =========================================================================
     ! Seed (plan 8.1, 7.4)
     ! =========================================================================
@@ -189,6 +222,7 @@ contains
 
         if (.not. run%globe%has_gi) return
         call gia_gather(run, init=.true.)                                   ! the t0 load: final ice
+        if (.not. run%globe%host_gi) return                                 ! the observing hub: nothing to seed
         call globe_pass(run%globe, "geo", run%clk, PASS_STATE)              ! spin-up under it, the dt = 0 seed
         do d = 1, run%n_dom
             if (.not. domain_present(run%dom(d), C_GEO)) cycle

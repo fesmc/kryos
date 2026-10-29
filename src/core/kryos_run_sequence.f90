@@ -55,10 +55,8 @@ contains
 
         ! phase 4 (plan 8.1): a host-resolved global geo is built before the domains' block a): the reference
         ! from the domains' static exports and the background, VILMA2 initialised at it (exports: no anomaly)
-        if (run%globe%has_gi) then
-            call gia_reference(run)
-            call globe_pass(run%globe, "geo", run%clk, PASS_GEOMETRY)
-        end if
+        if (run%globe%has_gi) call gia_reference(run)
+        if (run%globe%host_gi) call globe_pass(run%globe, "geo", run%clk, PASS_GEOMETRY)
 
         ! a) bed and sea level (domain_init_isostasy): the geo state from the
         !    ice's reference and geometry and the global bsl
@@ -119,7 +117,7 @@ contains
             associate (dom => run%dom(d))
                 ! c') the domain on the Earth's solution: bed and sea level of the seed into the ice, its
                 !     diagnostics reconciled (the ice thickness is kept; z_srf follows the bed)
-                if (run%globe%has_gi) then
+                if (run%globe%host_gi) then
                     call exchange(dom, "geo", "ice", t0, run%clk, init=.true.)
                     call domain_pass(dom, C_ICE, run%clk, PASS_GEOMETRY)
                 end if
@@ -185,13 +183,13 @@ contains
         call restart_check_manifest(dir, run%globe, run%dom, run%exps)
 
         ! 3. the globe (yelmox bsl_startup, coefs_restart_read)
+        ! phase 4 (plan 8.2): the reference is a function of files and of the static exports PASS_INIT published, so it
+        ! is rebuilt before the geo restore (and for the observing hub), and VILMA2 is built at it (memory zero); the
+        ! restore (vilma_restart_read: checks the reference, restores the memory and the ramp's last host terms) then
+        ! replaces the state, the imports and exports are the bundle's
+        if (run%globe%has_gi) call gia_reference(run)
         do j = 1, size(GLOBE_ORDER)
-            if (trim(GLOBE_ORDER(j)) == "geo" .and. run%globe%has_gi) then
-                ! phase 4 (plan 8.2): the reference is a function of files and of the static exports PASS_INIT
-                ! published, so it is rebuilt before the geo restore, and VILMA2 is built at it (memory zero);
-                ! the restore (vilma_restart_read: checks the reference, restores the memory and the ramp's last
-                ! host terms) then replaces the state, the imports and exports are the bundle's
-                call gia_reference(run)
+            if (trim(GLOBE_ORDER(j)) == "geo" .and. run%globe%host_gi) then
                 call globe_pass(run%globe, "geo", run%clk, PASS_GEOMETRY)
             end if
             call restart_read_global(dir, run%globe, trim(GLOBE_ORDER(j)), run%clk)
@@ -218,6 +216,9 @@ contains
                 call domain_hub_update(dom, t, run%clk)
             end associate
         end do
+
+        ! the observing hub has no restart: its merged ice is gathered again from the restored ice
+        if (run%globe%has_gi .and. .not. run%globe%host_gi) call gia_gather(run, init=.true.)
 
         call log_msg(LOG_INFO, "kryos_run", "restored from "//dir//" at time = "//year_label(t)//" yr")
     end subroutine run_restore
@@ -270,6 +271,8 @@ contains
                 if (cadence_due(run%globe%geo%c%cadence, run%clk)) call gia_gather(run, init=.false.)
             end if
             call globe_update(run%globe, "geo", run%clk)
+        else if (run%globe%has_gi) then                         ! the observer without a global geo: every step
+            call gia_gather(run, init=.false.)
         end if
         if (forcing_present(run%globe%forcing)) then
             call gather_forcing(run)

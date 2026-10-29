@@ -546,8 +546,27 @@ tick at `t1`); `update` stops with a named error if its own `st%tick` differs
   when the global geo is due.
 - One ice cadence across the domains: `gia_gather` takes the load time from the ice's last update and stops when two domains'
   ice instances were last updated at different times (the Earth has one load time).
-- Not yet: the restore (a run with a host geo that is restarted stops naming this), the lon-lat output of the Earth's
-  rank-2 exports, `globe_ice` as an observer without `geo = vilma2`.
+- Restore (§3.3): `gia_reference` rebuilds the reference before the geo restore, `globe_pass(geo, PASS_GEOMETRY)` builds VILMA2
+  at it, then the generic `restart_read_global` (`vilma_restart_read` of `geo_glob_restart.nc`, which checks the reference
+  against the model just built; the global imports and exports of the bundle; `PASS_RESTART`: nothing). The ports are
+  stateless (no row runs for them at a restore). The bundle and the manifest are the generic ones: the global geo's
+  `grid` is `GAUSS-L<lmax>`, its files `geo_glob_restart.nc`, `geo_glob_imports.nc`, `geo_glob_exports.nc`. chunk == cont is
+  bit for bit (`tests/test_gia_sequence.f90`, bundles included).
+- Spin-up: `gia_check` stops a run with `geo = vilma2` that has no VILMA2 spin-up (`pre_spinup_1d` or `equil_time_max > 0`,
+  `geo_opt_t%host_spinup`) unless the instance sets `allow_no_spinup = True`: the `dt = 0` seed solves the previous load
+  (VILMA2 F7), so without the spin-up the t0 load, the external ice above all, enters with the first call.
+- Output (WP5): the default writer writes an instance that owns a global grid (`grid_obj`) on `lon`, `lat` [degrees]
+  (`outfile_dims_lonlat`, `dims=` of `var_io_write`) with the precisions of the table `geo` (`C_ocn`, `bsl_ive`, `mass_resid`
+  rows added); the stream `gia` (`out_gia`, `<inst>_gia.nc`, table `geo-vilma2`) holds the host imports as VILMA2 got them
+  (and `t_load`), the stream `vilma` (`out_vilma`, `<inst>_vilma.nc`) VILMA2's own `vilma_write_step` (rounded by its table).
+  `[kryos] write_lossless` makes all of them lossless (ncio); restart files and bundles are always lossless (a rounded and a
+  lossless run have identical bundles, tested).
+- The global geometry hub without VILMA2 (observer, plan 5.4, gate G1b): `[globe_ice]` present and no host-resolved geo
+  (`globe%has_gi` without `host_gi`): `globe_gia_init` takes the target grid from `[globe_ice] target` (a `grid_<name>.txt`
+  of the map folder), `gia_reference` and `gia_gather` run (the gather at every step when there is no global geo, else on
+  its cadence) and feed nothing; `globe_ice.nc` is written on `[globe_ice] out_2D`. The ice checks of `gia_check` apply.
+  The run is bit identical to the same run without the group (tested for two FastIsostasy domains, both orders, and with a
+  restart, which gathers the restored ice again).
 
 ## 4. Timing, cadences, lags
 

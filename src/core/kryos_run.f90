@@ -35,12 +35,13 @@ module kryos_run
     use kryos_forcing,    only: forcing_present, forcing_kill, forcing_restart_due, forcing_restart_fldr
     use kryos_geo,        only: geo_present
     use kryos_globe,      only: globe_t, globe_init, globe_init_state, globe_end, globe_nodes, globe_register_grid
+    use kryos_globe_ice,  only: globe_ice_write
     use kryos_domain,     only: domain_t, domain_init, domain_create, domain_wire, domain_component, domain_present, C_CLIMATE, &
                                 domain_pass, domain_end, domain_hub_write, exchange_static, &
                                 NCOMP, INIT_ORDER
     use kryos_experiment, only: experiment_list_t, experiment_proto_t, experiments_create, experiments_describe, &
                                 experiments_end
-    use kryos_output,     only: output_t, output_init, output_add_component, output_add_hub, &
+    use kryos_output,     only: output_t, output_init, output_add_component, output_add_hub, output_add_writer, &
                                 output_add_timing, output_write, output_describe
     use kryos_restart,    only: year_label, restart_dir, restart_write
 
@@ -485,6 +486,9 @@ contains
         call output_init(run%out, run%cfg)
         if (forcing_present(run%globe%forcing)) call output_add_component(run%out, run%cfg, run%clk, run%globe%forcing%c)
         if (geo_present(run%globe%geo))         call output_add_component(run%out, run%cfg, run%clk, run%globe%geo%c)
+        if (run%globe%has_gi) &                 ! the global geometry hub, globe_ice.nc on [globe_ice] out_2D
+            call output_add_writer(run%out, run%cfg, run%clk, "globe_ice", "2D", "globe_ice.nc", &
+                                   trim(run%globe%gi%out_2D), globe_ice_writer, run%globe)
         do d = 1, run%n_dom
             do j = 1, NCOMP
                 c => domain_component(run%dom(d), INIT_ORDER(j))
@@ -495,6 +499,21 @@ contains
         call output_add_timing(run%out, run%cfg, run%clk, run%tmr)
         call output_describe(run%out)
     end subroutine run_output_init
+
+    subroutine globe_ice_writer(ctx, file, t, stream, init)
+        ! The writer of the global geometry hub stream (output_writer_i): globe_ice_write.
+        class(*),         intent(inout) :: ctx
+        character(len=*), intent(in)    :: file, stream
+        real(dp),         intent(in)    :: t
+        logical,          intent(in)    :: init
+        associate (unused => stream); end associate
+        select type (ctx)
+        type is (globe_t)
+            call globe_ice_write(ctx%gi, ctx%cpl, file, t, init)
+        class default
+            call fesm_error("kryos_run::globe_ice_writer", "context of the globe_ice stream is not a globe_t")
+        end select
+    end subroutine globe_ice_writer
 
     subroutine hub_writer(ctx, file, t, stream, init)
         ! The writer of a domain's hub stream (output_writer_i): domain_hub_write.
