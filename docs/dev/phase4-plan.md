@@ -497,6 +497,15 @@ on the background grid at `[globe_ice] out_2D`: the spliced reference (`z_bed`, 
 merged ice of the step (lag 1, as `ice → geo`), the coverage `Σ f_d`; rounded (§9.1). No
 restart (derived; rebuilt like the domain hubs). No `[globe_ice]` group: no cost.
 
+As built (WP3): `globe_ice_add_domain(..., priority)` gives overlapping domains owner weights
+(descending priority, ties by ice grid name; pairs that share no global cell are skipped, so no
+ice-to-ice map is needed for disjoint domains); domains without priority must not overlap (the merge
+stops naming them). The file variables are `z_bed_ref`, `H_ice_ref` (the spliced reference, static),
+`cov` (owned coverage, at most 1), `H_ice` and `t_load` (one record per output); the table is
+`input/kryos-variables-globe_ice.md`. The hub's merged reference and ice are checked against the
+background outside the domains plus the owned ice of the domains (1e-12, logged at the reference and at
+every write); `tools/bin/kryos-globe-ice.jl` recomputes the merge offline from the coupler's map files.
+
 ## 6. Scatter
 
 `gia_scatter(run)` after the global update, for every domain (name order):
