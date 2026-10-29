@@ -11,7 +11,7 @@ module kryos_ice_yelmo
     implicit none
 
     private
-    public :: yelmo_ice_t, yelmo_ice_constraints
+    public :: yelmo_ice_t, yelmo_ice_constraints, yelmo_ice_publish
 
     type, extends(ice_t) :: yelmo_ice_t
     contains
@@ -30,6 +30,13 @@ contains
         type(constraints_t) :: con
         con = constraints_t(linked=.false., build_flag="yelmo=1")
     end function yelmo_ice_constraints
+
+    subroutine yelmo_ice_publish(self, t1)
+        type(yelmo_ice_t), intent(inout) :: self
+        real(dp),          intent(in)    :: t1
+        associate (unused => t1); end associate
+        call unavailable(self)
+    end subroutine yelmo_ice_publish
 
     subroutine unavailable(self)               ! safety net: backend_admit stops first
         class(yelmo_ice_t), intent(in) :: self

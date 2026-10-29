@@ -26,7 +26,7 @@ module kryos_ice_yelmo
     implicit none
 
     private
-    public :: yelmo_ice_t, yelmo_ice_constraints
+    public :: yelmo_ice_t, yelmo_ice_constraints, yelmo_ice_publish
 
     ! Variable sets of the streams yelmo and yelmo_sm (yelmox kryos_output.f90)
     character(len=56), parameter :: YELMO_VARS_2D(24) = [ character(len=56) :: &
@@ -65,6 +65,19 @@ contains
         type(constraints_t) :: con
         con = constraints_t(build_flag="yelmo=1")
     end function yelmo_ice_constraints
+
+    subroutine yelmo_ice_publish(self, t1)
+        ! The INSTANT exports (geometry, reference, mass) of Yelmo's current state at t1, for an
+        ! experiment that changed the state outside a step (recon: H_ice, H_ice_ref, ...): what
+        ! PASS_INIT puts, without the static exports (footprint, H_ice_pd, H_grnd_pd: not changed)
+        ! and the MEAN rates (the step puts them).
+        type(yelmo_ice_t), intent(inout) :: self
+        real(dp),          intent(in)    :: t1
+
+        call exports_geometry(self, t1)
+        call exports_reference(self, t1)
+        call exports_mass(self, t1)
+    end subroutine yelmo_ice_publish
 
     ! =========================================================================
     ! Bindings

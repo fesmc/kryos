@@ -236,7 +236,7 @@ program test_run_sequence
     use kryos_experiment, only: experiment_proto_t, HOOK_STEP_BEGIN, HOOK_ICE_BND, HOOK_COLD_PRE_STATE, HOOK_COLD_POST_STATE
     use test_run_toys
     use kryos_ice,       only: ice_flotation
-    use kryos_ice_yelmo, only: yelmo_ice_t
+    use kryos_ice_yelmo, only: yelmo_ice_t, yelmo_ice_publish
     use yelmo_defs,      only: MASK_ICE_NONE
     use kryos_exp_relax, only: relax_exp_t
     use kryos_exp_opt_cb_ref, only: opt_cb_ref_exp_t
@@ -353,6 +353,7 @@ contains
         call check_ice_static(run, "t = 20", 0.0_dp)
         call check_ice_flotation(run, "t = 20")
         call check_dhidt(run, "t = 20")
+        call check_publish(run)
         call run_end(run)
         call check_hooks_run()
 
@@ -1251,6 +1252,35 @@ contains
             call check(all(g <= f) .and. any(g < f), what//": a sea level 5 km higher floats ice that was grounded")
         end associate
     end subroutine check_ice_flotation
+
+    subroutine check_publish(run)
+        ! yelmo_ice_publish: after the state is changed outside a step, the INSTANT exports (geometry,
+        ! reference, mass) follow it, at the time given; the static exports and the rates do not move.
+        type(run_t), target, intent(inout) :: run
+        real(dp), allocatable :: h(:,:), dh(:,:)
+        real(dp) :: t_dhidt, t_pd
+        logical :: moved
+
+        select type (ice => run%dom(1)%ice%c)
+        type is (yelmo_ice_t)
+            t_dhidt = ice%exports%f(ice%h_dHidt)%t1
+            t_pd    = ice%exports%f(ice%h_H_ice_pd)%t1
+            where (ice%ylmo%tpo%now%H_ice > 0.0_sp) ice%ylmo%tpo%now%H_ice = ice%ylmo%tpo%now%H_ice + 1.0_sp
+            ice%ylmo%bnd%H_ice_ref = ice%ylmo%tpo%now%H_ice
+            call yelmo_ice_publish(ice, 25.0_dp)
+            h  = get2(ice%exports, ice%h_H_ice)
+            dh = get2(ice%exports, ice%h_H_ice_ref)
+            moved = all(real(h, sp) == ice%ylmo%tpo%now%H_ice) .and. all(real(dh, sp) == ice%ylmo%bnd%H_ice_ref)
+            call check(moved, "yelmo_ice_publish: H_ice and H_ice_ref exports = Yelmo's state")
+            call check(published_at(ice%exports, ice%h_H_ice, 25.0_dp) .and. published_at(ice%exports, ice%h_H_ice_ref, 25.0_dp) .and. &
+                       published_at(ice%exports, ice%h_M_ice, 25.0_dp) .and. published_at(ice%exports, ice%h_z_bed_ref, 25.0_dp), &
+                       "yelmo_ice_publish: geometry, reference and mass published at the time given")
+            call check(ice%exports%f(ice%h_dHidt)%t1 == t_dhidt .and. ice%exports%f(ice%h_H_ice_pd)%t1 == t_pd, &
+                       "yelmo_ice_publish: the rates and the static exports are not put")
+        class default
+            call check(.false., "the ice instance is Yelmo")
+        end select
+    end subroutine check_publish
 
     subroutine check_dhidt(run, what)
         ! The dHidt export (MEAN over the ice call) is Yelmo's own tpo%now%dHidt, which is already the
