@@ -470,3 +470,53 @@ Both hypotheses hold: `remove_lakes` runs before `H_ice_min` and rewrites 11423 
 thick reduced to `H = z_srf - z_bed`; 7376 of those are negative where `z_srf < z_bed`), and the logged count includes the
 negatives (`H < H_ice_min .and. H /= 0`). The hub field is the raw file on the same grid (NH-32KM, `remap = "con"`
 identity). Nothing to change: the 8385 is the log's counting rule, not extra ice removed.
+
+### `ant-full` (W3d, kryos `5a663a3`, S5)
+
+Shipped ANT: relax, opt_cf and opt_tf = L21-points (the shelf corrections `tf_corr`, `tf_corr_basin` now the shelf component's, restart
+file `shelf_ant_corr_restart.nc`; `corr_method = tf`, four basin constants). R2: `ref-S5/ant-full/yx-5ac89c8/S5/cont`, job 28548078.
+K cont, cont2, chunk: jobs 28548453, 28548455, 28548456/57; `compare_p2.sh` job 28548977 (map rows send yelmox's `marine_shelf.nc:tf_corr`
+and `tf_corr_basin` to `<shelf>_corr_restart.nc`):
+
+| comparison | result |
+|---|---|
+| K cont vs R2 (mapped, `--restarts`) | PASS, 1042 variables, 0 failing, 0 absent, 16 new (N); `tf_corr` and `tf_corr_basin` of both bundles pass (145161 cells) |
+| K cont2 vs R2 | PASS, 1042 variables |
+| K cont2 vs K cont | PASS, 1362 variables |
+| K chunk vs K cont | PASS, 1736 variables |
+
+The thermal-forcing optimisation is bit-identical to yelmox: the ice exports (`H_ice`, `H_grnd`, `dHidt`, `H_ice_pd`, `H_grnd_pd`)
+remapped ANT-32KM -> ANT-16KM (bilinear) through the domain coupler give yelmox's `optimize_tf_corr` inputs bit for bit.
+
+### `grl` and `ant` after the shelf move (kryos `5a663a3`, S5)
+
+`par/gate/{grl,ant}.nml` regenerated (the marine_shelf keys moved to `&shelf_corr_<sfx>`, `corr` on the shelf instance), K against
+the S5 R2 runs of G0 (`ref-S5/{grl,ant}/yx-5ac89c8/S5/cont`), same comparisons (K jobs 28549571-77 and 28549580-88, `compare_p2.sh` jobs
+28550099 and 28550100):
+
+| comparison | grl | ant |
+|---|---|---|
+| K cont vs R2 (`--restarts`) | PASS, 930 variables | PASS, 1042 variables |
+| K cont2 vs R2 | PASS, 930 | PASS, 1042 |
+| K cont2 vs K cont | PASS, 1270 | PASS, 1362 |
+| K chunk vs K cont | PASS, 1496 | PASS, 1736 |
+
+Bit-identical in all outputs and bundles: the move of the corrections to the shelf component (and the new `H_grnd`, `H_grnd_pd`
+exports) changes no value.
+
+### `nor` (W4e, kryos `888884d`, S5)
+
+NOR (NH-32KM): cold start from the ICE-6G_C reconstruction (`recon_regions = region:North_America`, `recon_time = -26e3`), R2' =
+yelmox topo-prep: `ref-S5/nor/yx-5ac89c8/S5/cont`, job 28549546. K cont, cont2, chunk: jobs 28549631, 28549632, 28549633/34;
+`compare_p2.sh` job 28550508:
+
+| comparison | result |
+|---|---|
+| K cont vs R2' (mapped, `--restarts`) | PASS, 911 variables, 0 failing, 0 absent, 16 new (N) |
+| K cont2 vs R2' | PASS, 911 variables |
+| K cont2 vs K cont | PASS, 1251 variables |
+| K chunk vs K cont | PASS, 1472 variables |
+
+The recon recipe (reference ice from the file, regions, smoothing, `yelmo_init_topo`, the thin-floating cleaning, `H_ice_ref = H_ice`,
+`yelmo_ice_publish`, `domain_refresh_boundary`, the 200 yr stabilisation) reproduces yelmox bit for bit, including the hub and the
+surface refreshed inside the recipe. R2' vs R0 differences are those documented for WP0.
