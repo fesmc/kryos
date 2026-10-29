@@ -43,6 +43,7 @@ via `fesm_units`, not 360.
 | `kryos_globe` | `globe_t`: forcing slot, geo global slot (phase 3: global grids, coupler, global hub, ocean) | config, wiring, `kryos_forcing`, `kryos_geo` |
 | `kryos_output` | `output_t`: streams (file × schedule), dispatch, hub and timing files | domain, globe |
 | `kryos_restart` | bundle naming, manifest, write/restore order | domain, globe |
+| `kryos_experiment` (experiments/) | `experiment_t`, hooks, `experiments_*` dispatchers, factory submodule (§3.9, phase 2) | domain, component |
 | `kryos_run` | `run_t`, `run_init`, `run_step`, `run_done`, `run_end` | everything above |
 | `kryos_run_sequence` | submodule of `kryos_run`: the cold start, the restore, the step sequence (§3) | — |
 
@@ -123,7 +124,8 @@ type :: step_time_t
     real(dp) :: t_eval      ! t1, or clock_time_rel at t1 when the instance has clock = "forcing"
     real(dp) :: dtt
 end type
-integer, parameter :: PASS_GEOMETRY = 1, PASS_BOUNDARY = 2, PASS_STATE = 3, PASS_FINAL = 4
+integer, parameter :: PASS_GEOMETRY = 1, PASS_BOUNDARY = 2, PASS_STATE = 3, PASS_SPINUP = 4, &
+                      PASS_FINAL = 5, PASS_RESTART = 6
 ```
 
 ## 3. Run lifecycle
@@ -190,8 +192,13 @@ do d = 1, size(run%dom)
     call exchange(dom, "hub", "shelf", t0);   call exchange(dom, "climate", "shelf", t0)
     call shelf_init_state(dom%shelf, st0, PASS_BOUNDARY)
     call exchange_into(dom, "ice", t0)                        ! every row into ice (yelmox couple_to_yelmo)
-    ! c) ice state: yelmo_init_state(robin-cold), then the recipe of §5 (none | equil)
+    ! c) ice state: prepare (imports -> backend boundary), the hooks around yelmo_init_state
+    !    (robin-cold), then the spin-up of §5 (none | equil | thermal) in PASS_SPINUP
+    call domain_prepare(dom, C_ICE, clk, init=.true.)         ! ice_prepare: yelmo bnd_from_imports
+    call run_hook(run, d, HOOK_COLD_PRE_STATE)                ! experiments, §3.9
     call ice_init_state(dom%ice, st0, PASS_STATE)
+    call run_hook(run, d, HOOK_COLD_POST_STATE)
+    call ice_init_state(dom%ice, st0, PASS_SPINUP)            ! yelmo: equil, thermal, exports
     ! d) the surface on the final initial geometry: one more chion cycle, no spin-up
     call domain_hub_update(dom, t0)
     call exchange(dom, "hub", "surface", t0)
@@ -204,12 +211,19 @@ end do
 Recipe: yelmox `[sim]` in both base configs has `init_marine_H = False`,
 `init_kill_shelves = False`, `init_time_thrm = 0`; `init_method = "none"`
 (Greenland) and `"equil"` with `init_equil_time = 10` (Antarctica:
-`yelmo_update_equil(time_tot=10, dt=1, topo_fixed=.false.)`). Phase 1 keeps only
+`yelmo_update_equil(time_tot=10, dt=1, topo_fixed=.false.)`). Phase 1 kept only
 this path, as a yelmo-adapter key `init_equil_time` of the ice instance group
-(0 = none), run inside `PASS_STATE`; recon, marine-ice start, kill-shelves and
-the thermal equilibration become experiment plugins in phase 2 (hook
-`HOOK_ICE_STATE` before `PASS_STATE`, where yelmox sets the opt `cb_ref` guess
-and NEGIS).
+(0 = none). Phase 2 (WP1) moves it, with the thermal equilibration
+(`init_time_thrm`, new key, 0 = none: `yelmo_update_equil` at the run step,
+`topo_fixed`) and the final exports, out of `PASS_STATE` into the new core
+pass `PASS_SPINUP`, so that the experiment hooks sit between the two:
+`HOOK_COLD_PRE_STATE` before `PASS_STATE` (yelmox sets the opt `cb_ref` guess
+and NEGIS there), `HOOK_COLD_POST_STATE` after it (kill-shelves, marine
+ice, recon). `PASS_STATE` is then `yelmo_print_bound` and `yelmo_init_state`;
+the imports reach the backend in `prepare` (§3.9). Same backend calls in the
+same order, so bit-identical when no hook is set. The pass constants are not
+stored anywhere (restart files, manifests), so the renumbering of
+`PASS_FINAL` and `PASS_RESTART` is free.
 
 ### 3.3 Restore (restore, never step)
 
@@ -237,7 +251,8 @@ call clock_advance(run%clk)
 call geo_global_begin(run%globe%geo, st)                            ! bsl_update: A_ocean(bsl)
 call gather_into(run%globe, run%dom, "forcing", t)                  ! V_ice of every domain, lag 1
 call forcing_update(run%globe%forcing, st);  mark
-! 2. hooks: none in phase 1 (yelmox step_relax, step_optimize: see question 1)
+! 2. hooks: HOOK_STEP_BEGIN of every domain's experiments (yelmox step_relax, step_optimize)
+call run_hook(run, d, HOOK_STEP_BEGIN)
 ! 3. geo: every domain, then the global reduction (gather -> update -> scatter, decision 5)
 do d
   if (cadence_due(dom%geo%cadence, clk)) then
@@ -250,7 +265,11 @@ call geo_global_reduce(run%globe%geo, run%dom, t)                    ! bsl -= su
 ! 4. per domain: ice, hub, climate, surface, shelf (yelmox couple_to_yelmo .. step_shelf)
 do d
   call exchange_into(dom, "ice", t)            ! geo (lag 0), surface, shelf, climate Qd (lag 1)
-  call ice_update(dom%ice, st);  mark
+  if (due(ice)) then
+    call domain_prepare(dom, C_ICE, clk)       ! ice_prepare: imports -> backend boundary
+    call run_hook(run, d, HOOK_ICE_BND)        ! experiments, §3.9
+    call ice_update(dom%ice, st);  mark
+  end if
   call domain_hub_update(dom, t)               ! couple_yelmo_to_htopo
   if (cadence_due(dom%climate%cadence, clk)) then
     call exchange(dom, "hub", "climate", t); call exchange_globe(globe, "forcing", dom, "climate", t)
@@ -414,6 +433,42 @@ include them:
   hold; refilled in a 500-yr chunk). With Yelmo's default `vm-m16` calving a
   restart is not exact (the run diverges in the first step); the gate
   configurations use `equil`.
+
+### 3.9 Experiment hooks (phase 2, WP1)
+
+Experiments are plugins between the domain and the run (design §4, §15
+decision 1): `src/experiments/`, abstract `experiment_t` (deferred `init` and
+`hook(dom, id, st)`, optional restart bindings), a factory by `kind`, an adopt
+for host-provided ones, held in `run_t%exps(d)` next to `run%dom(d)` (not in
+`domain_t`: `hook` takes a `domain_t`). The core never names an experiment
+type and a plugin reaches backend internals only by `select type`, stopping on
+a mismatch. Created in `run_init` after `domain_wire`, from the domain's
+`experiments = "a" "b"` (one group per experiment, `kind`; the order is the
+call order). Hooks run for every domain; `run_restore` runs none.
+
+| Id | Where |
+|---|---|
+| `HOOK_STEP_BEGIN` | step 2, all domains in order, after forcing and globe, before geo |
+| `HOOK_ICE_BND` | step 4, after `exchange_into(ice)` and `domain_prepare`, before `ice_update`; only when the ice is due |
+| `HOOK_COLD_PRE_STATE` | cold start c), after `domain_prepare`, before `PASS_STATE` |
+| `HOOK_COLD_POST_STATE` | after `PASS_STATE`, before `PASS_SPINUP` |
+
+`st` is a `hook_time_t`: the run's step `[t0, t1]` (cold start: both
+`time_init`), `t_eval`, the run step `dtt`, `t_elapsed` = `clock_time_elapsed`
+at `t1` (0 at the cold start) and a read-only pointer to the clock. The
+elapsed time is the window time of the plugins: a continuation restart keeps
+the clock's origin (`clock_n_origin`), so it runs on across chunks; a branch
+restarts it. Nothing else is stored.
+
+`prepare` (binding of `component_t`, default nothing; wrapper
+`domain_prepare(dom, k, clk, init)`, an absent component does nothing) puts the
+imports into the backend's boundary, already converted, so that a hook can
+modify the boundary the backend then integrates with (`lim_pd_ice` subtracts
+after the `sp` conversion). It is called only when the component is due, by the
+run sequence only, before the hook and before `update` (and, at the cold
+start, before `PASS_STATE`). Yelmo: `bnd_from_imports`, then records the clock
+tick; `update` stops with a named error if the tick is not the current one
+(prepare skipped).
 
 ## 4. Timing, cadences, lags
 
@@ -706,6 +761,11 @@ named as in the par file (`scope`, `component`, `backend`, `grid`, `files`,
 - Restore checks the manifest against the par file: the same instances with
   the same component, backend and grid, or stop naming the instance (a
   changed `dt` is allowed, logged by fesm_clock).
+- Experiments (WP1): stateless by default, nothing stored (cb_ref lives in
+  Yelmo's restart, relax is a function of time). A stateful experiment
+  declares its files (`restart_files`) and is a manifest group
+  (`component = "experiment"`, `backend` = its kind); stateless ones may be
+  added or dropped between chunks.
 - Chunks: chunk k sets `[clock] time_init` = previous `time_end` and
   `[kryos] restart = "restart-<time_end>"`; names are known at submission
   (staging: §3.8).

@@ -206,11 +206,13 @@ The `bmb` export keeps Yelmo's sign (melt < 0 is "+ = gain" already).
   `calc_ytopo_diagnostic(tpo, dyn, mat, thrm, bnd)`; publish geometry exports.
 - `INIT_STATE` (after climate, surface, shelf): imports into `bnd` (2.1);
   `yelmo_print_bound`; `yelmo_init_state(ylmo, t, thrm_method="robin-cold")`
-  (`kryos_startup.f90:178-179`); then `domain_init_ice` (`:252-287`) for the
-  base configs only: `equil` -> `yelmo_update_equil(ylmo, t, init_equil_time,
-  dt=1.0, topo_fixed=.false.)`; `init_time_thrm > 0` -> `yelmo_update_equil(...,
-  dt=<ice cadence>, topo_fixed=.true.)` (today `dtt`, equal in both configs).
-  Publish exports.
+  (`kryos_startup.f90:178-179`). Phase 2 (WP1) splits it: the imports go
+  into `bnd` in `prepare`, and the rest of `domain_init_ice` (`:252-287`) runs
+  in the new `PASS_SPINUP`, after the experiment hook `HOOK_COLD_POST_STATE`:
+  `equil` -> `yelmo_update_equil(ylmo, t, init_equil_time, dt=1.0,
+  topo_fixed=.false.)`; `init_time_thrm > 0` (new key, default 0; not in the
+  phase 1 adapter) -> `yelmo_update_equil(..., dt=<run step>,
+  topo_fixed=.true.)` (today `dtt`); publish exports.
 - `INIT_RESTART` (after `restart_read` and the geo import): as
   `INIT_GEOMETRY`, plus `yelmo_regions_update(ylmo)` (`kryos_startup.f90:521-527`).
 
@@ -708,7 +710,7 @@ ice, geo, climate, surface ANT-32KM.
 | NEGIS cb_ref and its cold-start init (`use_negis`) | `negis_update_cb_ref`, `domain_negis_init` | dropped | 2, plugin |
 | glacial SMB scaling | `couple_surface_to_yelmo:326-330` | dropped | 2, plugin (needs climate `ta_ann`, exported already) |
 | `lim_pd_ice` (-4 m/yr) | `:334-337` | dropped | 2, plugin |
-| `init_marine_H`, `init_kill_shelves`, `recon`, `recon_ref` | `domain_init_ice`, `domain_init_recon` | dropped (`none`, `equil`, `init_time_thrm` kept) | 2, cold-start plugins |
+| `init_marine_H`, `init_kill_shelves`, `recon`, `recon_ref` | `domain_init_ice`, `domain_init_recon` | dropped (`none`, `equil` kept; the adapter has no `init_time_thrm` key) | 2, cold-start plugins; `init_time_thrm` as a yelmo key in `PASS_SPINUP` (WP1) |
 | `ice_bnd` (prescribed `H_ice_ref` in fixed cells) | `step_ice_bnd` | dropped (inactive in both configs) | 2, `data` instance + optional `H_ice_ref` import of yelmo |
 | `with_ice_sheet = False` and the other `with_*` | `[comps]` | dropped | 2, `data` backends |
 | CMIP output | `cmip_output.f90` | dropped | 2, post-processing over ice exports (design §9) |

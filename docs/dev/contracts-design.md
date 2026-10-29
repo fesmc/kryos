@@ -208,7 +208,8 @@ hub (domain, not a component): `hub_exports` = `z_bed`, `H_ice`, `z_srf`,
 ### 3.1 `kryos_component`
 
 ```fortran
-integer, parameter, public :: PASS_INIT = 0, PASS_GEOMETRY = 1, PASS_BOUNDARY = 2, PASS_STATE = 3, PASS_FINAL = 4
+integer, parameter, public :: PASS_INIT = 0, PASS_GEOMETRY = 1, PASS_BOUNDARY = 2, PASS_STATE = 3, &
+                              PASS_SPINUP = 4, PASS_FINAL = 5, PASS_RESTART = 6   ! SPINUP: phase 2 (WP1)
 
 type, public :: caps_t                          ! set by the backend in init
     logical :: has_ocn = .false., has_ocn_shelf = .false., has_smb = .false., has_Qd = .false.
@@ -240,6 +241,7 @@ type, abstract, public :: component_t
 contains
     procedure(c_init),   deferred :: init         ! (ctx): read group; set prec, nx, ny, caps, opt flags
     procedure :: init_state => component_init_state      ! (st, pass): default nothing
+    procedure :: prepare => component_prepare            ! (st): imports -> backend boundary; default nothing (phase 2)
     procedure(c_update), deferred :: update       ! (st): integrate st%t0 -> st%t1; put every export
     procedure(c_rst),    deferred :: restart_write, restart_read   ! (dir, t)
     procedure :: restart_files => component_restart_files  ! () -> base names restart_write creates in `dir`
@@ -255,6 +257,17 @@ modules: `backend_admit(c, census)` enforces `con` with named stops (decision
 `Antarctica`", "backend `rembo` runs only on grid `GRL-16KM`", wrong scope or
 domain; then counts the instance. `component_close(c, st)` =
 `fields_finalize_interval(c%exports, st%t1)`. `kryos_mask` (§8).
+
+`prepare(st)` (phase 2, WP1) puts the instance's imports into the backend's
+boundary in the backend's units and precision, so that an experiment hook
+(`HOOK_ICE_BND`) can change the boundary before `update`. Only the run
+sequence calls it, through `domain_prepare(dom, k, clk, init)`, once per step
+when the instance is due, before the hook and `update` (and at the cold start
+before `PASS_STATE`). The ice is the only backend that implements it (yelmo:
+`bnd_from_imports`); `update` of such a backend checks that `prepare` ran for
+the step. `PASS_SPINUP` runs after `PASS_STATE` and the hook between them:
+the cold-start equilibration of the instance (yelmo: `init_equil_time`,
+`init_time_thrm`) and the exports of the initial state.
 
 `restart_files(self) result(files)` (`character(len=PATH_LEN)`, allocatable)
 returns the base names (no folder) of the files `restart_write` creates in the
@@ -704,12 +717,13 @@ dp` for the hub is a declaration change.
 
 | Field / edge (yelmox) | Phase 1 | Goes to (phase 2 unless noted) |
 |---|---|---|
-| `relax` (`ytopo topo_rel` ramp), `opt` cb_ref (`optimize_cb_ref`) | dropped (gate: `relax = opt = False`, regression Q1) | `experiments/relax`, `opt_cb_ref` (yelmo plugins) |
+| `relax` (`ytopo topo_rel` ramp), `opt` cb_ref (`optimize_cb_ref`) | dropped (gate: `relax = opt = False`, regression Q1) | `experiments/relax`, `opt_cb_ref` (yelmo plugins; `HOOK_STEP_BEGIN`, cb_ref guess at `HOOK_COLD_PRE_STATE`) |
 | `opt` tf_corr (marine_shelf `tf_corr`; reads Yelmo `H_ice`, `H_grnd`, `dHidt`, pd `H_ice`) | dropped | marine_shelf plugin (decision 6); needs ice `dHidt`, `f_grnd` exports and pd data |
 | NEGIS `cb_ref` | dropped | `experiments/negis` |
 | glacial smb scaling (`ta_ann` now/ref → ice smb) | dropped | `experiments/glacial_smb` on the surface → ice row; climate exports `ta_ann`, `ta_ann_ref` |
-| `lim_pd_ice` (−4 m ie/yr outside pd ice) | dropped | yelmo plugin |
-| cold-start recipes (recon, marine ice, kill shelves, thermal equilibration) | only `init_equil_time` (core §3.2) | plugins at `HOOK_ICE_STATE` |
+| `lim_pd_ice` (−4 m ie/yr outside pd ice) | dropped | yelmo plugin at `HOOK_ICE_BND`, after `prepare` |
+| cold-start recipes (recon, marine ice, kill shelves) | only `init_equil_time` (core §3.2) | plugins at `HOOK_COLD_POST_STATE` (core §3.9) |
+| thermal equilibration (`init_time_thrm`) | dropped | yelmo key `init_time_thrm` in `PASS_SPINUP` (WP1) |
 | `ice_bnd` (`H_ice_ref`, `mask_ice`, `tau_relax` from a history, coef-scaled) | dropped | yelmo plugin reading a `datasrc_t` |
 | smb_simple (`tsl_ann`; Yelmo `H_ice_ref` reach-in) | dropped | backend; climate export `tsl_ann`; mask from `refs(surface)%H_ice` |
 | `surface = "climate"` (`has_smb`), esm (`has_ocn_shelf`, `has_Qd`, `Qd`), rembo, smbpal | dropped | backends; `Qd` per-cell units revisited with esm |
@@ -740,3 +754,8 @@ dp` for the hub is a declaration change.
    (design §1: no reuse while both build together). Name the component
    module `kryos_forcing_comp` (proposed) or another name? (Core-design's
    `kryos_output` collides with yelmox's `kryos_output` in the same way.)
+5. **Experiment hooks** (decided, phase 2 WP1, `phase2-plan.md`): `prepare` on
+   `component_t` and a core `PASS_SPINUP` (§3.1, core §3.2, §3.9), so that
+   `lim_pd_ice` can act on the converted boundary and the cold-start recipes
+   sit between the state and the equilibration; both bit-neutral on the
+   phase 1 gates (same calls, same order).

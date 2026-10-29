@@ -76,6 +76,8 @@ contains
     procedure(c_update),  deferred :: update        ! (t_target): integrate from t_last to t_target; idempotent at dt=0
     procedure(c_rst_w),   deferred :: restart_write ! (dir, time)
     procedure(c_rst_r),   deferred :: restart_read  ! (dir, time)
+    procedure                      :: init_state     ! (st, pass): the passes of the cold start; default nothing
+    procedure                      :: prepare        ! (st): imports -> backend boundary (phase 2); default nothing
     procedure                      :: write_output  ! default: write exports on the native grid from a variable table
     procedure                      :: end
 end type
@@ -100,6 +102,13 @@ end type
 - **Backend internals** are reachable only through `select type` in an
   experiment plugin (`experiments/opt_cb_ref.f90` requires `yelmo_ice_t`
   and stops otherwise). The core never does this.
+- **Experiments** are `experiment_t` extensions (`src/experiments/`: deferred
+  `init(ctx, dom)` and `hook(dom, id, st)`, optional restart bindings), made by
+  a factory from the `kind` of their par-file group, held in `run_t` one list
+  per domain, and called at four fixed hooks (`HOOK_STEP_BEGIN`,
+  `HOOK_ICE_BND`, `HOOK_COLD_PRE_STATE`, `HOOK_COLD_POST_STATE`; core-design
+  §3.9). `prepare` and the core pass `PASS_SPINUP` give the hooks their place
+  around the ice boundary and the cold-start state.
 - **Precision**: each backend keeps its own `wp`; the contract is `dp`. Each
   backend takes the run's `phys_const_class` if it can; the adapter calls
   `phys_const_compare` and logs the differences otherwise (VILMA2, CISM, rembo).
@@ -328,7 +337,7 @@ kryos/
                    ice/yelmo, ice/cism, ice/pism (C shim), geo/fastisostasy,
                    geo/vilma2, surface/chion, surface/smb_simple, climate/snapshots,
                    climate/esm, climate/rembo, shelf/marine_shelf, ocean/obm
-  src/experiments/ opt_cb_ref, relax, negis, glacial_smb, marine_ice_start, recon_start
+  src/experiments/ kryos_experiment (+ factory), then opt_cb_ref, relax, opt_tf, recon, negis, glacial_smb, ...
   drivers/kryos.f90
   par/  input/<backend>_defaults.nml  maps/  tests/  tools/ (Julia)  docs/
 ```
