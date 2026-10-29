@@ -83,14 +83,15 @@ program test_globe_ice
     use precision,       only: dp
     use coords,          only: grid_class, grid_init, grid_init_gaussian
     use coupler,         only: coupler_class, coupler_init
-    use ncio,            only: nc_create, nc_write_dim, nc_write, nc_write_attr
+    use ncio,            only: nc_create, nc_write_dim, nc_write, nc_write_attr, nc_read, nc_set_lossless
     use phys_constants,  only: phys_const_class, phys_const_set
     use kryos_config,    only: config_t, config_init
     use kryos_component, only: init_ctx_t, census_t, constraints_t
     use kryos_ice,       only: ice_t, ice_slot_t, ice_adopt, ice_init, ice_flotation
     use kryos_globe_ice, only: globe_ice_t, globe_ice_init, globe_ice_add_domain, globe_ice_end, &
                                globe_ice_reference_begin, globe_ice_reference_add, globe_ice_reference_end, &
-                               globe_ice_gather_begin, globe_ice_gather_add, globe_ice_gather_end
+                               globe_ice_gather_begin, globe_ice_gather_add, globe_ice_gather_end, &
+                               globe_ice_hub_merge, globe_ice_write
     use test_gi_toy,     only: toy_ice_t, RHO_I, RHO_SW
 
     implicit none
@@ -130,6 +131,7 @@ program test_globe_ice
     call test_reference()
     call test_order()
     call test_owners()
+    call test_hub()
     call test_no_domains()
     call test_wgs84()
     call test_stops()
@@ -845,6 +847,61 @@ contains
             if (trim(sc%gi%dom(k)%name) == trim(name)) dom_of = k
         end do
     end function dom_of
+
+    subroutine test_hub()
+        ! The hub output (5.4, 9.1) and the observer-only pieces of gate G1b that need no run: the merged
+        ! reference and ice conserve the volume, globe_ice.nc is rounded (lossless under the ncio switch),
+        ! the domain order of the registrations does not change the file.
+        type(scene_t) :: s1, s2
+        real(dp), allocatable :: exact(:,:), cov(:,:), hf(:,:,:), zr(:,:), ca(:,:)
+        real(dp) :: dmax
+        character(len=*), parameter :: F1 = DIR//"globe_ice_r.nc", F2 = DIR//"globe_ice_l.nc", F3 = DIR//"globe_ice_o.nc"
+        integer :: es
+
+        write(*,"(a)") "the hub: globe_ice.nc, conservation, order swap"
+        call build(s1, "def", with_2=.true.)
+        call reference(s1)
+        call check("the spliced reference conserves the volume (hub closure, 1e-12)", s1%gi%diag%hub_ref < 1.0e-12_dp)
+        call gather(s1, -40000.0_dp, dHa=120.0_dp)
+        call globe_ice_hub_merge(s1%gi, s1%cpl, exact, cov)
+        call check("the merged ice conserves the volume (hub closure, 1e-12)", s1%gi%diag%hub_ice < 1.0e-12_dp)
+        call check("the merged ice equals X outside the domains and has ice inside", &
+                   all(merge(exact == s1%gi%H_ext, .true., cov == 0.0_dp)) .and. any(cov > 0.0_dp) .and. any(cov == 0.0_dp))
+
+        ! rounded file, two records
+        call nc_set_lossless(.false.)
+        call globe_ice_write(s1%gi, s1%cpl, F1, 100.0_dp, .true.)
+        allocate(hf(NXB, NYB, 1), zr(NXB, NYB), ca(NXB, NYB))
+        call nc_read(F1, "H_ice", hf)
+        dmax = maxval(abs(hf(:,:,1) - exact))
+        call check("globe_ice.nc: H_ice rounded to 1e-3 m: within the precision, and not exact", dmax <= 1.0e-3_dp .and. dmax > 0.0_dp)
+        call nc_read(F1, "z_bed_ref", zr)
+        call nc_read(F1, "cov", ca)
+        call check("globe_ice.nc: the static reference and coverage (rounded)", maxval(abs(zr - s1%gi%z_bed_spl)) <= 1.0e-3_dp .and. &
+                   maxval(abs(ca - min(s1%gi%cov_bg, 1.0_dp))) <= 1.0e-4_dp)
+
+        ! lossless file
+        call nc_set_lossless(.true.)
+        call globe_ice_write(s1%gi, s1%cpl, F2, 100.0_dp, .true.)
+        call nc_set_lossless(.false.)
+        call nc_read(F2, "H_ice", hf)
+        call check("globe_ice.nc: lossless (write_lossless): H_ice exact", all(hf(:,:,1) == exact))
+        call nc_read(F2, "z_bed_ref", zr)
+        call check("globe_ice.nc: lossless: the spliced reference exact", all(zr == s1%gi%z_bed_spl))
+
+        ! order of the registrations swapped: the same file
+        call build(s2, "def", order_ab=.false., with_2=.true.)
+        call reference(s2, order_ab=.false.)
+        call gather(s2, -40000.0_dp, dHa=120.0_dp, order_ab=.false.)
+        call nc_set_lossless(.true.)
+        call globe_ice_write(s2%gi, s2%cpl, F3, 100.0_dp, .true.)
+        call nc_set_lossless(.false.)
+        call execute_command_line("cmp -s "//F2//" "//F3, exitstat=es)
+        call check("globe_ice.nc: domain order swapped gives an identical file (cmp)", es == 0)
+
+        call globe_ice_end(s1%gi)
+        call globe_ice_end(s2%gi)
+    end subroutine test_hub
 
     subroutine test_no_domains()
         ! No domain: the host terms are zero, the reference is X, the ocean area is the background's.

@@ -56,7 +56,10 @@ module kryos_globe_ice
     use coupler,         only: coupler_class, coupler_merge_t, coupler_add_grid, coupler_set_area, &
                                coupler_integral, coupler_merge_begin, coupler_merge_add, coupler_merge_end, &
                                coupler_owner_reduce, remap
+    use ncio,            only: nc_create, nc_write_dim, nc_write, nc_close
     use nml,             only: nml_read
+    use variable_io,     only: var_io_type, var_io_write
+    use kryos_outfile,   only: outfile_row, outfile_open, outfile_table_file
     use phys_constants,  only: phys_const_class, phys_const_isset
     use kryos_config,    only: config_t, config_read, config_validate, config_find, CFG_PATH_LEN
     use kryos_ice,       only: ice_slot_t, ice_flotation
@@ -71,6 +74,7 @@ module kryos_globe_ice
     real(dp), parameter :: KG_TO_GT = 1.0e-12_dp         ! kg -> Gt
     real(dp), parameter :: BOUND_TOL = 1.0e-9_dp         ! slack of the bounds of host_C, host_w
     real(dp), parameter :: W_TOL = 1.0e-12_dp            ! the coverage of a step against the reference
+    real(dp), parameter :: HUB_TOL = 1.0e-12_dp          ! closure of the hub's merged reference and ice (gate G1b (2))
 
     type, public :: gi_domain_t                          ! one registered domain
         character(len=GI_NAME_LEN) :: name = ""          ! the domain
@@ -85,6 +89,7 @@ module kryos_globe_ice
         real(dp), allocatable :: fg_ref(:,:)             ! reference grounded fraction
         real(dp), allocatable :: I_ref(:,:), I_last(:,:) ! grounded ice H_tot f_g [m] of the reference, of the last gather
         real(dp), allocatable :: H_ref(:,:)              ! total ice of the reference m H_pd + (1 - m) X [m]
+        real(dp), allocatable :: H_last(:,:)             ! total ice m H + (1 - m) ext of the last gather [m]
         logical  :: has_prio = .false.                   ! overlapping domains: priority given (owner weights)
         integer  :: priority = 0                         ! higher wins the cells two domains share
         real(dp), allocatable :: owner(:,:)              ! owner weights [0,1] on the ice grid (has_prio), else absent: 1
@@ -105,6 +110,7 @@ module kryos_globe_ice
         real(dp) :: clip_Gt = 0.0_dp                     ! external mass clipped at zero thickness [Gt]
         real(dp) :: cons_I = 0.0_dp, cons_ext = 0.0_dp   ! relative closure of the two merges
         real(dp) :: a_ocn_ref = 0.0_dp                   ! ocean area of the reference [m2]
+        real(dp) :: hub_ref = 0.0_dp, hub_ice = 0.0_dp   ! relative closure of the hub's spliced reference, of its merged ice
     end type gi_diag_t
 
     type, public :: globe_ice_t
@@ -134,12 +140,16 @@ module kryos_globe_ice
         type(gi_diag_t) :: diag
         type(gi_domain_t), allocatable :: dom(:)
         integer, allocatable :: ord(:)                   ! dom indices in order of the ice grid names
-        type(coupler_merge_t) :: acc_I, acc_C, acc_F, acc_zs, acc_hs
+        type(coupler_merge_t) :: acc_I, acc_C, acc_F, acc_zs, acc_hs, acc_hub
+        character(len=GI_NAME_LEN) :: out_2D = "none"    ! schedule group of globe_ice.nc (the caller's)
+        real(dp), allocatable :: lon(:), lat(:)          ! axes of the background grid
+        logical :: bg_lonlat = .false.
     end type globe_ice_t
 
     public :: globe_ice_init, globe_ice_add_domain, globe_ice_end
     public :: globe_ice_reference_begin, globe_ice_reference_add, globe_ice_reference_end
     public :: globe_ice_gather_begin, globe_ice_gather_add, globe_ice_gather_end
+    public :: globe_ice_hub_merge, globe_ice_write
 
 contains
 
@@ -189,6 +199,7 @@ contains
         call config_read(cfg, trim(gi%group), "ext_tref",    gi%ext_tref,    "globe_ice")
         call config_read(cfg, trim(gi%group), "overlap_tol", gi%overlap_tol, "globe_ice")
         call config_read(cfg, trim(gi%group), "cons_tol",    gi%cons_tol,    "globe_ice")
+        call config_read(cfg, trim(gi%group), "out_2D",      gi%out_2D,      "globe_ice")
 
         gi%ext = trim(ext_mode)
         if (trim(gi%ext) /= "ref" .and. trim(gi%ext) /= "file") then
@@ -235,6 +246,8 @@ contains
         call coupler_add_grid(cpl, trim(gi%bg),  gbg)
         call coupler_add_grid(cpl, trim(gi%tgt), grid_tgt)
         gi%nxb = gbg%G%nx;      gi%nyb = gbg%G%ny
+        gi%lon = gbg%G%x;       gi%lat = gbg%G%y
+        gi%bg_lonlat = (trim(gbg%cs%mtype) == "latlon")
         gi%nxg = grid_tgt%G%nx; gi%nyg = grid_tgt%G%ny
 
         ! --- the datasrc: X (read at ext_tref) and the history (anomaly) ---
@@ -665,7 +678,7 @@ contains
 
         character(len=*), parameter :: proc = "kryos_globe_ice::globe_ice_reference_end"
         real(dp), allocatable :: zero(:,:), fg_bg(:,:), c_bg(:,:), c_tgt(:,:), tmp(:,:), wtmp(:,:)
-        real(dp) :: a_ocn
+        real(dp) :: a_ocn, rel
         integer :: k, d
         character(len=:), allocatable :: line
 
@@ -684,6 +697,9 @@ contains
         gi%z_bed_spl = tmp
         call coupler_merge_end(gi%acc_hs, cpl, gi%H_X, tmp, frac_tot=gi%cov_bg, overlap_tol=gi%overlap_tol)
         gi%H_spl = tmp
+
+        call hub_closure(gi, cpl, gi%H_spl, gi%cov_bg, "H_ref", rel, "the spliced reference", proc)
+        gi%diag%hub_ref = rel
 
         ! ocean area of the reference: the host ocean function plus the background's (1 - w) part
         ! (the background flotation is the hydrostatic rule, for this log only)
@@ -809,6 +825,7 @@ contains
             call merge_add(gi%acc_C, cpl, dm, Cc)
             call merge_add(gi%acc_F, cpl, dm, F)
             dm%I_last = I
+            dm%H_last = H_tot
             dm%V_src = owned_integral(cpl, dm, I)
             dm%added = .true.
         end associate
@@ -904,6 +921,135 @@ contains
         end if
         gi%ready = .false.
     end subroutine globe_ice_end
+
+    ! =========================================================================
+    ! The hub output (section 5.4, 9.1)
+    ! =========================================================================
+
+    subroutine globe_ice_hub_merge(gi, cpl, H_hub, cov)
+        ! The ice of the last gather on the background grid: the domains' total ice
+        ! merged (extensive, owner weights) into the external ice H_ext, and the
+        ! coverage of the domains (at most 1). Stops when the merge does not
+        ! conserve the volume to 1e-12 (gate G1b (2)); logs the closure.
+        type(globe_ice_t),     intent(inout) :: gi
+        type(coupler_class),   intent(inout) :: cpl
+        real(dp), allocatable, intent(out)   :: H_hub(:,:)
+        real(dp), allocatable, intent(out)   :: cov(:,:)
+
+        character(len=*), parameter :: proc = "kryos_globe_ice::globe_ice_hub_merge"
+        real(dp), allocatable :: tmp(:,:), f(:,:)
+        real(dp) :: rel
+        integer :: k
+
+        call require_ready(gi, proc)
+        do k = 1, size(gi%dom)
+            if (.not. allocated(gi%dom(k)%H_last)) then
+                call fesm_error(proc, "no gather yet for domain `"//trim(gi%dom(k)%name)//"`", "gather first")
+            end if
+        end do
+        allocate(f(gi%nxb, gi%nyb))
+        call coupler_merge_begin(gi%acc_hub, cpl, trim(gi%bg), "extensive")
+        do k = 1, size(gi%dom)
+            call merge_add(gi%acc_hub, cpl, gi%dom(k), gi%dom(k)%H_last)
+        end do
+        call coupler_merge_end(gi%acc_hub, cpl, gi%H_ext, tmp, frac_tot=f, overlap_tol=gi%overlap_tol)
+        H_hub = tmp
+        cov = min(f, 1.0_dp)
+        call hub_closure(gi, cpl, H_hub, f, "H_last", rel, "the merged ice at t = "//to_str(gi%t_load), proc)
+        gi%diag%hub_ice = rel
+    end subroutine globe_ice_hub_merge
+
+    subroutine hub_closure(gi, cpl, H_hub, f, which, rel, label, proc)
+        ! The volume of the hub's ice on the background grid against the background outside the domains
+        ! plus the owned ice of the domains on their grids (plain model areas), relative.
+        type(globe_ice_t),   intent(in)    :: gi
+        type(coupler_class), intent(in)    :: cpl
+        real(dp),            intent(in)    :: H_hub(:,:), f(:,:)
+        character(len=*),    intent(in)    :: which, label, proc
+        real(dp),            intent(out)   :: rel
+
+        real(dp) :: lhs, rhs
+        integer :: k
+
+        lhs = coupler_integral(cpl, trim(gi%bg), H_hub)
+        if (trim(which) == "H_ref") then
+            rhs = coupler_integral(cpl, trim(gi%bg), (1.0_dp - min(f, 1.0_dp))*gi%H_X)
+        else
+            rhs = coupler_integral(cpl, trim(gi%bg), (1.0_dp - min(f, 1.0_dp))*gi%H_ext)
+        end if
+        do k = 1, size(gi%ord)
+            associate (dm => gi%dom(gi%ord(k)))
+                if (trim(which) == "H_ref") then
+                    rhs = rhs + owned_integral(cpl, dm, dm%H_ref)
+                else
+                    rhs = rhs + owned_integral(cpl, dm, dm%H_last)
+                end if
+            end associate
+        end do
+        rel = abs(lhs - rhs)/max(abs(rhs), tiny(1.0_dp))
+        call log_msg(LOG_INFO, "kryos_globe_ice", "hub: "//trim(label)//" conserves the ice on the background grid to "// &
+                     to_str(rel)//" (volume "//to_str(lhs)//" m3)")
+        if (rel > HUB_TOL) then
+            call fesm_error(proc, "the hub's merge of "//trim(label)//" does not conserve the volume", &
+                            "relative difference "//to_str(rel)//" > "//to_str(HUB_TOL))
+        end if
+    end subroutine hub_closure
+
+    subroutine globe_ice_write(gi, cpl, file, t, init)
+        ! globe_ice.nc on the background grid: record at output time t with the ice of the last gather
+        ! (the load of lag 1; `t_load` says when) merged into the background; init creates the file with
+        ! the static spliced reference (z_bed_ref, H_ice_ref) and the coverage. Values are rounded to the
+        ! `prec` of input/kryos-variables-globe_ice.md (ncio bit rounding); lossless under
+        ! nc_set_lossless (kryos_output / run set it from [kryos] write_lossless). No restart: derived.
+        type(globe_ice_t),   intent(inout) :: gi
+        type(coupler_class), intent(inout) :: cpl
+        character(len=*),    intent(in)    :: file
+        real(dp),            intent(in)    :: t
+        logical,             intent(in)    :: init
+
+        character(len=*), parameter :: proc = "kryos_globe_ice::globe_ice_write"
+        type(var_io_type) :: row
+        real(dp), allocatable :: H_hub(:,:), cov(:,:)
+        logical :: found
+        integer :: ncid, n
+
+        call require_ready(gi, proc)
+        if (.not. gi%have_ref) call fesm_error(proc, "no reference yet", "run the reference first")
+        if (.not. gi%bg_lonlat) then
+            call fesm_error(proc, "the background grid "//trim(gi%bg)//" is not a lon-lat grid", &
+                            "globe_ice.nc is written on a lon-lat grid (lon, lat)")
+        end if
+
+        call globe_ice_hub_merge(gi, cpl, H_hub, cov)
+        if (init) then
+            call nc_create(file)
+            call nc_write_dim(file, "lon", x=gi%lon, units="degrees_east")
+            call nc_write_dim(file, "lat", x=gi%lat, units="degrees_north")
+            call nc_write_dim(file, "time", x=t, dx=1.0_dp, nx=1, units="year", unlimited=.true.)
+            call static_var(file, "z_bed_ref", gi%z_bed_spl)
+            call static_var(file, "H_ice_ref", gi%H_spl)
+            call static_var(file, "cov", min(gi%cov_bg, 1.0_dp))
+        end if
+        call outfile_open(file, t, ncid, n)
+        call outfile_row("globe_ice", "H_ice", row, found)
+        if (.not. found) call fesm_error(proc, "H_ice has no row in "//outfile_table_file("globe_ice"), "")
+        call var_io_write(file, row, H_hub, n, ncid=ncid)
+        call nc_write(file, "t_load", gi%t_load, dim1="time", start=[n], count=[1], ncid=ncid, units="year", &
+                      long_name="time of the load of this record (the gather, lag 1)")
+        call nc_close(ncid)
+    end subroutine globe_ice_write
+
+    subroutine static_var(file, name, a)
+        character(len=*), intent(in) :: file, name
+        real(dp),         intent(in) :: a(:,:)
+        character(len=*), parameter :: proc = "kryos_globe_ice::globe_ice_write"
+        type(var_io_type) :: row
+        logical :: found
+        call outfile_row("globe_ice", name, row, found)
+        if (.not. found) call fesm_error(proc, trim(name)//" has no row in "//outfile_table_file("globe_ice"), "")
+        call nc_write(file, trim(row%varname), a, dim1="lon", dim2="lat", units=trim(row%units), &
+                      long_name=trim(row%long_name), prec_abs=row%prec_abs, prec_rel=row%prec_rel)
+    end subroutine static_var
 
     ! =========================================================================
     ! The one procedure of the reference and the step
