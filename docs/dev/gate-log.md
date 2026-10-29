@@ -580,3 +580,7 @@ Clock choice (`clock.time_const = 0.0` in the merged file, NH has -21e3): NH alo
 `nor` gate's K cont (kryos 888884d, S5, -21e3), identity `--restarts` (`$G/reports/KK/nor-t0-vs-kx-888884d_S5_cont.md`): **1247 of 1251 variables equal bit for bit,
 4 differ**: `time_init` and `time_prev` of `forcing_alpha_restart.nc` in both bundles (-21000 vs 0, the forcing time the tsgen coefficient stores; nothing
 else, no output file and no field of any instance differs). Not bit for bit by the letter: reported to the coordinator.
+
+After the rebase onto main 1f8a7b8 (p3-out, p3-smb merged): `make check` and `make check-long` pass; the long test found a latent crash in the climate init of
+a domain without terms (`size` of an unallocated coefficient table; the Antarctica single run segfaulted), fixed in f4866ae (the table is empty, no value
+changes). The Levante gates above ran on 99589d0 (before the rebase and the fix; the code paths they exercise are unchanged).
