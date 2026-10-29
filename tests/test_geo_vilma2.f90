@@ -5,7 +5,8 @@ program test_geo_vilma2
     ! seed at PASS_STATE, updates, restart), and the regional port (vilma_geo_t).
     !
     !   * Gauss grid: GAUSS-L<lmax>, its size and name, areas = quadrature areas, the
-    !     description file (written, then compared), the planet radius against r_earth;
+    !     description file (written, then compared, also its planet radius), the grid's sphere has
+    !     VILMA2's r_earth (strict, to round-off);
     !   * densities and r_earth: from the run's constants, not the keys;
     !   * init at the reference (exports zero, reference ocean function), spin-up (a no-op
     !     and pre_spinup_1d), the dt = 0 seed, three updates: every export bitwise equal to
@@ -148,7 +149,7 @@ program test_geo_vilma2
     call expect_abort("host_term", "are not admissible")
     call expect_abort("before_build", "has not been built")
     call expect_abort("no_published_import", "has not been published")
-    call expect_abort("radius", "planet radius differs")
+    call expect_abort("grid_file_radius", "has another planet radius")
     call expect_abort("group_key", "must name group `vilma`")
 
     call execute_command_line("rm -rf "//DIR)
@@ -305,7 +306,7 @@ contains
         type(grid_class) :: gg
         select type (c => g%c)
         type is (vilma_earth_t)
-            gg = c%gauss
+            gg = c%grid_obj
         end select
     end function gauss_of
 
@@ -336,6 +337,12 @@ contains
         call check(trim(g%c%grid) == "GAUSS-L16" .and. g%c%nx == NPHI .and. g%c%ny == NLAT, "grid GAUSS-L16, 64 x 34")
         call check(gg%G%nx == NPHI .and. gg%G%ny == NLAT .and. trim(gg%cs%mtype) == "gaussian" .and. &
                    gg%G%x(1) == 0.0_dp .and. gg%G%y(1) < gg%G%y(NLAT), "Gaussian, longitudes from 0, latitudes ascending")
+        select type (c => g%c)
+        type is (vilma_earth_t)
+            call check(abs(gg%cs%planet%R - c%se%par%r_earth) <= 1.0e-12_dp*c%se%par%r_earth .and. &
+                       abs(sum(gg%area) - 4.0_dp*pi*c%se%par%r_earth**2) <= 1.0e-12_dp*4.0_dp*pi*c%se%par%r_earth**2, &
+                       "the grid is a sphere of VILMA2's r_earth: the areas sum to 4 pi r_earth^2")
+        end select
         call check(abs(sum(gg%area) / (4.0_dp*pi*gg%cs%planet%R**2) - 1.0_dp) < 1.0e-12_dp, &
                    "cell areas are the quadrature areas (sum = 4 pi R^2)")
         i = NLAT / 2
@@ -501,9 +508,8 @@ contains
         write(u,'(a)') "&geo_sp", ' backend = "vilma2"', "/", &
                        "&vilma", " lmax = 16", " pre_spinup_1d = .true.", "/"
         close(u)
-        open(newunit=u, file=PAR_BAD, status="replace", action="write")        ! the stops: a radius VILMA2 has but the grid has not
-        write(u,'(a)') "&geo_glob", ' backend = "vilma2"', "/", "&vilma", " lmax = 16", " r_earth = 6.5e6", "/", &
-                       "&geo_key", ' backend = "vilma2"', ' vilma = "other"', "/"
+        open(newunit=u, file=PAR_BAD, status="replace", action="write")        ! the stop: a group name VILMA2 cannot read
+        write(u,'(a)') "&geo_key", ' backend = "vilma2"', ' vilma = "other"', "/"
         close(u)
     end subroutine par_write
 
@@ -540,9 +546,11 @@ contains
         call contexts()
         call coordinates_for_child()
         call reference_terms()
-        if (trim(arg) == "radius" .or. trim(arg) == "group_key") ctxg%par_file = PAR_BAD
-        if (trim(arg) == "group_key") ctxg%instance = "geo_key"
-        if (trim(arg) /= "grid_file_size") then         ! (that case builds the instance itself)
+        if (trim(arg) == "group_key") then
+            ctxg%par_file = PAR_BAD
+            ctxg%instance = "geo_key"
+        end if
+        if (trim(arg) /= "grid_file_size" .and. trim(arg) /= "grid_file_radius") then   ! (those build the instance themselves)
             call geo_create(g, ctxg, census)
             call geo_init(g, ctxg)
         end if
@@ -550,13 +558,18 @@ contains
         case ("wrong_grid")                             ! the grid is shifted: VILMA2 builds a remap
             select type (c => g%c)
             type is (vilma_earth_t)
-                c%gauss%G%x = c%gauss%G%x + 0.01_dp
+                c%grid_obj%G%x = c%grid_obj%G%x + 0.01_dp
             end select
             call put_reference(g)
             call geo_init_state(g, st(0.0_dp, 0.0_dp), PASS_GEOMETRY)
         case ("grid_file_size")                         ! a description of another size under the same name
-            call small_grid_file(DIR//"maps2")
+            call small_grid_file(DIR//"maps2", 32, 18)
             ctxg%map_fldr = DIR//"maps2"
+            call geo_create(g, ctxg, census)
+            call geo_init(g, ctxg)
+        case ("grid_file_radius")                       ! the right grid, on the default sphere (6371221 m), not r_earth
+            call small_grid_file(DIR//"maps3", NPHI, NLAT)
+            ctxg%map_fldr = DIR//"maps3"
             call geo_create(g, ctxg, census)
             call geo_init(g, ctxg)
         case ("host_term")                              ! C > w
@@ -572,14 +585,16 @@ contains
         end select
     end subroutine abort_case
 
-    subroutine small_grid_file(fldr)
-        ! A valid description of a smaller Gaussian grid under the name of the adapter's grid.
+    subroutine small_grid_file(fldr, nlon, nlat)
+        ! A valid description of a Gaussian grid of this size, on the default sphere (fesm-utils'
+        ! "Spherical Earth", not VILMA2's radius), under the name of the adapter's grid.
         use coordinates, only: grid_init_gaussian
         use coords,      only: grid_cdo_write_desc_short
         character(len=*), intent(in) :: fldr
+        integer,          intent(in) :: nlon, nlat
         type(grid_class) :: g8
         call execute_command_line("rm -rf "//fldr//" && mkdir -p "//fldr)
-        call grid_init_gaussian(g8, "GAUSS-L16", nlon=32, nlat=18, lon180=.false., x0=0.0_dp)
+        call grid_init_gaussian(g8, "GAUSS-L16", nlon=nlon, nlat=nlat, lon180=.false., x0=0.0_dp)
         call grid_cdo_write_desc_short(g8, fldr)
     end subroutine small_grid_file
 

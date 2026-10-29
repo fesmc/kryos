@@ -114,6 +114,8 @@ module kryos_component
         character(len=FIELD_NAME_LEN), allocatable :: opt_imports(:)   ! imports that may stay unwired
         character(len=FIELD_NAME_LEN), allocatable :: core_imports(:)  ! imports the core fills outside the wiring rows
         real(dp), allocatable :: xkm(:), ykm(:)         ! grid axes [km], from the init context (component_identity)
+        type(grid_class), allocatable :: grid_obj       ! a global instance's own grid (its init sets it with grid, nx, ny);
+                                                        ! the core registers it in the couplers (kryos_globe, kryos_run)
         character(len=FIELD_NAME_LEN), allocatable :: out_vars(:)   ! exports the default writer writes; unset: all
     contains
         procedure(c_init),   deferred :: init           ! (ctx): read group; set prec, nx, ny, caps, opt

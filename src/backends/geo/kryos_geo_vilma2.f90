@@ -36,14 +36,13 @@ module kryos_geo_vilma2
     character(len=*), parameter :: VILMA_TABLE_FILE    = "input/vilma-variables.md"
     character(len=*), parameter :: VILMA_GROUP         = "vilma"       ! fixed in vilma_par_load (defaults group = group)
 
-    ! Largest relative difference of the grid's planet radius and VILMA2's r_earth
-    ! that is accepted: fesm-utils' "Spherical Earth" is 6371221 m, VILMA2's
-    ! default radius 6371000 m (3.5e-5; the areas differ by twice that).
-    real(dp), parameter :: RADIUS_TOL = 1.0e-4_dp
+    ! Largest relative difference of the grid's planet radius and VILMA2's r_earth that is accepted: the
+    ! grid is built with radius = r_earth (written without loss in the planet name), so the two agree to
+    ! round-off; a description file of another radius (an older run's) must differ by more than this to stop.
+    real(dp), parameter :: RADIUS_TOL = 1.0e-12_dp
 
     type, extends(geo_t) :: vilma_earth_t
         type(solid_earth) :: se                          ! the model; built at PASS_GEOMETRY
-        type(grid_class)  :: gauss                       ! GAUSS-L<lmax>, VILMA2's own grid (the core registers it)
         character(len=NAME_LEN) :: group  = VILMA_GROUP  ! the &vilma group of the par file
         character(len=NAME_LEN) :: ice_bg = "globe_ice"  ! the global ice field group (read by globe_ice)
         logical :: built = .false.                       ! solid_earth_init done
@@ -159,7 +158,8 @@ contains
 
     subroutine gauss_build(self, ctx)
         ! plan 3.5: GAUSS-L<lmax> as VILMA2 builds it (grid_is_gauss compares to 1e-6 degree),
-        ! longitudes from 0, planet "Spherical Earth" (the cell areas are the quadrature areas).
+        ! longitudes from 0, a sphere of VILMA2's radius r_earth (the cell areas are the quadrature
+        ! areas, so integrals over the grid are VILMA2's own).
         ! The description goes to <map_fldr>/grid_<name>.txt for the couplers; an existing file
         ! must agree (a read-only map folder of a gate stack is fine).
         class(vilma_earth_t), intent(inout) :: self
@@ -170,13 +170,16 @@ contains
         real(dp) :: dr
 
         call vilma2_gauss_dims(self%se%par%lmax, self%se%par%nlat, self%se%par%nphi, nlat, nphi, name)
-        call grid_init_gaussian(self%gauss, trim(name), nlon=nphi, nlat=nlat, lon180=.false., x0=0.0_dp)
+        if (allocated(self%grid_obj)) deallocate(self%grid_obj)
+        allocate(self%grid_obj)
+        call grid_init_gaussian(self%grid_obj, trim(name), nlon=nphi, nlat=nlat, lon180=.false., x0=0.0_dp, &
+                                radius=self%se%par%r_earth)
 
-        dr = abs(self%gauss%cs%planet%R - self%se%par%r_earth) / self%se%par%r_earth
+        dr = abs(self%grid_obj%cs%planet%R - self%se%par%r_earth) / self%se%par%r_earth
         if (dr > RADIUS_TOL) then
             call fesm_error("kryos_geo_vilma2::init", "the grid's planet radius differs from `r_earth` of group `"// &
                             trim(self%group)//"`", "instance "//trim(self%name)//": grid "//trim(name)//" R = "// &
-                            to_str(self%gauss%cs%planet%R)//" m, r_earth = "//to_str(self%se%par%r_earth)// &
+                            to_str(self%grid_obj%cs%planet%R)//" m, r_earth = "//to_str(self%se%par%r_earth)// &
                             " m (relative difference "//to_str(dr)//", tolerance "//to_str(RADIUS_TOL)//")")
         end if
         call grid_file(self, ctx%map_fldr)
@@ -185,7 +188,7 @@ contains
         self%nx   = nphi
         self%ny   = nlat
         call log_msg(LOG_INFO, "kryos_geo_vilma2", "Gauss grid `"//trim(name)//"`: "//to_str(nphi)//" x "//to_str(nlat)// &
-                     ", lmax "//to_str(self%se%par%lmax)//"; planet radius "//to_str(self%gauss%cs%planet%R)// &
+                     ", lmax "//to_str(self%se%par%lmax)//"; planet radius "//to_str(self%grid_obj%cs%planet%R)// &
                      " m, VILMA2 r_earth "//to_str(self%se%par%r_earth)//" m (relative difference "//to_str(dr)//")", &
                      "instance "//trim(self%name))
     end subroutine gauss_build
@@ -200,22 +203,27 @@ contains
         character(len=:), allocatable :: file
         logical :: found
 
-        file = trim(fldr)//"/grid_"//trim(self%gauss%name)//".txt"
+        file = trim(fldr)//"/grid_"//trim(self%grid_obj%name)//".txt"
         inquire(file=file, exist=found)
         if (.not. found) then
             call execute_command_line("mkdir -p '"//trim(fldr)//"'")
-            call grid_cdo_write_desc_short(self%gauss, trim(fldr))
+            call grid_cdo_write_desc_short(self%grid_obj, trim(fldr))
             call log_msg(LOG_INFO, "kryos_geo_vilma2", "wrote the grid description "//file, "instance "//trim(self%name))
             return
         end if
 
-        call grid_cdo_read_desc(g0, trim(self%gauss%name), trim(fldr))
-        if (g0%G%nx /= self%gauss%G%nx .or. g0%G%ny /= self%gauss%G%ny) then
+        call grid_cdo_read_desc(g0, trim(self%grid_obj%name), trim(fldr))
+        if (g0%G%nx /= self%grid_obj%G%nx .or. g0%G%ny /= self%grid_obj%G%ny) then
             call fesm_error(proc, "grid description "//file//" has another size than the Gauss grid of VILMA2", &
                             "instance "//trim(self%name)//": file "//to_str(g0%G%nx)//" x "//to_str(g0%G%ny)// &
-                            ", VILMA2 "//to_str(self%gauss%G%nx)//" x "//to_str(self%gauss%G%ny))
+                            ", VILMA2 "//to_str(self%grid_obj%G%nx)//" x "//to_str(self%grid_obj%G%ny))
         end if
-        if (maxval(abs(g0%G%x - self%gauss%G%x)) > 1.0e-9_dp .or. maxval(abs(g0%G%y - self%gauss%G%y)) > 1.0e-9_dp) then
+        if (abs(g0%cs%planet%R - self%grid_obj%cs%planet%R) > RADIUS_TOL*self%grid_obj%cs%planet%R) then
+            call fesm_error(proc, "grid description "//file//" has another planet radius than the Gauss grid of VILMA2", &
+                            "instance "//trim(self%name)//": file R = "//to_str(g0%cs%planet%R)//" m, r_earth = "// &
+                            to_str(self%grid_obj%cs%planet%R)//" m; remove the file to have it rewritten")
+        end if
+        if (maxval(abs(g0%G%x - self%grid_obj%G%x)) > 1.0e-9_dp .or. maxval(abs(g0%G%y - self%grid_obj%G%y)) > 1.0e-9_dp) then
             call fesm_error(proc, "grid description "//file//" differs from the Gauss grid of VILMA2", &
                             "instance "//trim(self%name)//": its axes differ by more than 1e-9 degree; remove the file "// &
                             "to have it rewritten")
@@ -265,7 +273,7 @@ contains
         F0 = 0.0_dp
         call host_check(self, w, Ig, C, F0, "the reference")
 
-        call solid_earth_init(self%se, z_bed_ref, H_ice_ref, grid=self%gauss, w=w, I_g=Ig, C=C)
+        call solid_earth_init(self%se, z_bed_ref, H_ice_ref, grid=self%grid_obj, w=w, I_g=Ig, C=C)
         self%built = .true.
         call log_msg(LOG_INFO, "kryos_geo_vilma2", "Earth built at the reference; surface gravity of its Earth model "// &
                      to_str(self%se%resp%g)//" m s-2 (the run's g "//to_str(g_run)//")", "instance "//trim(self%name))
