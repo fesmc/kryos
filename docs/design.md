@@ -361,8 +361,11 @@ on the Levante test cases.
    successor).
 3. Globe: `forcing`, N domains, `ocean = obm`. Target: `yelmox_bipolar`.
 4. `geo = vilma2` (VILMA2's own gaps: export `u` and `N` separately,
-   barystatic definition, `libvilma.a`, FesmData viscosity format; global
-   present-day topography in FesmData). Target: VILMA2 global + NH-32KM +
+   barystatic definition, `libvilma.a`, FesmData viscosity format). The
+   global reference topography is assembled at runtime, not a FesmData
+   product: the background dataset of the globe (a run input on a global
+   grid) with the domain references gathered onto it exactly as in an update
+   step (§6 mechanism, item 1). Target: VILMA2 global + NH-32KM +
    ANT with obm and the bipolar forcing (the science case). Global GIA is
    built in kryos only; yelmox gets none (its VILMA2 plan,
    `yelmox/docs/_vilma2-backend-plan.md`, is superseded except for the
