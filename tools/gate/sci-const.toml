@@ -54,6 +54,13 @@ name = "ant"
 par  = "ant"
 kp   = ['barysealevel.method="const"']
 
+# the clock of the merged file (time_const 0.0) against the nor gate's (-21e3): NH alone, bsl fastiso, as the gate `nor`; compared with the
+# `nor` gate's K cont by hand (kryos-compare.jl REF RUN --gate nor --restarts), not a check of this gate
+[[run]]
+name = "nor-t0"
+par  = "nor"
+kp   = ['clock.time_const=0.0']
+
 # checks (kryos-gate-kk.jl check)
 [[check]]
 type   = "domain"
