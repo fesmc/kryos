@@ -410,3 +410,11 @@ No experiment is active in grl or ant: every list is empty.
   (now a tracked synchronised copy); moved to
   `$G/yelmo_phys_const.nml.untracked-in-K`.
 
+## Phase 4 WP0: stack S5, G0 (2026-10-29)
+
+Report `gate-reports/p4-wp0.md`. S5 = S4 + fesm-utils phase0-kryos 5662899 + SHTns + vilma2 main 5e5a9ee, all
+Fortran packages rebuilt (`tools/setup_S5.sh`, `tools/gate/stack-S5.toml`). libvilma.a links on Levante (vilma2 host tests
+PASS, job 28542741). G0 (`--restarts`): K(S5, vilma=0) == K(S4) and R2(S5) == R2(S4), grl and ant, all PASS
+(jobs 28542775/77, 28542778/79). `$G/maps/S5` = S4 copy; Gauss and GLOBAL-0.5DEG maps pending (WP2/WP3 code).
+Data check: PaleoMIST 0.5DEG (0 ka = last record) and both Bagge files present; `fesmdata-prepared` is not a gate link.
+

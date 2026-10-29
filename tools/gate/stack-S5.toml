@@ -1,0 +1,65 @@
+# Stack S5 (phase 4 WP0, gate-log.md): S4 + fesm-utils phase0-kryos 5662899 (grid_init_gaussian sphere default,
+# a coords/ncio change: every dependent package rebuilt) + SHTns 3.7.5 built in fesm-utils (serial, omp) + vilma2
+# main 5e5a9ee (libvilma.a, openmp variant). Same format as stack.toml (stack S2); full shas as `gate.sh stack` resolves
+# them (stacks/S5/stack.lock). Gate.STACK_LIBS does not list vilma2 yet: [libs.vilma2] is read by nothing in
+# KryosTools, it only enters the stack id and the record. kryos builds with vilma=0 until phase 4 WP2.
+name = "S5"
+note = "S4 + fesm-utils phase0-kryos 5662899 + SHTns + vilma2 main 5e5a9ee; yelmox topo-prep 5ac89c8 (R2'), rembo1 linked"
+
+[yelmox]
+ref    = "topo-prep"          # on v2.4 (918d996): [topo] keys in all bases (R2')
+commit = "5ac89c80c61e00c0e439fec043413066cc6a87e3"
+
+[kryos]
+ref    = "main"
+commit = ""                   # the commit under test: set by gate.sh (kx-<sha7>), not part of the stack id
+
+[libs.fesm-utils]
+ref    = "phase0-kryos"
+commit = "5662899e5e4cae3e912572368ba4a4d0ab025900"
+[libs.yelmo]
+ref    = "topo-prepared"      # on v2.4 (7bd4316); vm-m16 restart fix
+commit = "ea90fee761d04ce74ce9eb47cc6ff63c383cd034"
+[libs.FastHydrology]
+ref    = "v0.4"
+commit = "a0d5e8e3ec9ce18d1c0699c50f20f6bcc7896bd2"
+[libs.elsa]
+ref    = "v3.1.0"
+commit = "74d426ddba20ef4020bee5cfead6a29db00d8f63"
+[libs.tracer]
+ref    = "v0.2"
+commit = "208ac3a0de4b4af66b57c52ed5ee18f7547c305f"
+[libs.FastIsostasy]
+ref    = "v0.3-fesmc"
+commit = "ce0d6ff09bc6ec01dd89158bf532ca83eb34f0cd"
+[libs.chion]
+ref    = "v0.2.0"
+commit = "0de32ba62be4ec9aed322affcb2321370a5936dc"
+[libs.insol]
+ref    = "v1.2.0"
+commit = "42b254e2f8d9c1448c4980c8aa3baedb75efeb7d"
+[libs.rembo1]
+ref    = "v1.3"
+commit = "9c24c427cdbe5d65dea5685a08c2bf5bc0bc86e2"   # linked (rembo=1) as in S4
+[libs.vilma2]
+ref    = "main"
+commit = "5e5a9ee5e9daa7c88bb7b30f0bc844ac136a6db3"
+
+[tools]
+configme = "0.16"             # kryos orchestrator; the yelmox install used 0.15.7
+runme    = "0.5.26"
+
+[build]
+machine  = "dkrz_levante"
+compiler = "ifx"
+modules  = ["intel-oneapi-compilers/2023.2.1", "netcdf-c/4.9.3", "netcdf-fortran/4.6.2"]
+# DFLAGS_NODEBUG on the make command line (reaches the recursive dependency builds)
+flags    = "-O2 -fp-model precise -march=znver3 -traceback"
+# the production flags, compared once per phase as information (regression-design.md Q3)
+flags_production = "-Ofast -march=znver3 -traceback"
+
+[run]
+omp_threads = 16
+partition   = "compute"
+account     = "ba1442"
+walltime    = "00:30:00"

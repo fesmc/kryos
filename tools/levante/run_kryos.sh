@@ -1,16 +1,17 @@
 #!/bin/bash -l
 # Update kryos on Levante, build kryos.x with the gate flags, stage and submit a kryos gate run.
-#   [STACK=S4] [BUNDLE=kryos.bundle] [REF=main] run_kryos.sh <gate> cont|cont2|chunk|base   (STACK default S3)
-# cont2: a second cont run (determinism). The code is the REF branch of $G/bundles/$BUNDLE.
+#   [STACK=S5] [SRC=<git url>] [BUNDLE=kryos.bundle] [REF=main] [MAPS=$G/maps/S] run_kryos.sh <gate> cont|cont2|chunk|base   (STACK default S3)
+# cont2: a second cont run (determinism). The code is the REF branch of SRC (default $G/bundles/$BUNDLE;
+# SRC=git@github.com:fesmc/kryos.git pulls from origin). MAPS is the folder linked as <rundir>/maps.
 # chunk: c00 0 -> 500, c01 500 -> 1000 from c00/restart-500 (afterok), as submit_ref.sh.
 set -euo pipefail
 G=/work/ba1442/robinson/kryos-gate; K=$G/kryos
 GATE=$1; RUN=$2; STACK=${STACK:-S3}   # stack the kryos dependency links point at
-BUNDLE=${BUNDLE:-kryos.bundle}; REF=${REF:-main}
+BUNDLE=${BUNDLE:-kryos.bundle}; REF=${REF:-main}; SRC=${SRC:-$G/bundles/$BUNDLE}; MAPS=${MAPS:-$G/maps/S}
 GF="-O2 -fp-model precise -march=znver3 -traceback"
 CM="env PYTHONPATH=$G/tools/configme-src/src python3 -m configme"
 cd $K
-git fetch -q $G/bundles/$BUNDLE $REF:refs/remotes/bundle/main
+git fetch -q $SRC $REF:refs/remotes/bundle/main
 git checkout -q --detach bundle/main
 SHA=$(git rev-parse --short=7 HEAD)
 $CM config kryos --only -m dkrz_levante -c ifx > /dev/null; $CM deps . > /dev/null
@@ -25,7 +26,7 @@ stage () {   # stage <dir> <jobname> <set_nml args...>; echo the folder
     for f in $K/input/*; do ln -sf $f input/; done
     ln -sf $K/fesm-utils/par/datasrc_defaults.nml input/datasrc_defaults.nml
     for d in fesmdata ice_data isostasy_data; do ln -s /work/ba1442/$d $d; done
-    ln -s $K/fesm-utils fesm-utils; ln -s $G/maps/S maps
+    ln -s $K/fesm-utils fesm-utils; ln -s $MAPS maps
     cp $K/par/gate/$GATE.nml par.nml; cp $K/libkryos/bin/kryos.x .
     [ $# -gt 0 ] && python3 $G/tools/set_nml.py par.nml "$@"
     git -C $K rev-parse HEAD > kryos_commit.txt
