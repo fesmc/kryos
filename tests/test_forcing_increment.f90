@@ -148,12 +148,12 @@ contains
         call run_end(run)
     end subroutine run_all
 
-    function series(file) result(f)
+    function read_series(file) result(f)
         character(len=*), intent(in) :: file
         real(sp), allocatable :: f(:)
         allocate(f(nc_size(file, "time")))
         call nc_read(file, "coef_alpha", f)
-    end function series
+    end function read_series
 
     function bundle_time(folder) result(t)
         character(len=*), intent(in) :: folder
@@ -175,7 +175,7 @@ contains
 
         call write_par(dir//"a.nml", a, "None", 0.0_dp, 0.25_dp)
         call run_all(dir//"a.nml")
-        f = series(a//"forcing_ts.nc")
+        f = read_series(a//"forcing_ts.nc")
         call check(size(f) == 11 .and. abs(f(11) - 1.0_sp) < 1.0e-6_sp .and. abs(f(4) - 0.3_sp) < 1.0e-6_sp, &
                    "bundles: alpha ramps 0 .. 1 over 100 yr")
         call check(exists(a//"restart-1/manifest.nml") .and. exists(a//"restart-2/manifest.nml") .and. &
@@ -195,8 +195,8 @@ contains
 
         call write_par(dir//"b.nml", b, a//"restart-1", 30.0_dp, 0.25_dp)
         call run_all(dir//"b.nml")
-        fa = series(a//"forcing_ts.nc")
-        fb = series(b//"forcing_ts.nc")
+        fa = read_series(a//"forcing_ts.nc")
+        fb = read_series(b//"forcing_ts.nc")
         call check(size(fb) == 8 .and. all(fb == fa(4:11)), "restored: alpha of the restored run equals the original's from 30 yr on")
         call check(same_bundle(a//"restart-100", b//"restart-100"), "restored: the bundle at time_end equals the original's")
         call check(.not. exists(b//"restart-1") .and. exists(b//"restart-2/manifest.nml") .and. &
