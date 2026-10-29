@@ -138,7 +138,7 @@ unit that differs from the data's stops the run. The tables:
 | Table | Read by | Content |
 |---|---|---|
 | `kryos-variables-<component>.md` | the default writer (`component_write_output`) | exports of an instance of that component kind |
-| `kryos-variables-<component>-<backend>.md`, `kryos-variables-hub.md` | the backend's own writer | `geo-fastisostasy`, `climate-snapshots`, `surface-chion`, `shelf-marine_shelf`: the variables of that backend's 2D stream; `hub`: `f_ice` of the hub file |
+| `kryos-variables-<component>-<backend>.md`, `kryos-variables-hub.md` | the backend's own writer | `geo-fastisostasy`, `climate-snapshots`, `surface-chion`, `shelf-marine_shelf`: the variables of that backend's 2D stream; `hub`: `z_bed`, `H_ice`, `z_srf`, `f_grnd`, `z_sl` (passed to `htopo_write_step`) and `f_ice` of the hub file |
 | `yelmo-variables-*.md` | Yelmo (synchronised copies) | the Yelmo streams |
 
 `[kryos] write_lossless = True` (ncio `nc_set_lossless`) ignores every precision:
@@ -161,7 +161,7 @@ of `libs/kryos_output.f90`, `yelmox_climate.f90`, `snapshots.f90`,
 | `<instance>.nc` of a climate, snapshots | snapshots adapter, snapshots and transform modules | `climate-snapshots`: temperature 1e-3, precipitation and salinity 1e-4 relative; static transform fields (`taper_w`, `bias_*_ann`) and `term_<name>` lossless |
 | `<instance>.nc` of a surface, chion | chion adapter | `surface-chion`: smb, melt, runoff, refreezing, snowpack 1e-1, T 1e-3, `pr`, `sf`, `S`, `PDDs` 1e-4 relative, albedo 1e-4, `mask` lossless |
 | `<instance>.nc` of a shelf, marine_shelf | marine_shelf adapter | `shelf-marine_shelf`: `bmb_shlf` 1e-4, `T_shlf`, `tf_shlf` 1e-3 |
-| `<domain>_hub.nc` | fesm-utils `htopo_write_step` (`z_bed`, `H_ice`, `z_srf`, `z_sl` 1e-3, `f_grnd` 1e-4, hard-coded in the library), kryos (`f_ice` 1e-4 from `hub`; `mask` lossless) | as listed |
+| `<domain>_hub.nc` | fesm-utils `htopo_write_step` (`z_bed`, `H_ice`, `z_srf`, `f_grnd`, `z_sl`), kryos (`f_ice`; `mask` lossless) | `hub`: `z_bed`, `H_ice`, `z_srf`, `z_sl` 1e-3, `f_grnd` and `f_ice` 1e-4 |
 | `<instance>_yelmo.nc`, `<instance>_yelmo_sm.nc` | Yelmo | `yelmo-variables-*.md` |
 | `<instance>_yelmo_ts*.nc` (global and region series) | Yelmo | lossless |
 | `timing.txt` | timing table | text |
