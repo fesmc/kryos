@@ -226,7 +226,7 @@ end type
 
 ! axis_t: name ("month" | "depth"), units, v(:). census_t: instances per "kind:backend" (run).
 ! grid_ref_t, init_ctx_t, step_time_t: core-design §2, plus init_ctx_t%axes(:) (producers'
-! axes) and step_time_t%dt (the instance's cadence step [yr]; dtt for every step).
+! axes) and step_time_t%dt (the instance's cadence step [yr]; dtt for every step) and %tick (the clock tick at t1, phase 2).
 
 type, abstract, public :: component_t
     character(len=64)   :: name = "", kind = "", backend = "", grid = "", domain = ""

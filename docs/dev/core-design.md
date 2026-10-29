@@ -123,6 +123,7 @@ type :: step_time_t
     real(dp) :: t0, t1      ! model-time interval (cadence_interval); t0 = t1 = time_init during init
     real(dp) :: t_eval      ! t1, or clock_time_rel at t1 when the instance has clock = "forcing"
     real(dp) :: dtt
+    integer(int64) :: tick  ! the clock's tick at t1 (phase 2, WP1): for the prepare/update check of a backend
 end type
 integer, parameter :: PASS_GEOMETRY = 1, PASS_BOUNDARY = 2, PASS_STATE = 3, PASS_SPINUP = 4, &
                       PASS_FINAL = 5, PASS_RESTART = 6
@@ -466,8 +467,8 @@ imports into the backend's boundary, already converted, so that a hook can
 modify the boundary the backend then integrates with (`lim_pd_ice` subtracts
 after the `sp` conversion). It is called only when the component is due, by the
 run sequence only, before the hook and before `update` (and, at the cold
-start, before `PASS_STATE`). Yelmo: `bnd_from_imports`, then records the clock
-tick; `update` stops with a named error if the tick is not the current one
+start, before `PASS_STATE`). Yelmo: `bnd_from_imports`, then records `st%tick` (the clock
+tick at `t1`); `update` stops with a named error if its own `st%tick` differs
 (prepare skipped).
 
 ## 4. Timing, cadences, lags

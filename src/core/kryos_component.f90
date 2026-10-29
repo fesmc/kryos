@@ -9,6 +9,7 @@ module kryos_component
     ! the free-procedure wrappers of the component modules (ice_update(ice, st)
     ! wraps ice%c%update(st)). Driver, core and experiments never write %update.
 
+    use, intrinsic :: iso_fortran_env, only: int64
     use precision,      only: sp, dp
     use coordinates,    only: grid_class
     use regions,        only: regions_class
@@ -94,6 +95,7 @@ module kryos_component
         real(dp) :: t_eval = 0.0_dp             ! t1, or the forcing time at t1 (clock = "forcing")
         real(dp) :: dt = 0.0_dp                 ! the instance's cadence step [yr]
         real(dp) :: dtt = 0.0_dp                ! the run's step [yr]
+        integer(int64) :: tick = -1             ! the clock's tick at t1 (step_time_of); a backend compares ticks, not years
     end type step_time_t
 
     type, abstract, public :: component_t
@@ -552,6 +554,7 @@ contains
             call cadence_interval(cadence, clk, st%t0, st%t1)
         end if
         st%t_eval = st%t1
+        st%tick   = clk%n
         if (trim(clock_mode) == "forcing") st%t_eval = clock_time_rel(clk)
         st%dt  = cadence_dt_years(cadence, clk)
         st%dtt = clock_dtt(clk)
