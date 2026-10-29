@@ -9,7 +9,10 @@ module kryos_smb_simple
     ! init/set_mask/update; the backend below owns the grid, the mask and the
     ! fields), the namelist loader, and the TG24 scheme (never wired into yelmox).
     ! tests/test_surface_smb_simple.f90 compares them with the literal yelmox
-    ! module.
+    ! module. One departure in form, none in result: compute_signed_distance
+    ! searches the nearest boundary cell with a tree (Cartesian units) or a
+    ! latitude-sorted scan (degrees) instead of the scan over all boundary cells;
+    ! the minimum is the same bit for bit (comments there).
     !
     ! Snow line, with phi = |latitude| (hemisphere-agnostic):
     !     z_SL = a1 + a2*phi + a3*CO2 + a4*(f - fmean)
@@ -84,6 +87,15 @@ module kryos_smb_simple
         real(sp) :: smb_min = -2000.0_sp      ! mm w.e./yr
 
     end type smb_params_syn
+
+    ! Search tree of boundary points for compute_signed_distance.
+    integer, parameter :: KD_LEAF = 8
+    type :: kd_tree_t
+        integer :: n = 0
+        real(sp), allocatable :: p(:,:,:)     ! (2, n, 1): x, y of the points, permuted by the build
+        integer,  allocatable :: first(:), last(:)   ! node k: points first(k):last(k)
+        real(sp), allocatable :: box(:,:)     ! (4, node): xmin, xmax, ymin, ymax
+    end type kd_tree_t
 
 contains
 
@@ -300,15 +312,12 @@ contains
         real(sp), intent(in)  :: y(:,:)
         character(len=*), intent(in), optional :: units
 
-        integer  :: nx, ny, i, j, ib, jb, k, nb, kk
-        logical  :: m, is_bnd, latlon
-        real(sp) :: xq, yq, xb, yb, dx, dy, dphi, dlam
-        real(sp) :: phi_mid, dy_m, dx_m, dist, dmin, scale
+        integer  :: nx, ny, i, j, nb, ic, nc(2)
+        logical  :: m, latlon
+        real(sp) :: xq, yq, dmin, scale
         character(len=16) :: units_use
-        integer, allocatable :: bi(:), bj(:)
-        logical, allocatable :: bm(:)
-        real(sp), parameter :: R_earth = 6.371e6_sp   ! m
-        real(sp), parameter :: deg2rad = 3.141592653589793_sp / 180.0_sp
+        real(sp), allocatable :: bxy(:,:,:)      ! boundary cells' (x, y) by class (1: ocean, 2: ice)
+        type(kd_tree_t) :: tree(2)
 
         nx = size(mask_target, 1)
         ny = size(mask_target, 2)
@@ -338,25 +347,12 @@ contains
             error stop "compute_signed_distance: units must be 'm', 'km', or 'degrees'"
         end select
 
-        ! Pass 1: count boundary cells (4-connectivity).
+        ! Boundary cells (4-connectivity), by their own mask value: a cell is
+        ! measured against the boundary cells of the opposite mask only.
         nb = 0
         do j = 1, ny
             do i = 1, nx
-                m      = mask_target(i, j)
-                is_bnd = .false.
-                if (i > 1) then
-                    if (mask_target(i - 1, j) .neqv. m) is_bnd = .true.
-                end if
-                if (.not. is_bnd .and. i < nx) then
-                    if (mask_target(i + 1, j) .neqv. m) is_bnd = .true.
-                end if
-                if (.not. is_bnd .and. j > 1) then
-                    if (mask_target(i, j - 1) .neqv. m) is_bnd = .true.
-                end if
-                if (.not. is_bnd .and. j < ny) then
-                    if (mask_target(i, j + 1) .neqv. m) is_bnd = .true.
-                end if
-                if (is_bnd) nb = nb + 1
+                if (is_boundary_cell(mask_target, i, j)) nb = nb + 1
             end do
         end do
 
@@ -369,63 +365,43 @@ contains
             return
         end if
 
-        allocate(bi(nb), bj(nb), bm(nb))
-
-        ! Pass 2: fill boundary lists.
-        k = 0
+        allocate(bxy(2, nb, 2))
+        nc = 0
         do j = 1, ny
             do i = 1, nx
-                m      = mask_target(i, j)
-                is_bnd = .false.
-                if (i > 1) then
-                    if (mask_target(i - 1, j) .neqv. m) is_bnd = .true.
-                end if
-                if (.not. is_bnd .and. i < nx) then
-                    if (mask_target(i + 1, j) .neqv. m) is_bnd = .true.
-                end if
-                if (.not. is_bnd .and. j > 1) then
-                    if (mask_target(i, j - 1) .neqv. m) is_bnd = .true.
-                end if
-                if (.not. is_bnd .and. j < ny) then
-                    if (mask_target(i, j + 1) .neqv. m) is_bnd = .true.
-                end if
-                if (is_bnd) then
-                    k = k + 1
-                    bi(k) = i
-                    bj(k) = j
-                    bm(k) = m
+                if (is_boundary_cell(mask_target, i, j)) then
+                    ic = merge(2, 1, mask_target(i, j))
+                    nc(ic) = nc(ic) + 1
+                    bxy(1, nc(ic), ic) = x(i, j)
+                    bxy(2, nc(ic), ic) = y(i, j)
                 end if
             end do
         end do
 
-        ! Pass 3: min distance to opposite-mask boundary, per query cell.
+        ! Nearest opposite boundary cell, exactly the minimum of the full scan
+        ! over all of them (same expression per pair, same bits): the search
+        ! only skips cells whose distance cannot be below the current minimum
+        ! (kd_nearest_d2, nearest_latlon).
+        do ic = 1, 2
+            if (latlon) then
+                call sort_cols(bxy, ic, 1, nc(ic), 2)
+            else
+                call kd_build(tree(ic), bxy(1, 1:nc(ic), ic), bxy(2, 1:nc(ic), ic))
+            end if
+        end do
+
         do j = 1, ny
             do i = 1, nx
                 m     = mask_target(i, j)
+                ic    = merge(1, 2, m)      ! the class of opposite mask
                 xq    = x(i, j)
                 yq    = y(i, j)
-                dmin  = huge(1.0_sp)
-                do kk = 1, nb
-                    if (bm(kk) .eqv. m) cycle
-                    ib    = bi(kk)
-                    jb    = bj(kk)
-                    xb    = x(ib, jb)
-                    yb    = y(ib, jb)
-                    if (latlon) then
-                        dphi    = yq - yb
-                        dlam    = xq - xb
-                        dlam    = modulo(dlam + 180.0_sp, 360.0_sp) - 180.0_sp
-                        phi_mid = 0.5_sp * (yq + yb)
-                        dy_m    = R_earth * dphi * deg2rad
-                        dx_m    = R_earth * cos(phi_mid * deg2rad) * dlam * deg2rad
-                        dist    = sqrt(dy_m * dy_m + dx_m * dx_m)
-                    else
-                        dx   = xq - xb
-                        dy   = yq - yb
-                        dist = scale * sqrt(dx * dx + dy * dy)
-                    end if
-                    if (dist < dmin) dmin = dist
-                end do
+                if (latlon) then
+                    dmin = nearest_latlon(bxy(:, :, ic), nc(ic), xq, yq)
+                else
+                    ! scale*sqrt(.) is non-decreasing, so it commutes with the minimum
+                    dmin = scale * sqrt(kd_nearest_d2(tree(ic), xq, yq))
+                end if
                 if (m) then
                     d(i, j) =  dmin
                 else
@@ -433,9 +409,252 @@ contains
                 end if
             end do
         end do
-
-        deallocate(bi, bj, bm)
     end subroutine compute_signed_distance
+
+    !-----------------------------------------------------------------
+    !> Cell (i,j) has a 4-neighbour of the other mask value.
+    !-----------------------------------------------------------------
+    pure function is_boundary_cell(mask, i, j) result(is_bnd)
+        logical, intent(in) :: mask(:,:)
+        integer, intent(in) :: i, j
+        logical :: is_bnd
+        integer :: nx, ny
+        logical :: m
+
+        nx = size(mask, 1)
+        ny = size(mask, 2)
+        m      = mask(i, j)
+        is_bnd = .false.
+        if (i > 1) then
+            if (mask(i - 1, j) .neqv. m) is_bnd = .true.
+        end if
+        if (.not. is_bnd .and. i < nx) then
+            if (mask(i + 1, j) .neqv. m) is_bnd = .true.
+        end if
+        if (.not. is_bnd .and. j > 1) then
+            if (mask(i, j - 1) .neqv. m) is_bnd = .true.
+        end if
+        if (.not. is_bnd .and. j < ny) then
+            if (mask(i, j + 1) .neqv. m) is_bnd = .true.
+        end if
+    end function is_boundary_cell
+
+    !-----------------------------------------------------------------
+    !> v widened by a relative 1e-5, the slack of the pruning bounds: far
+    !> above the rounding of the bounds, so a pruned cell is never closer
+    !> than the minimum, whatever the compiler does with the products.
+    !-----------------------------------------------------------------
+    pure function widen(v) result(w)
+        real(sp), intent(in) :: v
+        real(sp) :: w
+        if (v < 0.5_sp * huge(1.0_sp)) then
+            w = v * (1.0_sp + 1.0e-5_sp)
+        else
+            w = huge(1.0_sp)
+        end if
+    end function widen
+
+    !-----------------------------------------------------------------
+    ! Sort the columns a(:, lo:hi, ic) by row `key` (quicksort, Hoare
+    ! partition: balanced on equal keys, as the boundary of a mask lines up).
+    !-----------------------------------------------------------------
+    recursive subroutine sort_cols(a, ic, lo, hi, key)
+        real(sp), intent(inout) :: a(:,:,:)
+        integer,  intent(in)    :: ic, lo, hi, key
+        integer  :: i, j, k
+        real(sp) :: piv, t(2)
+
+        if (hi - lo < 12) then
+            do i = lo + 1, hi
+                t = a(:, i, ic)
+                j = i - 1
+                do while (j >= lo)
+                    if (a(key, j, ic) <= t(key)) exit
+                    a(:, j + 1, ic) = a(:, j, ic)
+                    j = j - 1
+                end do
+                a(:, j + 1, ic) = t
+            end do
+            return
+        end if
+
+        ! median of three as the pivot
+        k = (lo + hi) / 2
+        piv = max(min(a(key, lo, ic), a(key, k, ic)), min(max(a(key, lo, ic), a(key, k, ic)), a(key, hi, ic)))
+        i = lo
+        j = hi
+        do
+            do while (a(key, i, ic) < piv)
+                i = i + 1
+            end do
+            do while (a(key, j, ic) > piv)
+                j = j - 1
+            end do
+            if (i >= j) exit
+            t = a(:, i, ic);  a(:, i, ic) = a(:, j, ic);  a(:, j, ic) = t
+            i = i + 1
+            j = j - 1
+        end do
+        call sort_cols(a, ic, lo, j, key)
+        call sort_cols(a, ic, j + 1, hi, key)
+    end subroutine sort_cols
+
+    !-----------------------------------------------------------------
+    !> Nearest boundary point in the lon/lat metric: the full-scan distance
+    !> over the points b(:, 1:n), sorted by latitude (row 2). dist >= |dy_m|
+    !> and |dy_m| grows monotonically away from yq, so each direction stops
+    !> at the first point whose |dy_m| exceeds the minimum.
+    !-----------------------------------------------------------------
+    function nearest_latlon(b, n, xq, yq) result(dmin)
+        real(sp), intent(in) :: b(:,:)
+        integer,  intent(in) :: n
+        real(sp), intent(in) :: xq, yq
+        real(sp) :: dmin
+
+        integer  :: k, k0, lo, hi, mid, dirn
+        real(sp) :: xb, yb, dphi, dlam, phi_mid, dy_m, dx_m, dist
+        real(sp), parameter :: R_earth = 6.371e6_sp   ! m
+        real(sp), parameter :: deg2rad = 3.141592653589793_sp / 180.0_sp
+
+        ! first point with latitude >= yq
+        lo = 1
+        hi = n + 1
+        do while (lo < hi)
+            mid = (lo + hi) / 2
+            if (b(2, mid) < yq) then
+                lo = mid + 1
+            else
+                hi = mid
+            end if
+        end do
+        k0 = lo
+
+        dmin = huge(1.0_sp)
+        do dirn = 1, 2
+            k = merge(k0, k0 - 1, dirn == 1)
+            do while (k >= 1 .and. k <= n)
+                xb   = b(1, k)
+                yb   = b(2, k)
+                dphi = yq - yb
+                dy_m = R_earth * dphi * deg2rad
+                if (abs(dy_m) > widen(dmin)) exit
+                dlam    = xq - xb
+                dlam    = modulo(dlam + 180.0_sp, 360.0_sp) - 180.0_sp
+                phi_mid = 0.5_sp * (yq + yb)
+                dx_m    = R_earth * cos(phi_mid * deg2rad) * dlam * deg2rad
+                dist    = sqrt(dy_m * dy_m + dx_m * dx_m)
+                if (dist < dmin) dmin = dist
+                k = merge(k + 1, k - 1, dirn == 1)
+            end do
+        end do
+    end function nearest_latlon
+
+    !-----------------------------------------------------------------
+    ! 2-D tree of points (x, y), in the plane metric of the Cartesian units
+    !-----------------------------------------------------------------
+
+    !> Balanced tree over the points, leaves of up to KD_LEAF points; node k
+    !> has the children 2k and 2k+1 and the tight bounding box of its range
+    !> p(:, first(k):last(k)).
+    subroutine kd_build(t, px, py)
+        type(kd_tree_t), intent(inout) :: t
+        real(sp), intent(in) :: px(:), py(:)
+        integer :: n, depth, sz
+
+        n = size(px)
+        t%n = n
+        if (allocated(t%p)) deallocate(t%p, t%first, t%last, t%box)
+        allocate(t%p(2, n, 1))
+        t%p(1, :, 1) = px
+        t%p(2, :, 1) = py
+        sz = n
+        depth = 0
+        do while (sz > KD_LEAF)
+            sz = (sz + 1) / 2
+            depth = depth + 1
+        end do
+        allocate(t%first(2**(depth + 1)), t%last(2**(depth + 1)), t%box(4, 2**(depth + 1)))
+        t%first = 0
+        t%last  = -1
+        call kd_split(t, 1, 1, n)
+    end subroutine kd_build
+
+    recursive subroutine kd_split(t, k, lo, hi)
+        type(kd_tree_t), intent(inout) :: t
+        integer, intent(in) :: k, lo, hi
+        integer :: mid, key
+
+        t%first(k) = lo
+        t%last(k)  = hi
+        t%box(1, k) = minval(t%p(1, lo:hi, 1))
+        t%box(2, k) = maxval(t%p(1, lo:hi, 1))
+        t%box(3, k) = minval(t%p(2, lo:hi, 1))
+        t%box(4, k) = maxval(t%p(2, lo:hi, 1))
+        if (hi - lo + 1 <= KD_LEAF) return
+        key = merge(1, 2, t%box(2, k) - t%box(1, k) >= t%box(4, k) - t%box(3, k))
+        call sort_cols(t%p, 1, lo, hi, key)
+        mid = (lo + hi) / 2
+        call kd_split(t, 2 * k, lo, mid)
+        call kd_split(t, 2 * k + 1, mid + 1, hi)
+    end subroutine kd_split
+
+    !> Minimum over the tree's points of dx*dx + dy*dy (dx = xq - xb, dy = yq - yb,
+    !> as in the full scan). A node is skipped when the same expression on the
+    !> gaps to its box exceeds the minimum found, widened: rounding is monotone,
+    !> so the gaps (xq - box edge) are not larger than dx of any point of the
+    !> box, and the pruned points cannot beat the minimum.
+    function kd_nearest_d2(t, xq, yq) result(best)
+        type(kd_tree_t), intent(in) :: t
+        real(sp), intent(in) :: xq, yq
+        real(sp) :: best
+
+        integer  :: stack(64), top, k, a, b, kk, c1, c2
+        real(sp) :: bound(64), bnd, bnd1, bnd2, dx, dy, d2, lim
+
+        best  = huge(1.0_sp)
+        lim   = huge(1.0_sp)
+        top   = 1
+        stack(1) = 1
+        bound(1) = 0.0_sp
+        do while (top > 0)
+            k   = stack(top)
+            bnd = bound(top)
+            top = top - 1
+            if (bnd > lim) cycle
+            a = t%first(k)
+            b = t%last(k)
+            if (b - a + 1 <= KD_LEAF) then
+                do kk = a, b
+                    dx = xq - t%p(1, kk, 1)
+                    dy = yq - t%p(2, kk, 1)
+                    d2 = dx * dx + dy * dy
+                    if (d2 < best) best = d2
+                end do
+                lim = widen(best)
+            else
+                c1 = 2 * k
+                c2 = 2 * k + 1
+                bnd1 = box_gap_d2(t%box(:, c1), xq, yq)
+                bnd2 = box_gap_d2(t%box(:, c2), xq, yq)
+                ! the nearer child is popped first
+                if (bnd1 <= bnd2) then
+                    top = top + 1;  stack(top) = c2;  bound(top) = bnd2
+                    top = top + 1;  stack(top) = c1;  bound(top) = bnd1
+                else
+                    top = top + 1;  stack(top) = c1;  bound(top) = bnd1
+                    top = top + 1;  stack(top) = c2;  bound(top) = bnd2
+                end if
+            end if
+        end do
+    end function kd_nearest_d2
+
+    pure function box_gap_d2(bx, xq, yq) result(g2)
+        real(sp), intent(in) :: bx(4), xq, yq
+        real(sp) :: g2, gx, gy
+        gx = max(max(bx(1) - xq, xq - bx(2)), 0.0_sp)
+        gy = max(max(bx(3) - yq, yq - bx(4)), 0.0_sp)
+        g2 = gx * gx + gy * gy
+    end function box_gap_d2
 
     !=================================================================
     ! Synthetic-elevation profiles (linear and plastic)
