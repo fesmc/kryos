@@ -65,10 +65,13 @@ program test_globe_ice
     ! (ice_adopt), two domains with disjoint footprints on small polar
     ! stereographic grids, a small Gaussian target grid and a coarse lon-lat
     ! background with a synthetic IceHistory file (years ago, 80 ka to 0):
-    !   * init: the [globe_ice] group, the history group's guards (ref_time,
-    !     out_of_range), the datasrc bound on the background grid;
-    !   * add_domain: the true areas, footprint and coverage of each domain on
-    !     the target grid; one ice grid per domain.
+    !   * the background datasrc: the 0 ka slice of X on the background and target grids;
+    !   * the reference host terms against a direct computation (uniform fields,
+    !     partial cells); footprint and coverage w;
+    !   * the reference: bit identical when assembled twice, the spliced reference;
+    !   * domain-order invariance (registration and add order swapped);
+    !   * the stops (the program re-runs itself with an argument per case, as
+    !     test_ice_contract).
     ! Works in tmp/test_globe_ice/ below the repository root (make check runs there).
 
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
@@ -80,7 +83,8 @@ program test_globe_ice
     use kryos_config,    only: config_t, config_init
     use kryos_component, only: init_ctx_t, census_t, constraints_t
     use kryos_ice,       only: ice_t, ice_slot_t, ice_adopt, ice_init
-    use kryos_globe_ice, only: globe_ice_t, globe_ice_init, globe_ice_add_domain, globe_ice_end
+    use kryos_globe_ice, only: globe_ice_t, globe_ice_init, globe_ice_add_domain, globe_ice_end, &
+                               globe_ice_reference_begin, globe_ice_reference_add, globe_ice_reference_end
     use test_gi_toy,     only: toy_ice_t, RHO_I, RHO_SW
 
     implicit none
@@ -91,6 +95,7 @@ program test_globe_ice
     character(len=*), parameter :: HIST = "tmp/test_globe_ice/{grid_name}_IceHistory-TEST.nc"
     integer, parameter :: NXB = 90, NYB = 45, NT = 5
     real(dp), parameter :: PI = 3.14159265358979323846_dp
+    real(dp), parameter :: SP_TOL = 2.0e-6_dp       ! the datasrc reads in single precision (wp)
     integer :: nfail = 0
 
     type :: scene_t                                   ! the grids, the coupler, the globe, the mock ice of two domains
@@ -111,7 +116,12 @@ program test_globe_ice
     call execute_command_line("rm -rf "//DIR//" && mkdir -p "//FLD)
     call write_history()
 
-    call test_coverage()
+    call test_background()
+    call test_host_terms()
+    call test_coverage_and_conservation()
+    call test_reference()
+    call test_order()
+    call test_no_domains()
     call test_stops()
 
     call execute_command_line("rm -f "//errfile)
@@ -346,6 +356,23 @@ contains
         end if
     end subroutine build
 
+    subroutine reference(sc, order_ab)
+        type(scene_t), intent(inout) :: sc
+        logical,       intent(in), optional :: order_ab
+        logical :: ab
+        ab = .true.
+        if (present(order_ab)) ab = order_ab
+        call globe_ice_reference_begin(sc%gi, sc%cpl)
+        if (ab) then
+            call globe_ice_reference_add(sc%gi, sc%cpl, "A", sc%ice_a)
+            call globe_ice_reference_add(sc%gi, sc%cpl, "B", sc%ice_b)
+        else
+            call globe_ice_reference_add(sc%gi, sc%cpl, "B", sc%ice_b)
+            call globe_ice_reference_add(sc%gi, sc%cpl, "A", sc%ice_a)
+        end if
+        call globe_ice_reference_end(sc%gi, sc%cpl)
+    end subroutine reference
+
     function areas(g) result(a)
         type(grid_class), intent(in) :: g
         real(dp), allocatable :: a(:,:)
@@ -361,15 +388,109 @@ contains
     ! The tests
     ! =========================================================================
 
-    subroutine test_coverage()
+    subroutine test_background()
+        type(scene_t) :: sc
+        real(dp), allocatable :: x(:,:), ab(:,:), at(:,:)
+        real(dp) :: vbg, vtg
+        integer :: i, j
+
+        write(*,"(a)") "background datasrc: the 0 ka slice, the history as an anomaly"
+        call build(sc, "def")
+        call reference(sc)
+        allocate(x(NXB,NYB))
+        do j = 1, NYB
+            do i = 1, NXB
+                x(i,j) = h_now(i, j)
+            end do
+        end do
+        call check("X ice is the 0 ka slice (last record, years ago -> model time 0; read in single precision)", &
+                   maxval(abs(sc%gi%H_X - x)) <= SP_TOL*maxval(x))
+        do j = 1, NYB
+            do i = 1, NXB
+                x(i,j) = zb_bg(real(i, dp), real(j, dp))
+            end do
+        end do
+        call check("X bed is the 0 ka slice", maxval(abs(sc%gi%z_bed_X - x)) <= SP_TOL*maxval(abs(x)))
+
+        ab = areas(sc%gbg); at = areas(sc%gtg)
+        vbg = sum(ab*sc%gi%H_X); vtg = sum(at*sc%gi%H_ice_ref)
+        call check("H_ice_ref (X on the target grid) conserves the ice of X (1e-12)", relerr(vtg, vbg) < 1.0e-12_dp)
+        call globe_ice_end(sc%gi)
+
+    end subroutine test_background
+
+    real(dp) function maxdiff_h(H, fac)
+        ! max |H - fac H0| / max(H0) on the background grid
+        real(dp), intent(in) :: H(:,:), fac
+        real(dp) :: m
+        integer :: i, j
+        maxdiff_h = 0.0_dp
+        m = 0.0_dp
+        do j = 1, NYB
+            do i = 1, NXB
+                m = max(m, h_now(i, j))
+            end do
+        end do
+        do j = 1, NYB
+            do i = 1, NXB
+                maxdiff_h = max(maxdiff_h, abs(H(i,j) - fac*h_now(i, j))/m)
+            end do
+        end do
+    end function maxdiff_h
+
+    subroutine test_host_terms()
+        ! A: the footprint is the whole grid, 1000 m of ice over a bed at -500 m (grounded), so the host
+        ! terms of a cell are its weight w times a constant: partial cells included. The weights of the
+        ! intensive terms are the map's coverage exactly; the amounts (per true area) differ from w times
+        ! the constant by the ratio of the true cell area to the map's polygon area (tolerance below, 5e-4: the measured 8e-5).
+        type(scene_t) :: sc
+        real(dp), allocatable :: w(:,:), a(:,:)
+        real(dp), parameter :: AMT_TOL = 5.0e-4_dp
+        logical :: partial
+
+        write(*,"(a)") "host terms of the reference against a direct computation (uniform A, partial cells)"
+        call build(sc, "def", uniform=.true.)
+        call reference(sc)
+        w = sc%gi%host_w
+        call mask_a_only(sc, a)
+        partial = any(w*a > 0.0_dp .and. w*a < 0.95_dp)
+        call check("coverage: partial cells at the rim and cells fully covered", partial .and. maxval(w*a) > 0.999_dp)
+        call check("reference: host_Ig_ref = 1000 w on the cells of A (amounts: tolerance 5e-4)", &
+                   maxval(abs((sc%gi%host_Ig_ref - 1000.0_dp*w)*a)) <= AMT_TOL*1000.0_dp)
+        write(*,"(a,es10.3)") "  note  max |host_Ig_ref - 1000 w| / 1000 on the cells of A: ", &
+            maxval(abs((sc%gi%host_Ig_ref - 1000.0_dp*w)*a))/1000.0_dp
+        call check("reference: host_C_ref = 0 on the cells of A (grounded)", maxval(abs(sc%gi%host_C_ref*a)) <= 1.0e-12_dp)
+
+        call globe_ice_end(sc%gi)
+    end subroutine test_host_terms
+
+    subroutine mask_a_only(sc, a)
+        ! 1 on the target cells that A covers and B does not.
+        type(scene_t), intent(in) :: sc
+        real(dp), allocatable, intent(out) :: a(:,:)
+        integer :: i
+        allocate(a(sc%gi%nxg, sc%gi%nyg))
+        a = 0.0_dp
+        do i = 1, size(sc%gi%dom)
+            if (trim(sc%gi%dom(i)%name) == "A") a = merge(1.0_dp, 0.0_dp, sc%gi%dom(i)%f_tgt > 0.0_dp)
+        end do
+        do i = 1, size(sc%gi%dom)
+            if (trim(sc%gi%dom(i)%name) == "B") a = a*merge(0.0_dp, 1.0_dp, sc%gi%dom(i)%f_tgt > 0.0_dp)
+        end do
+    end subroutine mask_a_only
+
+    subroutine test_coverage_and_conservation()
         type(scene_t) :: sc
         real(dp), allocatable :: at(:,:)
         real(dp) :: fp_area, fp_cov
         integer :: d
 
-        write(*,"(a)") "footprint and coverage of each domain"
+        write(*,"(a)") "footprint and coverage w"
         call build(sc, "def")
+        call reference(sc)
         at = areas(sc%gtg)
+        call check("host_w in [0, 1], some cells covered, some not", minval(sc%gi%host_w) >= 0.0_dp .and. &
+                   maxval(sc%gi%host_w) <= 1.0_dp + 1.0e-9_dp .and. any(sc%gi%host_w > 0.0_dp) .and. any(sc%gi%host_w == 0.0_dp))
         do d = 1, size(sc%gi%dom)
             call check("domain "//trim(sc%gi%dom(d)%name)//": footprint fraction <= coverage <= 1", &
                        all(sc%gi%dom(d)%fp_tgt <= sc%gi%dom(d)%f_tgt + 1.0e-12_dp) .and. &
@@ -383,11 +504,119 @@ contains
             call check("domain "//trim(sc%gi%dom(d)%name)//": the footprint fraction covers the footprint area (1e-3)", &
                        relerr(fp_cov, fp_area) < 1.0e-3_dp)
         end do
-        call check("the domains do not overlap on the target grid", &
-                   maxval(sc%gi%dom(1)%f_tgt + sc%gi%dom(2)%f_tgt) <= 1.0_dp + 1.0e-9_dp .and. &
-                   any(sc%gi%dom(1)%f_tgt > 0.0_dp .and. sc%gi%dom(1)%f_tgt < 1.0_dp))
+        call check("w is the sum of the domains' coverage (1e-12)", &
+                   maxval(abs(sc%gi%host_w - sc%gi%dom(1)%f_tgt - sc%gi%dom(2)%f_tgt)) < 1.0e-12_dp)
+
         call globe_ice_end(sc%gi)
-    end subroutine test_coverage
+    end subroutine test_coverage_and_conservation
+
+    subroutine test_reference()
+        type(scene_t) :: sc
+        real(dp), allocatable :: w0(:,:), ig0(:,:), c0(:,:), zs0(:,:), hs0(:,:), cov0(:,:), zr0(:,:), hr0(:,:), ab(:,:)
+        real(dp), allocatable :: expect(:,:)
+        logical, allocatable :: onlya(:,:)
+        real(dp) :: lhs, rhs
+
+        write(*,"(a)") "reference: assembly twice, the spliced reference"
+        call build(sc, "def")
+        call reference(sc)
+        w0 = sc%gi%host_w; ig0 = sc%gi%host_Ig_ref; c0 = sc%gi%host_C_ref
+        zs0 = sc%gi%z_bed_spl; hs0 = sc%gi%H_spl; cov0 = sc%gi%cov_bg; zr0 = sc%gi%z_bed_ref; hr0 = sc%gi%H_ice_ref
+        call reference(sc)
+        call check("the reference assembled twice is bit identical (host terms, X on the target grid)", &
+                   all(w0 == sc%gi%host_w) .and. all(ig0 == sc%gi%host_Ig_ref) .and. all(c0 == sc%gi%host_C_ref) .and. &
+                   all(zr0 == sc%gi%z_bed_ref) .and. all(hr0 == sc%gi%H_ice_ref))
+        call check("... and the spliced reference", all(zs0 == sc%gi%z_bed_spl) .and. all(hs0 == sc%gi%H_spl) .and. &
+                   all(cov0 == sc%gi%cov_bg))
+
+        call check("splice: where no domain covers, the reference is X exactly", &
+                   all(merge(.true., sc%gi%z_bed_spl == sc%gi%z_bed_X .and. sc%gi%H_spl == sc%gi%H_X, sc%gi%cov_bg > 0.0_dp)) .and. &
+                   any(sc%gi%cov_bg == 0.0_dp) .and. any(sc%gi%cov_bg > 0.0_dp))
+        ab = areas(sc%gbg)
+        lhs = sum(ab*sc%gi%H_spl)
+        rhs = sum(ab*(1.0_dp - min(sc%gi%cov_bg, 1.0_dp))*sc%gi%H_X) + sum(areas(sc%ga)*sc%hpd_a) + sum(areas(sc%gb)*sc%hpd_b)
+        call check("splice: the ice is the background outside the domains plus the present days (plain sums, 1e-9)", &
+                   relerr(lhs, rhs) < 1.0e-9_dp)
+        call check("splice: coverage in [0, 1]", minval(sc%gi%cov_bg) >= 0.0_dp .and. maxval(sc%gi%cov_bg) <= 1.0_dp + 1.0e-9_dp)
+        call globe_ice_end(sc%gi)
+
+        ! a constant reference bed in A: the intensive merge is (1 - cov) z_X + cov c on the cells only A covers
+        call build(sc, "def", uniform=.true.)
+        call reference(sc)
+        allocate(expect(NXB,NYB), onlya(NXB,NYB))
+        onlya = sc%gi%cov_bg > 0.0_dp .and. .not. covered_by_b(sc)
+        expect = (1.0_dp - min(sc%gi%cov_bg, 1.0_dp))*sc%gi%z_bed_X - 500.0_dp*sc%gi%cov_bg/max(sc%gi%cov_bg, 1.0_dp)
+        call check("splice: a domain with a constant bed gives (1 - cov) z_X + cov c where only A covers (1e-9 m)", &
+                   count(onlya) > 0 .and. maxval(abs(merge(sc%gi%z_bed_spl - expect, 0.0_dp, onlya))) < 1.0e-9_dp)
+        call globe_ice_end(sc%gi)
+    end subroutine test_reference
+
+    function covered_by_b(sc) result(m)
+        type(scene_t), intent(in) :: sc
+        logical, allocatable :: m(:,:)
+        integer :: i
+        allocate(m(NXB,NYB))
+        m = .false.
+        do i = 1, size(sc%gi%dom)
+            if (trim(sc%gi%dom(i)%name) == "B") m = sc%gi%dom(i)%f_bg > 0.0_dp
+        end do
+    end function covered_by_b
+
+    subroutine test_order()
+        type(scene_t) :: s1, s2
+        logical :: same
+
+        write(*,"(a)") "domain-order invariance"
+        call build(s1, "def", order_ab=.true.)
+        call build(s2, "def", order_ab=.false.)
+        call reference(s1, order_ab=.true.)
+        call reference(s2, order_ab=.false.)
+        same = all(s1%gi%host_w == s2%gi%host_w) .and. all(s1%gi%host_Ig_ref == s2%gi%host_Ig_ref) .and. &
+               all(s1%gi%host_C_ref == s2%gi%host_C_ref) .and. all(s1%gi%z_bed_spl == s2%gi%z_bed_spl) .and. &
+               all(s1%gi%H_spl == s2%gi%H_spl) .and. all(s1%gi%cov_bg == s2%gi%cov_bg)
+        call check("registration and add order swapped: the reference is bit identical", same)
+        call globe_ice_end(s1%gi)
+        call globe_ice_end(s2%gi)
+    end subroutine test_order
+
+    subroutine test_no_domains()
+        ! No domain: the host terms are zero, the reference is X, the ocean area is the background's.
+        type(scene_t) :: sc
+        real(dp), allocatable :: ab(:,:), cbg(:,:)
+        real(dp) :: a, fg
+        integer :: i, j
+
+        write(*,"(a)") "no domain registered"
+        call build_bare(sc)
+        call globe_ice_reference_begin(sc%gi, sc%cpl)
+        call globe_ice_reference_end(sc%gi, sc%cpl)
+        call check("host_w, host_Ig_ref and host_C_ref are zero", all(sc%gi%host_w == 0.0_dp) .and. &
+                   all(sc%gi%host_Ig_ref == 0.0_dp) .and. all(sc%gi%host_C_ref == 0.0_dp))
+        call check("the spliced reference is X", all(sc%gi%z_bed_spl == sc%gi%z_bed_X) .and. all(sc%gi%H_spl == sc%gi%H_X))
+        ab = areas(sc%gbg)
+        a = 0.0_dp
+        do j = 1, NYB
+            do i = 1, NXB
+                fg = merge(1.0_dp, 0.0_dp, RHO_I*sc%gi%H_X(i,j)/RHO_SW + sc%gi%z_bed_X(i,j) >= 0.0_dp)
+                a = a + ab(i,j)*(1.0_dp - fg)
+            end do
+        end do
+        call check("the ocean area of the reference is the background's (1e-9)", relerr(sc%gi%diag%a_ocn_ref, a) < 1.0e-9_dp)
+        if (allocated(cbg)) deallocate(cbg)
+        call globe_ice_end(sc%gi)
+    end subroutine test_no_domains
+
+    subroutine build_bare(sc)
+        type(scene_t), intent(inout) :: sc
+        character(len=*), parameter :: par = DIR//"par.nml"
+        call grids(sc, "Spherical Earth")
+        call phys_const_set(sc%cnst, label="Earth", rho_ice=RHO_I, rho_sw=RHO_SW, rho_w=1000.0_dp, g=9.81_dp, &
+                            area_seasurf=3.618e8_dp)
+        call write_par(par, "def")
+        call config_init(sc%cfg, par)
+        call coupler_init(sc%cpl, FLD)
+        call globe_ice_init(sc%gi, sc%cfg, sc%cpl, sc%cnst, sc%gtg, grid_bg=sc%gbg)
+    end subroutine build_bare
 
     ! =========================================================================
     ! Named stops
@@ -397,6 +626,8 @@ contains
         write(*,"(a)") "the checks as named stops"
         call expect_abort("bad_ref_time", "has ref_time")
         call expect_abort("bad_hold", "out_of_range")
+        call expect_abort("overlap", "domains overlap")
+        call expect_abort("late_domain", "registered after the reference")
         call expect_abort("same_grid", "are on one ice grid")
     end subroutine test_stops
 
@@ -425,6 +656,8 @@ contains
         ! Child: build the situation and make the call that must stop.
         character(len=64) :: arg
         type(scene_t) :: sc
+        real(dp), allocatable :: fp2(:,:)
+        type(grid_class) :: g2
 
         call get_command_argument(1, arg)
         call execute_command_line("mkdir -p "//FLD)
@@ -433,6 +666,24 @@ contains
             call build(sc, "bad_ref_time")
         case ("bad_hold")
             call build(sc, "bad_hold")
+        case ("overlap")
+            call build(sc, "def")
+            ! a third domain on a grid shifted by 500 km over A
+            call grid_init(g2, name="TNH2-100KM-SPH", mtype="polar_stereographic", units="kilometers", planet="Spherical Earth", &
+                           lon180=.false., x0=-1000.0_dp, dx=100.0_dp, nx=31, y0=500.0_dp, dy=100.0_dp, ny=31, &
+                           lambda=-40.0_dp, phi=70.0_dp)
+            allocate(fp2(31,31))
+            fp2 = 1.0_dp
+            call globe_ice_add_domain(sc%gi, sc%cpl, "A2", g2, fp2, 0.0_dp*fp2, 0.0_dp*fp2 - 500.0_dp)
+            call globe_ice_reference_begin(sc%gi, sc%cpl)
+            call globe_ice_reference_add(sc%gi, sc%cpl, "A", sc%ice_a)
+            call globe_ice_reference_add(sc%gi, sc%cpl, "B", sc%ice_b)
+            call globe_ice_reference_add(sc%gi, sc%cpl, "A2", sc%ice_a)     ! (flotation of the grid of A: shapes differ)
+            call globe_ice_reference_end(sc%gi, sc%cpl)
+        case ("late_domain")
+            call build(sc, "def")
+            call reference(sc)
+            call globe_ice_add_domain(sc%gi, sc%cpl, "A3", sc%ga, sc%fp_a, sc%hpd_a, sc%zb_a)
         case ("same_grid")
             call build(sc, "def")
             call globe_ice_add_domain(sc%gi, sc%cpl, "A3", sc%ga, sc%fp_a, sc%hpd_a, sc%zb_a)

@@ -118,6 +118,7 @@ module kryos_globe_ice
     end type globe_ice_t
 
     public :: globe_ice_init, globe_ice_add_domain, globe_ice_end
+    public :: globe_ice_reference_begin, globe_ice_reference_add, globe_ice_reference_end
 
 contains
 
@@ -440,6 +441,144 @@ contains
         call fesm_error(proc, "domain `"//trim(name)//"` is not registered", "globe_ice_add_domain first")
     end function find_domain
 
+    ! =========================================================================
+    ! Reference (section 5.1)
+    ! =========================================================================
+
+    subroutine globe_ice_reference_begin(gi, cpl)
+        ! Background X on the background grid (datasrc at ext_tref) and on the
+        ! target grid (z_bed_ref, H_ice_ref: the 1 - w part of VILMA2's
+        ! reference), then the accumulators of the reference host terms and of
+        ! the spliced reference. May be called again: the reference is rebuilt
+        ! and is bit identical.
+        type(globe_ice_t),   intent(inout) :: gi
+        type(coupler_class), intent(inout) :: cpl
+
+        character(len=*), parameter :: proc = "kryos_globe_ice::globe_ice_reference_begin"
+        real(dp), allocatable :: tmp(:,:)
+        integer :: k
+
+        call require_ready(gi, proc)
+        if (gi%in_ref .or. gi%in_gather) then
+            call fesm_error(proc, "a reference or a gather is open", "close it with its _end first")
+        end if
+
+        call datasrc_update(gi%ds_x, gi%ext_tref)
+        call datasrc_get(gi%ds_x, "z_bed_ref", gi%z_bed_X)
+        call datasrc_get(gi%ds_x, "H_ice_ref", gi%H_X)
+        call check_bg(gi%z_bed_X, "z_bed (X)", proc)
+        call check_bg(gi%H_X,     "H_ice (X)", proc)
+        if (any(gi%H_X < 0.0_dp)) then
+            call fesm_error(proc, "the background ice X holds negative thickness", "minval = "//to_str(minval(gi%H_X)))
+        end if
+
+        call remap(cpl, gi%z_bed_X, trim(gi%bg), tmp, trim(gi%tgt), method="con")
+        gi%z_bed_ref = tmp
+        call ext_to_tgt(cpl, trim(gi%bg), trim(gi%tgt), gi%H_X, gi%H_ice_ref)
+
+        call coupler_merge_begin(gi%acc_I,  cpl, trim(gi%tgt), "extensive")
+        call coupler_merge_begin(gi%acc_C,  cpl, trim(gi%tgt), "intensive")
+        call coupler_merge_begin(gi%acc_zs, cpl, trim(gi%bg),  "intensive")
+        call coupler_merge_begin(gi%acc_hs, cpl, trim(gi%bg),  "extensive")
+        do k = 1, size(gi%dom)
+            gi%dom(k)%ref_added = .false.
+        end do
+        gi%in_ref = .true.
+    end subroutine globe_ice_reference_begin
+
+    subroutine globe_ice_reference_add(gi, cpl, name, ice)
+        ! Domain `name` in the reference: its present day with the background ice
+        ! outside the footprint, the reference flotation of the ice instance
+        ! (sea level 0, the bed z_bed_ref in every cell), the host terms of the
+        ! same procedure as a step, and its present day for the spliced reference.
+        type(globe_ice_t),   intent(inout) :: gi
+        type(coupler_class), intent(inout) :: cpl
+        character(len=*),    intent(in)    :: name
+        type(ice_slot_t),    intent(in)    :: ice
+
+        character(len=*), parameter :: proc = "kryos_globe_ice::globe_ice_reference_add"
+        real(dp), allocatable :: H_tot(:,:), f_g(:,:), I(:,:), Cc(:,:), zero(:,:)
+        integer :: d
+
+        if (.not. gi%in_ref) call fesm_error(proc, "no reference is open", "globe_ice_reference_begin first")
+        d = find_domain(gi, name, proc)
+        associate (dm => gi%dom(d))
+            if (dm%ref_added) call fesm_error(proc, "domain `"//trim(name)//"` was already added", "")
+            call ext_to_ice(cpl, trim(gi%bg), trim(dm%grid), gi%H_X, dm%ext_ref)
+            allocate(zero(dm%nx, dm%ny))
+            zero = 0.0_dp
+            call host_arrays(dm, ice, dm%ext_ref, dm%H_pd, dm%z_bed_ref, zero, H_tot, f_g)
+            dm%fg_ref = f_g
+            I  = H_tot*f_g
+            Cc = 1.0_dp - f_g
+            call coupler_merge_add(gi%acc_I, cpl, trim(dm%grid), I)
+            call coupler_merge_add(gi%acc_C, cpl, trim(dm%grid), Cc)
+            call coupler_merge_add(gi%acc_zs, cpl, trim(dm%grid), dm%z_bed_ref)
+            call coupler_merge_add(gi%acc_hs, cpl, trim(dm%grid), dm%H_pd)
+            dm%I_ref = I
+            dm%V_ref = coupler_integral(cpl, trim(dm%grid), I)
+            dm%ref_added = .true.
+        end associate
+    end subroutine globe_ice_reference_add
+
+    subroutine globe_ice_reference_end(gi, cpl)
+        ! Close the reference: host_w, host_Ig_ref, host_C_ref on the target grid
+        ! (F_ref = 0), the spliced reference on the background grid
+        ! ((1 - sum f_d) X + sum f_d pd), the ocean area of the reference, the log.
+        type(globe_ice_t),   intent(inout) :: gi
+        type(coupler_class), intent(inout) :: cpl
+
+        character(len=*), parameter :: proc = "kryos_globe_ice::globe_ice_reference_end"
+        real(dp), allocatable :: zero(:,:), fg_bg(:,:), c_bg(:,:), c_tgt(:,:), tmp(:,:), wtmp(:,:)
+        real(dp) :: a_ocn
+        integer :: k, d
+        character(len=:), allocatable :: line
+
+        if (.not. gi%in_ref) call fesm_error(proc, "no reference is open", "globe_ice_reference_begin first")
+        call all_added(gi, gi%dom(:)%ref_added, proc)
+
+        allocate(zero(gi%nxg, gi%nyg), wtmp(gi%nxg, gi%nyg))
+        zero = 0.0_dp
+        call coupler_merge_end(gi%acc_I, cpl, zero, tmp, frac_tot=gi%host_w, overlap_tol=gi%overlap_tol)
+        gi%host_Ig_ref = tmp
+        call coupler_merge_end(gi%acc_C, cpl, zero, tmp, frac_tot=wtmp, overlap_tol=gi%overlap_tol)
+        gi%host_C_ref = tmp
+        call check_host(gi, gi%host_Ig_ref, gi%host_C_ref, gi%host_w, "the reference", proc)
+
+        call coupler_merge_end(gi%acc_zs, cpl, gi%z_bed_X, tmp, frac_tot=gi%cov_bg, overlap_tol=gi%overlap_tol)
+        gi%z_bed_spl = tmp
+        call coupler_merge_end(gi%acc_hs, cpl, gi%H_X, tmp, frac_tot=gi%cov_bg, overlap_tol=gi%overlap_tol)
+        gi%H_spl = tmp
+
+        ! ocean area of the reference: the host ocean function plus the background's (1 - w) part
+        ! (the background flotation is the hydrostatic rule, for this log only)
+        allocate(fg_bg(gi%nxb, gi%nyb))
+        fg_bg = merge(1.0_dp, 0.0_dp, gi%rho_ice*gi%H_X/gi%rho_sw + gi%z_bed_X >= 0.0_dp)
+        c_bg = 1.0_dp - fg_bg
+        call remap(cpl, c_bg, trim(gi%bg), tmp, trim(gi%tgt), method="con", norm="dst")
+        c_tgt = gi%host_C_ref + max(0.0_dp, 1.0_dp - gi%host_w)*tmp
+        a_ocn = coupler_integral(cpl, trim(gi%tgt), c_tgt)
+        gi%diag%a_ocn_ref = a_ocn
+
+        line = "reference: coverage of the host region up to "//to_str(maxval(gi%host_w))
+        do k = 1, size(gi%ord)
+            d = gi%ord(k)
+            line = line//new_line("a")//"    domain "//trim(gi%dom(d)%name)//" ("//trim(gi%dom(d)%grid)// &
+                   "): grounded ice "//to_str(gi%dom(d)%V_ref*gi%rho_ice*KG_TO_GT)//" Gt, footprint "// &
+                   to_str(count(gi%dom(d)%footprint > 0.5_dp))//" of "//to_str(gi%dom(d)%nx*gi%dom(d)%ny)//" cells"
+        end do
+        line = line//new_line("a")//"    ocean area of the reference "//to_str(a_ocn)//" m2 ("// &
+               to_str(100.0_dp*(a_ocn - gi%area_ocn)/gi%area_ocn)//" % of the sea surface "//to_str(gi%area_ocn)//" m2)"
+        call log_msg(LOG_INFO, "kryos_globe_ice", line)
+        if (abs(a_ocn - gi%area_ocn) > 0.01_dp*gi%area_ocn) then
+            call log_msg(LOG_WARN, "kryos_globe_ice", "the ocean area of the reference differs from the sea surface by "// &
+                         "more than 1 %: "//to_str(a_ocn)//" m2 against "//to_str(gi%area_ocn)//" m2")
+        end if
+
+        gi%in_ref = .false.
+        gi%have_ref = .true.
+    end subroutine globe_ice_reference_end
+
     subroutine globe_ice_end(gi)
         type(globe_ice_t), intent(inout) :: gi
         if (gi%ready) then
@@ -450,6 +589,58 @@ contains
     end subroutine globe_ice_end
 
     ! =========================================================================
+    ! The one procedure of the reference and the step
+    ! =========================================================================
+
+    subroutine host_arrays(dm, ice, ext_i, H, z_bed, z_sl, H_tot, f_g, f_in)
+        ! H_tot = m H + (1 - m) ext_i; f_g = m f_in + (1 - m) flot(H_tot, z_bed, z_sl)
+        ! (the reference has no f_in: flot everywhere, as the same rule on the footprint).
+        type(gi_domain_t), intent(in)  :: dm
+        type(ice_slot_t),  intent(in)  :: ice
+        real(dp),          intent(in)  :: ext_i(:,:), H(:,:), z_bed(:,:), z_sl(:,:)
+        real(dp), allocatable, intent(out) :: H_tot(:,:), f_g(:,:)
+        real(dp), intent(in), optional :: f_in(:,:)
+        real(dp), allocatable :: flot(:,:)
+
+        allocate(flot(dm%nx, dm%ny))
+        H_tot = dm%footprint*H + (1.0_dp - dm%footprint)*ext_i
+        call ice_flotation(ice, H_tot, z_bed, z_sl, flot)
+        if (present(f_in)) then
+            f_g = dm%footprint*f_in + (1.0_dp - dm%footprint)*flot
+        else
+            f_g = flot
+        end if
+    end subroutine host_arrays
+
+    ! =========================================================================
+    ! Remaps
+    ! =========================================================================
+
+    subroutine ext_to_tgt(cpl, bg, tgt, H_bg, H_tgt)
+        ! Ice on the background grid to the target grid: an amount per target
+        ! area (conserves the volume in the model areas), the whole-cell mean
+        ! that the 1 - w part takes (D17).
+        type(coupler_class), intent(inout) :: cpl
+        character(len=*),    intent(in)    :: bg, tgt
+        real(dp),            intent(in)    :: H_bg(:,:)
+        real(dp),            intent(out)   :: H_tgt(:,:)
+        real(dp), allocatable :: tmp(:,:)
+        call remap(cpl, H_bg, bg, tmp, tgt, method="con", norm="dst")
+        H_tgt = tmp
+    end subroutine ext_to_tgt
+
+    subroutine ext_to_ice(cpl, bg, grid, H_bg, H_ice)
+        ! Ice on the background grid to the ice grid of a domain (amount per true area).
+        type(coupler_class), intent(inout) :: cpl
+        character(len=*),    intent(in)    :: bg, grid
+        real(dp),            intent(in)    :: H_bg(:,:)
+        real(dp), allocatable, intent(out) :: H_ice(:,:)
+        real(dp), allocatable :: tmp(:,:)
+        call remap(cpl, H_bg, bg, tmp, grid, method="con", norm="dst")
+        H_ice = tmp
+    end subroutine ext_to_ice
+
+    ! =========================================================================
     ! Checks
     ! =========================================================================
 
@@ -458,6 +649,19 @@ contains
         character(len=*),  intent(in) :: proc
         if (.not. gi%ready) call fesm_error(proc, "globe_ice_t is not initialised", "globe_ice_init first")
     end subroutine require_ready
+
+    subroutine all_added(gi, flags, proc)
+        type(globe_ice_t), intent(in) :: gi
+        logical,           intent(in) :: flags(:)
+        character(len=*),  intent(in) :: proc
+        integer :: k
+        do k = 1, size(gi%ord)
+            if (.not. flags(gi%ord(k))) then
+                call fesm_error(proc, "domain `"//trim(gi%dom(gi%ord(k))%name)//"` was not added", &
+                                "every registered domain takes part in the reference and in every gather")
+            end if
+        end do
+    end subroutine all_added
 
     subroutine check_shape(a, dm, what, proc)
         real(dp),          intent(in) :: a(:,:)
@@ -478,5 +682,34 @@ contains
                             to_str(count(.not. ieee_is_finite(a)))//" cells")
         end if
     end subroutine check_finite
+
+    subroutine check_bg(a, what, proc)
+        real(dp),         intent(in) :: a(:,:)
+        character(len=*), intent(in) :: what, proc
+        if (.not. all(ieee_is_finite(a)) .or. any(a == mv_dp)) then
+            call fesm_error(proc, trim(what)//" on the background grid is not finite or holds missing values", &
+                            to_str(count(.not. ieee_is_finite(a) .or. a == mv_dp))//" cells")
+        end if
+    end subroutine check_bg
+
+    subroutine check_host(gi, Ig, C, w, what, proc)
+        ! finite; 0 <= C <= w; Ig >= 0; w <= 1 + tolerance (the restart of VILMA2 repeats it)
+        type(globe_ice_t), intent(in) :: gi
+        real(dp),          intent(in) :: Ig(:,:), C(:,:), w(:,:)
+        character(len=*),  intent(in) :: what, proc
+        if (.not. all(ieee_is_finite(Ig)) .or. .not. all(ieee_is_finite(C)) .or. .not. all(ieee_is_finite(w))) then
+            call fesm_error(proc, "host_Ig, host_C or host_w is not finite in "//trim(what), "group ["//trim(gi%group)//"]")
+        end if
+        if (any(Ig < 0.0_dp)) then
+            call fesm_error(proc, "host_Ig is negative in "//trim(what), "min "//to_str(minval(Ig)))
+        end if
+        if (any(C < -BOUND_TOL) .or. any(C > w + BOUND_TOL)) then
+            call fesm_error(proc, "host_C is outside [0, host_w] in "//trim(what), &
+                            "min "//to_str(minval(C))//", max (C - w) "//to_str(maxval(C - w)))
+        end if
+        if (any(w > 1.0_dp + gi%overlap_tol)) then
+            call fesm_error(proc, "host_w exceeds 1 in "//trim(what), "max "//to_str(maxval(w)))
+        end if
+    end subroutine check_host
 
 end module kryos_globe_ice
