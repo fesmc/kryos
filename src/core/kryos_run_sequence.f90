@@ -29,7 +29,7 @@ submodule (kryos_run) kryos_run_sequence
     use kryos_experiment, only: hook_time_t, experiments_hook, HOOK_STEP_BEGIN, HOOK_ICE_BND, &
                                 HOOK_COLD_PRE_STATE, HOOK_COLD_POST_STATE
     use kryos_restart,   only: GLOBE_ORDER, restart_read_clock, restart_check_manifest, restart_read_global, &
-                               restart_read_instance
+                               restart_read_instance, restart_read_experiments
 
     implicit none
 
@@ -131,7 +131,8 @@ contains
         !      restored H_ice and bsl, yelmox domain_restart_read); geo, climate,
         !      surface, shelf, geothermal, sediments. Each instance: its
         !      restart_read, its imports and exports as the bundle holds them,
-        !      PASS_RESTART (kryos_restart). The rows into the other instances
+        !      PASS_RESTART (kryos_restart). Then the domain's stateful
+        !      experiments (restart_read; no hook runs in a restore). The rows into the other instances
         !      do not run: their imports are restored as received, and the
         !      static (LAG_INIT) rows stay done from run_pass_init;
         !   5. per domain, domain_check_reference (the restored references
@@ -157,7 +158,7 @@ contains
         t = clock_time(run%clk)
 
         ! 2. the manifest
-        call restart_check_manifest(dir, run%globe, run%dom)
+        call restart_check_manifest(dir, run%globe, run%dom, run%exps)
 
         ! 3. the globe (yelmox bsl_startup, coefs_restart_read)
         do j = 1, size(GLOBE_ORDER)
@@ -176,6 +177,7 @@ contains
                     end if
                     call restart_read_instance(dir, dom, k, run%clk)
                 end do
+                call restart_read_experiments(dir, dom, run%exps(d), run%clk)         ! stateful ones; no hook runs
 
                 ! 5. reference check (check_isostasy_reference), hub (couple_yelmo_to_htopo)
                 call domain_check_reference(dom)

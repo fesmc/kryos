@@ -499,7 +499,7 @@ contains
                          " yr: the time is not on the grid of every cadence (the run was killed between them)")
             return
         end if
-        call restart_write(restart_dir(run%out_dir, clock_time(run%clk)), run%clk, run%globe, run%dom)
+        call restart_write(restart_dir(run%out_dir, clock_time(run%clk)), run%clk, run%globe, run%dom, run%exps)
     end subroutine run_restart_write
 
     ! =========================================================================

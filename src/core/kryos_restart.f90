@@ -23,7 +23,11 @@ module kryos_restart
     ! each exists. The hub is not stored: it is derived from the
     ! restored ice. Write order = restore order: the globe (forcing, geo),
     ! then each domain's instances in RESTORE_ORDER (ice, geo, climate,
-    ! surface, shelf, geothermal, sediments).
+    ! surface, shelf, geothermal, sediments); then the domain's stateful
+    ! experiments (core-design 3.9), each a manifest group with component
+    ! "experiment" and backend = its kind, its declared files in the domain's
+    ! folder. A stateless experiment is not in the bundle: it may be added or
+    ! dropped between chunks.
     !
     ! Restore of one instance (restart_read_instance, restart_read_global):
     ! <comp>_restart_read, then its imports and exports from the bundle, then
@@ -55,6 +59,8 @@ module kryos_restart
                                 globe_restart_files
     use kryos_domain,     only: domain_t, domain_component, domain_pass, domain_restart_write, &
                                 domain_restart_read, domain_restart_files, RESTORE_ORDER, NCOMP
+    use kryos_experiment, only: experiment_t, experiment_list_t, experiments_count, experiments_restart_write, &
+                                experiments_restart_read, experiments_restart_files
     use kryos_build_info, only: GIT_KRYOS, LIB_NAME, LIB_GIT
 
     implicit none
@@ -62,7 +68,7 @@ module kryos_restart
     private
     public :: GLOBE_ORDER, year_label, restart_dir
     public :: restart_write, restart_read_clock, restart_check_manifest
-    public :: restart_read_global, restart_read_instance, restart_require_files
+    public :: restart_read_global, restart_read_instance, restart_read_experiments, restart_require_files
 
     character(len=*), parameter :: CLOCK_FILE    = "clock_restart.nc"
     character(len=*), parameter :: MANIFEST_FILE = "manifest.nml"
@@ -126,10 +132,11 @@ contains
     ! Write
     ! =========================================================================
 
-    subroutine restart_write(dir, clk, globe, dom)
+    subroutine restart_write(dir, clk, globe, dom, exps)
         ! The whole bundle at the clock's time into `dir` (replaced if it
         ! exists): the clock and the cadences, the globe's instances, each
-        ! domain's instances in RESTORE_ORDER, the manifest last (a bundle
+        ! domain's instances in RESTORE_ORDER and its stateful experiments
+        ! (exps(d), the list of dom(d)), the manifest last (a bundle
         ! without one is incomplete). The folders are made with one shell
         ! command; after each backend write, every file the backend declared
         ! (restart_files) must exist in its folder.
@@ -137,6 +144,7 @@ contains
         type(clock_t),          intent(in)    :: clk
         type(globe_t),  target, intent(inout) :: globe
         type(domain_t), target, intent(inout) :: dom(:)
+        type(experiment_list_t), intent(inout) :: exps(:)
 
         type(entry_t), allocatable :: ent(:)
         class(component_t), pointer :: c
@@ -183,11 +191,48 @@ contains
                 call backend_write(ent(size(ent)), dom=dom(d), k=RESTORE_ORDER(j), t=t)
                 call fields_write(c, ent(size(ent)))
             end do
+            call experiments_write(exps(d), dom(d)%name, ddir, t, ent)
         end do
 
         call manifest_write(dir, clk, dom, ent)
         call log_msg(LOG_INFO, "kryos_restart", "restart bundle "//dir//": "//to_str(size(ent))//" instances")
     end subroutine restart_write
+
+    subroutine experiments_write(list, domain, dir, t, ent)
+        ! The stateful experiments of a domain: their restart_write into the
+        ! domain's folder (which checks the files they declare), and one
+        ! manifest entry each, in list order.
+        type(experiment_list_t), intent(inout) :: list
+        character(len=*),        intent(in)    :: domain, dir
+        real(dp),                intent(in)    :: t
+        type(entry_t), allocatable, intent(inout) :: ent(:)
+
+        integer :: i
+
+        call experiments_restart_write(list, dir, t)
+        do i = 1, experiments_count(list)
+            if (.not. list%s(i)%c%restart) cycle
+            ent = [ent, entry_of_experiment(list%s(i)%c, domain, dir)]
+            ent(size(ent))%files = experiments_restart_files(list, i)
+        end do
+    end subroutine experiments_write
+
+    function entry_of_experiment(x, domain, dir) result(e)
+        ! The manifest entry of a stateful experiment: component "experiment", backend = its kind.
+        class(experiment_t), intent(in) :: x
+        character(len=*),    intent(in) :: domain, dir
+        type(entry_t) :: e
+
+        e%name      = x%name
+        e%scope     = "regional"
+        e%domain    = domain
+        e%component = "experiment"
+        e%backend   = x%kind
+        e%grid      = ""
+        e%dir       = dir
+        e%git       = GIT_KRYOS
+        allocate(e%files(0))
+    end function entry_of_experiment
 
     function entry_of(c, dir) result(e)
         ! The manifest entry of an instance written into the folder `dir`.
@@ -350,9 +395,10 @@ contains
         end do
     end subroutine restart_read_clock
 
-    subroutine restart_check_manifest(dir, globe, dom)
+    subroutine restart_check_manifest(dir, globe, dom, exps)
         ! The run's instances against the bundle's manifest: every instance of
-        ! the run is in the bundle with the same scope, domain, component,
+        ! the run (and every stateful experiment, component "experiment") is
+        ! in the bundle with the same scope, domain, component,
         ! backend and grid, and the bundle holds no other instance; else stop
         ! naming the instance. Every file the manifest lists for an instance
         ! exists in its folder, else stop naming instance, file and folder
@@ -360,6 +406,7 @@ contains
         character(len=*),       intent(in) :: dir
         type(globe_t),  target, intent(in) :: globe
         type(domain_t), target, intent(in) :: dom(:)
+        type(experiment_list_t), intent(in) :: exps(:)
 
         character(len=*), parameter :: proc = "kryos_restart::restart_check_manifest"
         character(len=nml_group_len), allocatable :: groups(:)
@@ -390,6 +437,10 @@ contains
             do j = 1, NCOMP
                 c => domain_component(dom(d), RESTORE_ORDER(j))
                 if (associated(c)) ent = [ent, entry_of(c, dir//"/"//trim(dom(d)%name))]
+            end do
+            do j = 1, experiments_count(exps(d))
+                if (.not. exps(d)%s(j)%c%restart) cycle
+                ent = [ent, entry_of_experiment(exps(d)%s(j)%c, dom(d)%name, dir//"/"//trim(dom(d)%name))]
             end do
         end do
 
@@ -546,6 +597,17 @@ contains
         call fields_read(c, ddir)
         call domain_pass(dom, k, clk, PASS_RESTART)
     end subroutine restart_read_instance
+
+    subroutine restart_read_experiments(dir, dom, list, clk)
+        ! Restore of the stateful experiments of a domain from the bundle
+        ! (their files in dir/<domain>); the stateless ones have none.
+        character(len=*),        intent(in)    :: dir
+        type(domain_t),          intent(in)    :: dom
+        type(experiment_list_t), intent(inout) :: list
+        type(clock_t),           intent(in)    :: clk
+
+        call experiments_restart_read(list, dir//"/"//trim(dom%name), clock_time(clk))
+    end subroutine restart_read_experiments
 
     subroutine fields_read(c, dir)
         ! The imports and exports of an instance as the bundle holds them.

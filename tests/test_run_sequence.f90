@@ -26,6 +26,16 @@ module test_run_toys
         procedure :: hook => rec_hook
     end type recorder_t
 
+    type, extends(experiment_t), public :: counter_t        ! stateful: the number of steps it has seen, in <name>_toy.dat
+        integer :: n = 0
+    contains
+        procedure :: init => cnt_init
+        procedure :: hook => cnt_hook
+        procedure :: restart_write => cnt_write
+        procedure :: restart_read  => cnt_read
+        procedure :: restart_files => cnt_files
+    end type counter_t
+
     type, extends(experiment_t), public :: skip_prepare_t
     contains
         procedure :: init => skip_init
@@ -66,6 +76,52 @@ contains
             log_tsum(n_log)     = sum(real(c%ylmo%thrm%now%T_ice, dp))
         end select
     end subroutine rec_hook
+
+    subroutine cnt_init(self, ctx, dom)
+        class(counter_t), intent(inout) :: self
+        type(exp_ctx_t),  intent(in)    :: ctx
+        type(domain_t),   intent(in)    :: dom
+        associate (u => ctx%time + len(dom%name)); end associate
+        self%restart = .true.
+        self%wants(HOOK_STEP_BEGIN) = .true.
+    end subroutine cnt_init
+
+    subroutine cnt_hook(self, dom, id, st)
+        class(counter_t),  intent(inout) :: self
+        type(domain_t),    intent(inout) :: dom
+        integer,           intent(in)    :: id
+        type(hook_time_t), intent(in)    :: st
+        associate (u => len(dom%name) + id + st%t1); end associate
+        self%n = self%n + 1
+    end subroutine cnt_hook
+
+    function cnt_files(self) result(files)
+        class(counter_t), intent(in) :: self
+        character(len=512), allocatable :: files(:)
+        files = [character(len=512) :: trim(self%name)//"_toy.dat"]
+    end function cnt_files
+
+    subroutine cnt_write(self, dir, t)
+        class(counter_t), intent(inout) :: self
+        character(len=*), intent(in)    :: dir
+        real(dp),         intent(in)    :: t
+        integer :: u
+        associate (unused => t); end associate
+        open(newunit=u, file=trim(dir)//"/"//trim(self%name)//"_toy.dat", status="replace", action="write")
+        write(u,*) self%n
+        close(u)
+    end subroutine cnt_write
+
+    subroutine cnt_read(self, dir, t)
+        class(counter_t), intent(inout) :: self
+        character(len=*), intent(in)    :: dir
+        real(dp),         intent(in)    :: t
+        integer :: u
+        associate (unused => t); end associate
+        open(newunit=u, file=trim(dir)//"/"//trim(self%name)//"_toy.dat", status="old", action="read")
+        read(u,*) self%n
+        close(u)
+    end subroutine cnt_read
 
     subroutine skip_init(self, ctx, dom)
         class(skip_prepare_t), intent(inout) :: self
@@ -162,6 +218,7 @@ program test_run_sequence
     !     test_run_sequence.x plain <par file>        the run as the driver does it
     !     test_run_sequence.x restored <par file>     a restored chunk + checks
     !     test_run_sequence.x hooks <par file>        a restored chunk with the recorder experiment + checks
+    !     test_run_sequence.x counter <par file>      a restored chunk with a stateful experiment + checks
     !     test_run_sequence.x require <folder> <file> restart_require_files of one file
     ! Built only with yelmo=1 fastisostasy=1 chion=1 (config/common.mk).
 
@@ -190,7 +247,7 @@ program test_run_sequence
     ! The restart round trip: cont 0 -> T_END, chunks 0 -> T_MID -> T_END.
     real(dp), parameter :: T_MID = 40.0_dp, T_END = 80.0_dp
     character(len=*), parameter :: CONT = "cont/", C00 = "chunk/c00/", C01 = "chunk/c01/", CMM = "chunk/mm/", &
-                                CHK = "chunk/c01h/", GRD = "guard/"
+                                CHK = "chunk/c01h/", GRD = "guard/", CS0 = "chunk/cs0/", CS1 = "chunk/cs1/"
 
     ! The instances of the par file (manifest groups, bundle files).
     character(len=16), parameter :: INSTANCES(9) = [character(len=16) :: "forcing", "geo_glob", "ice_grl", &
@@ -202,7 +259,7 @@ program test_run_sequence
 
     call get_command_argument(1, arg)
     select case (trim(arg))
-    case ("run", "plain", "restored", "hooks", "require")
+    case ("run", "plain", "restored", "hooks", "counter", "require")
         call get_command_argument(2, par_arg)
         select case (trim(arg))
         case ("require")
@@ -214,6 +271,7 @@ program test_run_sequence
         case ("plain");    call plain_child(trim(par_arg))
         case ("restored"); call restored_child(trim(par_arg))
         case ("hooks");    call hooks_child(trim(par_arg))
+        case ("counter");  call counter_child(trim(par_arg))
         end select
         stop 0
     end select
@@ -347,11 +405,13 @@ contains
     function host_protos() result(protos)
         ! The host experiments of the tests, selected by the group name in the par file.
         type(experiment_proto_t), allocatable :: protos(:)
-        allocate(protos(2))
+        allocate(protos(3))
         protos(1)%name = "rec"
         allocate(recorder_t :: protos(1)%c)
         protos(2)%name = "skip_prepare"
         allocate(skip_prepare_t :: protos(2)%c)
+        protos(3)%name = "counter"
+        allocate(counter_t :: protos(3)%c)
     end function host_protos
 
     subroutine check_hooks_run()
@@ -398,6 +458,41 @@ contains
             call check(log_rates(k) .and. log_rates(k+1), "step "//trim(itoa(n))//": rates exported by the cold start")
         end do
     end subroutine check_hooks_run
+
+    subroutine counter_child(par_file)
+        ! A chunk restored from a bundle that holds a stateful experiment (the
+        ! counter of the chunk before: 4 steps seen): its state comes back with
+        ! the restore and the count runs on.
+        character(len=*), intent(in) :: par_file
+
+        type(run_t), target :: run
+        integer :: n, n0
+
+        call run_init(run, par_file, protos=host_protos())
+        write(*,'(a)') "--- after run_init (restored, t = 40, stateful experiment)"
+        n0 = -1
+        select type (c => run%exps(1)%s(1)%c)
+        type is (counter_t)
+            n0 = c%n
+        end select
+        call check(n0 == 4 .and. n_log == 0, "the counter restored with its four steps; no hook in the restore")
+        n = 0
+        do while (.not. run_done(run))
+            call run_step(run)
+            n = n + 1
+        end do
+        select type (c => run%exps(1)%s(1)%c)
+        type is (counter_t)
+            n0 = c%n
+        end select
+        call check(n == 4 .and. n0 == 8, "four more steps: the count runs on to 8")
+        call run_end(run)
+        if (nfail > 0) then
+            write(*,'(a,i0,a)') "test_run_sequence (counter): FAILED (", nfail, " checks)"
+            error stop 1
+        end if
+        write(*,'(a)') "test_run_sequence (counter): OK"
+    end subroutine counter_child
 
     subroutine hooks_child(par_file)
         ! A chunk restored from the bundle at T_MID with the recorder (a stateless
@@ -473,6 +568,26 @@ contains
                    in_file(d//GRD//"run.log", "kryos_ice_yelmo::update") .and. &
                    in_file(d//GRD//"run.log", "was not prepared"), &
                    "the ice's update stops when its boundary was not prepared for the step ("//DIR//GRD//"run.log)")
+
+        ! a stateful experiment: a manifest group of its own and its file in the domain's folder; its state
+        ! restored; a stateful experiment added or dropped against the bundle stops the restore
+        call setup_run_dir(CS0)
+        call setup_run_dir(CS1)
+        call write_par(d//CS0//PAR, "None", 0.0_dp, T_MID, T_MID, exps="counter")
+        call write_par(d//CS1//PAR, "../cs0/restart-40", T_MID, T_END, T_MID, exps="counter")
+        call check(child(CS0, "plain "//PAR, "run.log"), "chunk 0 -> 40 with a stateful experiment ("//DIR//CS0//"run.log)")
+        call check(exists(d//CS0//"restart-40/Greenland/counter_toy.dat") .and. &
+                   in_file(d//CS0//"restart-40/manifest.nml", "&counter") .and. &
+                   in_file(d//CS0//"restart-40/manifest.nml", 'component      = "experiment"') .and. &
+                   in_file(d//CS0//"restart-40/manifest.nml", 'backend        = "host"') .and. &
+                   in_file(d//CS0//"restart-40/manifest.nml", '"counter_toy.dat"'), &
+                   "the bundle: counter_toy.dat in the domain folder, manifest group counter (experiment, host)")
+        call check(.not. in_file(d//C00//"restart-40/manifest.nml", "&rec") .and. &
+                   .not. in_file(d//CHK//"restart-80/manifest.nml", "&rec"), &
+                   "a stateless experiment (the recorder) is not in the manifest")
+        ok = child(CS1, "counter "//PAR, "run.log")
+        call sh("grep -E '^  (ok|FAIL|OPEN)|^---' '"//d//CS1//"run.log'")
+        call check(ok, "chunk 40 -> 80 restores the stateful experiment ("//DIR//CS1//"run.log)")
         if (nfail > 0) return
 
         call check_bundle(CONT//"restart-40")
@@ -581,6 +696,16 @@ contains
                    in_file(d//CMM//"require.log", "missing_restart.nc") .and. &
                    in_file(d//CMM//"require.log", "restart-40/Greenland"), &
                    "restart_require_files: a declared file that is missing stops naming instance, file and folder")
+
+        call write_par(d//CMM//"dropped.nml", "../cs0/restart-40", T_MID, T_END, T_MID)
+        call check(.not. child(CMM, "plain dropped.nml", "dropped.log", quiet=.true.) .and. &
+                   in_file(d//CMM//"dropped.log", "instance `counter` of the restart bundle is not in the run"), &
+                   "restore stops: the bundle holds the stateful experiment, the run dropped it ("//DIR//CMM//"dropped.log)")
+        call write_par(d//CMM//"added.nml", "../c00/restart-40", T_MID, T_END, T_MID, exps="counter")
+        call check(.not. child(CMM, "plain added.nml", "added.log", quiet=.true.) .and. &
+                   in_file(d//CMM//"added.log", "instance `counter` (experiment, host) is not in the restart bundle"), &
+                   "restore stops: the run has a stateful experiment the bundle lacks ("//DIR//CMM//"added.log)")
+
 
         call write_par(d//CMM//"backend.nml", "bad-40", T_MID, T_END, T_MID)
         call check(.not. child(CMM, "plain backend.nml", "backend.log", quiet=.true.) .and. &
