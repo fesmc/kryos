@@ -16,15 +16,16 @@ program test_geo_vilma2
     !     another size, a host term that is not admissible, an update before the build.
     ! With vilma=0 the test is not built (test_skip in config/common.mk).
 
-    use precision,       only: dp
+    use precision,       only: sp, dp
     use coordinates,     only: grid_class, grid_init
+    use ncio,            only: nc_read
     use constants,       only: pi
     use phys_constants,  only: phys_const_load
     use fesm_fields,     only: fields_get, fields_put, fields_restart_write, fields_restart_read
     use kryos_component, only: init_ctx_t, step_time_t, census_t, census_count, PASS_INIT, PASS_GEOMETRY, &
                                PASS_STATE, PASS_RESTART
     use kryos_geo,       only: geo_slot_t, geo_create, geo_init, geo_init_state, geo_update, &
-                               geo_restart_write, geo_restart_read, geo_end
+                               geo_restart_write, geo_restart_read, geo_write_output, geo_end
     use kryos_geo_vilma2, only: vilma_earth_t, vilma2_gauss_dims
     use vilma_params,    only: vilma_par_load
     use vilma_coupling,  only: solid_earth, solid_earth_init, solid_earth_update, solid_earth_spinup, &
@@ -97,6 +98,7 @@ program test_geo_vilma2
     call check(minval(field(glob, "dz_bed")) < 0.0_dp, "the grown ice load depresses the bed somewhere")
     call check(abs(scalar(glob, "bsl")) > 0.0_dp, "bsl moved")
     call check(abs(dse%time - 3.0_dp*DTT) < 1.0e-9_dp, "VILMA2's clock advanced by the steps")
+    call test_series(glob, t)
 
     ! ---- restart round trip -----------------------------------------------------------------
     call execute_command_line("rm -rf "//RST//" && mkdir -p "//RST)
@@ -407,6 +409,20 @@ contains
         call check(s == -1.0_dp/9.0_dp .and. all(exp2(p, p%c%h_z_bed_ref) == bed), "update: bsl copied, z_bed_ref still the ice's")
         call geo_end(p)
     end subroutine test_port
+
+    subroutine test_series(g, t1)
+        ! The default writer's time series (stream 1D: the 0-D exports) works for the global part
+        ! (the 2D stream needs the lon-lat writer of WP5).
+        type(geo_slot_t), intent(inout) :: g
+        real(dp),         intent(in)    :: t1
+        real(sp) :: v(1)
+
+        call geo_write_output(g, DIR//"ts.nc", t1, "1D", .true.)
+        call nc_read(DIR//"ts.nc", "bsl", v, start=[1], count=[1])
+        call check(abs(real(v(1), dp) - scalar(g, "bsl")) <= 1.0e-3_dp, "stream 1D: bsl written (rounded to 1e-3 m)")
+        call nc_read(DIR//"ts.nc", "dphi", v, start=[1], count=[1])
+        call check(abs(real(v(1), dp) - scalar(g, "dphi")) <= 1.0e-3_dp, "stream 1D: dphi written")
+    end subroutine test_series
 
     function exp2(g, h) result(a)
         type(geo_slot_t), intent(in) :: g
