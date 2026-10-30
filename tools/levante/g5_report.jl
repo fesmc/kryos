@@ -1,5 +1,5 @@
 # G5 report (phase 4 WP7c): ANT deglaciation with geo = vilma2 and the same run with FastIsostasy.
-#   julia --project=tools tools/levante/g5_report.jl <vilma2 run> <fastiso run> [--md FILE] [--dt 10] [--nsel 11]
+#   julia --project=tools tools/levante/g5_report.jl <vilma2 run> <fastiso run> [<fastiso run 2> ...] [--md FILE] [--dt 10] [--nsel 11]
 # (a) VILMA2 run: sign and magnitude of dz_bed on the ice grid (geo_ant.nc, ice_ant.nc) against the ice change since the start
 #     (cells that lost > 100 m: uplift expected), (b) bsl against the sea-level equivalent of the ANT ice change (log of the gathers: ANT and
 #     external PaleoMIST; Yelmo V_sle), (c) the documented differences against the FastIsostasy run.
@@ -17,13 +17,19 @@ function gather_log(f)
     end
     gl
 end
+function bslmethod(dir)
+    L = readlines(joinpath(dir, "par.nml")); k = findfirst(startswith("&barysealevel"), L)
+    m = [match(r"^\s*(method|sl_path)\s*=\s*(\"[^\"]*\")", l) for l in L[k+1:k+4]]
+    join(["$(x[1]) = $(x[2])" for x in m if x !== nothing], ", ")
+end
 function main(args)
-    rv, rf = args[1:2]
+    pos = [a for a in args[1:something(findfirst(startswith("--"), args), length(args) + 1) - 1]]
+    rv = pos[1]; rfs = pos[2:end]
     md = nothing; dt = 10.0; nsel = 11
     i = findfirst(==("--md"), args); i === nothing || (md = args[i+1])
     i = findfirst(==("--dt"), args); i === nothing || (dt = parse(Float64, args[i+1]))
     io = IOBuffer()
-    println(io, "# G5: ANT deglaciation (", rv, " | ", rf, ")\n")
+    println(io, "# G5: ANT deglaciation (", rv, " | ", join(rfs, " | "), ")\n")
     # ---- (a) dz_bed against the ice change on the ice grid
     gv = NCDataset(joinpath(rv, "geo_ant.nc")); iv = NCDataset(joinpath(rv, "ice_ant.nc"))
     tg = rd(gv, "time"); ti = rd(iv, "time")
@@ -61,13 +67,14 @@ function main(args)
     @printf(io, "\nANT ESL of the gathers: first %.3f m at %g yr, last %.3f m at %g yr (change %.3f m); external: first %.3f, last %.3f m; bsl at the start %.3f m, at the end %.3f m.\n\n",
             ant_esl[1][2], ant_esl[1][1], ant_esl[end][2], ant_esl[end][1], ant_esl[end][2] - ant_esl[1][2], gl[ant_esl[1][1]].ext, gl[ant_esl[end][1]].ext, bsl[1], bsl[end])
     # ---- (c) FastIsostasy
-    if isdir(rf) && isfile(joinpath(rf, "geo_ant.nc"))
+    for rf in rfs
+        (isdir(rf) && isfile(joinpath(rf, "geo_ant.nc"))) || continue
         gf = NCDataset(joinpath(rf, "geo_ant.nc")); ifi = NCDataset(joinpath(rf, "ice_ant.nc"))
         tf = rd(gf, "time"); tif = rd(ifi, "time")
         yf = NCDataset(joinpath(rf, "ice_ant_yelmo_ts.nc")); tyf = rd(yf, "time")
         bf = isfile(joinpath(rf, "geo_glob_bsl_ts.nc")) ? NCDataset(joinpath(rf, "geo_glob_bsl_ts.nc")) : NCDataset(joinpath(rf, "geo_glob_ts.nc"))
         tb = rd(bf, "time"); bslf = haskey(bf, "bsl") ? rd(bf, "bsl") : fill(NaN, length(tb))
-        println(io, "## (c) VILMA2 against FastIsostasy (same run: `geo = fastisostasy`, `[barysealevel] method` as the base)\n")
+        println(io, "## (c) VILMA2 against FastIsostasy: ", basename(rf), " (same run with `geo = fastisostasy`; `[barysealevel]` ", bslmethod(rf), ")\n")
         println(io, "Per record: ANT grounded ice volume V_ice [1e6 km3] and V_sle [m] of both runs; dz_bed over the cells of the start ice mask (H_ice(t0) > 0): mean and min/max; bsl [m]; uplift fraction in cells that lost > 100 m.\n")
         println(io, "| t [yr] | V_sle VILMA2 | V_sle FI | diff [m] | bsl VILMA2 | bsl FI | dz_bed mean V2 | dz_bed mean FI | dz_bed max V2 | dz_bed max FI | dz_bed min V2 | dz_bed min FI | uplift frac V2 | uplift frac FI |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
         Hf0 = rd(ifi, "H_ice")[:, :, 1]; Zf0 = rd(gf, "dz_bed")[:, :, 1]; mask = H0 .> 0
