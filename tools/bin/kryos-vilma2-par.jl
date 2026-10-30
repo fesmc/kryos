@@ -113,6 +113,8 @@ function main(args)
     recon_time    = -80e3         ! [yr] model time of the state: the first record (80 ka)
     recon_regions = "all"         ! every cell of the ice grid
     recon_zb_min  = -1e5          ! [m] no bed filter: marine ice is kept
+    recon_smooth_sigma = 0.0      ! [cells] no smoothing: the PaleoMIST start is already smoothed
+    recon_H_float_min  = 0.0      ! [m] no floating-ice minimum
 /""", "\n")
         if nm == "recon_nor"
             L = replace_group(L, nm, body)

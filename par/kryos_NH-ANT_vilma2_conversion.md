@@ -31,7 +31,7 @@ the base: snapshots + tsgen + chion. No `obm`.
    (the first record of the "years ago" axis), `recon_regions = "all"`, `recon_zb_min = -1e5` (no bed filter: marine ice is kept); `[Antarctica]`
    `experiments = "recon_ant"` (the base had none). The VILMA2 reference stays present day (the ice's `z_bed_ref`, `H_ice_pd`). The base's NH recon
    (ICE-6G_C at -26 ka in North America) is replaced. The t0 load of each footprint then equals PaleoMIST at -80 ka (checked in the first short
-   science run). Pending on main: `recon_smooth_sigma` and `recon_H_float_min`, to be set to 0 in both groups (the PaleoMIST start is already smoothed).
+   science run). `recon_smooth_sigma = 0` and `recon_H_float_min = 0` in both groups (the PaleoMIST start is already smoothed).
 2. **Alpha series (choice):** above.
 3. **`dt = 10` and the cadence of the ports** equal the base's `dt_isos`.
 4. **Spin-up:** `pre_spinup_1d` only (above).
