@@ -35,7 +35,7 @@ module kryos_geo
         integer :: hi_dz_bed = 0, hi_dz_ss = 0, hi_dphi = 0                                    ! port imports
         integer :: hi_H_ice_ext = 0, hi_host_w = 0, hi_host_Ig = 0, hi_host_C = 0, hi_host_F = 0   ! host global imports
         integer :: hi_host_Ig_ref = 0, hi_host_C_ref = 0
-        integer :: h_C_ocn = 0, h_bsl_ive = 0, h_mass_resid = 0                                ! host global exports
+        integer :: h_C_ocn = 0, h_bsl_ive = 0, h_bsl_ive_host = 0, h_mass_resid = 0                 ! host global exports
         integer :: h_dz_bed = 0, h_dz_ss = 0, h_dV_bsl = 0, h_z_bed_ref = 0, h_dz_bed_dt = 0  ! regional exports
         integer :: h_bsl = 0, h_A_ocn = 0                                                      ! both / global
         integer :: h_dphi = 0                                                                   ! regional export
@@ -296,6 +296,7 @@ contains
         call fields_add(c%exports, "dphi",       "m",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_dphi)
         call fields_add(c%exports, "bsl",        "m",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_bsl)
         call fields_add(c%exports, "bsl_ive",    "m",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_bsl_ive)
+        call fields_add(c%exports, "bsl_ive_host", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_bsl_ive_host)
         call fields_add(c%exports, "A_ocn",      "m2", FIELD_INSTANT, FIELD_EXTENSIVE, c%h_A_ocn)
         call fields_add(c%exports, "mass_resid", "1",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_mass_resid)
     end subroutine declare_host

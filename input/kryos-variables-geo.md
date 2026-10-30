@@ -17,3 +17,4 @@ lossless (`-`): time series stay lossless.
 |  9 | C_ocn     | xc, yc     | 1      | Ocean function (global part, host-resolved Earth)  | 1e-4  |
 | 10 | bsl_ive   |            | m      | Ice-volume equivalent sea level (global part)      | -     |
 | 11 | mass_resid |           | 1      | Worst sea-level-equation mass residual of the step | -     |
+| 12 | bsl_ive_host |         | m      | bsl_ive's host part: the host columns' grounded-ice change (Yelmo's flotation) | -     |

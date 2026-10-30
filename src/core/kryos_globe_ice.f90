@@ -918,7 +918,7 @@ contains
         gi%diag%ext_dV  = coupler_integral(cpl, trim(gi%tgt), ext_d)
         gi%diag%ext_dM  = gi%diag%ext_dV*gi%rho_ice*KG_TO_GT
         gi%diag%ext_esl = -(gi%rho_ice/gi%rho_sw)*gi%diag%ext_dV/area_ocn
-        line = line//", external "//to_str(gi%diag%ext_esl)//"; clipped external ice "//to_str(gi%diag%clip_Gt)// &
+        line = line//", external ice, all (floating included) "//to_str(gi%diag%ext_esl)//"; clipped external ice "//to_str(gi%diag%clip_Gt)// &
                " Gt; merge closure "//to_str(max(gi%diag%cons_I, gi%diag%cons_ext))
         call log_msg(LOG_INFO, "kryos_globe_ice", line)
 
