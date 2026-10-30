@@ -643,6 +643,15 @@ Report `gate-reports/p4-s9.md`. yelmo `topo-prepared` 30361f96 and `dev` 18b41e3
 fesm-utils `phase0-kryos` 45e09c2 (pushed): `nc_read` keeps a stored `-0.0`, `test_ncio_tiny` extended. Stack S9 = S8 + 45e09c2 + 30361f96 + kryos 624f686 (`tools/setup_S9.sh`).
 G1: grl, ant, ant-full, nor, sci, sci-const bit identical to K(S8) and K3-sci (0 failing, 0 absent, 0 new). G4: cont2 == cont; chunk == cont with no skip (3206 variables): `pc_tau_max` exact, VILMA2 memories exact; rounding 0.977, bundles identical.
 
+## Phase 4, S10: state-only restore (2026-10-30)
+
+Report `gate-reports/p4-s10.md`. fesm-utils `fields-diag` afae7a0 and kryos `rst-state` (not pushed): diagnostics (`fields_add(..., restart = .false.)`) are not in the bundle and are put again on
+`PASS_RESTART`; a diagnostic an older bundle holds is ignored and logged. Stack S10 = S9 + afae7a0 + vilma2 e449d58 + kryos 3074043 (`tools/setup_S10.sh`; every package rebuilt, yelmo included).
+G0: `make check` and `make check-long` (vilma=1), `make check` (vilma=0) pass. G1: grl, ant, ant-full, nor against K(S9), sci, sci-const against K3-sci: outputs and every state field of the bundles
+bit identical; the only differences are the diagnostics the bundles no longer hold (regional `bsl`, `tf_shlf`). G4: sci-vilma2 cont2 == cont, chunk == cont (3200 variables, bundles included),
+rounding 0.977, bundles identical; sci (fastiso) chunk == cont (3170). Backward compatibility: an S9 bundle restored by S10 + one extra diagnostic, chunk == cont (3200, bundles included, the S9
+diagnostics ignored and logged); an S10 bundle restored by S10 without `bsl_ive_host`: identical except that variable, absent.
+
 ## Phase 4 WP7c: G2c, G5, G6, G7 on S8 (2026-10-30)
 
 Report `gate-reports/p4-wp7c.md`. Branch `p4-wp7c` rebased on main b99fff4 (scripts, `par/gate/{g5-vilma2,g5-fastiso,g6-smb}.nml`, gates `g6`, `g6-smb`); S8 binaries as built. About 9.7 node-hours.

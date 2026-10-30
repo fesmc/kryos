@@ -1,0 +1,24 @@
+diff --git a/src/backends/geo/kryos_geo_vilma2.f90 b/src/backends/geo/kryos_geo_vilma2.f90
+index 525ece6..bb40b23 100644
+--- a/src/backends/geo/kryos_geo_vilma2.f90
++++ b/src/backends/geo/kryos_geo_vilma2.f90
+@@ -475,7 +475,6 @@ contains
+         associate (se => self%se)
+             call fields_put(self%exports, self%h_C_ocn,        se%gg%C,          t1=t1)
+             call fields_put(self%exports, self%h_bsl_ive,      se%bsl_ive,       t1=t1)
+-            call fields_put(self%exports, self%h_bsl_ive_host, se%bsl_ive_host,  t1=t1)
+         end associate
+     end subroutine exports_diagnostics
+ 
+diff --git a/src/components/geo/kryos_geo.f90 b/src/components/geo/kryos_geo.f90
+index a1b41af..83269fd 100644
+--- a/src/components/geo/kryos_geo.f90
++++ b/src/components/geo/kryos_geo.f90
+@@ -314,7 +314,6 @@ contains
+         call fields_add(c%exports, "dphi",       "m",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_dphi)
+         call fields_add(c%exports, "bsl",        "m",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_bsl)
+         call fields_add(c%exports, "bsl_ive",    "m",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_bsl_ive, restart=.false.)
+-        call fields_add(c%exports, "bsl_ive_host", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_bsl_ive_host, restart=.false.)
+         call fields_add(c%exports, "A_ocn",      "m2", FIELD_INSTANT, FIELD_EXTENSIVE, c%h_A_ocn)
+         call fields_add(c%exports, "mass_resid", "1",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_mass_resid)
+     end subroutine declare_host

@@ -1,0 +1,46 @@
+# Gate sci-vilma2-bc (S10, backward compatibility of the state-only restore): the runs of sci-vilma2 (tools/levante/g34_vilma2.sh,
+# kryos S10) as the reference cont, and two chunk runs whose c00 is the S10 chunk's and whose c01 (-79800 -> -79600) is restored by a
+# build that differs in its diagnostics (tools/levante/gate_S10.sh bc): bc-s9x, kryos-x (+ the diagnostic bsl_ive_x) from the S9
+# bundle (it holds the S9 diagnostics, ignored and logged); bc-drop, kryos-d (bsl_ive_host dropped) from the S10 bundle.
+# chunk == cont, bundles included; the extra or dropped variable is new or absent in geo_glob_ts.nc of c01.
+gate     = "sci-vilma2-bc"
+kind     = "kryos"
+time_end = -79600.0
+chunks   = [-80000.0, -79800.0, -79600.0]
+restart_times = [-79800.0, -79600.0]
+domain_order  = ["North", "Antarctica"]
+skip     = []
+
+[domains.North.instances]
+domain     = "North"
+ice        = "ice_nor"
+geo        = "geo_nor"
+climate    = "climate_nor"
+surface    = "surface_nor"
+shelf      = "shelf_nor"
+geothermal = "ghf_nor"
+sediments  = "sed_nor"
+forcing    = "forcing"
+geo_glob   = "geo_glob"
+
+[domains.Antarctica.instances]
+domain     = "Antarctica"
+ice        = "ice_ant"
+geo        = "geo_ant"
+climate    = "climate_ant"
+surface    = "surface_ant"
+shelf      = "shelf_ant"
+geothermal = "ghf_ant"
+sediments  = "sed_ant"
+forcing    = "forcing"
+geo_glob   = "geo_glob"
+
+[[check]]
+type = "chunks"
+ref  = "cont"
+run  = "bc-s9x"
+
+[[check]]
+type = "chunks"
+ref  = "cont"
+run  = "bc-drop"

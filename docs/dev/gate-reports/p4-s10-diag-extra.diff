@@ -1,0 +1,33 @@
+diff --git a/src/backends/geo/kryos_geo_vilma2.f90 b/src/backends/geo/kryos_geo_vilma2.f90
+index 525ece6..11650fc 100644
+--- a/src/backends/geo/kryos_geo_vilma2.f90
++++ b/src/backends/geo/kryos_geo_vilma2.f90
+@@ -476,6 +476,7 @@ contains
+             call fields_put(self%exports, self%h_C_ocn,        se%gg%C,          t1=t1)
+             call fields_put(self%exports, self%h_bsl_ive,      se%bsl_ive,       t1=t1)
+             call fields_put(self%exports, self%h_bsl_ive_host, se%bsl_ive_host,  t1=t1)
++            call fields_put(self%exports, self%h_bsl_ive_x,    se%bsl_ive,       t1=t1)   ! S10 test variant
+         end associate
+     end subroutine exports_diagnostics
+ 
+diff --git a/src/components/geo/kryos_geo.f90 b/src/components/geo/kryos_geo.f90
+index a1b41af..433e9f8 100644
+--- a/src/components/geo/kryos_geo.f90
++++ b/src/components/geo/kryos_geo.f90
+@@ -35,7 +35,7 @@ module kryos_geo
+         integer :: hi_dz_bed = 0, hi_dz_ss = 0, hi_dphi = 0                                    ! port imports
+         integer :: hi_H_ice_ext = 0, hi_host_w = 0, hi_host_Ig = 0, hi_host_C = 0, hi_host_F = 0   ! host global imports
+         integer :: hi_host_Ig_ref = 0, hi_host_C_ref = 0
+-        integer :: h_C_ocn = 0, h_bsl_ive = 0, h_bsl_ive_host = 0, h_mass_resid = 0                 ! host global exports
++        integer :: h_C_ocn = 0, h_bsl_ive = 0, h_bsl_ive_host = 0, h_mass_resid = 0, h_bsl_ive_x = 0                 ! host global exports
+         integer :: h_dz_bed = 0, h_dz_ss = 0, h_dV_bsl = 0, h_z_bed_ref = 0, h_dz_bed_dt = 0  ! regional exports
+         integer :: h_bsl = 0, h_A_ocn = 0                                                      ! both / global
+         integer :: h_dphi = 0                                                                   ! regional export
+@@ -317,6 +317,7 @@ contains
+         call fields_add(c%exports, "bsl_ive_host", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_bsl_ive_host, restart=.false.)
+         call fields_add(c%exports, "A_ocn",      "m2", FIELD_INSTANT, FIELD_EXTENSIVE, c%h_A_ocn)
+         call fields_add(c%exports, "mass_resid", "1",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_mass_resid)
++        call fields_add(c%exports, "bsl_ive_x",  "m",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_bsl_ive_x, restart=.false.)   ! S10 test variant
+     end subroutine declare_host
+ 
+ end module kryos_geo
