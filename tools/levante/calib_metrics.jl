@@ -1,7 +1,8 @@
 #!/usr/bin/env julia
 # calib-cf metrics (docs/dev/calib-cf.md): the final state of a calib run against the references, on Levante (NCDatasets only).
 #   julia calib_metrics.jl <run dir> <Antarctica|North> <pd|lgm> <out prefix>
-# Writes <prefix>.md (tables), <prefix>_ts.tsv (V_sle, V_ice_g, A_ice_g of the 1-D file every 500 yr) and <prefix>_fields.nc (model and reference
+# Writes <prefix>.md (tables), <prefix>_ts.tsv (V_sle, V_ice_g, A_ice_g of the 1-D file every 500 yr), North: <prefix>_reg_ts.tsv (V_af of GRL/NA/EUR
+# of every 2-D record), and <prefix>_fields.nc (model and reference
 # grounded thickness, for the maps of tools/calib_maps.jl). Grounded ice: H_ice where f_grnd >= 0.5 (model, BedMachine, GEBCO); the history files hold
 # grounded ice only (PaleoMIST) or ice thickness (GLAC-1D, ICE-6G_C: every H > 0 is taken as grounded; the bed there is z_srf - H_ice).
 # V_af: ice above flotation as sea level equivalent, rho_i 917, rho_sw 1028, ocean area 3.625e14 m2, flotation against the sea level of the state
@@ -106,6 +107,17 @@ function main(args)
             for (nm, H, g, zbr, zlr) in refs; push!(row, @sprintf("%.2f", sle(H, g .& rm, zbr, fill(zlr, size(H))))); end
             println(io, "| $rn | " * join(row, " | ") * " |")
         end
+        # regional V_af of every 2-D record (<prefix>_reg_ts.tsv): where the ice sheet drifts
+        ds = NCDataset(fice); t2 = Float64.(ds["time"][:])
+        open(pre * "_reg_ts.tsv", "w") do f
+            println(f, "time\tGRL\tNA\tEUR")
+            for j in eachindex(t2)
+                r = Dict(v => clean(Float64.(nomissing(ds[v][:, :, j], NaN))) for v in ("H_ice", "f_grnd", "z_bed", "z_sl"))
+                g = (r["f_grnd"] .>= 0.5) .& (r["H_ice"] .> 0); H = r["H_ice"] .* g
+                println(f, @sprintf("%g\t%.3f\t%.3f\t%.3f", t2[j], [sle(H, g .& rm, r["z_bed"], r["z_sl"]) for rm in (grl, na, eu)]...))
+            end
+        end
+        close(ds)
     end
     # region split of the ANT: WAIS / EAIS / APIS from the `regions` of the output if present
     open(pre * ".md", "w") do f; write(f, String(take!(io))); end

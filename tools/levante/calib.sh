@@ -1,7 +1,8 @@
 #!/bin/bash -l
 # Stage and submit a calib-cf run (docs/dev/calib-cf.md) on stack S9: kryos at $S/kryos-v0 (vilma=0, FastIsostasy), the par of par/calib/ copied to $G/calib/par.
-#   [AFTER=<jobid>] [THREADS=64] [JOBTIME=03:00:00] [PART=compute] [TAG=] calib.sh <Antarctica|North> <pd|lgm> [set_nml args ...]
-# lgm restarts from the end of the pd run of the same TAG (restart-$RSTT, default 30000; kryos.restart), afterok AFTER when given.
+#   [AFTER=<jobid>] [THREADS=64] [JOBTIME=03:00:00] [PART=compute] [TAG=] [FROM=] [RSTT=] calib.sh <Antarctica|North> <pd|lgm|lgmrecon> [set_nml args ...]
+# lgm restarts from restart-$RSTT (default 30000; kryos.restart) of the run FROM (default <domain>-pd<TAG>), afterok AFTER when given;
+# lgmrecon is a cold start (PaleoMIST 21 ka).
 # Run folder $G/runs/calib/kx-<sha>/S9/<domain>-<case><TAG>. Exclusive node of the compute partition (PART), THREADS threads (the shared queue had a wait of hours).
 set -euo pipefail
 G=/work/ba1442/robinson/kryos-gate; S=$G/stacks/S9; K=$S/kryos-v0; STACK=S9
@@ -12,7 +13,8 @@ ROOT=$G/runs/calib/kx-$SHA/$STACK; OUT=$ROOT/$DOM-$CASE$TAG
 [ -x $K/libkryos/bin/kryos.x ] || { echo "no kryos.x"; exit 1; }
 [ -e $OUT ] && { echo "exists: $OUT"; exit 1; }
 OV=("$@")
-[ $CASE = lgm ] && OV+=("kryos.restart=\"$ROOT/$DOM-pd$TAG/restart-${RSTT:-30000}\"")
+FROM=${FROM:-$DOM-pd$TAG}
+[ $CASE = lgm ] && OV+=("kryos.restart=\"$ROOT/$FROM/restart-${RSTT:-30000}\"")
 mkdir -p $OUT/input; cd $OUT
 for f in $G/stacks/$STACK/yelmox/input/*; do ln -sf $f input/; done
 for f in $K/input/*; do ln -sf $f input/; done

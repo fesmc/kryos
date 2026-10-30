@@ -9,7 +9,9 @@
 #       CASE lgm: t 30e3 -> 60e3, restarted from the end of the pd run ([kryos] restart is set by the run script), alpha = 1 (the LGM terms),
 #                 barysealevel from a constant -120 m series (input/sl_const_lgm120.dat), orbit fixed_time -21e3.
 #       Antarctica: the paleo terms lgm + ocean (DJF as the second PMIP3 tas) as of WP7c kryos-ant-par.jl, in both cases (alpha = 0 is the present day);
-#       North: its terms are the file's (lgm + ocean), the ICE-6G start of the base is removed.
+#       CASE lgmrecon: t 0 -> 20e3, the lgm forcing as above, cold start from the PaleoMIST record nearest 21 ka over the whole domain
+#                 (experiment recon_<sfx> as in par/kryos_NH-ANT_vilma2.nml at -80 ka: no bed filter, no smoothing, no floating-ice cut).
+#       North: its terms are the file's (lgm + ocean), the ICE-6G start of the base is removed (pd, lgm).
 function groups(lines)
     out = Tuple{String,Int,Int}[]
     i = 1
@@ -25,6 +27,9 @@ function groups(lines)
     out
 end
 grp(L, name) = first(filter(x -> x[1] == name, groups(L)))
+hasgrp(L, name) = any(x -> x[1] == name, groups(L))
+setgroup(L, name, after, body) = hasgrp(L, name) ?       # replaces group `name` by `body`, or inserts it after group `after`
+    (g = grp(L, name); vcat(L[1:g[2]-1], body, L[g[3]+1:end])) : insert_after(L, after, body)
 insert_after(L, name, body) = (g = grp(L, name); vcat(L[1:g[3]], [""], body, L[g[3]+1:end]))
 function setkey(L, name, key, val; note="")      # keeps the comment, or sets one
     g = grp(L, name); L = copy(L)
@@ -48,10 +53,15 @@ end
 
 function run(L, dom, case)
     ant = dom == "Antarctica"; sfx = ant ? "ant" : "nor"
-    pd = case == "pd"; pd || case == "lgm" || error("case pd|lgm")
+    pd = case == "pd"; rec = case == "lgmrecon"; pd || rec || case == "lgm" || error("case pd|lgm|lgmrecon")
     L = setkey(L, "kryos", "domains", "\"$dom\"")
-    L = setkey(L, "clock", "time_init", pd ? "0.0" : "30e3"; note="calib-cf: lgm restarts from the end of the pd run")
-    L = setkey(L, "clock", "time_end", pd ? "30e3" : "60e3"; note="calib-cf: 30 kyr per case")
+    if rec
+        L = setkey(L, "clock", "time_init", "0.0"; note="calib-cf: cold start from PaleoMIST 21 ka")
+        L = setkey(L, "clock", "time_end", "20e3"; note="calib-cf: 20 kyr")
+    else
+        L = setkey(L, "clock", "time_init", pd ? "0.0" : "30e3"; note="calib-cf: lgm restarts from the end of the pd run")
+        L = setkey(L, "clock", "time_end", pd ? "30e3" : "60e3"; note="calib-cf: 30 kyr per case")
+    end
     L = setkey(L, "clock", "time_const", "0.0"; note="frozen forcing (the orbit is set in [orbit_$sfx])")
     L = setkey(L, "out_1D", "dt", "10.0"); L = setkey(L, "out_2D", "dt", "500.0")
     L = setkey(L, "out_2Dsm", "dt", "500.0"); L = setkey(L, "out_rst", "dt", "10e3")
@@ -82,6 +92,20 @@ function run(L, dom, case)
 /"""))
     else
         L = setkey(L, "North", "experiments", "\"\"")
+    end
+    if rec
+        L = setkey(L, dom, "experiments", "\"recon_$sfx\""; note="calib-cf: PaleoMIST 21 ka start")
+        L = setgroup(L, "recon_$sfx", dom, body("""
+&recon_$sfx
+    kind          = "recon"
+    recon_path    = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"   ! the domain's PaleoMIST history ("years ago")
+    recon_var     = "H_ice"
+    recon_time    = -21e3         ! [yr] the record nearest 21 ka
+    recon_regions = "all"         ! every cell of the ice grid
+    recon_zb_min  = -1e5          ! [m] no bed filter: marine ice is kept
+    recon_smooth_sigma = 0.0      ! [cells] no smoothing: the PaleoMIST start is already smoothed
+    recon_H_float_min  = 0.0      ! [m] no floating-ice minimum
+/"""))
     end
     L
 end
