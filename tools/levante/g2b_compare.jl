@@ -42,7 +42,7 @@ end
 
 # ---- one lmax ------------------------------------------------------------------------------------------------------------
 
-function analyse(base, tag, io; sthr, sdt)
+function analyse(base, tag, io; sthr, sdt, csv = nothing)
     kd = joinpath(base, tag, "kryos"); vd = joinpath(base, tag, "vilma")
     k = NCDataset(joinpath(kd, "kryos_out.nc")); v = NCDataset(joinpath(vd, "vilma_out.nc"))
     lon = Float64.(k["lon"][:]); lat = Float64.(k["lat"][:]); nphi = length(lon); nlat = length(lat); lmax = nphi ÷ 4
@@ -95,6 +95,28 @@ function analyse(base, tag, io; sthr, sdt)
         end
         println(io)
     end
+    # the ocean function and the grounded-ice volume the two Earths were given
+    println(io, "**Ocean function C** (kryos - standalone): integral of the difference, and of its absolute value, over the region [1e9 m2] at selected times; maximum over records of |integral| relative to the standalone's ocean area of the region, and of the absolute-value integral relative to the region's area:\n")
+    println(io, "| region | ", join([@sprintf("t = %.0f", tr[r]) for r in sel], " | "), " | max |int dC| / ocean area (standalone) | max int |dC| / region area |")
+    println(io, "|---|", "---|"^(length(sel) + 2))
+    cser = Dict(nm => (int = zeros(nrec), abs = zeros(nrec), oc = zeros(nrec)) for (nm, _) in regs)
+    for r in 1:nrec
+        dC = Float64.(nomissing(k["C_ocn"][:, :, r], 0.0)) .- rd("C_ocean", stepof(r) + 1); Cv = rd("C_ocean", stepof(r) + 1)
+        for (nm, m) in regs
+            cser[nm].int[r] = sum(dC[m] .* area[m]); cser[nm].abs[r] = sum(abs.(dC[m]) .* area[m]); cser[nm].oc[r] = sum(Cv[m] .* area[m])
+        end
+    end
+    for (nm, m) in regs
+        c = cser[nm]
+        println(io, "| ", nm, " | ", join([@sprintf("%.1f (%.1f)", c.int[r] / 1e9, c.abs[r] / 1e9) for r in sel], " | "),
+                @sprintf(" | %.2e | %.2e |", maximum(abs.(c.int) ./ max.(c.oc, 1.0)), maximum(c.abs) / sum(area[m])))
+        stats["C|"*nm] = (maxint = maximum(abs.(c.int) ./ max.(c.oc, 1.0)), maxabs = maximum(c.abs) / sum(area[m]))
+    end
+    println(io)
+    bik = Float64.(k["bsl_ive"][:]); biv = Float64.(v["bsl_ive"][:]); dbi = bik[1:n] .- biv[1:n]
+    println(io, @sprintf("bsl_ive (the ice-volume equivalent of the grounded-ice change each Earth was given, m): kryos - standalone seed %.4f, end %.4f, max |d| %.4f (%.2e of the range of bsl_ive %.2f)\n",
+            dbi[1], dbi[n], maximum(abs.(dbi)), maximum(abs.(dbi)) / (maximum(biv[1:n]) - minimum(biv[1:n])), maximum(biv[1:n]) - minimum(biv[1:n])))
+    stats["bsl_ive"] = (maxabs = maximum(abs.(dbi)), rel = maximum(abs.(dbi)) / (maximum(biv[1:n]) - minimum(biv[1:n])))
     # the changes since the seed (response), dz_bed
     println(io, "**dz_bed, change since the seed** (kryos - standalone of dz_bed(t) - dz_bed(seed)), maximum over records of the rms [m] (abs [m]); the largest change of the standalone [m]:\n")
     a0 = readrec(k, "dz_bed", 1); b0 = rd("dz_bed", 1)
@@ -122,6 +144,7 @@ function analyse(base, tag, io; sthr, sdt)
         LON = Float64.(dd["lon"][:, :]); LATd = Float64.(dd["lat"][:, :]); fp = Float64.(dd["footprint"][:, :]) .> 0.5
         idx = findall(fp); lonp = LON[idx]; latp = LATd[idx]
         fk = Float64[]; fg = Float64[]; fs = Float64[]; nl = Int[]; mk = Float64[]; ms = Float64[]; gk = Float64[]; gs = Float64[]
+        rows = String[]
         for r in 1:ni:nrec-ni
             r2 = r + ni
             H1 = Float64.(dd["H_ice"][:, :, r])[idx]; H2 = Float64.(dd["H_ice"][:, :, r2])[idx]; dH = H2 .- H1
@@ -132,9 +155,11 @@ function analyse(base, tag, io; sthr, sdt)
             sum(lost) < 20 && continue
             push!(nl, sum(lost)); push!(fk, mean(pk[lost] .> 0)); push!(fg, mean(gk_[lost] .> 0)); push!(fs, mean(gs_[lost] .> 0))
             push!(mk, mean(gk_[lost])); push!(ms, mean(gs_[lost]))
+            push!(rows, @sprintf("%.0f,%.0f,%d,%.4f,%.4f,%.4f,%.4f,%.4f", tr[r], tr[r2], sum(lost), fk[end], fg[end], fs[end], mk[end], ms[end]))
             if sum(gain) >= 20; push!(gk, mean(gk_[gain] .< 0)); push!(gs, mean(gs_[gain] .< 0)); end
         end
         close(dd)
+        csv === nothing || write(joinpath(csv, "sign_L$(lmax)_$(dn).csv"), "t1,t2,n_lost,uplift_kryos_port,uplift_kryos_gauss,uplift_standalone,mean_dbed_kryos,mean_dbed_standalone\n" * join(rows, "\n") * "\n")
         f(x) = isempty(x) ? "-" : @sprintf("%.3f / %.3f", minimum(x), median(x))
         println(io, @sprintf("| %s | %d | %s | %s | %s | %s | %.3f / %.3f | %s / %s |", dn, length(nl), isempty(nl) ? "-" : string(round(Int, median(nl))), f(fk), f(fg), f(fs),
                 isempty(mk) ? NaN : median(mk), isempty(ms) ? NaN : median(ms), isempty(gk) ? "-" : @sprintf("%.3f", median(gk)), isempty(gs) ? "-" : @sprintf("%.3f", median(gs))))
@@ -146,23 +171,24 @@ function analyse(base, tag, io; sthr, sdt)
 end
 
 function main(args)
-    md = nothing; sthr = 100.0; sdt = 500.0
+    md = nothing; sthr = 100.0; sdt = 500.0; csv = nothing
+    i = findfirst(==("--csv"), args); i === nothing || (csv = args[i+1]; mkpath(csv); deleteat!(args, i:i+1))
     i = findfirst(==("--md"), args); i === nothing || (md = args[i+1]; deleteat!(args, i:i+1))
     i = findfirst(==("--sign-thr"), args); i === nothing || (sthr = parse(Float64, args[i+1]); deleteat!(args, i:i+1))
     i = findfirst(==("--sign-dt"), args); i === nothing || (sdt = parse(Float64, args[i+1]); deleteat!(args, i:i+1))
     base = args[1]; tags = args[2:end]
     io = IOBuffer()
     println(io, "# G2b: kryos (mock ice, host-resolved flotation) vs the standalone vilma.x\n\nbase: ", base)
-    res = [analyse(base, t, io; sthr = sthr, sdt = sdt) for t in tags]
+    res = [analyse(base, t, io; sthr = sthr, sdt = sdt, csv = csv) for t in tags]
     sort!(res, by = r -> r.lmax)
     println(io, "\n## Convergence with lmax\n")
-    println(io, "| lmax | bsl: max abs d [m] | max abs d / range | seed d [m] | end d [m] | dz_bed host NH: max rms [m] | host ANT | rim | outside | rsl host NH: max rms | host ANT | dz_bed change since seed, host NH: max rms | host ANT |")
-    println(io, "|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    println(io, "| lmax | bsl: max abs d [m] | max abs d / range | seed d [m] | end d [m] | bsl_ive: max abs d [m] | dz_bed host NH: max rms [m] | host ANT | rim | outside | rsl host NH: max rms | host ANT | dz_bed change since seed, host NH: max rms | host ANT | C: max int dC / ocean area, host NH | host ANT |")
+    println(io, "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for r in res
         s = r.stats
-        println(io, @sprintf("| %d | %.4f | %.2e | %.4f | %.4f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f |", r.lmax, r.bsl_max, r.bsl_rel, r.bsl_seed, r.bsl_end,
+        println(io, @sprintf("| %d | %.4f | %.2e | %.4f | %.4f | %.4f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.2e | %.2e |", r.lmax, r.bsl_max, r.bsl_rel, r.bsl_seed, r.bsl_end, s["bsl_ive"].maxabs,
                 s["dz_bed|host NH"].maxrms, s["dz_bed|host ANT"].maxrms, s["dz_bed|rim"].maxrms, s["dz_bed|outside"].maxrms,
-                s["rsl|host NH"].maxrms, s["rsl|host ANT"].maxrms, s["dchg|host NH"].maxrms, s["dchg|host ANT"].maxrms))
+                s["rsl|host NH"].maxrms, s["rsl|host ANT"].maxrms, s["dchg|host NH"].maxrms, s["dchg|host ANT"].maxrms, s["C|host NH"].maxint, s["C|host ANT"].maxint))
     end
     if length(res) >= 2
         println(io, "\nRatio of each lmax to the next finer one (maximum over records, rms; values > 1: the difference falls with lmax):\n")
