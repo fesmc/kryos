@@ -215,7 +215,7 @@ kryos: $(objdir)/libkryos.a | $(bindir)
 # exits non-zero on failure. `make check` builds and runs them all, except the
 # tests that need a backend library switched off (test_skip, config/common.mk).
 # The long tests (minutes) run with `make check-long`, not `make check`.
-long_tests = $(testdir)/test_run_domains.f90 $(testdir)/test_gia_sequence.f90
+long_tests = $(testdir)/test_run_sequence.f90 $(testdir)/test_run_domains.f90 $(testdir)/test_gia_sequence.f90
 test_srcs = $(filter-out $(test_skip) $(long_tests),$(wildcard $(testdir)/test_*.f90))
 test_exes = $(patsubst $(testdir)/%.f90,$(bindir)/%.x,$(test_srcs))
 long_srcs = $(filter-out $(test_skip),$(filter $(long_tests),$(wildcard $(testdir)/test_*.f90)))
