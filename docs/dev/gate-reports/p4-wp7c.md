@@ -1,9 +1,10 @@
-# Phase 4 WP7c: G2c, G5, G6, G7 on stack S8 (2026-10-30); G2b not run
+# Phase 4 WP7c: G2c, G5, G6, G7 (S8), G6 rerun on S9 with the chosen spin-up (2026-10-30); G2b not run
 
-`$G = /work/ba1442/robinson/kryos-gate`. Stack `$G/stacks/S8` as built (kryos e4453dc, vilma2 4419636, fesm-utils a13cd38; S9 not touched). Branch `p4-wp7c` (main 624f686, not pushed).
+`$G = /work/ba1442/robinson/kryos-gate`. G2c, G5, G7 and the first G6 on stack `$G/stacks/S8` as built (kryos e4453dc, vilma2 4419636, fesm-utils a13cd38); the G6 rerun on `$G/stacks/S9` (kryos 624f686, Yelmo pc_tau_max fix, ncio -0.0). Branch `p4-wp7c`, rebased onto main b99fff4 (not pushed).
+Decisions of Alex on the checkpoint, done: `equil_rate_tol = 1e-5`, `equil_time_max = 2e4` and `[out_rst] dt = 5e3` in `par/kryos_NH-ANT_vilma2.nml` (generator `tools/bin/kryos-vilma2-par.jl`) and the conversion note; Q6 (cadence 10 yr), Q12 (bundles every 5 kyr plus one at each job end) accepted; the conversion note's smb_simple section points at `tools/bin/kryos-smb-par.jl` and `par/gate/g6-smb.nml`.
 Scripts `tools/levante/{g2c,g5,g6,g7,run_vilma2,jl,cmp_g6}.sh`, `tools/levante/{g2c_report,g5_report,g5_iv,g5_spike,g6_report,g7_report,g7_cadence}.jl`, `tools/bin/{kryos-ant-par,kryos-smb-par}.jl`,
 par files `par/gate/{g5-vilma2,g5-fastiso,g6-smb}.nml`, gates `tools/gate/{g6,g6-smb}.toml`. Runs `$G/runs/{g2c,g5,g5mg,g6,g6-smb,g7}/kx-e4453dc/S8/`, full reports `$G/reports/WP7c/`.
-All runs: 64 threads, exclusive node (G5 fastiso 32 threads), `-O2 -fp-model precise`, S8 binaries. Used about 9.7 node-hours in all (G2c 4.1, G5 3.0, G6 1.7, G7 0.9).
+All runs: 64 threads, exclusive node (G5 fastiso 32 threads), `-O2 -fp-model precise`, S8 binaries. Used about 9.7 node-hours at the checkpoint (G2c 4.1, G5 3.0, G6 1.7, G7 0.9), 3.6 more for the G6 rerun.
 `run_vilma2.sh`: only change is `SINGLE=1` (any run name is one run like `cont`).
 
 ## G2c: spin-up (for Alex: `equil_time_max`, `equil_rate_tol`)
@@ -32,7 +33,7 @@ Findings:
 4. The 20 ka LGM start of G5 (below) behaves differently at the stock tolerance: the 1-D phase needs 7 passes (8.6 kyr relaxed; pass 1 has mean rate 0.47 m/yr) before the 1e-3 criterion is met. The rate criterion is a good stop for a load far from equilibrium and too loose for the mild -80 ka load.
 5. Equilibrium under the t0 load is the assumption of decision 7; nothing here says it is realistic at -80 ka (the NH was not in isostatic equilibrium then). The numbers say what each setting does to the seed.
 
-Pick proposed for review: `equil_rate_tol = 1e-5`; `equil_time_max` 1e4 (seed within 1 %, +32 min once per cold start) or 2e3 (within 4 %, +9 min). The 80 kyr run costs about 14 node-h (G7), so either is small. G6 below ran with the placeholder (0, 1e-3); it takes 25 min to rerun with the choice.
+Decided by Alex: `equil_rate_tol = 1e-5`, `equil_time_max = 2e4` (+43 min once per cold start). The first G6 below ran with the placeholder (0, 1e-3); the rerun on S9 uses the choice.
 
 ## G5: ANT deglaciation (ANT only, VILMA2 global, NH as external PaleoMIST)
 
@@ -56,7 +57,7 @@ G3 (all 2000 steps; (iii) at the 200 records of the lossless `gia` and `vilma` s
 | (iv) `bsl_ive` against the gathered ESL, as volumes | max **1.7e-2** (-7.95 ka); 1e-3 to 5e-3 while the NH is melting (-20 to -9 ka); at the last step 7.8e-6 (as sea level: 6.0 %, the ocean area) | 1e-5: **exceeded** during the deglaciation, met for the last 5 kyr |
 | (v) `A_ocn_ref` | +0.233 % | 1 %: PASS |
 
-(iv): the series (`g5-iv.md`, `g5-spike.log`) is smooth, not a glitch: an excess of `bsl_ive A_ocn` over ESL times the sea surface of 2.6e14 to 2.8e14 m3 (0.75 m of sea level) between about -8.6 and -7.4 ka, 1e13 and below before and after. (iii) holds to round-off, so VILMA2 is consistent with the terms it got: the difference is between the kryos ESL of the gathered grounded ice and VILMA2's grounded-ice increment `dIg` while the NH marine basins flood (VILMA2 documents that `bsl_ive` reads high over cells that flooded since the reference). Not investigated further. The bound of 1e-5 came from the -80 ka case (1.7e-6); for an LGM-scale deglaciation 2e-2 as volumes is what is observed.
+(iv): the series (`g5-iv.md`, `g5-spike.log`) is smooth, not a glitch: an excess of `bsl_ive A_ocn` over ESL times the sea surface of 2.6e14 to 2.8e14 m3 (0.75 m of sea level) between about -8.6 and -7.4 ka, 1e13 and below before and after. (iii) holds to round-off, so VILMA2 is consistent with the terms it got: the difference is between the kryos ESL of the gathered grounded ice and VILMA2's grounded-ice increment `dIg` while the NH marine basins flood (VILMA2 documents that `bsl_ive` reads high over cells that flooded since the reference). Not investigated here (traced in main's G3 (iv) fix: `bsl_ive_host`, floating external ice). The bound of 1e-5 came from the -80 ka case (1.7e-6); for an LGM-scale deglaciation 2e-2 as volumes is what is observed.
 
 (c) Documented differences against FastIsostasy (`g5.md` (c), same ice, climate, forcing, start; columns on the start ice mask, change since the start):
 
@@ -73,25 +74,29 @@ G3 (all 2000 steps; (iii) at the 200 records of the lossless `gia` and `vilma` s
 
 ## G6: science case smoke (`par/kryos_NH-ANT_vilma2.nml`, both domains, from -80 ka)
 
-2 kyr (`cont`, 200 steps, 25 min, 0.42 node-h, 11.5 GB), restart at -79000 (chunks of 100 + 100 steps, 17.3 and 16.7 min). No stop, no warning. Streams `gia`, `vilma` lossless every 50 yr.
+**Rerun on S9 with the chosen spin-up** (1e-5, 2e4 yr; `tools/levante/g6.sh`, runs `$G/runs/g6/kx-624f686/S9/`, `$G/runs/g6-smb/kx-624f686/S9/`, reports `$G/reports/WP7c/S9/`, `g6-kk.md`, `g6-smb-kk.md`).
+2 kyr (`cont`, 200 steps, 69 min, 1.1 node-h, 11.9 GB: spin-up 8 passes, 107 kyr of VILMA2 clock, the last full pass v 7.6e-6 m/yr), restart at -79000 (chunks of 100 + 100 steps: c00 62 min with the spin-up, c01 17 min). No stop, no warning. Streams `gia`, `vilma` lossless every 50 yr.
 
 | check | result |
 |---|---|
-| G3 every step: (i) / (ii) / (iii) / (iv) as volumes / (v) | 1.2e-12 / 2.6e-15 / 1.6e-13 (41 records) / 1.7e-6 (as sea level 2.2e-3) / +0.23 %: all PASS |
-| chunk (restart at the middle) vs cont, bundles included (`kryos-gate-kk.jl`) | **PASS, bit identical**, 3198 variables, 0 failing (`pc_tau_max` passes at 1 kyr chunks) |
+| G3 every step: (i) / (ii) / (iii) / (v) | 1.3e-12 (200 gathers) / 2.1e-15 / 1.6e-13 (41 records) / +0.23 %: all PASS |
+| G3 (iv) on the host part, from the streams (S9 predates the `bsl_ive_host` export), `g3_budget.jl` of main | 5.8e-13 (40 records), bound 1e-6: PASS |
+| chunk (restart at the middle) vs cont, bundles included (`kryos-gate-kk.jl`) | **PASS, bit identical**, 3206 variables, 0 failing (S9: `pc_tau_max` and `-0.0` exact) |
 
-Drift against K3-sci (the fastiso `sci` run over its 1 kyr; change since the start, `g6-drift.md`):
+Drift against K3-sci (the fastiso `sci` run over its 1 kyr; change since the start, `S9/g6-drift.md`):
 
-| | t [yr] | 100 | 250 | 500 | 750 | 1000 | 2000 |
-|---|---|---|---|---|---|---|---|
-| North, vilma2 | d V_sle [m] | 0.12 | 0.21 | 0.12 | -0.04 | -0.05 | 0.07 |
-| North, K3-sci | d V_sle [m] | -0.85 | 0.21 | 1.66 | 2.78 | 3.74 | |
-| Antarctica, vilma2 | d V_sle [m] | 0.36 | 0.83 | 1.50 | 2.09 | 2.61 | 4.23 |
-| Antarctica, K3-sci | d V_sle [m] | 1.73 | 2.40 | 3.37 | 4.22 | 4.96 | |
+| | t [yr] | 500 | 1000 | 2000 |
+|---|---|---|---|---|
+| North, vilma2 | d V_sle [m] | -0.11 | -0.49 | -0.76 |
+| North, K3-sci | d V_sle [m] | 1.66 | 3.74 | |
+| Antarctica, vilma2 | d V_sle [m] | 1.03 | 2.05 | 3.55 |
+| Antarctica, K3-sci | d V_sle [m] | 3.37 | 4.96 | |
 
-North is stable (|d V_sle| < 0.25 m in 2 kyr, V_ice 5.1e6 at the start against 32.6e6 for the ICE-6G LGM start of K3-sci, which grows 3.7 m per kyr under constant PD forcing). Antarctica grows 2.6 m per kyr (K3-sci 5.0): the same unoptimised ANT base as in G5. `bsl` -7.75 m to -12.08 m.
+North drifts slowly (-0.5 m per kyr; V_ice 5.1e6 at the start against 32.6e6 for the ICE-6G LGM start of K3-sci, which grows 3.7 m per kyr under constant PD forcing). Antarctica grows 2.05 m per kyr (K3-sci 4.96; 2.61 with the stock spin-up): the unoptimised ANT base, as in G5. `bsl` -7.75 m to -10.82 m.
 
-`smb_simple` variant (surface of both domains from `smb_simple`): **the `-p` list of the conversion note stops** at `nml_validate`: `surface_chion`, `chion`, `orbit` are unknown keys of `[surface_nor]`, `[surface_ant]` once the backend is `smb_simple`. Fixed in `par/gate/g6-smb.nml` (`tools/bin/kryos-smb-par.jl`: the three keys out, `smb_simple = "smb_simple"`; the module defaults of `[smb_simple]` need no group). 1 kyr (`cont`, 100 steps, 16 min), restart at -79500: no stop; G3: 1.3e-12 / 1.5e-15 / 3.1e-13 / 3.0e-7 volumes (2.1e-3 sea level) / +0.23 %; chunk == cont **PASS**, 3006 variables. Drift per kyr: NH +1.07 m, ANT +0.84 m (untuned `smb_simple`; chion: -0.05 and +2.6).
+`smb_simple` variant (`par/gate/g6-smb.nml`, regenerated with the chosen spin-up), 1 kyr (`cont`, 100 steps, 43 min, 0.72 node-h), restart at -79500: no stop; G3: 1.3e-12 / 2.0e-15 / 3.0e-13 / (iv) host part 6.7e-13 / +0.23 %, all PASS; chunk == cont **PASS**, 3014 variables. Drift per kyr: NH +1.05 m, ANT +0.46 m (untuned `smb_simple`).
+
+First G6 on S8 with the placeholder spin-up (superseded; recorded for the comparison): 2 kyr no stop, G3 passes ((iv) as volumes 1.7e-6), chunk == cont bit identical (3198 variables); drift NH -0.05 m, ANT +2.61 m per kyr; smb_simple 1 kyr likewise (3006 variables), drift NH +1.07, ANT +0.84. The `-p` list of the old conversion note for `smb_simple` stopped at `nml_validate`: `surface_chion`, `chion`, `orbit` are unknown keys of a `smb_simple` instance; `par/gate/g6-smb.nml` has them removed.
 
 ## G7: cost
 
@@ -123,9 +128,8 @@ To decide: (1) window: 21-0 ka (or 20-0) or the whole 80 ka; (2) the standalone'
 
 ## Open for you
 
-1. G2c: `equil_rate_tol` and `equil_time_max` (above), then rerun G6 (and G5 if wanted) with them.
-2. G5: the ANT base does not deglaciate (grows 28 m of sea level). Options: accept G5 as run (budgets, signs for growth, FastIsostasy differences) and test loss with the G2b mock history; or tune the ANT configuration (the yelmox ant-paleo `opt` spin-up is not in kryos).
-3. G3 (iv) as volumes for a large deglaciation: bound 1e-5 is exceeded (1.7e-2 at -8 ka; the budget (iii) holds at 1.6e-14): relax the bound, or find the definition difference (the flooding of marine cells) with VILMA2.
-4. The conversion note's `smb_simple` `-p` list is wrong (above); `par/gate/g6-smb.nml` replaces it.
-5. G2b design (above), Q6 and Q12 (above).
-6. The ANT paleo terms (lgm, ocean, DJF) are in the G5 par only; the science par's ANT has constant present-day climate (alpha acts on the NH only).
+1. G5: the ANT base does not deglaciate (grows 28 m of sea level); the ANT calibration and the G2b mock history are with other agents. G5 was not rerun with the chosen spin-up (the par file `par/gate/g5-vilma2.nml` is regenerated with it).
+2. G3 (iv) in a large deglaciation: see main's fix; the G5 numbers above are from the S8 run before it.
+3. The ANT paleo terms (lgm, ocean, DJF) are in the G5 par only; the science par's ANT has constant present-day climate (alpha acts on the NH only).
+4. G2b: not run (design in the section above).
+5. Cost with the chosen spin-up: add 0.9 node-h once per cold start to the 80 kyr estimate (about 14 node-h).
