@@ -608,3 +608,16 @@ Reports `$G/reports/KK/{sci-const,sci}-2d80b43-S5b.md` (jobs 28556423/24):
 
 **`K3-sci` registered**: `$G/ref/K3-sci/kx-2d80b43/S5b/{sci,sci-const}/cont` (`register_k3.sh 2d80b43 S5b`; 122 nc files each, files and bundles at 500 and 1000,
 `par.nml`, `kryos_commit.txt`; read-only, 1.4 GB; `registered.txt`). Phase 4 G1 compares against it (`kryos-compare.jl --map identity --restarts`).
+
+## Phase 4 WP7, part 1: stack S6, G0-G4 (2026-10-30)
+
+Report `gate-reports/p4-wp7a.md`. Branch `p4-wp7` on main cd85c14. S6 = S5b + fesm-utils 0a626e9 + vilma2 2676879 (`tools/setup_S6.sh`; kryos cd85c14 built `vilma=1` and `vilma=0`);
+identity (K v0 vs K(S5b), R2(S6) vs R2(S5b), grl and ant, `--restarts`): PASS. G1 (grl, ant, ant-full, nor against the earlier K; sci, sci-const against K3-sci): PASS, bit identical.
+`maps/S6` frozen (S5 + 15 files: GAUSS-L170 pairs, GLOBAL-0.5DEG -> GAUSS/NH/ANT, ANT-16KM pairs).
+G0: `make check` fails on Levante at cd85c14 (ifx): `test_forcing_increment` (name clash), `test_geo_vilma2` (main-program arrays; module fix), `test_globe_ice` and every new con map
+(fesm-utils `conservative.f90`: allocatable listed `private` after a serial alloc/free; patch `gate-reports/p4-wp7a-fesm-utils-conservative-ifx.patch`); with the fixes both builds pass.
+G1b: with `[globe_ice]` bit identical to K3-sci (2579 variables), cont2 and domain swap identical, `globe_ice.nc` equals the offline merge; the hub closure is 2.6e-10 (reference) and 1.5e-10 (ice), not 1e-12,
+and VILMA2's host check rejects `host_w` = 1 + 2.8e-9 at the polar row: runs with VILMA2 need a decision (variant diff `gate-reports/p4-wp7a-kryos-hub-variant.diff`).
+G2a (lmax 170): adapter == `vilma.x` to <= 6e-10 of max |field| (step 1) and <= 1e-12 after, with equal spin-up; the default spin-up tolerance stops the two at different passes (21 % at the cap centre).
+G3 (400 yr): merge closure 7.1e-13, `mass_resid` 2.1e-15, `bsl_ive` against the gathered ice 4.3e-7 as volumes, `A_ocn_ref` +0.23 %. G4: cont2 == cont and rounding (max error / tolerance 0.977, bundles identical) pass; chunk != cont at round-off (1e-14 `bsl`, 7e-12 m `dz_bed`) in the Earth's state.
+Science par `par/kryos_NH-ANT_vilma2.nml` (+ conversion note, generator `tools/bin/kryos-vilma2-par.jl`); `par/kryos_Antarctica.nml`, `par/kryos_NH-ANT.nml` regenerated (they predated the shelf move).

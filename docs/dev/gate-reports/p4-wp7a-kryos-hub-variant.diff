@@ -1,0 +1,31 @@
+diff --git a/src/core/kryos_globe_ice.f90 b/src/core/kryos_globe_ice.f90
+index 360307f..43815e1 100644
+--- a/src/core/kryos_globe_ice.f90
++++ b/src/core/kryos_globe_ice.f90
+@@ -74,7 +74,7 @@ module kryos_globe_ice
+     real(dp), parameter :: KG_TO_GT = 1.0e-12_dp         ! kg -> Gt
+     real(dp), parameter :: BOUND_TOL = 1.0e-9_dp         ! slack of the bounds of host_C, host_w
+     real(dp), parameter :: W_TOL = 1.0e-12_dp            ! the coverage of a step against the reference
+-    real(dp), parameter :: HUB_TOL = 1.0e-12_dp          ! closure of the hub's merged reference and ice (gate G1b (2))
++    real(dp), parameter :: HUB_TOL = 1.0e-9_dp           ! closure of the hub's merged reference and ice (gate G1b (2))
+ 
+     type, public :: gi_domain_t                          ! one registered domain
+         character(len=GI_NAME_LEN) :: name = ""          ! the domain
+@@ -691,6 +691,8 @@ contains
+         gi%host_Ig_ref = tmp
+         call coupler_merge_end(gi%acc_C, cpl, zero, tmp, frac_tot=wtmp, overlap_tol=gi%overlap_tol)
+         gi%host_C_ref = tmp
++        gi%host_w     = min(gi%host_w, 1.0_dp)                 ! WP7 variant: map round-off (3e-9 at the polar row) clipped; VILMA2 admits 1e-9
++        gi%host_C_ref = min(gi%host_C_ref, gi%host_w)
+         call check_host(gi, gi%host_Ig_ref, gi%host_C_ref, gi%host_w, "the reference", proc)
+ 
+         call coupler_merge_end(gi%acc_zs, cpl, gi%z_bed_X, tmp, frac_tot=gi%cov_bg, overlap_tol=gi%overlap_tol)
+@@ -855,6 +857,8 @@ contains
+         gi%host_C = tmp
+         call coupler_merge_end(gi%acc_F, cpl, zero, tmp, frac_tot=wf, overlap_tol=gi%overlap_tol)
+         gi%host_F = tmp
++        w = min(w, 1.0_dp)                                       ! WP7 variant, as at the reference
++        gi%host_C = min(gi%host_C, gi%host_w)
+ 
+         ! the coverage of the host region is fixed with the footprint (section 4.2)
+         if (maxval(abs(w - gi%host_w)) > W_TOL) then

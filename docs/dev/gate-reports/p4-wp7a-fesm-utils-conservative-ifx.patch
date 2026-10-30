@@ -1,0 +1,52 @@
+diff --git a/src/coords/conservative.f90 b/src/coords/conservative.f90
+index 1ca9451..7554548 100644
+--- a/src/coords/conservative.f90
++++ b/src/coords/conservative.f90
+@@ -159,8 +159,8 @@ contains
+         real(dp) :: lx(4), ly(4), tcx(4), tcy(4), qpt(2)
+         real(dp), allocatable :: emb(:,:), ox(:), oy(:)
+         real(dp), allocatable :: scornx(:,:), scorny(:,:)   ! source cell boundary in target plane
+-        integer,  allocatable :: cidx(:)
+-        real(dp), allocatable :: cd2(:)
++        integer,  allocatable :: cidx(:), cidx0(:)
++        real(dp), allocatable :: cd2(:), cd20(:)
+         logical,  allocatable :: need(:)                    ! source cell is a candidate of some target
+         real(dp), allocatable :: wfull_src(:)               ! full source-cell area in the target plane
+         type(link_buf), allocatable :: bufs(:)
+@@ -248,16 +248,16 @@ contains
+             ! infinity (a pole corner of a global source divides by zero). The
+             ! candidate sets come from the sphere tree alone, so marking them
+             ! first leaves the weights unchanged.
+-            allocate(need(n1), cidx(n1), cd2(n1))
++            allocate(need(n1), cidx0(n1), cd20(n1))
+             need = .false.
+             do j = 1, ny2
+                 do i = 1, nx2
+                     call lonlat_to_xyz(grid2%lon(i,j), grid2%lat(i,j), cx, cy, cz)
+-                    call kdtree_radius(tree, [cx,cy,cz], rad, cidx, cd2, nf)
+-                    need(cidx(1:nf)) = .true.
++                    call kdtree_radius(tree, [cx,cy,cz], rad, cidx0, cd20, nf)
++                    need(cidx0(1:nf)) = .true.
+                 end do
+             end do
+-            deallocate(cidx, cd2)
++            deallocate(cidx0, cd20)
+ 
+             ! lx,ly are the source cell corners in the SOURCE axis system:
+             ! geographic lon/lat for a plain lat-lon source, or ROTATED
+@@ -310,6 +310,7 @@ contains
+         !$omp   private(i, j, c, cc, cs, nf, no, tcx, tcy, qpt, cx, cy, cz, area, cidx, cd2, ox, oy, tid)
+         tid = 0
+         !$ tid = omp_get_thread_num()
++        if (allocated(cidx)) deallocate(cidx, cd2)
+         allocate(cidx(n1), cd2(n1))
+         !$omp do schedule(guided) collapse(2)
+         do j = 1, ny2
+@@ -443,6 +444,7 @@ contains
+         !$omp           cidx, cd2, sv, tv, tid)
+         tid = 0
+         !$ tid = omp_get_thread_num()
++        if (allocated(cidx)) deallocate(cidx, cd2)
+         allocate(cidx(n2), cd2(n2))
+         !$omp do schedule(static)
+         do cs = 1, n1
