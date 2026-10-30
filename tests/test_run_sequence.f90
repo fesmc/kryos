@@ -260,6 +260,8 @@ program test_run_sequence
     character(len=16), parameter :: INSTANCES(9) = [character(len=16) :: "forcing", "geo_glob", "ice_grl", &
         "geo_grl", "climate_grl", "surface_grl", "shelf_grl", "ghf_grl", "sed_grl"]
 
+    character(len=*), parameter :: XA = "xr/all/"      ! the recon variant with regions 'all' and recon_zb_min (exp_round_trip)
+
     character(len=512) :: arg, par_arg, file_arg, root, repo, only
     character(len=PATH_LEN) :: files_arg(1)
     integer :: nfail = 0
@@ -576,11 +578,11 @@ contains
         real(sp), allocatable :: cb0(:,:), cb60(:,:), tf0(:,:), tf60(:,:)
         integer :: n, i, irel, icf, itf, irec, topo_rel0
         real(dp) :: t
-        logical :: ok, ok_cb, ok_tf, none_cf
+        logical :: ok, ok_cb, ok_tf, none_cf, rec_all
 
         call run_init(run, par_file, protos=host_protos())
         write(*,'(a)') "--- plugin experiments"
-        irel = 0;  icf = 0;  itf = 0;  irec = 0;  none_cf = .false.
+        irel = 0;  icf = 0;  itf = 0;  irec = 0;  none_cf = .false.;  rec_all = .false.
         do i = 1, size(run%exps(1)%s)
             select type (x => run%exps(1)%s(i)%c)
             type is (relax_exp_t)
@@ -591,6 +593,9 @@ contains
                 irec = i
                 call check(x%wants(HOOK_COLD_POST_STATE) .and. count(x%wants) == 1, "recon: wants COLD_POST_STATE only")
                 call check(count(x%mask_recon) == size(x%mask_recon), "recon: the regions 'all' select every cell")
+                rec_all = x%zb_min < -1.0e4_dp
+                call check(rec_all .eqv. (trim(x%name) == "exp_recon_all"), "recon: recon_zb_min is the par-file value of its group, "// &
+                           "-500 m by default")
             type is (opt_tf_exp_t)
                 itf = i
                 call check(x%wants(HOOK_STEP_BEGIN) .and. count(x%wants) == 1, "opt_tf: wants STEP_BEGIN only")
@@ -602,6 +607,7 @@ contains
             end select
         end do
         if (irec > 0 .and. .not. run%clk%continued) call check_recon(run)
+        if (rec_all .and. .not. run%clk%continued) call check_recon_all(run)
         if (irel > 0 .and. .not. run%clk%continued) then
             select type (c => run%dom(1)%ice%c)
             type is (yelmo_ice_t)
@@ -923,6 +929,14 @@ contains
         ok = child(XN, "xexp "//PAR, "run.log")
         call sh("grep -E '^  (ok|FAIL|OPEN)|^---' '"//d//XN//"run.log'")
         call check(ok, "opt_cb_ref method = none: till_method = -1, cb_ref = cf_init and unchanged ("//DIR//XN//"run.log)")
+        ! recon with recon_regions = 'all' and recon_zb_min = -1e5 on a synthetic reconstruction (xexp_child checks it)
+        call setup_run_dir(XA)
+        call write_recon_all(d//XA//"recon_all.nc")
+        names = [character(len=24) :: "exp_recon_all"]
+        call write_par(d//XA//PAR, "None", 0.0_dp, 20.0_dp, 20.0_dp, explist=names, xlines=exp_lines(names))
+        ok = child(XA, "xexp "//PAR, "run.log")
+        call sh("grep -E '^  (ok|FAIL|OPEN)|^---' '"//d//XA//"run.log'")
+        call check(ok, "recon with regions 'all' and recon_zb_min = -1e5 on a synthetic reconstruction ("//DIR//XA//"run.log)")
         ! L21 without the present-day velocity stops at init, naming the key
         call setup_run_dir(XV)
         names = [character(len=24) :: "exp_cf"]
@@ -955,6 +969,10 @@ contains
                 lines = [character(len=400) :: lines, "&exp_recon", "  kind = 'recon'", &
                          "  recon_path = '"//trim(root)//"/{domain}/{grid_name}/{grid_name}_TOPO-ICE-6G_C.nc'", &
                          "  recon_var = 'dz'", "  recon_time = -20000.0", "  recon_regions = 'all'", "/"]
+            case ("exp_recon_all")
+                lines = [character(len=400) :: lines, "&exp_recon_all", "  kind = 'recon'", &
+                         "  recon_path = '"//trim(repo)//"/"//DIR//XA//"recon_all.nc'", "  recon_var = 'H_ice'", &
+                         "  recon_time = -20000.0", "  recon_regions = 'all'", "  recon_zb_min = -1.0e5", "/"]
             case ("exp_relax")
                 lines = [character(len=400) :: lines, "&exp_relax", "  kind = 'relax'", "  topo_rel = 3", "  tau1 = 100.0", &
                          "  tau2 = 2000.0", "  time1 = 20.0", "  time2 = 60.0", "  m = 2.0", "/"]
@@ -1391,6 +1409,46 @@ contains
             call check(.false., "the ice instance is Yelmo")
         end select
     end subroutine check_recon
+
+    subroutine check_recon_all(run)
+        ! The variant with recon_regions = 'all' and recon_zb_min = -1e5 on the synthetic reconstruction (write_recon_all:
+        ! 300 m everywhere in its first slice, nothing in its second): the first slice is read (the time axis in years
+        ! ago), and the bed filter is off, so the reference ice thickness has ice over the deep ocean too (with the
+        ! default -500 m it is ice free there, away from the coast).
+        type(run_t), target, intent(in) :: run
+        integer :: n_deep, n_ice
+
+        select type (ice => run%dom(1)%ice%c)
+        type is (yelmo_ice_t)
+            n_deep = count(ice%ylmo%bnd%z_bed < -1500.0_sp)
+            n_ice  = count(ice%ylmo%bnd%z_bed < -1500.0_sp .and. ice%ylmo%bnd%H_ice_ref > 100.0_sp)
+            call check(n_deep > 1000, "recon all: the domain has deep ocean ("//trim(itoa(n_deep))//" cells below -1500 m)")
+            call check(n_ice > n_deep/2, "recon all, recon_zb_min = -1e5: the reference ice thickness covers the deep ocean ("// &
+                       trim(itoa(n_ice))//" of "//trim(itoa(n_deep))//" cells above 100 m)")
+            call check(maxval(ice%ylmo%bnd%H_ice_ref) <= 300.0_sp*1.001_sp .and. maxval(ice%ylmo%bnd%H_ice_ref) > 250.0_sp, &
+                       "recon all: the first slice (300 m) was read, not the second")
+        class default
+            call check(.false., "the ice instance is Yelmo")
+        end select
+    end subroutine check_recon_all
+
+    subroutine write_recon_all(file)
+        ! A synthetic reconstruction on GRL-16KM, as FesmData's IceHistory files: H_ice(x, y, time) with the time axis in
+        ! "years ago", first slice (20 kyr ago) 300 m of ice everywhere, second slice (10 kyr ago) none.
+        character(len=*), intent(in) :: file
+
+        type(grid_class) :: grid
+        real(sp) :: h(NX,NY,2)
+
+        call grid_cdo_read_desc(grid, "GRL-16KM", trim(repo)//"/maps")
+        h(:,:,1) = 300.0_sp
+        h(:,:,2) = 0.0_sp
+        call nc_create(file)
+        call nc_write_dim(file, "xc",   x=grid%G%x)
+        call nc_write_dim(file, "yc",   x=grid%G%y)
+        call nc_write_dim(file, "time", x=[20000.0_dp, 10000.0_dp], units="years ago")
+        call nc_write(file, "H_ice", h, dim1="xc", dim2="yc", dim3="time")
+    end subroutine write_recon_all
 
     subroutine check_publish(run)
         ! yelmo_ice_publish: after the state is changed outside a step, the INSTANT exports (geometry,

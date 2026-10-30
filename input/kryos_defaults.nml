@@ -137,7 +137,10 @@
     recon_path    = ""                         ! required: the reconstruction file ({domain}, {grid_name} of the ice grid)
     recon_var     = ""                         ! required: its ice-thickness variable
     recon_time    = 0.0                        ! [yr] model time of the state (nearest slice of the file)
-    recon_regions = ""                         ! required: where its ice is imposed (a regions selection expression)
+    recon_regions = ""                         ! required: where its ice is imposed: a regions selection expression, or "all"
+                                               ! (every cell of the ice grid, no regions file read)
+    recon_zb_min  = -500.0                     ! [m] the ice is imposed where z_bed > recon_zb_min (yelmox: -500; a very low value,
+                                               ! e.g. -1e5, disables the filter: marine ice is kept)
 /
 
 &forcing_tsgen

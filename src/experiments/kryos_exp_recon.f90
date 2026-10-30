@@ -6,8 +6,8 @@ module kryos_exp_recon
     ! Hook COLD_POST_STATE (after Yelmo's state is initialised, before PASS_SPINUP):
     !   1. the reconstruction's slice nearest recon_time of recon_var is Yelmo's reference ice
     !      thickness (bnd%H_ice_ref);
-    !   2. the initial ice is that field where the bed is above -500 m and the cell is in the
-    !      recon_regions, smoothed (Gaussian, sigma = 2 dx), the topography initialised from it
+    !   2. the initial ice is that field where the bed is above recon_zb_min (default -500 m) and the
+    !      cell is in the recon_regions ("all": every cell, no regions file read), smoothed (Gaussian, sigma = 2 dx), the topography initialised from it
     !      (yelmo_init_topo, load_topo = .false.);
     !   3. a one-year fixed-topography equilibration, thin floating ice (mask_bed = 5, H < 50 m)
     !      removed, another year;
@@ -43,7 +43,8 @@ module kryos_exp_recon
         character(len=PATH_LEN) :: path = ""            ! the reconstruction file ({domain}, {grid_name} replaced)
         character(len=NAME_LEN) :: var = ""             ! its ice-thickness variable
         real(dp) :: time = 0.0_dp                       ! [yr] model time of the state (nearest slice)
-        character(len=LEN_EXPR) :: regions = ""         ! where its ice is imposed (a regions selection)
+        character(len=LEN_EXPR) :: regions = ""         ! where its ice is imposed (a regions selection, or "all")
+        real(dp) :: zb_min = -500.0_dp                  ! [m] its ice is imposed where z_bed > zb_min
         logical, allocatable :: mask_recon(:,:)         ! the same on the ice grid
         character(len=PATH_LEN) :: par_file = ""        ! (yelmo_init_topo reads its group from the par file)
     contains
@@ -68,6 +69,7 @@ contains
         call config_read(ctx%cfg, ctx%instance, "recon_var",     self%var,     tmpl, extra)
         call config_read(ctx%cfg, ctx%instance, "recon_time",    self%time,    tmpl, extra)
         call config_read(ctx%cfg, ctx%instance, "recon_regions", self%regions, tmpl, extra)
+        call config_read(ctx%cfg, ctx%instance, "recon_zb_min",  self%zb_min,  tmpl, extra)
         if (len_trim(self%path) == 0 .or. len_trim(self%var) == 0 .or. len_trim(self%regions) == 0) then
             call fesm_error(proc, "experiment `"//trim(self%name)//"` needs recon_path, recon_var and recon_regions", &
                             "group &"//trim(ctx%instance)//" of "//trim(ctx%par_file))
@@ -94,8 +96,13 @@ contains
         end if
 
         call grid_cdo_read_desc(grid, trim(dom%grid(C_ICE)), trim(ctx%cfg%map_fldr))
-        call domain_regions_load(reg, dom, ctx%cfg, grid)
-        self%mask_recon = regions_select(reg, trim(self%regions))
+        if (trim(adjustl(self%regions)) == "all") then
+            allocate(self%mask_recon(grid%G%nx, grid%G%ny))     ! the whole domain: no regions file
+            self%mask_recon = .true.
+        else
+            call domain_regions_load(reg, dom, ctx%cfg, grid)
+            self%mask_recon = regions_select(reg, trim(self%regions))
+        end if
         self%par_file   = ctx%par_file
 
         self%wants(HOOK_COLD_POST_STATE) = .true.
@@ -121,7 +128,7 @@ contains
             call nc_read(trim(self%path), trim(self%var), c%ylmo%bnd%H_ice_ref, start=[1,1,k], count=[nx,ny,1])
 
             ! initial ice: the reconstruction on the regions, smoothed; the topography from it
-            where (c%ylmo%bnd%z_bed > -500.0_sp .and. self%mask_recon) c%ylmo%tpo%now%H_ice = c%ylmo%bnd%H_ice_ref
+            where (c%ylmo%bnd%z_bed > real(self%zb_min, sp) .and. self%mask_recon) c%ylmo%tpo%now%H_ice = c%ylmo%bnd%H_ice_ref
             call smooth_gauss_2D(c%ylmo%tpo%now%H_ice, dx=real(c%ylmo%grd%G%dx, sp), f_sigma=2.0_sp)
             call yelmo_init_topo(c%ylmo, trim(self%par_file), c%ylmo%par%nml_init_topo, st%t1, load_topo=.false.)
 
