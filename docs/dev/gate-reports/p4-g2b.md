@@ -59,9 +59,9 @@ Ratio to the next finer lmax (> 1: the difference falls): `dz_bed` host NH 1.05,
 - Cost (64 threads, exclusive node): kryos 16 / 30 / 60 min, standalone 14 / 30 / 61 min (lmax 85 / 128 / 170), with the spin-up
   (6 min at l085).
 
-## Proposed thresholds (for the plan, 13.2)
+## Thresholds (plan 13.2; set 2026-10-31)
 
-| quantity | proposed bound | observed (S11, lmax 85-170) |
+| quantity | bound | observed (S11, lmax 85-170) |
 |---|---|---|
 | `bsl` max abs difference / range of the standalone `bsl` | 1 % | 0.36-0.42 % |
 | `dz_bed` and `rsl`, host regions: max over records of the rms / max abs `dz_bed` of the standalone | 2 % | NH 0.44-0.47 %, ANT 0.64-1.0 % |
@@ -69,4 +69,5 @@ Ratio to the next finer lmax (> 1: the difference falls): `dz_bed` host NH 1.05,
 | convergence: max rms of `dz_bed` (host NH, ANT) at lmax 170 against lmax 85 | not larger | 0.93, 0.62 |
 | sign test, lost cells: median uplift fraction in kryos | >= 0.9 and within 0.05 of the standalone | 0.93-1.00, within 0.03 |
 
-The S9 numbers (5.8 % host NH, flat with lmax) would have failed the second and the fourth bound.
+The S9 numbers (5.8 % host NH, flat with lmax) would have failed the second and the fourth bound. S11 passes all five.
+The seed (z_sl = 0 on the present-day bed in the kryos seed gather) stays: its difference decays and is inside the bounds.
