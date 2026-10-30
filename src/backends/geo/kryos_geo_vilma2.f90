@@ -398,8 +398,8 @@ contains
         logical,              intent(in)    :: init
 
         character(len=*), parameter :: DIMS_LL(3) = [character(len=32) :: "lon", "lat", "time"]
-        character(len=*), parameter :: VARS_VILMA(9) = [character(len=12) :: "h_ice", "rsl", "z_bed", "C_ocean", &
-            "dz_bed", "dz_ss", "bsl", "dphi", "bsl_ive"]
+        character(len=*), parameter :: VARS_VILMA(11) = [character(len=12) :: "h_ice", "rsl", "z_bed", "C_ocean", &
+            "dz_bed", "dz_ss", "bsl", "dphi", "bsl_ive", "fill_int", "fill_int_own"]
         type(var_io_type) :: row
         real(dp), allocatable :: a(:,:)
         integer :: hs(5), i, ncid, n
