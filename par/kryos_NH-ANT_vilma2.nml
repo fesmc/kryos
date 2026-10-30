@@ -5,6 +5,8 @@
 !   [clock]       transient 80 ka: method = "rel", time_init = -80e3, time_end = 0 (no time_const: forcing time = model time)
 !   [coef_alpha]  series: the glacial index input/alpha_combined_125kyr_interp.dat (was const 1, the LGM); norm_t0, norm_t1 removed (a series with them is normalised)
 !   [geo_glob]    backend = "vilma2", dt = 10, clock = "model", [vilma], [globe_ice]; [geo_nor], [geo_ant]: the regional ports
+!   [recon_nor], [recon_ant]  both domains start from PaleoMIST at -80 ka over the whole domain (the base: NH from ICE-6G_C at -26 ka in
+!                 North America, ANT without a reconstruction); [Antarctica] experiments = "recon_ant"
 !   removed       [barysealevel], [isos_nor], [isos_ant] (FastIsostasy only)
 !   added         [vilma] (CLIMBER-X set: PREM, 11 layers, Bagge 3D structure 6, lmax 170, 1-D pre-spin-up),
 !                 [globe_ice] and the three datasrc groups of the PaleoMIST history on GLOBAL-0.5DEG (X at 0 ka, anomaly of the history)
@@ -364,10 +366,20 @@
 
 &recon_nor
     kind          = "recon"
-    recon_path    = "ice_data/{domain}/{grid_name}/{grid_name}_TOPO-ICE-6G_C.nc"   ! yelmox sim.recon_path
-    recon_var     = "dz"                                                           ! yelmox sim.recon_var
-    recon_time    = -26e3                                                          ! yelmox sim.recon_time
-    recon_regions = "region:North_America"                                         ! yelmox sim.recon_regions
+    recon_path    = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"   ! the domain's PaleoMIST history ("years ago")
+    recon_var     = "H_ice"
+    recon_time    = -80e3         ! [yr] model time of the state: the first record (80 ka)
+    recon_regions = "all"         ! every cell of the ice grid
+    recon_zb_min  = -1e5          ! [m] no bed filter: marine ice is kept
+/
+
+&recon_ant
+    kind          = "recon"
+    recon_path    = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"   ! the domain's PaleoMIST history ("years ago")
+    recon_var     = "H_ice"
+    recon_time    = -80e3         ! [yr] model time of the state: the first record (80 ka)
+    recon_regions = "all"         ! every cell of the ice grid
+    recon_zb_min  = -1e5          ! [m] no bed filter: marine ice is kept
 /
 
 &topo_nor
@@ -1047,7 +1059,7 @@
     shelf       = "shelf_ant"
     geothermal  = "ghf_ant"
     sediments   = "sed_ant"
-    experiments = ""
+    experiments = "recon_ant"
 /
 
 &ice_ant

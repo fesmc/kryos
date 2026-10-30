@@ -43,6 +43,8 @@ const HEADER = """
 !   [clock]       transient 80 ka: method = "rel", time_init = -80e3, time_end = 0 (no time_const: forcing time = model time)
 !   [coef_alpha]  series: the glacial index input/alpha_combined_125kyr_interp.dat (was const 1, the LGM); norm_t0, norm_t1 removed (a series with them is normalised)
 !   [geo_glob]    backend = "vilma2", dt = 10, clock = "model", [vilma], [globe_ice]; [geo_nor], [geo_ant]: the regional ports
+!   [recon_nor], [recon_ant]  both domains start from PaleoMIST at -80 ka over the whole domain (the base: NH from ICE-6G_C at -26 ka in
+!                 North America, ANT without a reconstruction); [Antarctica] experiments = "recon_ant"
 !   removed       [barysealevel], [isos_nor], [isos_ant] (FastIsostasy only)
 !   added         [vilma] (CLIMBER-X set: PREM, 11 layers, Bagge 3D structure 6, lmax 170, 1-D pre-spin-up),
 !                 [globe_ice] and the three datasrc groups of the PaleoMIST history on GLOBAL-0.5DEG (X at 0 ka, anomaly of the history)
@@ -100,6 +102,25 @@ function main(args)
     end
     L = delete_group(L, "isos_nor")
     L = delete_group(L, "isos_ant")
+
+    # cold start of both domains from PaleoMIST at -80 ka over the whole domain (marine ice kept)
+    for (nm, sfx) in (("recon_nor", "nor"), ("recon_ant", "ant"))
+        body = split("""
+&$nm
+    kind          = "recon"
+    recon_path    = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"   ! the domain's PaleoMIST history ("years ago")
+    recon_var     = "H_ice"
+    recon_time    = -80e3         ! [yr] model time of the state: the first record (80 ka)
+    recon_regions = "all"         ! every cell of the ice grid
+    recon_zb_min  = -1e5          ! [m] no bed filter: marine ice is kept
+/""", "\n")
+        if nm == "recon_nor"
+            L = replace_group(L, nm, body)
+        else
+            L = insert_after(L, "recon_nor", body)
+        end
+    end
+    L = map(l -> occursin(r"^\s*experiments\s*=\s*\"\"", l) ? replace(l, "\"\"" => "\"recon_ant\"") : l, L)
 
     L = replace_group(L, "coef_alpha", map(l -> begin
         l = replace(l, r"^(\s*method\s*=\s*)\"const\"\s*" => s"\1\"series\"  ")

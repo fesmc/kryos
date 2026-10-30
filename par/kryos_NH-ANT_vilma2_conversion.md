@@ -18,6 +18,7 @@ the base: snapshots + tsgen + chion. No `obm`.
 | `[clock]` | `method = "rel"`, `time_init = -80e3`, `time_end = 0`, `time_const` removed | the transient clock: forcing time = model time; 80 ka is the length of PaleoMIST (plan Q4). The base is `method = "const"`, `time_const = 0` (frozen forcing). A shorter run: `clock.time_end`. |
 | `[coef_alpha]` | `method = "series"`, `series_file = "input/alpha_combined_125kyr_interp.dat"`; `norm_t0`, `norm_t1` removed **(choice)** | a transient clock with the base's constant alpha = 1 (the LGM) would be an LGM climate for 80 kyr. The file is the glacial index of the yelmox transient setups (0 at 0 ka, about 1 at the LGM, 0.50 at -80 ka), already normalised: with `norm_t0`/`norm_t1` present in the group the series is normalised again and the run stops (both 0: "reference values are equal"). Back to the base: `coef_alpha.method="const"`. |
 | `[geo_glob]` | `backend = "vilma2"`, `dt = 10`, `clock = "model"`, `vilma = "vilma"`, `ice_bg = "globe_ice"`, `allow_no_spinup = False`, `out_2D = "out_2D"`, `out_gia = out_vilma = "none"` | plan 3.4; `dt = 10` is Q6 (revisit after G7). The 2D output of the Earth on the Gauss grid is on at the schedule of the run; the streams `gia` (what VILMA2 got) and `vilma` (its own diagnostics) are off, the gates switch them on. |
+| `[recon_nor]`, `[recon_ant]` | PaleoMIST at -80 ka, whole domain, `recon_zb_min = -1e5`; `[Antarctica] experiments = "recon_ant"` | decided (Alex), choice 1 below. |
 | `[geo_nor]`, `[geo_ant]` | `backend = "vilma2"`, `dt = 10`, `grid` = the ice grid, the FastIsostasy keys removed | the ports (plan D16: on the ice grid; a `dt` that differs from the global's stops). |
 | `[barysealevel]`, `[isos_nor]`, `[isos_ant]` | removed | FastIsostasy only. |
 | `[vilma]` (new) | the CLIMBER-X set: `earth = "PREM"`, 11 layers (`r_bot`, `r_top`, `eta`, `rheology` of `input/vilma_defaults.nml`), `lmax = 170`, `l_visc_3d`, `visc_3d_file` = FesmData `GLOBAL-T170_SolidEarth-Bagge2021.nc`, `visc_3d_structure = 6`, `pre_spinup_1d = .true.`, `equil_time_max = 0.0` | the plan's Earth. Densities and `r_earth` are the run's (`phys_const`), not keys. **`equil_time_max = 0` is a placeholder**: the full-model relaxation after the 1-D pre-spin-up is G2c's question (Alex). With `pre_spinup_1d` alone the run has a spin-up (the `gia_check` condition) and holds the t0 load. |
@@ -25,10 +26,12 @@ the base: snapshots + tsgen + chion. No `obm`.
 
 ## Choices to review
 
-1. **Start state at -80 ka (choice, not changed):** the NH cold start is the base's `[recon_nor]` (ICE-6G_C at -26 ka, North America), the ANT cold
-   start the base's. At -80 ka the PaleoMIST ice outside the footprints is the real one, the ice inside is the recon: the load at t0 is
-   inconsistent in the NH footprint (LGM ice in North America at 80 ka, alpha = 0.5). For the gates (hundreds of years, numerics)
-   this does not matter; for a science run the NH start needs a decision (e.g. `recon_time`, or no recon).
+1. **Start state at -80 ka (decided, Alex):** both domains start, each over the whole domain, from PaleoMIST at -80 ka: `[recon_nor]` and
+   `[recon_ant]` read `fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc`, `recon_var = "H_ice"`, `recon_time = -80e3`
+   (the first record of the "years ago" axis), `recon_regions = "all"`, `recon_zb_min = -1e5` (no bed filter: marine ice is kept); `[Antarctica]`
+   `experiments = "recon_ant"` (the base had none). The VILMA2 reference stays present day (the ice's `z_bed_ref`, `H_ice_pd`). The base's NH recon
+   (ICE-6G_C at -26 ka in North America) is replaced. The t0 load of each footprint then equals PaleoMIST at -80 ka (checked in the first short
+   science run). Pending on main: `recon_smooth_sigma` and `recon_H_float_min`, to be set to 0 in both groups (the PaleoMIST start is already smoothed).
 2. **Alpha series (choice):** above.
 3. **`dt = 10` and the cadence of the ports** equal the base's `dt_isos`.
 4. **Spin-up:** `pre_spinup_1d` only (above).
