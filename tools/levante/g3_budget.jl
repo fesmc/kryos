@@ -105,14 +105,22 @@ function main(args)
         gia = NCDataset(joinpath(lrun, "geo_glob_gia.nc")); vil = NCDataset(joinpath(lrun, "geo_glob_vilma.nc"))
         bund = sort(filter(d -> startswith(d, "restart-") && isdir(joinpath(lrun, d)), readdir(lrun)))
         rst = NCDataset(joinpath(lrun, last(bund), "geo_glob_restart.nc"))
-        w0 = Float64.(rst["w_ref"][:, :]); I0 = Float64.(rst["I_g_ref"][:, :]); Cref = Float64.(rst["C_host_ref"][:, :])
-        zeq = Float64.(rst["z_bed_eq"][:, :]); heq = Float64.(rst["h_ice_eq"][:, :])
+        # row order: the gia stream is on the host grid (latitude ascending), VILMA2's own files (vilma stream, restart) in its
+        # layout (north first); every field is brought to the gia stream's order by the lat axes
+        latg = Float64.(gia["lat"][:])
+        rows(ds) = (l = Float64.(ds["lat"][:]); maximum(abs.(l .- latg)) <= 1e-6 ? false :
+                    maximum(abs.(reverse(l) .- latg)) <= 1e-6 ? true : error("lat axes of the gia stream and $(path(ds)) differ"))
+        fv = rows(vil); fr = rows(rst)
+        orient(x, f) = f ? x[:, end:-1:1] : x
+        w0 = orient(Float64.(rst["w_ref"][:, :]), fr); I0 = orient(Float64.(rst["I_g_ref"][:, :]), fr); Cref = orient(Float64.(rst["C_host_ref"][:, :]), fr)
+        zeq = orient(Float64.(rst["z_bed_eq"][:, :]), fr); heq = orient(Float64.(rst["h_ice_eq"][:, :]), fr)
         # the arrays of the files: (lon, lat) as Julia reads dims (lon, lat, time); the restart is (lat, lon) in Fortran order
         # -> as NCDatasets returns them (lon, lat) if dims are (lon, lat); check shapes
         tg = Float64.(Array(gia["time"])); tv = Float64.(Array(vil["time"]))
         ri, rw = rho
         C0own = Float64.(zeq .< 0 .&& ri .* heq .< -rw .* zeq)
         hasfill = haskey(vil, "fill_int")
+        @printf(io, "row order: vilma stream %s, restart %s against the gia stream\n\n", fv ? "reversed" : "as is", fr ? "reversed" : "as is")
         println(io, "(iii) int C rsl dA = -(rho_i/rho_w) int dI_g dA + fill_int, from the lossless run's streams (fill_int: VILMA2's flooded-area fill integral of the whole sphere, the host's F and the own part's share):\n")
         println(io, "| t [yr] | int C rsl dA [m3] | -(ri/rw) int dI_g dA [m3] | VILMA2 bsl_ive A_ocn [m3] | rhs / VILMA2 - 1 | int F_host dA [m3] | fill_int [m3] | (fill_int - fill_int_own - F_host) / fill_int | balance residual [m3] | residual / abs(lhs) |\n|---|---|---|---|---|---|---|---|---|---|")
         maxres = 0.0
@@ -121,7 +129,7 @@ function main(args)
             kv = findfirst(x -> abs(x - tt) < 1e-6, tv); kv === nothing && continue
             w = Float64.(gia["host_w"][:, :, k]); Ig = Float64.(gia["host_Ig"][:, :, k]); Ch = Float64.(gia["host_C"][:, :, k])
             F = Float64.(gia["host_F"][:, :, k]); H = Float64.(gia["H_ice_ext"][:, :, k])
-            C = Float64.(vil["C_ocean"][:, :, kv]); rsl = Float64.(vil["rsl"][:, :, kv])
+            C = orient(Float64.(vil["C_ocean"][:, :, kv]), fv); rsl = orient(Float64.(vil["rsl"][:, :, kv]), fv)
             a = 1 .- w; a0 = 1 .- w0
             Cown = ifelse.(a .> 1e-12, (C .- Ch) ./ max.(a, 1e-12), 0.0)
             dI = (Ig .- I0) .+ (ifelse.(a .> 1e-12, a .* H .* (1 .- Cown), 0.0) .- ifelse.(a0 .> 1e-12, a0 .* heq .* (1 .- C0own), 0.0))
