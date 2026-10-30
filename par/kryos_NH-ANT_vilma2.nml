@@ -11,7 +11,7 @@
 !   [out_rst]     restart bundle every 5 kyr (was 20 kyr; phase 4 G7, Q12)
 !   added         [vilma] (CLIMBER-X set: PREM, 11 layers, Bagge 3D structure 6, lmax 170, 1-D pre-spin-up, spin-up 2e4 yr / 1e-5 m/yr),
 !                 [globe_ice] and the three datasrc groups of the PaleoMIST history on GLOBAL-0.5DEG (X at 0 ka, anomaly of the history)
-! A run shorter than 80 ka: -p clock.time_end=<t>. The smb_simple variant is a -p list (conversion note).
+! A run shorter than 80 ka: -p clock.time_end=<t>. The smb_simple variant: par/gate/g6-smb.nml (tools/bin/kryos-smb-par.jl).
 
 &kryos
     domains         = "North" "Antarctica"   ! domain of kryos_North.nml, domain of kryos_Antarctica.nml
