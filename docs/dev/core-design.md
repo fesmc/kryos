@@ -255,6 +255,26 @@ restored Yelmo geometry (adapters-design). Then `domain_check_reference`,
 `domain_hub_update` (the hub is derived, never stored). No exchange runs:
 imports are restored as received.
 
+State-only restore (2026-10-30): the field files hold the state of a restart,
+bit for bit: every import, every export an active wiring row reads (source,
+aux, lapse fields, T_GIA sources) and every export with a window (MEAN,
+ACCUM). The other INSTANT exports are diagnostics, declared with
+`fields_add(..., restart = .false.)` and left out of the files; the instance's
+`PASS_RESTART` puts them again from the restored state (the regional geo's
+`bsl`: `geo_init_state`, the copy of `geo_scatter`; the host geo's `C_ocn`,
+`bsl_ive`, `bsl_ive_host`: vilma2; `tf_shlf`: marine_shelf; the ice's `ux_s`,
+`uy_s`, `dz_bed_dt_corr` have no backend yet), so they equal the continuous
+run's. An export not derivable from the restored state stays state
+(`dz_bed_dt`, FastIsostasy's last rate evaluation; `mass_resid`, VILMA2's
+residual). Adding or dropping a diagnostic leaves the bundles readable: a
+diagnostic in an older bundle is ignored and logged; a state field missing
+from the bundle, or one in it the run does not declare, stops. `wire_resolve`
+(step 5) stops on a diagnostic import, a non-INSTANT diagnostic or one an
+active row reads. Reads outside the rows are not checked: an experiment or
+the core reading an export (opt_tf: `H_grnd`, `H_grnd_pd`;
+`domain_check_reference`: `z_bed_ref`) needs it declared state; a run with no
+domain resolves no rows, so its global instances are not checked.
+
 Phase 4: the globe step becomes `gia_reference(run)` (the reference is a
 function of files and of static exports that `PASS_INIT` publishes), then
 `globe_pass(geo, PASS_GEOMETRY)` (VILMA2 at the reference, memory zero), then

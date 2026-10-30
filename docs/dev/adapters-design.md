@@ -40,7 +40,7 @@ mismatch is resolved there, not by changing an adapter silently.
 | A2 | `init(self, par_file, group, grid, time, cnst, ref)`: `ref` is a plain `kryos_ref_t` with the domain reference (`z_bed`, `H_ice`, `z_srf`, `z_bed_sd`, `dp`) and the `regions_class` on the instance grid, made by the core with the same conservative map for every grid (D4). Global instances get an empty `ref`. |
 | A3 | `update(self, tm)`: `tm%t0`, `tm%t1` model time [yr, dp] from `cadence_interval`, `tm%t_rel` forcing time at `t1` (`clock_time_rel`). Backends never see ticks (D8). |
 | A4 | `init_state(self, tm, stage)` is called by the core per stage, in the order of section 9; a backend ignores the stages it does not use. Stages: `INIT_GEOMETRY`, `INIT_FIELDS`, `INIT_STATE`, `INIT_FINAL`, `INIT_RESTART`. This generalises `domain_init_state` (`kryos_startup.f90:131-195`) and the tail of `domain_restart_read` (`:521-527`). |
-| A5 | The core writes and restores every instance's export state with `fields_restart_write/read`, so a published export survives a restart without the adapter. Adapter files hold only backend state. |
+| A5 | The core writes and restores every instance's state exports with `fields_restart_write/read`, so a published export survives a restart without the adapter. Adapter files hold only backend state. A diagnostic export (`restart = .false.`: INSTANT, no wiring row reads it; core-design 3.3) is not in the bundle: the adapter's `PASS_RESTART` puts it again from the restored state, exactly as the continuous run put it. |
 | A6 | The re-elevation of the atmosphere (`remap_atm_to_surface`, `kryos_coupling.f90:508-539`) is a transform of the core's `climate -> surface` wiring row, not code in a surface adapter (every surface backend needs it). |
 | A7 | Wiring rows phase 1 needs for bit-identity: `ice.H_ice -> geo.H_ice` from the ice exports, not from the hub (today `step_isostasy` reads Yelmo, `kryos_coupling.f90:146`); the hub mirror takes `ice.z_bed`, `ice.z_sl` as exported (widened from `bnd%`), not the core's own `dp` sums; `shelf.tf_shlf` is not wired to `ice` (Yelmo never receives it today). |
 | A8 | A rank-3 export with `zdim = "depth"` carries its axis values through a core axis table filled at init by the producer. `fesm_fields` has the axis name but no coordinate values; this is a gap to close in contracts or fesm-utils. |
@@ -615,7 +615,7 @@ step later (lag 1 in the wiring, as today).
 ### 6.4 Restart, output, end
 
 `restart_write/read`: `marshelf_restart_write/read` (today `marine_shelf.nc`,
-`kryos_startup.f90:428, 514`; it holds `now`, without `tf_corr` and `tf_corr_basin`: since phase 2 WP3
+`kryos_startup.f90:428, 514`; `PASS_RESTART` puts the diagnostic `tf_shlf` from the restored `now`; it holds `now`, without `tf_corr` and `tf_corr_basin`: since phase 2 WP3
 the shelf component owns them (`shelf_t%corr`, module `kryos_shelf_ocean`, written by `shelf_restart_write`
 to `<instance>_corr_restart.nc`, listed after the backend's file in `restart_files`). The component makes
 them before the backend's `init` from the group named by the instance's `corr` key (`basins`,
@@ -797,7 +797,7 @@ Vocabulary: `contracts-design.md` §2.2.
 | `init_state(PASS_GEOMETRY)` | after the core's `gia_reference`: `solid_earth_init` at the reference (`z_bed_eq = z_bed_ref`, `h_ice_eq = H_ice_ref`, `w`, `I_g`, `C` = reference host terms); stop if VILMA2 built a remap (`se%remap`: the grid is not its Gauss grid); put the exports at the reference (zero anomalies) |
 | `init_state(PASS_STATE)` | cold only: `solid_earth_spinup` (a no-op unless `equil_time_max > 0` or `pre_spinup_1d`), then `solid_earth_update(..., dt = 0, ...)` (the seed), put the exports |
 | `update(st)` | `dt = st%t1 - st%t0`; `solid_earth_update(se, H_ice_ext, dt, host_w, host_Ig, host_C, host_F)`; put `dz_bed = gg%dz_bed`, `dz_ss = gg%dz_ss - se%dphi`, `dphi`, `bsl`, `bsl_ive`, `A_ocn`, `C_ocn`, `mass_resid` at `t1` |
-| `restart_write/read` | `vilma_restart_write(se, se%time, filename = "<name>_restart.nc", folder = dir)`; read the last slice into the model built by `PASS_GEOMETRY` (VILMA2 checks the reference, `check_reference`); `PASS_RESTART` puts nothing (A5) |
+| `restart_write/read` | `vilma_restart_write(se, se%time, filename = "<name>_restart.nc", folder = dir)`; read the last slice into the model built by `PASS_GEOMETRY` (VILMA2 checks the reference, `check_reference`); `PASS_RESTART` puts the diagnostics `C_ocn`, `bsl_ive`, `bsl_ive_host` (restored by `vilma_restart_read`), no state export (A5) |
 | `write_output` | default writer for the exports; backend streams `gia` and `vilma` (VILMA2's own diagnostics, rounded: `prec` column and lossless restart path in VILMA2) |
 | `end` | `solid_earth_finalize(se)` |
 

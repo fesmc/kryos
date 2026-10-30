@@ -15,8 +15,9 @@ module kryos_restart
     !       manifest.nml                      [bundle] + one group per instance; written last
     !
     ! The field states (fesm_fields_restart_write/read, one file per state)
-    ! are the core's: a published import or export survives the restart
-    ! without the adapter (adapters-design A5); the backend files are the
+    ! are the core's: a published import or state export survives the
+    ! restart without the adapter (adapters-design A5), a diagnostic export
+    ! (restart = .false.) is not stored; the backend files are the
     ! adapter's (restart_write/read through the component wrappers, nothing for
     ! a backend without state); a backend declares the files its restart_write
     ! creates (restart_files, <comp>_restart_files), and the writer checks that
@@ -30,10 +31,11 @@ module kryos_restart
     ! dropped between chunks.
     !
     ! Restore of one instance (restart_read_instance, restart_read_global):
-    ! <comp>_restart_read, then its imports and exports from the bundle, then
+    ! <comp>_restart_read, then its imports and state exports from the bundle
+    ! (a diagnostic an older bundle holds is ignored, logged), then
     ! <comp>_init_state(PASS_RESTART), which re-derives the backend's internal
-    ! state from the restored state and puts no export (the exports are the
-    ! ones the bundle holds, bit for bit).
+    ! state from the restored state and puts the diagnostics again; the state
+    ! exports are the ones the bundle holds, bit for bit.
     !
     ! manifest.nml (read back with nml): group [bundle] (time, ticks,
     ! ticks_per_year, kryos_git, fesm_utils_git, domains) and one group per
@@ -610,7 +612,7 @@ contains
     end subroutine restart_read_experiments
 
     subroutine fields_read(c, dir)
-        ! The imports and exports of an instance as the bundle holds them.
+        ! The imports and state exports of an instance as the bundle holds them.
         class(component_t), intent(inout) :: c
         character(len=*),   intent(in)    :: dir
         call fields_restart_read(c%imports, fields_file(dir, c%name, "imports"))
