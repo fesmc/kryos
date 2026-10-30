@@ -39,12 +39,12 @@ function main(args)
         haskey(v, vn) || (println(io, "| ", vn, " | absent in the standalone file | | | |"); continue)
         a = sa(Float64.(Array(k[kn]))); b = vrows(v[vn])
         n = min(size(a, 3), size(b, 3))
-        dmax = 0.0; bmax = 0.0; first = 0
+        dmax = 0.0; bmax = 0.0; first = -1
         for r in 1:n
             d = maximum(abs.(a[:, :, r] .- b[:, :, r])); dmax = max(dmax, d); bmax = max(bmax, maximum(abs.(b[:, :, r])))
-            d > 0 && first == 0 && (first = r - 1)
+            d > 0 && first < 0 && (first = r - 1)
         end
-        @printf(io, "| %s | %.3e | %.3e | %.3e | %s |\n", kn, dmax, bmax, bmax == 0 ? NaN : dmax / bmax, first == 0 && dmax == 0 ? "none (bit identical)" : string(first))
+        @printf(io, "| %s | %.3e | %.3e | %.3e | %s |\n", kn, dmax, bmax, bmax == 0 ? NaN : dmax / bmax, first < 0 ? "none (bit identical)" : string(first))
     end
     println(io, "\nper record, dz_bed and dz_ss (max abs diff / max abs standalone):\n")
     for (kn, vn) in pairs[1:2]
