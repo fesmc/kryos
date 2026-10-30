@@ -16,7 +16,8 @@ set -uo pipefail
 module load python3 >/dev/null 2>&1 || true
 export PATH=$HOME/.juliaup/bin:$HOME/.local/bin:$PATH
 G=/work/ba1442/robinson/kryos-gate; T=$G/p4w7/kryos/tools; S=$G/stacks/S11; K=$S/kryos; L=$K/tools/levante
-KSHA=$(git -C $K rev-parse --short=7 HEAD)
+KSHA=${KSHA:-$(cut -d- -f1 $K/libkryos/bin/.kryos_sha)}   # the commit the stack's kryos was built at (git is not on the compute nodes' PATH)
+S11T=$G/s11/tools                                       # scripts fixed after the stack was set up (g3_budget.jl, g2a_compare.jl)
 export JULIA_DEPOT_PATH=$G/julia-depot
 OUT=$G/reports/S11; mkdir -p $OUT
 J="julia +1.13 --project=$T"
@@ -34,10 +35,10 @@ case ${1:-} in
     echo "sci-vilma2 | $(sed -n 1p $OUT/sci-vilma2-kk.md) | g4-vilma2.log" >> $OUT/summary.txt ;;
   g3)
     R=$G/runs/sci-vilma2/kx-$KSHA/S11
-    $J $L/g3_budget.jl $R/cont $R/lossless $K/libkryos/bin/hub_areas.x --md $OUT/g3-sci-vilma2.md > $OUT/g3-sci-vilma2.log 2>&1
+    $J $S11T/g3_budget.jl $R/cont $R/lossless $K/libkryos/bin/hub_areas.x --md $OUT/g3-sci-vilma2.md > $OUT/g3-sci-vilma2.log 2>&1
     echo "g3 sci-vilma2 | exit $? | g3-sci-vilma2.md" >> $OUT/summary.txt
     R=$G/runs/g6/kx-$KSHA/S11
-    $J $L/g3_budget.jl $R/cont $R/cont $K/libkryos/bin/hub_areas.x --md $OUT/g3-g6.md > $OUT/g3-g6.log 2>&1
+    $J $S11T/g3_budget.jl $R/cont $R/cont $K/libkryos/bin/hub_areas.x --md $OUT/g3-g6.md > $OUT/g3-g6.log 2>&1
     echo "g3 g6 | exit $? | g3-g6.md" >> $OUT/summary.txt ;;
   g6)
     for g in g6 g6-smb; do
