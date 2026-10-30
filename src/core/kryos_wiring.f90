@@ -284,7 +284,10 @@ contains
         !   3. no masked field across two grids; MEAN -> INSTANT rows need equal
         !      cadences;
         !   4. the shelf's ocean set: exactly one of profiles and shelf-base
-        !      values is complete and active.
+        !      values is complete and active;
+        !   5. a diagnostic (restart = .false., not in the restart bundle; its
+        !      backend puts it again on PASS_RESTART) is an INSTANT export that
+        !      no active row reads (check_diagnostics).
         ! Then the methods are resolved and the workspaces allocated. coupler_prime
         ! of every remapped pair is the caller's (wire_prime).
         ! w: every row of the table, rules expanded, in table order.
@@ -315,6 +318,7 @@ contains
             if (check_row(w(i), nodes, stat)) return
         end do
         if (check_shelf(w, nodes, stat)) return
+        if (check_diagnostics(w, nodes, stat)) return
 
         do i = 1, size(w)
             if (.not. w(i)%active) cycle
@@ -630,6 +634,68 @@ contains
             end if
         end associate
     end function check_row
+
+    function check_diagnostics(w, nodes, stat) result(bad)
+        ! Step 5: the state of a restart is every import, every export an
+        ! active row reads (its principal source, aux, lapse fields or T_GIA
+        ! sources) and every export with a window (MEAN, ACCUM); a field
+        ! declared a diagnostic (restart = .false.) must be none of them.
+        type(wire_t),      intent(in) :: w(:)
+        type(wire_node_t), intent(in) :: nodes(:)
+        integer,           intent(inout), optional :: stat
+        logical :: bad
+
+        character(len=*), parameter :: proc = "kryos_wiring::wire_resolve"
+        character(len=*), parameter :: why = "a diagnostic (restart = .false.) is not in the restart bundle"
+        character(len=:), allocatable :: who
+        integer :: n, h, i
+
+        bad = .false.
+        do n = 1, size(nodes)
+            if (associated(nodes(n)%imports)) then
+                do h = 1, nodes(n)%imports%n
+                    if (nodes(n)%imports%f(h)%restart) cycle
+                    bad = failed(proc, trim(nodes(n)%kind)//" `"//trim(nodes(n)%name)//"` import `"// &
+                                 trim(nodes(n)%imports%f(h)%name)//"` is declared a diagnostic", why// &
+                                 "; every import is state", stat)
+                    return
+                end do
+            end if
+            if (.not. associated(nodes(n)%exports)) cycle
+            do h = 1, nodes(n)%exports%n
+                associate (f => nodes(n)%exports%f(h))
+                    if (f%restart) cycle
+                    who = trim(nodes(n)%kind)//" `"//trim(nodes(n)%name)//"` export `"//trim(f%name)//"`"
+                    if (f%tsem /= FIELD_INSTANT) then
+                        bad = failed(proc, who//" is declared a diagnostic but is not INSTANT", why// &
+                                     "; its open window is state", stat)
+                        return
+                    end if
+                    do i = 1, size(w)
+                        if (.not. w(i)%active) cycle
+                        if (node_index(nodes, w(i)%src_kind) /= n) cycle
+                        if (.not. reads(w(i), h)) cycle
+                        bad = failed(proc, who//" is declared a diagnostic but row "//wire_label(w(i))// &
+                                     " reads it", why//"; a row's source is state", stat)
+                        return
+                    end do
+                end associate
+            end do
+        end do
+
+    contains
+
+        logical function reads(r, hh)
+            ! Does the active row r read the producer's export hh?
+            type(wire_t), intent(in) :: r
+            integer,      intent(in) :: hh
+            reads = r%hs == hh
+            if (r%transform == T_ADD_SCALAR) reads = reads .or. r%ha == hh
+            if (r%transform == T_LAPSE_T .or. r%transform == T_LAPSE_P) reads = reads .or. any(r%hl(1:3) == hh)
+            if (allocated(r%hx)) reads = reads .or. any(r%hx == hh)
+        end function reads
+
+    end function check_diagnostics
 
     function axis_problem(fs, ns, fd, nd) result(msg)
         ! Rank 3: same zdim and identical axis on both sides.

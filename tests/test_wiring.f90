@@ -1,6 +1,6 @@
 program test_wiring
     ! kryos_wiring on toy field states (no files, no real backends): the table,
-    ! resolution (gaps, duplicates, contracts), identity and remapped rows, every
+    ! resolution (gaps, duplicates, contracts, diagnostics), identity and remapped rows, every
     ! transform kind in sp and dp, gather, LAG_INIT, masks, and every lag error.
     !
     ! Remapped rows use two aligned toy grids registered in the coupler (the maps
@@ -56,6 +56,7 @@ program test_wiring
     call tc_domain()
     call tc_gia()
     call tc_resolve_errors()
+    call tc_diagnostics()
     call tc_identity()
     call tc_remap()
     call tc_add_ref()
@@ -94,25 +95,25 @@ contains
         end if
     end subroutine check
 
-    subroutine st_add(st, name, units, tsem, cons, grid, nz, masked)
+    subroutine st_add(st, name, units, tsem, cons, grid, nz, masked, restart)
         ! Declare a field: rank 0 without grid, rank 2 with grid, rank 3 with nz (month axis).
         type(field_state_t), intent(inout) :: st
         character(len=*),    intent(in) :: name, units
         integer,             intent(in) :: tsem, cons
         character(len=*),    intent(in), optional :: grid
         integer,             intent(in), optional :: nz
-        logical,             intent(in), optional :: masked
+        logical,             intent(in), optional :: masked, restart
         integer :: h, n
 
         if (.not. present(grid)) then
-            call fields_add(st, name, units, tsem, cons, h)
+            call fields_add(st, name, units, tsem, cons, h, restart=restart)
             return
         end if
         n = merge(NF, NC, trim(grid) == GF)
         if (present(nz)) then
-            call fields_add(st, name, units, tsem, cons, h, grid=grid, dims=[n, n, nz], zdim="month")
+            call fields_add(st, name, units, tsem, cons, h, grid=grid, dims=[n, n, nz], zdim="month", restart=restart)
         else
-            call fields_add(st, name, units, tsem, cons, h, grid=grid, dims=[n, n], masked=masked)
+            call fields_add(st, name, units, tsem, cons, h, grid=grid, dims=[n, n], masked=masked, restart=restart)
         end if
     end subroutine st_add
 
@@ -695,6 +696,47 @@ contains
         ax2(1) = month_axis()
     end subroutine tc_resolve_errors
 
+    subroutine tc_diagnostics()
+        ! Step 5 of resolution: a diagnostic (restart = .false.) is an INSTANT
+        ! export no active row reads (principal source, aux, lapse field, T_GIA
+        ! source); every import is state.
+        integer :: stat
+        type(wire_t), allocatable :: w(:)
+        type(wire_node_t) :: nodes2(2)
+        type(field_state_t), target :: ei, ee
+
+        write(*,"(a)") "diagnostics (stat)"
+        call empty(ei, "e:imports");  call empty(ee, "e:exports")
+        call fields_init(di, "dst:imports");  call st_add(di, "a", "m", I_, IT, GF);  call fields_lock(di)
+
+        call fields_init(sx, "src:exports")
+        call st_add(sx, "a", "m", I_, IT, GF);  call st_add(sx, "d", "m", I_, IT, restart=.false.)
+        call fields_lock(sx)
+        call resolve1(w, wire("ice", "a", "geo", "a"), sp, sp, stat=stat)
+        call check("an INSTANT diagnostic no row reads", stat == 0)
+        call resolve1(w, wire("ice", "a", "geo", "a", transform=T_ADD_SCALAR, aux="d"), sp, sp, stat=stat)
+        call check("a diagnostic read as aux", stat /= 0)
+        call resolve1(w, wire("ice", "zz", "geo", "a"), sp, sp, stat=stat)
+        call check("an inactive row does not read it", stat == 0)
+
+        call fields_init(sx, "src:exports");  call st_add(sx, "a", "m", I_, IT, GF, restart=.false.);  call fields_lock(sx)
+        call resolve1(w, wire("ice", "a", "geo", "a"), sp, sp, stat=stat)
+        call check("a diagnostic read as the source", stat /= 0)
+
+        call fields_init(sx, "src:exports")
+        call st_add(sx, "a", "m", I_, IT, GF);  call st_add(sx, "m", "m", M_, IT, GF, restart=.false.)
+        call fields_lock(sx)
+        call resolve1(w, wire("ice", "a", "geo", "a"), sp, sp, stat=stat)
+        call check("a MEAN diagnostic", stat /= 0)
+
+        call fields_init(sx, "src:exports");  call st_add(sx, "a", "m", I_, IT, GF);  call fields_lock(sx)
+        call fields_init(di, "dst:imports");  call st_add(di, "a", "m", I_, IT, GF, restart=.false.);  call fields_lock(di)
+        nodes2(1) = wire_node_states("ice", "src", ei, sx, sp, 10.0_dp, check=.false.)
+        nodes2(2) = wire_node_states("geo", "dst", di, ee, sp, 10.0_dp, check=.false.)
+        call wire_resolve(w, nodes2, cpl, table=[wire("ice", "a", "geo", "a")], stat=stat)
+        call check("a diagnostic import", stat /= 0)
+    end subroutine tc_diagnostics
+
     ! =========================================================================
     ! exchange
     ! =========================================================================
@@ -1193,6 +1235,7 @@ contains
         call expect_abort("units", "units differ")
         call expect_abort("no_ref", "needs ref_dst")
         call expect_abort("inactive", "is inactive")
+        call expect_abort("diagnostic", "ice `ice_grl` export `a` is declared a diagnostic but row")
     end subroutine tc_aborts
 
     subroutine expect_abort(case_name, text)
@@ -1307,6 +1350,13 @@ contains
         case ("inactive")
             call resolve1(w, wire("ice", "zz", "geo", "a"), sp, sp)
             call wire_exchange(w(1), sx, di, cpl, t=10.0_dp, t_last=10.0_dp)
+        case ("diagnostic")
+            call fields_init(sx, "ice_grl:exports");  call st_add(sx, "a", "m", FIELD_INSTANT, FIELD_INTENSIVE, GF, &
+                                                                  restart=.false.)
+            call fields_lock(sx)
+            nodes(1) = wire_node_states("ice", "ice_grl", ei, sx, sp, 10.0_dp, check=.false.)
+            nodes(2) = wire_node_states("geo", "geo_grl", di, ee, sp, 10.0_dp, check=.false.)
+            call wire_resolve(w, nodes, cpl, table=[wire("ice", "a", "geo", "a")])
         case default
             error stop 78
         end select

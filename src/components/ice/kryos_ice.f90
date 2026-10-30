@@ -197,7 +197,9 @@ contains
         ! H_ice_pd (optional, static, phase 4 and phase 2 WP3): published once,
         ! at PASS_INIT. H_grnd (optional, with the geometry) and H_grnd_pd (static) are
         ! what the thermal-forcing calibration (experiment opt_tf) reads, with H_ice,
-        ! dHidt and H_ice_pd.
+        ! dHidt and H_ice_pd. Diagnostics (restart = .false.: INSTANT, nothing
+        ! reads them, not in the restart bundle; the backend puts them again on
+        ! PASS_RESTART): ux_s, uy_s, dz_bed_dt_corr.
         class(ice_t), intent(inout) :: c
         integer :: d2(2)
         character(len=:), allocatable :: g
@@ -247,12 +249,14 @@ contains
         call fields_add(c%exports, "mb_net", "kg m-2 yr-1", FIELD_MEAN,    FIELD_EXTENSIVE, c%h_mb_net, grid=g, dims=d2)
         call fields_add(c%exports, "M_ice",  "Gt",          FIELD_INSTANT, FIELD_EXTENSIVE, c%h_M_ice)      ! 0-D
         if (c%opt%uxy_s) then
-            call fields_add(c%exports, "ux_s", "m yr-1", FIELD_INSTANT, FIELD_INTENSIVE, c%h_ux_s, grid=g, dims=d2)
-            call fields_add(c%exports, "uy_s", "m yr-1", FIELD_INSTANT, FIELD_INTENSIVE, c%h_uy_s, grid=g, dims=d2)
+            call fields_add(c%exports, "ux_s", "m yr-1", FIELD_INSTANT, FIELD_INTENSIVE, c%h_ux_s, grid=g, dims=d2, &
+                            restart=.false.)
+            call fields_add(c%exports, "uy_s", "m yr-1", FIELD_INSTANT, FIELD_INTENSIVE, c%h_uy_s, grid=g, dims=d2, &
+                            restart=.false.)
         end if
         if (c%opt%dz_bed_dt_corr) then
             call fields_add(c%exports, "dz_bed_dt_corr", "m yr-1", FIELD_INSTANT, FIELD_INTENSIVE, &
-                            c%h_dz_bed_dt_corr, grid=g, dims=d2)
+                            c%h_dz_bed_dt_corr, grid=g, dims=d2, restart=.false.)
         end if
         if (c%opt%z_bed_ref) then
             call fields_add(c%exports, "z_bed_ref", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_z_bed_ref, grid=g, dims=d2)

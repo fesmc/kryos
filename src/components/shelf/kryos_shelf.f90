@@ -159,6 +159,8 @@ contains
         ! Contracts-design section 2.5. Both ocean sets are optional imports;
         ! wire_resolve requires exactly one complete and active. Set A needs the
         ! producer's depth axis (in ctx%axes when the climate has_ocn).
+        ! Diagnostic (restart = .false.: INSTANT, no row reads it, not in the
+        ! restart bundle; the backend puts it again on PASS_RESTART): tf_shlf.
         class(shelf_t),   intent(inout) :: c
         type(init_ctx_t), intent(in)    :: ctx
         integer :: d2(2)
@@ -203,7 +205,8 @@ contains
         call fields_init(c%exports, trim(c%name)//":exports")
         call fields_add(c%exports, "bmb_shlf", "kg m-2 yr-1", FIELD_MEAN, FIELD_EXTENSIVE, c%h_bmb_shlf, grid=g, dims=d2)
         call fields_add(c%exports, "T_shlf", "K", FIELD_INSTANT, FIELD_INTENSIVE, c%h_T_shlf, grid=g, dims=d2)
-        call fields_add(c%exports, "tf_shlf", "K", FIELD_INSTANT, FIELD_INTENSIVE, c%h_tf_shlf, grid=g, dims=d2)
+        call fields_add(c%exports, "tf_shlf", "K", FIELD_INSTANT, FIELD_INTENSIVE, c%h_tf_shlf, grid=g, dims=d2, &
+                        restart=.false.)
         call fields_lock(c%exports)
     end subroutine shelf_declare
 

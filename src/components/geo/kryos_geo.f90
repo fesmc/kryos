@@ -207,7 +207,12 @@ contains
         ! instance's reference, geo's initial state (decision 4 refined). A
         ! global part with opt%host (vilma2) has its own vocabulary on its own
         ! grid; the regional port of it (opt%port) imports the scattered fields
-        ! instead of the ice (contracts-design 2.2).
+        ! instead of the ice (contracts-design 2.2). Diagnostics (restart =
+        ! .false.: INSTANT, no row reads them, not in the restart bundle; put
+        ! again on PASS_RESTART): regional bsl (geo_init_state, the copy of
+        ! geo_scatter), dz_bed_dt (the backend);
+        ! the host part's C_ocn, bsl_ive, bsl_ive_host (not mass_resid: the
+        ! solve's residual, not derivable from the restored state).
         class(geo_t), intent(inout) :: c
         integer :: d2(2)
         character(len=:), allocatable :: g
@@ -246,13 +251,13 @@ contains
 
             call fields_add(c%exports, "dz_bed",    "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_dz_bed,    grid=g, dims=d2)
             call fields_add(c%exports, "dz_ss",     "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_dz_ss,     grid=g, dims=d2)
-            call fields_add(c%exports, "bsl",       "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_bsl)
+            call fields_add(c%exports, "bsl",       "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_bsl, restart=.false.)
             call fields_add(c%exports, "dphi",      "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_dphi)
             call fields_add(c%exports, "z_bed_ref", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_z_bed_ref, grid=g, dims=d2)
             if (c%opt%dV_bsl) call fields_add(c%exports, "dV_bsl", "m3", FIELD_INSTANT, FIELD_EXTENSIVE, c%h_dV_bsl)
             if (c%opt%dz_bed_dt) then
                 call fields_add(c%exports, "dz_bed_dt", "m yr-1", FIELD_INSTANT, FIELD_INTENSIVE, c%h_dz_bed_dt, &
-                                grid=g, dims=d2)
+                                grid=g, dims=d2, restart=.false.)
             end if
         end if
 
@@ -292,11 +297,12 @@ contains
 
         call fields_add(c%exports, "dz_bed",     "m",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_dz_bed, grid=g, dims=d2)
         call fields_add(c%exports, "dz_ss",      "m",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_dz_ss,  grid=g, dims=d2)
-        call fields_add(c%exports, "C_ocn",      "1",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_C_ocn,  grid=g, dims=d2)
+        call fields_add(c%exports, "C_ocn",      "1",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_C_ocn,  grid=g, dims=d2, &
+                        restart=.false.)
         call fields_add(c%exports, "dphi",       "m",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_dphi)
         call fields_add(c%exports, "bsl",        "m",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_bsl)
-        call fields_add(c%exports, "bsl_ive",    "m",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_bsl_ive)
-        call fields_add(c%exports, "bsl_ive_host", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_bsl_ive_host)
+        call fields_add(c%exports, "bsl_ive",    "m",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_bsl_ive, restart=.false.)
+        call fields_add(c%exports, "bsl_ive_host", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%h_bsl_ive_host, restart=.false.)
         call fields_add(c%exports, "A_ocn",      "m2", FIELD_INSTANT, FIELD_EXTENSIVE, c%h_A_ocn)
         call fields_add(c%exports, "mass_resid", "1",  FIELD_INSTANT, FIELD_INTENSIVE, c%h_mass_resid)
     end subroutine declare_host
