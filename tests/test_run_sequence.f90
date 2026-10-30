@@ -241,7 +241,7 @@ program test_run_sequence
     use kryos_exp_relax, only: relax_exp_t
     use kryos_exp_opt_cb_ref, only: opt_cb_ref_exp_t
     use kryos_exp_opt_tf, only: opt_tf_exp_t
-    use kryos_exp_recon, only: recon_exp_t
+    use kryos_exp_recon, only: recon_exp_t, recon_set_initial_ice, recon_remove_thin_float
     use kryos_climate_snapshots,  only: snapshots_climate_t
     use kryos_surface_chion,      only: chion_surface_t
     use kryos_shelf_marine_shelf, only: marshelf_shelf_t
@@ -261,6 +261,7 @@ program test_run_sequence
         "geo_grl", "climate_grl", "surface_grl", "shelf_grl", "ghf_grl", "sed_grl"]
 
     character(len=*), parameter :: XA = "xr/all/"      ! the recon variant with regions 'all' and recon_zb_min (exp_round_trip)
+    character(len=*), parameter :: XW = "xr/raw/"      ! the same without the smoothing and the thin-floating-ice removal
 
     character(len=512) :: arg, par_arg, file_arg, root, repo, only
     character(len=PATH_LEN) :: files_arg(1)
@@ -578,7 +579,7 @@ contains
         real(sp), allocatable :: cb0(:,:), cb60(:,:), tf0(:,:), tf60(:,:)
         integer :: n, i, irel, icf, itf, irec, topo_rel0
         real(dp) :: t
-        logical :: ok, ok_cb, ok_tf, none_cf, rec_all
+        logical :: ok, ok_cb, ok_tf, none_cf, rec_all, raw
 
         call run_init(run, par_file, protos=host_protos())
         write(*,'(a)') "--- plugin experiments"
@@ -594,8 +595,13 @@ contains
                 call check(x%wants(HOOK_COLD_POST_STATE) .and. count(x%wants) == 1, "recon: wants COLD_POST_STATE only")
                 call check(count(x%mask_recon) == size(x%mask_recon), "recon: the regions 'all' select every cell")
                 rec_all = x%zb_min < -1.0e4_dp
-                call check(rec_all .eqv. (trim(x%name) == "exp_recon_all"), "recon: recon_zb_min is the par-file value of its group, "// &
-                           "-500 m by default")
+                call check(rec_all .eqv. (index(trim(x%name), "exp_recon_") == 1), "recon: recon_zb_min is the par-file value of "// &
+                           "its group, -500 m by default")
+                raw = trim(x%name) == "exp_recon_raw"
+                call check((x%smooth_sigma == 0.0_dp .and. x%H_float_min == 0.0_dp) .eqv. raw, "recon: recon_smooth_sigma and "// &
+                           "recon_H_float_min are the par-file values of their group (0 in exp_recon_raw)")
+                call check(raw .or. (x%smooth_sigma == 2.0_dp .and. x%H_float_min == 50.0_dp), "recon: defaults 2 cells and 50 m")
+                if (raw) call check_recon_initial(x%smooth_sigma, x%H_float_min)
             type is (opt_tf_exp_t)
                 itf = i
                 call check(x%wants(HOOK_STEP_BEGIN) .and. count(x%wants) == 1, "opt_tf: wants STEP_BEGIN only")
@@ -937,6 +943,14 @@ contains
         ok = child(XA, "xexp "//PAR, "run.log")
         call sh("grep -E '^  (ok|FAIL|OPEN)|^---' '"//d//XA//"run.log'")
         call check(ok, "recon with regions 'all' and recon_zb_min = -1e5 on a synthetic reconstruction ("//DIR//XA//"run.log)")
+        ! the same with recon_smooth_sigma = 0 and recon_H_float_min = 0 (xexp_child checks the unsmoothed initial ice)
+        call setup_run_dir(XW)
+        call write_recon_all(d//XW//"recon_all.nc")
+        names = [character(len=24) :: "exp_recon_raw"]
+        call write_par(d//XW//PAR, "None", 0.0_dp, 20.0_dp, 20.0_dp, explist=names, xlines=exp_lines(names))
+        ok = child(XW, "xexp "//PAR, "run.log")
+        call sh("grep -E '^  (ok|FAIL|OPEN)|^---' '"//d//XW//"run.log'")
+        call check(ok, "recon with recon_smooth_sigma = 0 and recon_H_float_min = 0 ("//DIR//XW//"run.log)")
         ! L21 without the present-day velocity stops at init, naming the key
         call setup_run_dir(XV)
         names = [character(len=24) :: "exp_cf"]
@@ -973,6 +987,11 @@ contains
                 lines = [character(len=400) :: lines, "&exp_recon_all", "  kind = 'recon'", &
                          "  recon_path = '"//trim(repo)//"/"//DIR//XA//"recon_all.nc'", "  recon_var = 'H_ice'", &
                          "  recon_time = -20000.0", "  recon_regions = 'all'", "  recon_zb_min = -1.0e5", "/"]
+            case ("exp_recon_raw")
+                lines = [character(len=400) :: lines, "&exp_recon_raw", "  kind = 'recon'", &
+                         "  recon_path = '"//trim(repo)//"/"//DIR//XW//"recon_all.nc'", "  recon_var = 'H_ice'", &
+                         "  recon_time = -20000.0", "  recon_regions = 'all'", "  recon_zb_min = -1.0e5", &
+                         "  recon_smooth_sigma = 0.0", "  recon_H_float_min = 0.0", "/"]
             case ("exp_relax")
                 lines = [character(len=400) :: lines, "&exp_relax", "  kind = 'relax'", "  topo_rel = 3", "  tau1 = 100.0", &
                          "  tau2 = 2000.0", "  time1 = 20.0", "  time2 = 60.0", "  m = 2.0", "/"]
@@ -1431,6 +1450,44 @@ contains
             call check(.false., "the ice instance is Yelmo")
         end select
     end subroutine check_recon_all
+
+    subroutine check_recon_initial(sigma, H_min)
+        ! The two recipe steps before and after the first equilibration, on a synthetic field, with the values of the
+        ! group exp_recon_raw (0, 0): the initial ice is the reconstruction exactly where the bed is above zb_min and
+        ! the mask holds, and the thin floating ice stays. With 2 cells and 50 m the steps act.
+        real(dp), intent(in) :: sigma, H_min
+        real(sp), parameter :: DX = 16.0e3_sp
+        real(sp) :: href(NX,NY), zb(NX,NY), h(NX,NY), h0(NX,NY)
+        logical :: sel(NX,NY), msk(NX,NY)
+        integer :: i, j, mb(NX,NY)
+
+        do j = 1, NY
+            do i = 1, NX
+                href(i,j) = 100.0_sp + 50.0_sp*sin(0.7_sp*real(i, sp))*cos(0.5_sp*real(j, sp))
+                zb(i,j)   = merge(-1000.0_sp, 200.0_sp, j < 40)
+                msk(i,j)  = mod(i + j, 3) /= 0
+                mb(i,j)   = merge(5, 3, mod(i, 2) == 0)
+            end do
+        end do
+        sel = zb > -500.0_sp .and. msk
+        h0 = 7.0_sp
+        h  = h0
+        call recon_set_initial_ice(h, href, zb, msk, -500.0_dp, sigma, DX)
+        call check(all(h(:,:) == merge(href, h0, sel)), "recon initial ice, sigma = 0: the reconstruction exactly in the "// &
+                   "selected cells, the rest as it was")
+        h = h0
+        call recon_set_initial_ice(h, href, zb, msk, -500.0_dp, 2.0_dp, DX)
+        call check(any(h(:,:) /= merge(href, h0, sel)) .and. maxval(h) < maxval(merge(href, h0, sel)), &
+                   "recon initial ice, sigma = 2 cells: smoothed")
+        h = 30.0_sp
+        h(1:NX:3,:) = 80.0_sp
+        h0 = h
+        call recon_remove_thin_float(h, mb, H_min)
+        call check(all(h == h0), "recon thin floating ice, H_min = 0: kept")
+        call recon_remove_thin_float(h, mb, 50.0_dp)
+        call check(all(h == merge(0.0_sp, h0, mb == 5 .and. h0 < 50.0_sp)) .and. any(h /= h0), &
+                   "recon thin floating ice, H_min = 50: floating ice below 50 m removed, grounded and thick kept")
+    end subroutine check_recon_initial
 
     subroutine write_recon_all(file)
         ! A synthetic reconstruction on GRL-16KM, as FesmData's IceHistory files: H_ice(x, y, time) with the time axis in

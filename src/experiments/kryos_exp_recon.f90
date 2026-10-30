@@ -7,10 +7,11 @@ module kryos_exp_recon
     !   1. the reconstruction's slice nearest recon_time of recon_var is Yelmo's reference ice
     !      thickness (bnd%H_ice_ref);
     !   2. the initial ice is that field where the bed is above recon_zb_min (default -500 m) and the
-    !      cell is in the recon_regions ("all": every cell, no regions file read), smoothed (Gaussian, sigma = 2 dx), the topography initialised from it
+    !      cell is in the recon_regions ("all": every cell, no regions file read), smoothed (Gaussian, sigma =
+    !      recon_smooth_sigma dx, default 2; <= 0: not smoothed), the topography initialised from it
     !      (yelmo_init_topo, load_topo = .false.);
-    !   3. a one-year fixed-topography equilibration, thin floating ice (mask_bed = 5, H < 50 m)
-    !      removed, another year;
+    !   3. a one-year fixed-topography equilibration, thin floating ice (mask_bed = 5, H < recon_H_float_min,
+    !      default 50 m; <= 0: kept) removed, another year;
     !   4. the reference ice thickness is the clean ice thickness (it drives the smb masks);
     !   5. the ice's INSTANT exports are published (yelmo_ice_publish), the domain's boundary
     !      refreshed (domain_refresh_boundary: hub, climate, surface, surface -> ice, prepare);
@@ -35,7 +36,7 @@ module kryos_exp_recon
     implicit none
 
     private
-    public :: recon_exp_t
+    public :: recon_exp_t, recon_set_initial_ice, recon_remove_thin_float
 
     integer, parameter :: LEN_EXPR = 1000
 
@@ -45,6 +46,8 @@ module kryos_exp_recon
         real(dp) :: time = 0.0_dp                       ! [yr] model time of the state (nearest slice)
         character(len=LEN_EXPR) :: regions = ""         ! where its ice is imposed (a regions selection, or "all")
         real(dp) :: zb_min = -500.0_dp                  ! [m] its ice is imposed where z_bed > zb_min
+        real(dp) :: smooth_sigma = 2.0_dp               ! [grid cells] Gaussian smoothing of the initial ice (<= 0: none)
+        real(dp) :: H_float_min = 50.0_dp               ! [m] floating ice thinner than this is removed after year 1 (<= 0: kept)
         logical, allocatable :: mask_recon(:,:)         ! the same on the ice grid
         character(len=PATH_LEN) :: par_file = ""        ! (yelmo_init_topo reads its group from the par file)
     contains
@@ -70,9 +73,15 @@ contains
         call config_read(ctx%cfg, ctx%instance, "recon_time",    self%time,    tmpl, extra)
         call config_read(ctx%cfg, ctx%instance, "recon_regions", self%regions, tmpl, extra)
         call config_read(ctx%cfg, ctx%instance, "recon_zb_min",  self%zb_min,  tmpl, extra)
+        call config_read(ctx%cfg, ctx%instance, "recon_smooth_sigma", self%smooth_sigma, tmpl, extra)
+        call config_read(ctx%cfg, ctx%instance, "recon_H_float_min",  self%H_float_min,  tmpl, extra)
         if (len_trim(self%path) == 0 .or. len_trim(self%var) == 0 .or. len_trim(self%regions) == 0) then
             call fesm_error(proc, "experiment `"//trim(self%name)//"` needs recon_path, recon_var and recon_regions", &
                             "group &"//trim(ctx%instance)//" of "//trim(ctx%par_file))
+        end if
+        if (self%smooth_sigma > 0.0_dp .and. self%smooth_sigma < 1.0_dp) then       ! (smooth_gauss_2D needs f_sigma >= 1)
+            call fesm_error(proc, "experiment `"//trim(self%name)//"`: recon_smooth_sigma must be 0 (no smoothing) or >= 1 grid cell", &
+                            "recon_smooth_sigma = "//to_str(self%smooth_sigma)//", group &"//trim(ctx%instance)//" of "//trim(ctx%par_file))
         end if
         if (.not. allocated(dom%ice%c)) then
             call fesm_error(proc, "experiment `"//trim(self%name)//"` needs an ice instance", &
@@ -128,13 +137,13 @@ contains
             call nc_read(trim(self%path), trim(self%var), c%ylmo%bnd%H_ice_ref, start=[1,1,k], count=[nx,ny,1])
 
             ! initial ice: the reconstruction on the regions, smoothed; the topography from it
-            where (c%ylmo%bnd%z_bed > real(self%zb_min, sp) .and. self%mask_recon) c%ylmo%tpo%now%H_ice = c%ylmo%bnd%H_ice_ref
-            call smooth_gauss_2D(c%ylmo%tpo%now%H_ice, dx=real(c%ylmo%grd%G%dx, sp), f_sigma=2.0_sp)
+            call recon_set_initial_ice(c%ylmo%tpo%now%H_ice, c%ylmo%bnd%H_ice_ref, c%ylmo%bnd%z_bed, self%mask_recon, &
+                                       self%zb_min, self%smooth_sigma, real(c%ylmo%grd%G%dx, sp))
             call yelmo_init_topo(c%ylmo, trim(self%par_file), c%ylmo%par%nml_init_topo, st%t1, load_topo=.false.)
 
             ! update the surface topography (fixed H), remove thin floating ice, update again
             call yelmo_update_equil(c%ylmo, st%t1, time_tot=1.0_sp, dt=1.0_sp, topo_fixed=.true.)
-            where (c%ylmo%tpo%now%mask_bed == 5 .and. c%ylmo%tpo%now%H_ice < 50.0_sp) c%ylmo%tpo%now%H_ice = 0.0_sp
+            call recon_remove_thin_float(c%ylmo%tpo%now%H_ice, c%ylmo%tpo%now%mask_bed, self%H_float_min)
             call yelmo_update_equil(c%ylmo, st%t1, time_tot=1.0_sp, dt=1.0_sp, topo_fixed=.true.)
 
             ! the clean thickness is the reference state (drives the smb masks)
@@ -151,6 +160,30 @@ contains
             c%ylmo%dyn%par%beta_min = beta_min_save
         end select
     end subroutine recon_hook
+
+    subroutine recon_set_initial_ice(H_ice, H_ref, z_bed, mask, zb_min, sigma, dx)
+        ! The initial ice: the reconstruction `H_ref` where the bed is above zb_min [m] and `mask` holds (H_ice
+        ! elsewhere as it is), then smoothed with a Gaussian of `sigma` grid cells of size dx [m]; sigma <= 0: no
+        ! smoothing (the field is the reconstruction's exactly in the selected cells).
+        real(sp), intent(inout) :: H_ice(:,:)
+        real(sp), intent(in)    :: H_ref(:,:), z_bed(:,:), dx
+        logical,  intent(in)    :: mask(:,:)
+        real(dp), intent(in)    :: zb_min, sigma
+
+        where (z_bed > real(zb_min, sp) .and. mask) H_ice = H_ref
+        if (sigma > 0.0_dp) call smooth_gauss_2D(H_ice, dx=dx, f_sigma=real(sigma, sp))
+    end subroutine recon_set_initial_ice
+
+    subroutine recon_remove_thin_float(H_ice, mask_bed, H_min)
+        ! Floating ice (mask_bed = 5) thinner than H_min [m] is removed; H_min <= 0: nothing is.
+        real(sp), intent(inout) :: H_ice(:,:)
+        integer,  intent(in)    :: mask_bed(:,:)
+        real(dp), intent(in)    :: H_min
+
+        if (H_min > 0.0_dp) then
+            where (mask_bed == 5 .and. H_ice < real(H_min, sp)) H_ice = 0.0_sp
+        end if
+    end subroutine recon_remove_thin_float
 
     function recon_time_index(filename, time) result(k)
         ! Index of the slice of a reconstruction file nearest to the model time `time` [yr]. The

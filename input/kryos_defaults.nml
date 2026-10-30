@@ -141,6 +141,11 @@
                                                ! (every cell of the ice grid, no regions file read)
     recon_zb_min  = -500.0                     ! [m] the ice is imposed where z_bed > recon_zb_min (yelmox: -500; a very low value,
                                                ! e.g. -1e5, disables the filter: marine ice is kept)
+    recon_smooth_sigma = 2.0                   ! [grid cells] Gaussian smoothing of the initial ice (yelmox: 2 dx); 0 (or less):
+                                               ! no smoothing; otherwise >= 1. A start already smoothed (the science case:
+                                               ! PaleoMIST at 25 km) uses 0
+    recon_H_float_min  = 50.0                  ! [m] floating ice (mask_bed = 5) thinner than this is removed after the first
+                                               ! year of equilibration (yelmox: 50); 0 (or less): kept. The science case uses 0
 /
 
 &forcing_tsgen

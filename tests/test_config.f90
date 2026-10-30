@@ -155,6 +155,14 @@ contains
         call check(trim(s) == "all", "recon: regions 'all'")
         call config_read(cfg, "exp_recon_all", "recon_zb_min", x, "experiment", "experiment_recon")
         call check(x == -1.0e5_dp, "recon: set recon_zb_min")
+        call config_read(cfg, "exp_recon", "recon_smooth_sigma", x, "experiment", "experiment_recon")
+        call check(x == 2.0_dp, "recon: default recon_smooth_sigma = 2")
+        call config_read(cfg, "exp_recon", "recon_H_float_min", x, "experiment", "experiment_recon")
+        call check(x == 50.0_dp, "recon: default recon_H_float_min = 50")
+        call config_read(cfg, "exp_recon_all", "recon_smooth_sigma", x, "experiment", "experiment_recon")
+        call check(x == 0.0_dp, "recon: set recon_smooth_sigma = 0")
+        call config_read(cfg, "exp_recon_all", "recon_H_float_min", x, "experiment", "experiment_recon")
+        call check(x == 25.0_dp, "recon: set recon_H_float_min")
 
         ! integer, logical, vector
         call config_read(cfg, "clock", "ticks_per_year", i, "clock")
@@ -279,6 +287,8 @@ contains
         call check(stat == 1, "a key of another kind (cf_init in a relax group)")
         call config_validate_experiment(cfg, "exp_recon_badkey", backend, stat)
         call check(stat == 1, "a misspelt key in a recon group (recon_zbmin)")
+        call config_validate_experiment(cfg, "exp_recon_badkey2", backend, stat)
+        call check(stat == 1, "a misspelt key in a recon group (recon_smoothsigma)")
         call config_validate_experiment(cfg, "exp_nokind", backend, stat)
         call check(stat == 1, "experiment without kind key")
         call config_validate_experiment(cfg, "exp_emptykind", backend, stat)
@@ -387,6 +397,12 @@ contains
             '    kind          = "recon"', &
             '    recon_regions = "all"', &
             '    recon_zb_min  = -1.0e5', &
+            '    recon_smooth_sigma = 0.0', &
+            '    recon_H_float_min  = 25.0', &
+            '/', &
+            '&exp_recon_badkey2', &
+            '    kind         = "recon"', &
+            '    recon_smoothsigma = 0.0', &
             '/', &
             '&exp_recon_badkey', &
             '    kind         = "recon"', &
