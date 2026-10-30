@@ -9,6 +9,10 @@ module g2a_mod
     ! Writes kryos_out.nc (dz_bed, dz_ss [= VILMA2's, i.e. the export plus dphi], bsl, bsl_ive, dphi, C_ocn; record 0 =
     ! the seed after the spin-up, records n = after step n) and the inputs of the standalone run: g2a_force.nc (h_ice, time),
     ! g2a_ref.nc (z_bed_eq, h_ice_eq), vilma_g2a.nml (&ctl, &vilma = the science case set with the run's densities).
+    ! Orientation: everything here is on the host grid, latitude ascending (the exports, kryos_out.nc and the standalone
+    ! inputs); vilma.x reads the inputs on the Gauss grid (remap_input = .false.), reverses their rows by their lat axis into
+    ! VILMA2's layout (north first) and writes vilma_out.nc in that layout. The cap is northern and the viscosity (Bagge2021)
+    ! hemispherically asymmetric, so a mirrored layout on either side shows; g2a_compare.jl aligns the files by lat.
     ! The load of step n is the same field in both runs: the host terms I_g = H, w = 1 in the box and h_ice = H in the
     ! standalone run; the reference has no ice, the start slice is the cap of size 1 (so both spin up under it).
     ! Timings of the adapter calls go to stdout ("g2a:" lines). Compared by tools/levante/g2a_compare.jl.
