@@ -9,7 +9,7 @@ rd(ds, v) = Float64.(replace(Array(ds[v]), missing => NaN))
 function gather_log(f)
     gl = Dict{Float64,NamedTuple}()
     for l in eachline(f)
-        m = match(r"t = (\S+) yr, sea-level equivalent of the ice change \[m\]:(.*), external (\S+); clipped external ice (\S+) Gt; merge closure (\S+)", l)
+        m = match(r"t = (\S+) yr, sea-level equivalent of the ice change \[m\]:(.*), external (?:ice, all \(floating included\) )?(\S+); clipped external ice (\S+) Gt; merge closure (\S+)", l)
         m === nothing && continue
         parts = split(strip(m[2]))
         doms = Dict{String,Float64}(parts[i] => parse(Float64, parts[i+1]) for i in 1:2:length(parts)-1)

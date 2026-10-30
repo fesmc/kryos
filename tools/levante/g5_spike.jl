@@ -4,7 +4,7 @@ rd(ds, v) = Float64.(replace(Array(ds[v]), missing => NaN))
 r = ARGS[1]; t0 = parse(Float64, ARGS[2]); n = length(ARGS) > 2 ? parse(Int, ARGS[3]) : 5
 gl = Dict{Float64,NamedTuple}()
 for l in eachline(joinpath(r, "out.out"))
-    m = match(r"t = (\S+) yr, sea-level equivalent of the ice change \[m\]:(.*), external (\S+);", l)
+    m = match(r"t = (\S+) yr, sea-level equivalent of the ice change \[m\]:(.*), external (?:ice, all \(floating included\) )?(\S+);", l)
     m === nothing && continue
     p = split(strip(m[2])); d = Dict(p[j] => parse(Float64, p[j+1]) for j in 1:2:length(p)-1)
     gl[parse(Float64, m[1])] = (ant = get(d, "Antarctica", NaN), ext = parse(Float64, m[3]))
