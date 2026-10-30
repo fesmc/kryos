@@ -8,7 +8,9 @@
 #SBATCH --job-name=g2b
 # G2b: the mock-ice replay of PaleoMIST through the kryos globe and VILMA2 (tests/g2b_replay.f90, MODE=kryos) or the standalone vilma.x
 # on the same history (MODE=vilma). sbatch --export=ALL,LMAX=85,NSTEP=2100,MODE=kryos,TAG=l085 g2b.sh
-# Env: LMAX (170), NSTEP (2100), MODE (kryos|vilma), TAG, SPIN (1; 0: no spin-up, smoke), SHA (label of the harness), RATE_TOL (1e-5), TIME_MAX (2e4), NOUT (10).
+# Env: LMAX (170), NSTEP (2100), MODE (kryos|vilma), TAG, SPIN (1; 0: no spin-up, smoke), SHA (label of the harness), RATE_TOL (1e-5), TIME_MAX (2e4), NOUT (10),
+# FESM (the fesmdata folder; g2b_visc_mirror.sh makes one with the 3D viscosity mirrored north-south). The diagnosis runs used
+# -p shared, no --exclusive, --mem=24G, -t 01:10:00 (L85).
 # Run folder $G/runs/g2b/kx-$SHA/S9/$TAG/{kryos,vilma}. Workspace $G/p4g2b: kryos (a copy of the S9 checkout, library as built there, plus the harness),
 # vilma2 (a copy of the S9 clone, bin/vilma.x), data (g2b_prep.jl), maps (writable; the S6 maps linked, the Gauss maps of each lmax made once).
 set -uo pipefail
@@ -19,7 +21,8 @@ OUT=$G/runs/g2b/kx-$SHA/S9/$TAG/$MODE
 mkdir -p $OUT/input; cd $OUT
 for f in $S/yelmox/input/*; do ln -sf $f input/; done
 for f in $K/input/*; do ln -sf $f input/; done
-for d in fesmdata ice_data isostasy_data; do ln -s /work/ba1442/$d $d; done
+for d in ice_data isostasy_data; do ln -s /work/ba1442/$d $d; done
+ln -s ${FESM:-/work/ba1442/fesmdata} fesmdata
 ln -s $K/fesm-utils fesm-utils
 export OMP_NUM_THREADS=64 OMP_PROC_BIND=spread OMP_PLACES=cores OMP_STACKSIZE=512M
 ulimit -s unlimited
