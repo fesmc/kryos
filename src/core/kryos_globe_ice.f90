@@ -74,7 +74,16 @@ module kryos_globe_ice
     real(dp), parameter :: KG_TO_GT = 1.0e-12_dp         ! kg -> Gt
     real(dp), parameter :: BOUND_TOL = 1.0e-9_dp         ! slack of the bounds of host_C, host_w
     real(dp), parameter :: W_TOL = 1.0e-12_dp            ! the coverage of a step against the reference
-    real(dp), parameter :: HUB_TOL = 1.0e-12_dp          ! closure of the hub's merged reference and ice (gate G1b (2))
+    ! Closure of the hub's merged reference and ice (gate G1b (2)). The conservative maps are exact to the round-off of
+    ! their polygon areas, not of the machine: 2.6e-10 at the reference and 1.5e-10 for the ice of the science case
+    ! (NH-32KM, ANT-32KM onto GLOBAL-0.5DEG), so the bound is 1e-9, as the closure of a gather (`cons_tol`).
+    real(dp), parameter :: HUB_TOL = 1.0e-9_dp
+    ! Producer side of the host terms (phase4-plan 4.5): the coverage w of the host region and the ocean fraction C come
+    ! out of the same conservative maps and exceed their bounds [0, 1] and [0, w] by the round-off of those maps (w =
+    ! 1 + 2.8e-9 at the polar row of GAUSS-L170 for ANT-32KM). VILMA2 admits 1e-9 and stops beyond it, so the merge clips
+    ! w to [0, 1] and C to [0, w] and logs the largest excess; an excess above HOST_CLIP_TOL is not round-off (overlapping
+    ! footprints, a wrong map) and stops the run.
+    real(dp), parameter :: HOST_CLIP_TOL = 1.0e-6   ! [1] largest excess of host_w or host_C that is clipped (round-off of the maps)
 
     type, public :: gi_domain_t                          ! one registered domain
         character(len=GI_NAME_LEN) :: name = ""          ! the domain
@@ -111,6 +120,7 @@ module kryos_globe_ice
         real(dp) :: cons_I = 0.0_dp, cons_ext = 0.0_dp   ! relative closure of the two merges
         real(dp) :: a_ocn_ref = 0.0_dp                   ! ocean area of the reference [m2]
         real(dp) :: hub_ref = 0.0_dp, hub_ice = 0.0_dp   ! relative closure of the hub's spliced reference, of its merged ice
+        real(dp) :: clip_w = 0.0_dp, clip_C = 0.0_dp     ! largest excess of host_w over [0, 1], of host_C over [0, host_w] (clipped)
     end type gi_diag_t
 
     type, public :: globe_ice_t
@@ -149,7 +159,7 @@ module kryos_globe_ice
     public :: globe_ice_init, globe_ice_add_domain, globe_ice_end
     public :: globe_ice_reference_begin, globe_ice_reference_add, globe_ice_reference_end
     public :: globe_ice_gather_begin, globe_ice_gather_add, globe_ice_gather_end
-    public :: globe_ice_hub_merge, globe_ice_write
+    public :: globe_ice_hub_merge, globe_ice_write, host_clip, HOST_CLIP_TOL
 
 contains
 
@@ -691,6 +701,7 @@ contains
         gi%host_Ig_ref = tmp
         call coupler_merge_end(gi%acc_C, cpl, zero, tmp, frac_tot=wtmp, overlap_tol=gi%overlap_tol)
         gi%host_C_ref = tmp
+        call clip_host(gi, gi%host_w, gi%host_C_ref, "the reference", proc)
         call check_host(gi, gi%host_Ig_ref, gi%host_C_ref, gi%host_w, "the reference", proc)
 
         call coupler_merge_end(gi%acc_zs, cpl, gi%z_bed_X, tmp, frac_tot=gi%cov_bg, overlap_tol=gi%overlap_tol)
@@ -855,6 +866,7 @@ contains
         gi%host_C = tmp
         call coupler_merge_end(gi%acc_F, cpl, zero, tmp, frac_tot=wf, overlap_tol=gi%overlap_tol)
         gi%host_F = tmp
+        call clip_host(gi, w, gi%host_C, "the gather at t = "//to_str(gi%t_load), proc, w_ref=gi%host_w)
 
         ! the coverage of the host region is fixed with the footprint (section 4.2)
         if (maxval(abs(w - gi%host_w)) > W_TOL) then
@@ -930,7 +942,7 @@ contains
         ! The ice of the last gather on the background grid: the domains' total ice
         ! merged (extensive, owner weights) into the external ice H_ext, and the
         ! coverage of the domains (at most 1). Stops when the merge does not
-        ! conserve the volume to 1e-12 (gate G1b (2)); logs the closure.
+        ! conserve the volume to HUB_TOL (gate G1b (2)); logs the closure.
         type(globe_ice_t),     intent(inout) :: gi
         type(coupler_class),   intent(inout) :: cpl
         real(dp), allocatable, intent(out)   :: H_hub(:,:)
@@ -1154,6 +1166,52 @@ contains
                             to_str(count(.not. ieee_is_finite(a) .or. a == mv_dp))//" cells")
         end if
     end subroutine check_bg
+
+    subroutine host_clip(w, C, xw, xc, ok, w_ref)
+        ! w to [0, 1] and C to [0, w] (w_ref: the coverage C is bounded by, when it is not w itself, as the clipped coverage
+        ! of the reference at a gather), the largest excess in xw, xc. Beyond HOST_CLIP_TOL nothing is changed and ok is .false.
+        real(dp), intent(inout) :: w(:,:), C(:,:)
+        real(dp), intent(out)   :: xw, xc
+        logical,  intent(out)   :: ok
+        real(dp), intent(in), optional :: w_ref(:,:)
+
+        xw = max(0.0_dp, maxval(w - 1.0_dp), maxval(-w))
+        if (present(w_ref)) then
+            xc = max(0.0_dp, maxval(C - w_ref), maxval(-C))
+        else
+            xc = max(0.0_dp, maxval(C - min(max(w, 0.0_dp), 1.0_dp)), maxval(-C))
+        end if
+        ok = xw <= HOST_CLIP_TOL .and. xc <= HOST_CLIP_TOL
+        if (.not. ok) return
+        w = min(max(w, 0.0_dp), 1.0_dp)
+        if (present(w_ref)) then
+            C = min(max(C, 0.0_dp), w_ref)
+        else
+            C = min(max(C, 0.0_dp), w)
+        end if
+    end subroutine host_clip
+
+    subroutine clip_host(gi, w, C, what, proc, w_ref)
+        ! Producer side of the host terms: host_clip, the largest excess logged and kept in gi%diag, a stop above the bound.
+        type(globe_ice_t), intent(inout) :: gi
+        real(dp),          intent(inout) :: w(:,:), C(:,:)
+        character(len=*),  intent(in)    :: what, proc
+        real(dp),          intent(in), optional :: w_ref(:,:)
+
+        real(dp) :: xw, xc
+        logical  :: ok
+
+        call host_clip(w, C, xw, xc, ok, w_ref)
+        if (.not. ok) then
+            call fesm_error(proc, "host_w or host_C is outside its bounds in "//trim(what)//": excess of w "//to_str(xw)// &
+                            ", of C "//to_str(xc), "more than the round-off of the maps (HOST_CLIP_TOL "// &
+                            to_str(HOST_CLIP_TOL)//")")
+        end if
+        gi%diag%clip_w = xw
+        gi%diag%clip_C = xc
+        call log_msg(LOG_INFO, "kryos_globe_ice", "host terms of "//trim(what)//" clipped to [0, 1] and [0, w]: largest excess of w "// &
+                     to_str(xw)//", of C "//to_str(xc))
+    end subroutine clip_host
 
     subroutine check_host(gi, Ig, C, w, what, proc)
         ! finite; 0 <= C <= w; Ig >= 0; w <= 1 + tolerance (the restart of VILMA2 repeats it)

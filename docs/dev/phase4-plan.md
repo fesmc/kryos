@@ -438,7 +438,13 @@ spherical grids: 8e-5); in the interior they agree to round-off, and the merge c
 ### 4.5 Checks and logs (every gather)
 
 - finite; `0 ≤ host_C ≤ host_w + tol`; `host_Ig ≥ 0`; `host_w ≤ 1 + tol` (VILMA2's
-  `solid_earth_host_check` repeats it);
+  `solid_earth_host_check` repeats it, with its own 1e-9; it stays as it is). **Producer side**: the merge makes
+  `host_w` and `host_C` from conservative maps, whose weights are exact to the round-off of their polygon areas
+  (`host_w` = 1 + 2.8e-9 at the polar row of GAUSS-L170), not of the machine; the gather therefore clips `host_w` to
+  [0, 1] and `host_C` to [0, `host_w`] after the merge, logs the largest excess (`kryos_globe_ice`, every gather and
+  the reference), and stops if an excess exceeds `HOST_CLIP_TOL` = 1e-6 (named parameter in `kryos_globe_ice.f90`: that
+  is not round-off). The conservation of the hub's merged reference and ice is held to `HUB_TOL` = 1e-9 (observed
+  2.6e-10 reference, 1.5e-10 ice), the same bound as the closure of a gather;
 - conservation: `∫ host_Ig dA` on the Gauss grid (`coupler_integral`) against `Σ_d ∫ m·H·f_g dA`
   and the external part on the source grids, relative difference ≤ 1e-9 (merge exactness);
 - per domain and external: grounded ice volume and its sea-level equivalent
@@ -513,7 +519,7 @@ ice-to-ice map is needed for disjoint domains); domains without priority must no
 stops naming them). The file variables are `z_bed_ref`, `H_ice_ref` (the spliced reference, static),
 `cov` (owned coverage, at most 1), `H_ice` and `t_load` (one record per output); the table is
 `input/kryos-variables-globe_ice.md`. The hub's merged reference and ice are checked against the
-background outside the domains plus the owned ice of the domains (1e-12, logged at the reference and at
+background outside the domains plus the owned ice of the domains (1e-9, logged at the reference and at
 every write); `tools/bin/kryos-globe-ice.jl` recomputes the merge offline from the coupler's map files.
 
 ## 6. Scatter
@@ -824,7 +830,7 @@ kryos self-baselines `K3-sci` (fastiso side) and, once G4 passes, `K4-*` (regist
   nor (bitwise, or the listed differences); `H_ice_pd == dta%pd%H_ice`; `footprint` == `mask_ice /=
   NONE`.
 - `test_globe_ice` also covers the hub (§5.4): coverage and owner weights with two fake overlapping
-  domains, the merged reference and ice conserve volume (1e-12), `globe_ice.nc` read back equals
+  domains, the merged reference and ice conserve volume (1e-9), `globe_ice.nc` read back equals
   the offline merge, domain-order swap bit-identical.
 - Precision (§9.1): `test_outfile` rounding on a Gauss-grid variable (within tolerance, lossless
   switch restores exact), VILMA2's `test_io_prec` (rounded diagnostics, restart exact, Q13).
@@ -839,11 +845,11 @@ kryos self-baselines `K3-sci` (fastiso side) and, once G4 passes, `K4-*` (regist
 |---|---|---|
 | G0 | S5 builds with `vilma=1` and `vilma=0`; `make check` passes both | builds, tests (the vilma tests skipped when off) |
 | G1 | no regression: K(S5, `vilma=1`, fastiso configs) == K(S4) for grl, ant, ant-full, nor **and `K3-sci`** (the phase 3 `sci` and `sci-const` files and bundles at 1000, P9; no yelmox baseline); the `dphi` change and the split cold-start loop are bit-neutral | bit identical |
-| G1b | **hub, observer-only**: the phase 3 `sci` run (two domains, fastiso, S5 binary) with `[globe_ice]` set (§5.4): (1) bit-identical to the run without it; (2) merged reference and ice conserve volume (`coupler_integral` against the domains' ice and the background outside the footprints, 1e-12 relative, logged at init and every output); (3) `cont2` determinism and domain-order swap bit-identical; (4) `globe_ice.nc` equals the merge computed offline (Julia, `KryosTools`) | (1), (3) bit identical; (2) 1e-12; (4) equal |
+| G1b | **hub, observer-only**: the phase 3 `sci` run (two domains, fastiso, S5 binary) with `[globe_ice]` set (§5.4): (1) bit-identical to the run without it; (2) merged reference and ice conserve volume (`coupler_integral` against the domains' ice and the background outside the footprints, 1e-9 relative, the round-off of the conservative maps: observed 2.6e-10 and 1.5e-10; logged at init and every output); (3) `cont2` determinism and domain-order swap bit-identical; (4) `globe_ice.nc` equals the merge computed offline (Julia, `KryosTools`) | (1), (3) bit identical; (2) 1e-9; (4) equal |
 | G2a | **VILMA2 standalone vs kryos, same load**, analytic: a grounded land-ice cap (no coast in the host region), mock ice; the standalone driver `vilma.x` on the Gauss-grid load vs `geo_glob` | `dz_bed`, `dz_ss`, `bsl` equal to the remap accuracy (proposed 1e-6 relative; set after the first run) |
 | G2b | same, realistic: mock ice replaying a PaleoMIST deglaciation on the NH and ANT grids vs VILMA2 standalone on the same history. Differences are the host-resolved flotation: reported against `lmax` 85, 128, 170; not an equality gate | difference falls with `lmax` (convergence report), `bsl` within a proposed 2%; thresholds set from the report |
 | G2c | **spin-up** (Q7): the 80 ka cold start with `equil_time_max` = 0 and a few values (and `equil_rate_tol`); reports per value the bed rate and `dz_bed` at the seed, the drift of `dz_bed` over the first intervals, the spin-up cost | `equil_time_max` chosen from the report (Alex) |
-| G3 | **mass and `bsl` budgets** per step: (i) merge conservation (§4.5), (ii) VILMA2 `mass_resid` ≤ `sle_tol`-level, (iii) `∫ C·rsl dA = −(ρ_i/ρ_w) ∫ ΔI_g dA + ∫ F dA` recomputed by kryos from the exports and the gathered terms, (iv) `bsl_ive` against the sea-level equivalent of the Yelmo grounded-ice change, (v) `A_ocn_ref` against 3.62e14 m² | (i) 1e-9, (iii) 1e-6 relative; (ii), (iv), (v) reported with the proposed bounds 1e-6, 1%, 1% |
+| G3 | **mass and `bsl` budgets** per step: (i) merge conservation (§4.5), (ii) VILMA2 `mass_resid` ≤ `sle_tol`-level, (iii) `∫ C·rsl dA = −(ρ_i/ρ_w) ∫ ΔI_g dA + ∫ F dA` recomputed by kryos from the exports and the gathered terms (`F` the host part and the own part's fill, which VILMA2 exports as its fill integral), (iv) `bsl_ive` against the sea-level equivalent of the Yelmo grounded-ice change, compared **as volumes** (`bsl_ive·A_ocn` of VILMA2's solve against the equivalent times the sea surface area of the constants; as sea levels they differ by the change of the ocean area, 3.4 % at an LGM load), (v) `A_ocn_ref` against 3.62e14 m² | (i) 1e-9, (iii) 1e-6 relative; (iv) 1e-5 as volumes (observed 4.3e-7); (ii), (v) reported with the proposed bounds 1e-6, 1%. Until VILMA2's fill integral lands, (iii) is reported as the match of the recomputed term with VILMA2's `bsl_ive·A_ocn` (observed 8e-8) |
 | G4 | **chunk == cont**: harness (mock ice, 2 + 2 steps vs 4, bundles and files) and the science case on Levante (`cont`, `cont2`, `chunk`, `kryos-compare --chunks`, 200-500 yr), including `geo_glob_restart.nc`; precondition `cont2 == cont`; and the rounding check of §9.1: a rounded and a lossless run give identical restarts, max error / tolerance ≤ 1 on every rounded output variable | bit identical, as phase 1 and 2 |
 | G5 | **ANT deglaciation**: `yelmox_Antarctica` base with VILMA2 global, NH as external PaleoMIST only (one active Yelmo domain), over a transient window with a large ESL change (21 → 0 ka if the base forcing allows; to be settled in WP0's data check); checks: signs and magnitudes of `dz_bed` (uplift under loss), G3 budgets, `bsl` against the ESL of the ANT ice change; **documented-difference report** against the same run with `geo = fastisostasy` (different Earth, far field, rotation) and a VILMA2 standalone replay of the recorded ANT load | budgets pass; the report is read by Alex |
 | G6 | science case smoke: both domains active (NH-32KM + ANT), climate and surface from snapshots + tsgen + chion, and again with `smb_simple`; ≥ 2 kyr of the `sci` configuration with `geo = vilma2`; no stop, G3 each step, restart at the middle; drift report against `K3-sci` (the fastiso `sci` files over their 1 kyr) | stable, budgets, report |

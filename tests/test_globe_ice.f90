@@ -91,7 +91,7 @@ program test_globe_ice
     use kryos_globe_ice, only: globe_ice_t, globe_ice_init, globe_ice_add_domain, globe_ice_end, &
                                globe_ice_reference_begin, globe_ice_reference_add, globe_ice_reference_end, &
                                globe_ice_gather_begin, globe_ice_gather_add, globe_ice_gather_end, &
-                               globe_ice_hub_merge, globe_ice_write
+                               globe_ice_hub_merge, globe_ice_write, host_clip, HOST_CLIP_TOL
     use test_gi_toy,     only: toy_ice_t, RHO_I, RHO_SW
 
     implicit none
@@ -132,6 +132,7 @@ program test_globe_ice
     call test_order()
     call test_owners()
     call test_hub()
+    call test_host_clip()
     call test_no_domains()
     call test_wgs84()
     call test_stops()
@@ -959,6 +960,33 @@ contains
         if (es /= 0) call execute_command_line("cat "//DIR//"offline.log")
         call check(what, es == 0)
     end subroutine run_julia
+
+    subroutine test_host_clip()
+        ! the producer side of the host terms: map round-off beyond [0, 1] and [0, w] is clipped and measured, more is refused
+        real(dp) :: w(3,2), C(3,2), wr(3,2), xw, xc
+        logical  :: ok
+
+        write(*,"(a)") "host_clip"
+        w = 0.5_dp; w(1,1) = 1.0_dp + 2.8e-9_dp; w(2,1) = -3.0e-10_dp
+        C = 0.25_dp; C(1,1) = 1.0_dp + 2.8e-9_dp; C(3,2) = 0.5_dp + 4.0e-9_dp; C(2,1) = -2.0e-10_dp
+        call host_clip(w, C, xw, xc, ok)
+        call check("round-off is clipped: w in [0, 1]", ok .and. all(w >= 0.0_dp) .and. all(w <= 1.0_dp) .and. w(1,1) == 1.0_dp)
+        call check("the largest excess of w is returned", abs(xw - 2.8e-9_dp) < 1.0e-15_dp)
+        call check("C in [0, w]", all(C <= w) .and. all(C >= 0.0_dp))
+        w = 0.5_dp; C = 0.5_dp + 1.0e-8_dp; C(2,2) = -1.0e-8_dp
+        call host_clip(w, C, xw, xc, ok)
+        call check("C above w and below 0 by 1e-8 is clipped, the excess is 1e-8", ok .and. all(C <= w) .and. all(C >= 0.0_dp) &
+                   .and. abs(xc - 1.0e-8_dp) < 1.0e-15_dp .and. xw == 0.0_dp)
+        wr = 0.4_dp; w = 0.4_dp + 1.0e-9_dp; C = 0.4_dp + 1.0e-9_dp
+        call host_clip(w, C, xw, xc, ok, w_ref=wr)
+        call check("against the reference's coverage: C is bounded by it", ok .and. all(C == wr))
+        w = 1.0_dp + 10.0_dp*HOST_CLIP_TOL; C = 0.0_dp
+        call host_clip(w, C, xw, xc, ok)
+        call check("an excess of w above the bound is refused and nothing changes", .not. ok .and. all(w == 1.0_dp + 10.0_dp*HOST_CLIP_TOL))
+        w = 0.5_dp; C = 0.5_dp + 10.0_dp*HOST_CLIP_TOL
+        call host_clip(w, C, xw, xc, ok)
+        call check("an excess of C above the bound is refused", .not. ok)
+    end subroutine test_host_clip
 
     subroutine test_no_domains()
         ! No domain: the host terms are zero, the reference is X, the ocean area is the background's.
