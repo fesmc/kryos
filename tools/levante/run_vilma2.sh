@@ -7,7 +7,7 @@
 # The node is exclusive (VILMA2 at lmax 170 needs 20-25 GB); OMP_PROC_BIND=spread. The extra args are set in the par file
 # (existing keys only: clock.time_init, clock.time_end, geo_glob.out_gia, ...).
 set -euo pipefail
-G=/work/ba1442/robinson/kryos-gate; S=$G/stacks/S6; K=${K:-$S/kryos}; STACK=S6
+G=/work/ba1442/robinson/kryos-gate; S=$G/stacks/${STK:-S6}; K=${K:-$S/kryos}; STACK=${STK:-S6}
 GATE=$1; RUN=$2; shift 2
 MAPS=${MAPS:-$G/maps/S6}; PAR=${PAR:-par/kryos_NH-ANT_vilma2.nml}; THREADS=${THREADS:-64}; JOBTIME=${JOBTIME:-02:00:00}
 PART=${PART:-compute}

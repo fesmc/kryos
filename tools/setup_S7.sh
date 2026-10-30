@@ -1,6 +1,6 @@
 #!/bin/bash -l
 # Stack S7 = S6 + fesm-utils phase0-kryos f30d952 (conservative_planar: own arrays in the candidate pre-pass, ifx; every dependent
-# package is rebuilt) + vilma2 main 2676879 (libvilma.a, openmp variant, rebuilt) + kryos at the head of p4-wp7 (test fixes, host_w and
+# package is rebuilt) + vilma2 main d2006c8 (exact restarts after the 1-D pre-spin-up, fill_int; libvilma.a, openmp variant, rebuilt; the first setup run was at 2676879 and the stack was moved to d2006c8 with a clean and rebuild of vilma2 and kryos) + kryos at the head of p4-wp7 (test fixes, host_w and
 # host_C clipped in the merge, HUB_TOL 1e-9, the science par file), from a bundle (not pushed): $G/p4w7/p4wp7-full.bundle (KBRANCH).
 # yelmox R2' (topo-prep 5ac89c8, rembo=1) is rebuilt into $G/stacks/S7/bin/R2.
 # kryos has two checkouts in the stack, both linked to S7 and built with the gate flags:
@@ -12,7 +12,7 @@
 set -euo pipefail
 G=/work/ba1442/robinson/kryos-gate
 S=$G/stacks/S7; R=$S/yelmox; GF="-O2 -fp-model precise -march=znver3 -traceback"
-FU=f30d952; VIL=2676879; YX=5ac89c8; KBRANCH=p4-wp7; KB=$G/p4w7/p4wp7-full.bundle
+FU=f30d952; VIL=d2006c8; YX=5ac89c8; KBRANCH=p4-wp7; KB=$G/p4w7/p4wp7-full.bundle
 CM="env PYTHONPATH=$G/tools/configme-src/src python3 -m configme"
 exec > >(tee "$G/stacks/s7-setup.log") 2>&1
 echo "== $(date -Is) copy S6 -> S7"

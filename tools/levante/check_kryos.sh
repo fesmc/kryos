@@ -11,7 +11,7 @@
 set -uo pipefail
 module load python3 >/dev/null 2>&1 || true
 export PATH=$HOME/.juliaup/bin:$HOME/.local/bin:$PATH
-G=/work/ba1442/robinson/kryos-gate; S=$G/stacks/S6; GF="-O2 -fp-model precise -march=znver3 -traceback"
+G=/work/ba1442/robinson/kryos-gate; S=$G/stacks/${STK:-S6}; GF="-O2 -fp-model precise -march=znver3 -traceback"
 export JULIA_DEPOT_PATH=$G/julia-depot KRYOS_TOOLS=$G/p4w7/kryos/tools OMP_NUM_THREADS=16 OMP_STACKSIZE=256M
 ulimit -s unlimited
 D=$S/kryos; [ "${V:-1}" = 0 ] && D=$S/kryos-v0
