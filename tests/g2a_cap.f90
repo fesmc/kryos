@@ -9,6 +9,11 @@ module g2a_mod
     ! Writes kryos_out.nc (dz_bed, dz_ss [= VILMA2's, i.e. the export plus dphi], bsl, bsl_ive, dphi, C_ocn; record 0 =
     ! the seed after the spin-up, records n = after step n) and the inputs of the standalone run: g2a_force.nc (h_ice, time),
     ! g2a_ref.nc (z_bed_eq, h_ice_eq), vilma_g2a.nml (&ctl, &vilma = the science case set with the run's densities).
+    ! Orientation: everything here is on the host grid, latitude ascending (the exports, kryos_out.nc and the standalone
+    ! inputs); vilma.x reads the inputs on the Gauss grid (remap_input = .false.), reverses their rows by their lat axis into
+    ! VILMA2's layout (north first) and writes vilma_out.nc in that layout. The cap is northern and the viscosity (Bagge2021)
+    ! hemispherically asymmetric, so a mirrored layout on either side shows; g2a_compare.jl aligns the files by lat.
+    ! Also the independent variant on a 0.5 degree lon-lat grid that vilma.x remaps itself (write_standalone_inputs_ll).
     ! The load of step n is the same field in both runs: the host terms I_g = H, w = 1 in the box and h_ice = H in the
     ! standalone run; the reference has no ice, the start slice is the cap of size 1 (so both spin up under it).
     ! Timings of the adapter calls go to stdout ("g2a:" lines). Compared by tools/levante/g2a_compare.jl.
@@ -96,24 +101,36 @@ contains
     call geo_end(glob)
     call write_outputs()
     call write_standalone_inputs()
+    call write_standalone_inputs_ll()
 
     end subroutine run
 
 
     real(dp) function cap(k, i, j)
         integer, intent(in) :: k, i, j
+        cap = cap_at(k, lon(i,j), lat(i,j))
+    end function cap
+
+    real(dp) function cap_at(k, lo, la) result(cap)
+        integer,  intent(in) :: k
+        real(dp), intent(in) :: lo, la
         real(dp) :: a, b, dl, d
-        a = lat(i,j)*pi/180.0_dp; b = CLAT*pi/180.0_dp; dl = (lon(i,j) - CLON)*pi/180.0_dp
+        a = la*pi/180.0_dp; b = CLAT*pi/180.0_dp; dl = (lo - CLON)*pi/180.0_dp
         d = acos(max(-1.0_dp, min(1.0_dp, sin(a)*sin(b) + cos(a)*cos(b)*cos(dl))))*180.0_dp/pi
         cap = H0*(1.0_dp + 0.25_dp*real(k, dp))*max(0.0_dp, 1.0_dp - d/RC)
-    end function cap
+    end function cap_at
+
+    logical function in_box(lo, la)
+        real(dp), intent(in) :: lo, la
+        in_box = lo >= BOX(1) .and. lo <= BOX(2) .and. la >= BOX(3) .and. la <= BOX(4)
+    end function in_box
 
     subroutine terms()
         integer :: i, j, n
         w = 0.0_dp; z_ref = -3000.0_dp
         do j = 1, NLAT
             do i = 1, NPHI
-                if (lon(i,j) >= BOX(1) .and. lon(i,j) <= BOX(2) .and. lat(i,j) >= BOX(3) .and. lat(i,j) <= BOX(4)) then
+                if (in_box(lon(i,j), lat(i,j))) then
                     w(i,j) = 1.0_dp; z_ref(i,j) = 500.0_dp
                 end if
             end do
@@ -245,6 +262,53 @@ contains
         write(u,'(a)') "/"
         close(u)
     end subroutine write_standalone_inputs
+
+    subroutine write_standalone_inputs_ll()
+        ! The independent variant: the same analytic load and reference on a regular 0.5 degree lon-lat grid (latitude
+        ! ascending, longitudes from -180), which vilma.x remaps itself (remap_input = .true.; conservative onto its Gauss grid,
+        ! cached in maps/): g2a_force_ll.nc, g2a_ref_ll.nc, vilma_g2a_ll.nml (output vilma_out_ll.nc). Not bit-comparable: the
+        ! load differs by the remap error (g2a_compare.jl --ll takes the tolerance from it).
+        integer, parameter :: NLO = 720, NLA = 360
+        character(len=*), parameter :: ff = "g2a_force_ll.nc", fr = "g2a_ref_ll.nc"
+        real(dp) :: xl(NLO), yl(NLA)
+        real(dp), allocatable :: zl(:,:), hl(:,:,:), zero_l(:,:)
+        integer :: i, j, n, u
+        allocate(zl(NLO,NLA), hl(NLO,NLA,0:nstep), zero_l(NLO,NLA))
+        do i = 1, NLO; xl(i) = -180.0_dp + 0.5_dp*(real(i, dp) - 0.5_dp); end do
+        do j = 1, NLA; yl(j) =  -90.0_dp + 0.5_dp*(real(j, dp) - 0.5_dp); end do
+        zero_l = 0.0_dp
+        do j = 1, NLA
+            do i = 1, NLO
+                zl(i,j) = merge(500.0_dp, -3000.0_dp, in_box(modulo(xl(i), 360.0_dp), yl(j)))
+                do n = 0, nstep
+                    hl(i,j,n) = cap_at(n, xl(i), yl(j))
+                end do
+            end do
+        end do
+        call nc_create(ff)
+        call nc_write_dim(ff, "lon", x=xl, units="degrees_east")
+        call nc_write_dim(ff, "lat", x=yl, units="degrees_north")
+        call nc_write_dim(ff, "time", x=tt, units="years", unlimited=.false.)
+        call nc_write(ff, "h_ice", hl, dim1="lon", dim2="lat", dim3="time", units="m")
+        call nc_create(fr)
+        call nc_write_dim(fr, "lon", x=xl, units="degrees_east")
+        call nc_write_dim(fr, "lat", x=yl, units="degrees_north")
+        call nc_write(fr, "bedrock_topography", zl, dim1="lon", dim2="lat", units="m")
+        call nc_write(fr, "ice_thickness", zero_l, dim1="lon", dim2="lat", units="m")
+        open(newunit=u, file="vilma_g2a_ll.nml", status="replace", action="write")
+        write(u,'(a)') "&ctl", ' file_forcing = "'//ff//'"', ' name_ice = "h_ice"', ' name_time = "time"', &
+            ' file_ref = ""', ' name_zbed_eq = "z_bed_eq"', ' name_hice_ref = "h_ice_ref"', ' file_out = "vilma_out_ll.nc"', &
+            ' file_hor = ""', " write_lossless = .true.", " time_init = -1.0e30", " time_end = 1.0e30", &
+            " remap_input = .true.", ' name_lon = "lon"', ' name_lat = "lat"', " i_eq = 2", ' z_bed_ref_file = ""', &
+            ' h_ice_ref_file = ""', ' z_bed_eq_file = "'//fr//'"', ' h_ice_eq_file = "'//fr//'"', ' rsl_restart_file = ""', &
+            ' name_z_bed_ref = "bedrock_topography"', ' name_h_ice_ref = "ice_thickness"', ' name_rsl = "rsl"', &
+            ' restart_in_file = ""', "/"
+        call vilma_group(u)
+        write(u,'(a,es24.16)') " rho_ice = ", ctx%cnst%rho_ice
+        write(u,'(a,es24.16)') " rho_water = ", ctx%cnst%rho_sw
+        write(u,'(a)') "/"
+        close(u)
+    end subroutine write_standalone_inputs_ll
 
 end module g2a_mod
 

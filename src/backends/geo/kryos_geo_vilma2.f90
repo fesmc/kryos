@@ -162,7 +162,7 @@ contains
     end subroutine params_check
 
     subroutine gauss_build(self, ctx)
-        ! plan 3.5: GAUSS-L<lmax> as VILMA2 builds it (grid_is_gauss compares to 1e-6 degree),
+        ! plan 3.5: GAUSS-L<lmax> as VILMA2 builds it (gauss_axes_rows compares to 1e-6 degree),
         ! longitudes from 0, a sphere of VILMA2's radius r_earth (the cell areas are the quadrature
         ! areas, so integrals over the grid are VILMA2's own).
         ! The description goes to <map_fldr>/grid_<name>.txt for the couplers; an existing file
@@ -289,7 +289,7 @@ contains
         if (self%se%remap) then
             call fesm_error("kryos_geo_vilma2::init_state", "VILMA2 does not take grid `"//trim(self%grid)// &
                             "` as its own Gauss grid", "instance "//trim(self%name)// &
-                            ": it built a remap (grid_is_gauss compares every axis value to 1e-6 degree)")
+                            ": it built a remap (gauss_axes_rows compares every axis value to 1e-6 degree)")
         end if
     end subroutine build_model
 
@@ -447,8 +447,10 @@ contains
 
     subroutine exports_state(self, t1)
         ! INSTANT at t1 (plan 3.1): dz_bed = u, dz_ss = N (VILMA2's dz_ss minus the uniform shift dphi),
-        ! mass_resid, then the diagnostics (exports_diagnostics). A_ocn = integral of C over VILMA2's sphere. At the reference (PASS_GEOMETRY)
-        ! this puts zeros and the reference ocean function.
+        ! mass_resid, then the diagnostics (exports_diagnostics). The fields are VILMA2's host-grid outputs
+        ! (on grid_obj, latitude ascending; VILMA2 reverses the rows of its Gauss-grid state), never se%gg.
+        ! A_ocn = integral of C over VILMA2's sphere (its Gauss-grid quadrature; independent of the row
+        ! order). At the reference (PASS_GEOMETRY) this puts zeros and the reference ocean function.
         class(vilma_earth_t), intent(inout) :: self
         real(dp),             intent(in)    :: t1
 
@@ -456,8 +458,8 @@ contains
 
         A_ocn = self%se%par%r_earth**2 * sht_grid_surface_integral(self%se%sht, self%se%gg%C)
         associate (se => self%se)
-            call fields_put(self%exports, self%h_dz_bed,     se%gg%dz_bed,               t1=t1)
-            call fields_put(self%exports, self%h_dz_ss,      se%gg%dz_ss - se%dphi,      t1=t1)
+            call fields_put(self%exports, self%h_dz_bed,     se%dz_bed,                  t1=t1)
+            call fields_put(self%exports, self%h_dz_ss,      se%dz_ss - se%dphi,         t1=t1)
             call fields_put(self%exports, self%h_dphi,       se%dphi,                    t1=t1)
             call fields_put(self%exports, self%h_bsl,        se%bsl,                     t1=t1)
             call fields_put(self%exports, self%h_A_ocn,      A_ocn,                      t1=t1)
@@ -473,7 +475,7 @@ contains
         class(vilma_earth_t), intent(inout) :: self
         real(dp),             intent(in)    :: t1
         associate (se => self%se)
-            call fields_put(self%exports, self%h_C_ocn,        se%gg%C,          t1=t1)
+            call fields_put(self%exports, self%h_C_ocn,        se%C,             t1=t1)
             call fields_put(self%exports, self%h_bsl_ive,      se%bsl_ive,       t1=t1)
             call fields_put(self%exports, self%h_bsl_ive_host, se%bsl_ive_host,  t1=t1)
         end associate

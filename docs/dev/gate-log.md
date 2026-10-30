@@ -659,3 +659,15 @@ G2c (10 runs, `equil_time_max` 0 to 2e4 yr x `equil_rate_tol` 1e-3, 1e-5): at 1e
 G5 (ANT only, 20 to 0 ka, 2000 steps, no stop, 1.7 node-h; FastIsostasy twice for the differences): the ANT base has no time-dependent forcing (paleo terms added as the yelmox ant-paleo `-p`); the ice grows (+28 m of sea level), not a deglaciation; gained cells subside (98-99 %), lost cells uplift from -12 ka (46 to 100 %); G3 (i) 1.3e-12, (ii) 2.4e-15, (iii) 1.6e-14, (v) +0.23 %; (iv) as volumes 1.7e-2 at -8 ka (bound 1e-5 met only after -5 ka).
 G6 on S8 (placeholder spin-up) and rerun on S9 with the chosen spin-up: 2 kyr from -80 ka, no stop, G3 each step passes ((iv) on the host part 5.8e-13), chunk == cont bit identical (3206 variables); smb_simple 1 kyr likewise (3014 variables) with `par/gate/g6-smb.nml` (the conversion note's `-p` list stops at `nml_validate`; note now points at the generator). Drift per kyr with the chosen spin-up: NH -0.5 m, ANT +2.05 m of sea level (K3-sci +3.7, +5.0). G2b not run (no harness yet).
 G7: VILMA2 cost 0.67 s + 0.175 s/yr x dt per call (proportional to simulated time), step 4.8 s at -80 ka, bundle 340 MB written in 21 s, rounded output 1.7 x smaller; proposals: geo cadence stays 10 yr, restart every 5 kyr; 80 kyr run about 14 node-h, at least three 8-h jobs, under 25 GB.
+
+## Phase 4, S11: VILMA2 row order (2026-10-31)
+
+Reports `gate-reports/p4-s11.md`, `gate-reports/p4-g2b.md`. Bug: the passthrough of kryos's Gauss grid (latitude ascending) into VILMA2's north-first state copied
+the rows unreversed, so the kryos side was mirrored consistently except the 3-D viscosity read in real geography (G2b diagnosis on S9: host NH `dz_bed` 51 m rms, flat with lmax;
+4 m with a mirrored viscosity file). vilma2 `host-orient` c17d513 (reversing passthrough both ways, `se%C`, the legacy reader by the lat axis; `test_host_orient`, `test_drive`),
+kryos `vilma-orient` (adapter on VILMA2's host-grid outputs; G2a lon-lat variant; S11 scripts), neither pushed. Stack S11 = S10 + c17d513 + kryos 3607918 (`tools/setup_S11.sh`).
+G0 PASS (check, check-long, vilma=0). G2a: equal spin-up <= 2.5e-14 after the seed, no spin-up 2.9e-10 (bound 1e-9); lon-lat variant within the load's remap error (1.8e-3 against 3.0e-3; mirrored 1.4).
+G2b: the difference falls with lmax, `bsl` 0.36-0.42 % of the range, `dz_bed` host NH 0.44-0.47 %, ANT 0.64-1.0 % of max; thresholds proposed. G3 (sci-vilma2, g6, g6-smb) all PASS ((iii) 1.6e-13 after aligning
+`g3_budget.jl` by lat). G4: cont2 == cont, chunk == cont (3200, bundles identical), rounding 0.977. G6: no stop, G3 each step, chunk == cont (3200; smb 3008); drift as S9 (NH -0.53, ANT +2.02 m per kyr).
+G2c: 1e-5 / 2e4 still converges (full phase 7 passes, 8.6 kyr, 0.87 tol; 39 min job against 55 on S8). VILMA2 restarts from before S11 are invalid. G5 and G7 predate the fix (G7's cost holds; G5 to be rerun).
+

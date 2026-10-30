@@ -21,7 +21,7 @@ program test_geo_vilma2
     !   * densities and r_earth: from the run's constants, not the keys;
     !   * init at the reference (exports zero, reference ocean function), spin-up (a no-op
     !     and pre_spinup_1d), the dt = 0 seed, three updates: every export bitwise equal to
-    !     solid_earth_* called with the same arrays (dz_ss as VILMA2's minus dphi);
+    !     solid_earth_* called with the same arrays (VILMA2's host-grid outputs; dz_ss as VILMA2's minus dphi);
     !   * restart round trip: write, rebuild at the reference, read, continue: bitwise;
     !   * the port copies its imports exactly, with their validity;
     !   * stops (child runs): a grid VILMA2 does not take as its own (se%remap), a grid file of
@@ -297,10 +297,10 @@ contains
         real(dp) :: a(NPHI,NLAT)
         logical :: ok
 
-        a = field(g, "dz_bed");  ok = all(a == d%gg%dz_bed)
-        a = field(g, "dz_ss");   ok = ok .and. all(a == d%gg%dz_ss - d%dphi)
-        a = field(g, "C_ocn");   ok = ok .and. all(a == d%gg%C)
-        call check(ok, what//": dz_bed, dz_ss (= VILMA2's minus dphi), C_ocn bitwise equal to the direct calls")
+        a = field(g, "dz_bed");  ok = all(a == d%dz_bed)
+        a = field(g, "dz_ss");   ok = ok .and. all(a == d%dz_ss - d%dphi)
+        a = field(g, "C_ocn");   ok = ok .and. all(a == d%C)
+        call check(ok, what//": dz_bed, dz_ss (= VILMA2's minus dphi), C_ocn bitwise equal to the direct calls' host-grid outputs")
         call check(scalar(g, "dphi") == d%dphi .and. scalar(g, "bsl") == d%bsl .and. &
                    scalar(g, "bsl_ive") == d%bsl_ive .and. scalar(g, "bsl_ive_host") == d%bsl_ive_host .and. &
                    scalar(g, "mass_resid") == d%worst_mass_resid, &
