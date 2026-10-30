@@ -20,7 +20,7 @@ module kryos_geo_vilma2
     use variable_io,     only: var_io_type, var_io_write
     use kryos_outfile,   only: outfile_dims_lonlat, outfile_open, outfile_row, outfile_table_file
     use kryos_component, only: init_ctx_t, step_time_t, constraints_t, NAME_LEN, PATH_LEN, &
-                               PASS_GEOMETRY, PASS_STATE, component_write_output
+                               PASS_GEOMETRY, PASS_STATE, PASS_RESTART, component_write_output
     use kryos_geo,       only: geo_t, geo_opt_t
     use vilma_params,    only: vilma_par_load
     use vilma_coupling,  only: solid_earth, solid_earth_init, solid_earth_update, solid_earth_spinup, &
@@ -238,8 +238,9 @@ contains
     subroutine earth_init_state_(self, st, pass)
         ! PASS_GEOMETRY: solid_earth_init at the reference, the exports at it. PASS_STATE
         ! (cold start): VILMA2's own spin-up under the t0 load, then the seed (dt = 0).
-        ! PASS_INIT and the others: nothing (PASS_RESTART: the bundle's exports stand,
-        ! restart_read ended with solid_earth_sync_host).
+        ! PASS_RESTART: the diagnostics C_ocn, bsl_ive, bsl_ive_host again (the
+        ! bundle's state exports stand; restart_read restored them in VILMA2 and
+        ! ended with solid_earth_sync_host). PASS_INIT and the others: nothing.
         class(vilma_earth_t), intent(inout) :: self
         type(step_time_t),    intent(in)    :: st
         integer,              intent(in)    :: pass
@@ -251,6 +252,9 @@ contains
         case (PASS_STATE)
             call spin_up_and_seed(self)
             call exports_state(self, st%t1)
+        case (PASS_RESTART)
+            call require_built(self, "init_state")
+            call exports_diagnostics(self, st%t1)
         end select
     end subroutine earth_init_state_
 
@@ -443,7 +447,7 @@ contains
 
     subroutine exports_state(self, t1)
         ! INSTANT at t1 (plan 3.1): dz_bed = u, dz_ss = N (VILMA2's dz_ss minus the uniform shift dphi),
-        ! the diagnostics. A_ocn = integral of C over VILMA2's sphere. At the reference (PASS_GEOMETRY)
+        ! mass_resid, then the diagnostics (exports_diagnostics). A_ocn = integral of C over VILMA2's sphere. At the reference (PASS_GEOMETRY)
         ! this puts zeros and the reference ocean function.
         class(vilma_earth_t), intent(inout) :: self
         real(dp),             intent(in)    :: t1
@@ -454,15 +458,26 @@ contains
         associate (se => self%se)
             call fields_put(self%exports, self%h_dz_bed,     se%gg%dz_bed,               t1=t1)
             call fields_put(self%exports, self%h_dz_ss,      se%gg%dz_ss - se%dphi,      t1=t1)
-            call fields_put(self%exports, self%h_C_ocn,      se%gg%C,                    t1=t1)
             call fields_put(self%exports, self%h_dphi,       se%dphi,                    t1=t1)
             call fields_put(self%exports, self%h_bsl,        se%bsl,                     t1=t1)
-            call fields_put(self%exports, self%h_bsl_ive,    se%bsl_ive,                 t1=t1)
-            call fields_put(self%exports, self%h_bsl_ive_host, se%bsl_ive_host,          t1=t1)
             call fields_put(self%exports, self%h_A_ocn,      A_ocn,                      t1=t1)
             call fields_put(self%exports, self%h_mass_resid, se%worst_mass_resid,        t1=t1)
         end associate
+        call exports_diagnostics(self, t1)
     end subroutine exports_state
+
+    subroutine exports_diagnostics(self, t1)
+        ! INSTANT at t1, the diagnostics (restart = .false.): C_ocn, bsl_ive,
+        ! bsl_ive_host. Also on PASS_RESTART, from the state vilma_restart_read
+        ! restored (mass_resid, the solve's residual, is state).
+        class(vilma_earth_t), intent(inout) :: self
+        real(dp),             intent(in)    :: t1
+        associate (se => self%se)
+            call fields_put(self%exports, self%h_C_ocn,        se%gg%C,          t1=t1)
+            call fields_put(self%exports, self%h_bsl_ive,      se%bsl_ive,       t1=t1)
+            call fields_put(self%exports, self%h_bsl_ive_host, se%bsl_ive_host,  t1=t1)
+        end associate
+    end subroutine exports_diagnostics
 
     subroutine require_built(self, what)
         class(vilma_earth_t), intent(in) :: self
@@ -504,7 +519,8 @@ contains
 
     subroutine port_init_state_(self, st, pass)
         ! PASS_GEOMETRY: the reference (zero anomalies, z_bed_ref from the ice). PASS_STATE: the
-        ! imports the core scattered. Other passes: nothing (PASS_RESTART: the bundle's exports stand).
+        ! imports the core scattered. Other passes: nothing (PASS_RESTART: the bundle's state exports
+        ! stand; the diagnostic bsl is put again by geo_init_state).
         class(vilma_geo_t), intent(inout) :: self
         type(step_time_t),  intent(in)    :: st
         integer,            intent(in)    :: pass

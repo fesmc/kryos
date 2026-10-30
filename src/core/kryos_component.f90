@@ -36,8 +36,10 @@ module kryos_component
     ! cold-start equilibration of the instance and the exports of its initial
     ! state (yelmo: init_equil_time, init_time_thrm).
     ! PASS_RESTART: after restart_read and the core's restore of the imports
-    ! and exports (core-design 3.3): re-derive the backend's internal state
-    ! from them; put no export (the bundle's are the run's, bit for bit).
+    ! and the state exports (core-design 3.3): re-derive the backend's
+    ! internal state from them; put the diagnostic exports (restart =
+    ! .false., not in the bundle) again from the restored state, and no state
+    ! export (the bundle's are the run's, bit for bit).
     ! The values are not stored anywhere.
     integer, parameter, public :: PASS_INIT = 0, PASS_GEOMETRY = 1, PASS_BOUNDARY = 2, PASS_STATE = 3, &
                                   PASS_SPINUP = 4, PASS_FINAL = 5, PASS_RESTART = 6

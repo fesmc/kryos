@@ -23,7 +23,7 @@ module kryos_shelf_marine_shelf
     use nml,             only: nml_read, nml_has_param
     use kryos_outfile,   only: outfile_dims_2d, outfile_open, outfile_var2d
     use kryos_component, only: init_ctx_t, step_time_t, constraints_t, component_write_output, &
-                               axis_find, NAME_LEN, PASS_BOUNDARY
+                               axis_find, NAME_LEN, PASS_BOUNDARY, PASS_RESTART
     use kryos_shelf,     only: shelf_t, shelf_opt_t
     use kryos_mshlf,     only: marshelf_class, marshelf_init, marshelf_update_shelf, marshelf_update, &
                                marshelf_end, marshelf_restart_write, marshelf_restart_read
@@ -106,16 +106,20 @@ contains
 
     subroutine marshelf_init_state_(self, st, pass)
         ! The shelf on the initial boundary fields (kryos_startup.f90:166-169):
-        ! the same two calls as an update. Other passes: nothing (the fields
-        ! of a restored run come with the bundle).
+        ! the same two calls as an update. PASS_RESTART: the diagnostic tf_shlf
+        ! again, from the restored now (the state exports come with the
+        ! bundle). Other passes: nothing.
         class(marshelf_shelf_t), intent(inout) :: self
         type(step_time_t),       intent(in)    :: st
         integer,                 intent(in)    :: pass
 
-        if (pass == PASS_BOUNDARY) then
+        select case (pass)
+        case (PASS_BOUNDARY)
             call calc_shelf(self)
             call exports_put(self, st)
-        end if
+        case (PASS_RESTART)
+            call exports_diagnostics(self, st)
+        end select
     end subroutine marshelf_init_state_
 
     subroutine marshelf_update_(self, st)
@@ -236,7 +240,8 @@ contains
 
     subroutine exports_put(self, st)
         ! bmb_shlf: MEAN over [t0, t1], one put, kg m-2 yr-1 = bmb [m ice yr-1] * rho_ice
-        ! (exact product of two sp numbers in dp). T_shlf, tf_shlf: INSTANT at t1.
+        ! (exact product of two sp numbers in dp). T_shlf: INSTANT at t1; then
+        ! the diagnostics.
         class(marshelf_shelf_t), intent(inout) :: self
         type(step_time_t),       intent(in)    :: st
 
@@ -244,8 +249,16 @@ contains
             call fields_put(self%exports, self%h_bmb_shlf, &
                             real(now%bmb_shlf, dp) * real(self%mshlf%par%rho_ice, dp), t1=st%t1, t0=st%t0)
             call fields_put(self%exports, self%h_T_shlf,  now%T_shlf,  t1=st%t1)
-            call fields_put(self%exports, self%h_tf_shlf, now%tf_shlf, t1=st%t1)
         end associate
+        call exports_diagnostics(self, st)
     end subroutine exports_put
+
+    subroutine exports_diagnostics(self, st)
+        ! The diagnostic (restart = .false.) tf_shlf: INSTANT at t1. Also on
+        ! PASS_RESTART, from now as marshelf_restart_read restored it.
+        class(marshelf_shelf_t), intent(inout) :: self
+        type(step_time_t),       intent(in)    :: st
+        call fields_put(self%exports, self%h_tf_shlf, self%mshlf%now%tf_shlf, t1=st%t1)
+    end subroutine exports_diagnostics
 
 end module kryos_shelf_marine_shelf

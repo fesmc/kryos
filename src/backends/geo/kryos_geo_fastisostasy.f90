@@ -118,7 +118,8 @@ contains
     subroutine fastiso_geo_init_state_(self, st, pass)
         ! Passes of core-design 3.2; others: nothing. PASS_INIT: nothing to put
         ! (the state needs the global bsl). PASS_RESTART: nothing, restart_read
-        ! rebuilt the state and the core restored the exports (adapters-design A5).
+        ! rebuilt the state and the core restored the state exports
+        ! (adapters-design A5; the diagnostic bsl is geo_init_state's).
         class(fastiso_geo_t), intent(inout) :: self
         type(step_time_t),    intent(in)    :: st
         integer,              intent(in)    :: pass

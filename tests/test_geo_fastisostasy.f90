@@ -3,7 +3,9 @@ program test_geo_fastisostasy
     ! drives it (kryos_startup.f90, kryos_coupling.f90, yelmox.f90): one regional
     ! instance and the global part (bsl method fastiso) through the component
     ! wrappers. Cold start, three updates with a growing ice load, and a restart
-    ! round trip must agree bit for bit with the direct calls. With
+    ! round trip must agree bit for bit with the direct calls; right after the
+    ! restore every export (the diagnostic bsl put again) equals the
+    ! continuous run's. With
     ! fastisostasy=0 the test is not built (test_skip in config/common.mk).
 
     use precision,       only: sp, dp
@@ -98,6 +100,9 @@ program test_geo_fastisostasy
     call geo_restart_read(reg2, RST, t)
     call fields_read(reg2, RST)
     call geo_init_state(reg2, st(t, t), PASS_RESTART)
+    call compare_regional(reg2, isos, bsl, "restored")
+    call same_exports(glob2, glob, "restored global part")
+    call same_exports(reg2,  reg,  "restored regional")
 
     t = t + DTT
     H = H * 1.1_sp
@@ -145,6 +150,19 @@ contains
         call reduce(glob, reg, t)
         call geo_scatter(reg, st(t - DTT, t))
     end subroutine advance
+
+    subroutine same_exports(a, b, what)
+        ! Every export of a equals b's: value, validity, publication.
+        type(geo_slot_t), intent(in) :: a, b
+        character(len=*), intent(in) :: what
+        integer :: h
+        do h = 1, a%c%exports%n
+            associate (fa => a%c%exports%f(h), fb => b%c%exports%f(h))
+                call check((fa%published .eqv. fb%published) .and. fa%t0 == fb%t0 .and. fa%t1 == fb%t1 .and. &
+                           all(fa%v == fb%v), what//": export "//trim(fa%name)//" as in the continuous run")
+            end associate
+        end do
+    end subroutine same_exports
 
     subroutine fields_write(g, dir)
         ! The imports and exports of an instance, as kryos_restart writes them.

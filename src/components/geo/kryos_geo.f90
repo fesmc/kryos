@@ -8,7 +8,7 @@ module kryos_geo
     use fesm_log,        only: fesm_error
     use fesm_fields,     only: fields_init, fields_add, fields_lock, fields_get, fields_put, &
                                FIELD_INSTANT, FIELD_INTENSIVE, FIELD_EXTENSIVE
-    use kryos_component, only: component_t, PATH_LEN, init_ctx_t, step_time_t, census_t, constraints_t, &
+    use kryos_component, only: component_t, PATH_LEN, PASS_RESTART, init_ctx_t, step_time_t, census_t, constraints_t, &
                                component_identity, backend_admit, component_close, &
                                component_enter, component_leave, component_optional, component_core_filled
 
@@ -106,6 +106,7 @@ contains
         s%t0 = st%t1 - st%dt                            ! virtual previous step for MEAN puts
         call component_enter(geo%c)
         call geo%c%init_state(s, pass)
+        if (pass == PASS_RESTART .and. trim(geo%c%scope) == "regional") call put_bsl(geo%c)   ! the diagnostic bsl
         call component_close(geo%c, s)
         call component_leave()
     end subroutine geo_init_state
@@ -152,9 +153,19 @@ contains
             call fesm_error("kryos_geo::geo_scatter", "imported bsl is newer than the step", &
                             "instance "//trim(geo%c%name))
         end if
-        call fields_put(geo%c%exports, geo%c%h_bsl,  v, t1=t1, t0=t0)
+        call put_bsl(geo%c)
         if (.not. geo%c%opt%port) call fields_put(geo%c%exports, geo%c%h_dphi, v, t1=t1, t0=t0)
     end subroutine geo_scatter
+
+    subroutine put_bsl(c)
+        ! Regional export bsl := import bsl, with its validity: the scatter's
+        ! (and the port's) value, put again on PASS_RESTART (a diagnostic: the
+        ! import is in the restart bundle, the export is not).
+        class(geo_t), intent(inout) :: c
+        real(dp) :: v, t0, t1
+        call fields_get(c%imports, c%hi_bsl, v, t0=t0, t1=t1)
+        call fields_put(c%exports, c%h_bsl, v, t1=t1, t0=t0)
+    end subroutine put_bsl
 
     subroutine geo_restart_write(geo, dir, t)
         type(geo_slot_t), intent(inout) :: geo
@@ -210,9 +221,10 @@ contains
         ! instead of the ice (contracts-design 2.2). Diagnostics (restart =
         ! .false.: INSTANT, no row reads them, not in the restart bundle; put
         ! again on PASS_RESTART): regional bsl (geo_init_state, the copy of
-        ! geo_scatter), dz_bed_dt (the backend);
-        ! the host part's C_ocn, bsl_ive, bsl_ive_host (not mass_resid: the
-        ! solve's residual, not derivable from the restored state).
+        ! geo_scatter); the host part's C_ocn, bsl_ive, bsl_ive_host (the
+        ! backend). Not dz_bed_dt (FastIsostasy's last rate evaluation) nor
+        ! mass_resid (the solve's residual): not derivable from the restored
+        ! state.
         class(geo_t), intent(inout) :: c
         integer :: d2(2)
         character(len=:), allocatable :: g
@@ -257,7 +269,7 @@ contains
             if (c%opt%dV_bsl) call fields_add(c%exports, "dV_bsl", "m3", FIELD_INSTANT, FIELD_EXTENSIVE, c%h_dV_bsl)
             if (c%opt%dz_bed_dt) then
                 call fields_add(c%exports, "dz_bed_dt", "m yr-1", FIELD_INSTANT, FIELD_INTENSIVE, c%h_dz_bed_dt, &
-                                grid=g, dims=d2, restart=.false.)
+                                grid=g, dims=d2)
             end if
         end if
 
