@@ -13,7 +13,8 @@ function parse_log(f)
         m !== nothing && (label = strip(m[1]))
         m = match(r"^\s+pass\s+(\d+):\s+(\S+) s\s+<dt>=\s+(\S+) yr \((\d+) sub\)\s+d\|z_bed\|=\s+(\S+) m\s+max=\s+(\S+) m\s+v=\s+(\S+) m/yr\s+v/tol=\s*(\S+)", l)
         if m !== nothing
-            push!(passes, (label = label, n = parse(Int, m[1]), cpu = parse(Float64, m[2]), dt = parse(Float64, m[3]) * parse(Int, m[4]),
+            push!(passes, (label = label, n = parse(Int, m[1]), cpu = (c = tryparse(Float64, m[2]); c === nothing ? 1e4 : c),   # f7.2 overflows above 9999.99 s: counted as 1e4 (a lower bound)
+                            dt = parse(Float64, m[3]) * parse(Int, m[4]),
                            nsub = parse(Int, m[4]), d = parse(Float64, m[5]), mx = parse(Float64, m[6]), v = parse(Float64, m[7]), r = parse(Float64, m[8])))
         end
         occursin("WARNING: spin-up", l) && (warn = strip(l))
@@ -40,7 +41,7 @@ function main(args)
     names = sort(filter(n -> occursin(r"^e.*_t", n) && isfile(joinpath(dir, n, "geo_glob_vilma.nc")), readdir(dir)))
     key(n) = (m = match(r"^e(.*)_t(.*)$", n); (parse(Float64, replace(m[1], "e" => "e")), parse(Float64, replace(m[2], "m" => "-"))))
     names = sort(names, by = n -> (key(n)[1], -key(n)[2]))
-    isnothing(ref) && (ref = names[argmax([key(n)[1] * 1e6 - key(n)[2] * 1e-9 for n in names])])
+    isnothing(ref) && (ref = names[argmax([key(n)[1] * 1e6 - key(n)[2] * 1e12 for n in names])])   # the most converged: the largest cap, the smallest tolerance
     D = Dict{String,Any}()
     for n in names
         ds = NCDataset(joinpath(dir, n, "geo_glob_vilma.nc"))
@@ -78,13 +79,13 @@ function main(args)
     end
     println(out, "\n## Difference to the reference run\n")
     println(out, "mean |dz_bed(run) - dz_bed(ref)| [m] at the seed and at t_5 (50 yr), and of the rate of interval 1 [mm/yr] (the leftover relaxation of the run against the reference under the same load history).\n")
-    println(out, "| run | region | seed [m] | t5 [m] | seed max [m] | rate 1 diff [mm/yr] |")
-    println(out, "|---|---|---|---|---|---|")
+    println(out, "| run | region | seed [m] | seed diff / ref seed mean | t5 [m] | seed max [m] | rate 1 diff [mm/yr] |")
+    println(out, "|---|---|---|---|---|---|---|")
     zr = D[ref].dz
     for n in names, (rn, mask) in (("globe", glob), ("host", host))
         z = D[n].dz; dt = D[n].t[2] - D[n].t[1]
         r1 = (z[:, :, 2] .- z[:, :, 1]) ./ dt .* 1e3 .- (zr[:, :, 2] .- zr[:, :, 1]) ./ dt .* 1e3
-        @printf(out, "| %s | %s | %.3f | %.3f | %.2f | %.3f |\n", n, rn, wm(abs.(z[:, :, 1] .- zr[:, :, 1]), mask), wm(abs.(z[:, :, 6] .- zr[:, :, 6]), mask),
+        @printf(out, "| %s | %s | %.3f | %.2f | %.3f | %.2f | %.3f |\n", n, rn, wm(abs.(z[:, :, 1] .- zr[:, :, 1]), mask), wm(abs.(z[:, :, 1] .- zr[:, :, 1]), mask) / wm(abs.(zr[:, :, 1]), mask), wm(abs.(z[:, :, 6] .- zr[:, :, 6]), mask),
                 maximum(abs.((z[:, :, 1] .- zr[:, :, 1])[mask])), wm(abs.(r1), mask))
     end
     s = String(take!(out)); print(s)

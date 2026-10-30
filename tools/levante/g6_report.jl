@@ -1,6 +1,6 @@
 # G6 report (phase 4 WP7c): drift of the science case with geo = vilma2 against K3-sci (the fastiso `sci` run over its 1 kyr).
 #   julia --project=tools tools/levante/g6_report.jl <vilma2 run> <K3-sci run> [--md FILE]
-# Per domain the series of Yelmo's ice (ice_<dom>_yelmo_ts.nc, 10 yr): V_ice, A_ice, V_sle (m of sea level), grounded V_ice_g, at
+# Per domain the series of Yelmo's ice (ice_<dom>_yelmo_ts.nc, 10 yr): V_ice, A_ice (the units of the file), V_sle (m of sea level), grounded V_ice_g, at
 # 0, 100, 250, 500, 750, 1000 yr (and the end of the vilma2 run), as change since the start; the drift rate (mean of d V_sle / dt over the
 # first 1000 yr) of both runs, and the stop-free check: the run's last time against the planned end.
 using NCDatasets, Printf, Statistics
@@ -15,13 +15,13 @@ function main(args)
         ta = rd(a, "time") .- rd(a, "time")[1]; tb = rd(b, "time") .- rd(b, "time")[1]
         println(io, "## ", nm, "\n")
         println(io, "Change since the start of each run (vilma2: from -80 ka, PaleoMIST start, transient forcing; K3-sci: from the ICE-6G/PD start, constant forcing):\n")
-        println(io, "| t [yr] | V_ice vilma2 [1e6 km3] | d V_sle vilma2 [m] | d A_ice vilma2 [1e6 km2] | V_ice K3 [1e6 km3] | d V_sle K3 [m] | d A_ice K3 [1e6 km2] |\n|---|---|---|---|---|---|---|")
+        println(io, "| t [yr] | V_ice vilma2 | d V_sle vilma2 [m] | d A_ice vilma2 | V_ice K3 | d V_sle K3 [m] | d A_ice K3 |\n|---|---|---|---|---|---|---|")
         for t in [0, 100, 250, 500, 750, 1000, 2000]
             ka = findfirst(x -> abs(x - t) < 1e-6, ta); kb = findfirst(x -> abs(x - t) < 1e-6, tb)
             ka === nothing && continue
             va = rd(a, "V_ice"); sa = rd(a, "V_sle"); aa = rd(a, "A_ice")
             vb = kb === nothing ? NaN : rd(b, "V_ice")[kb]; sb = kb === nothing ? NaN : rd(b, "V_sle")[kb] - rd(b, "V_sle")[1]; ab = kb === nothing ? NaN : rd(b, "A_ice")[kb] - rd(b, "A_ice")[1]
-            @printf(io, "| %g | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f |\n", t, va[ka] / 1e6, sa[ka] - sa[1], (aa[ka] - aa[1]) / 1e6, vb / 1e6, sb, ab / 1e6)
+            @printf(io, "| %g | %.5g | %.3f | %.4g | %.5g | %.3f | %.4g |\n", t, va[ka], sa[ka] - sa[1], aa[ka] - aa[1], vb, sb, ab)
         end
         sa = rd(a, "V_sle"); sb = rd(b, "V_sle")
         k1a = findfirst(x -> abs(x - 1000) < 1e-6, ta); k1b = findfirst(x -> abs(x - 1000) < 1e-6, tb)
