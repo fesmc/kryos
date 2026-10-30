@@ -95,8 +95,10 @@ function main(args)
         tg = Float64.(Array(gia["time"])); tv = Float64.(Array(vil["time"]))
         ri, rw = rho
         C0own = Float64.(zeq .< 0 .&& ri .* heq .< -rw .* zeq)
-        println(io, "(iii) int C rsl dA = -(rho_i/rho_w) int dI_g dA + int F dA, from the lossless run's streams (host part of F only):\n")
-        println(io, "| t [yr] | int C rsl dA [m3] | -(ri/rw) int dI_g dA [m3] | VILMA2 bsl_ive A_ocn [m3] | rhs / VILMA2 - 1 | int F_host dA [m3] | residual (own fill) | residual / |lhs| |\n|---|---|---|---|---|---|---|---|")
+        hasfill = haskey(vil, "fill_int")
+        println(io, "(iii) int C rsl dA = -(rho_i/rho_w) int dI_g dA + fill_int, from the lossless run's streams (fill_int: VILMA2's flooded-area fill integral of the whole sphere, the host's F and the own part's share):\n")
+        println(io, "| t [yr] | int C rsl dA [m3] | -(ri/rw) int dI_g dA [m3] | VILMA2 bsl_ive A_ocn [m3] | rhs / VILMA2 - 1 | int F_host dA [m3] | fill_int [m3] | (fill_int - fill_int_own - F_host) / fill_int | balance residual [m3] | residual / abs(lhs) |\n|---|---|---|---|---|---|---|---|---|---|")
+        maxres = 0.0
         for (k, tt) in enumerate(tg)
             kv = findfirst(x -> abs(x - tt) < 1e-6, tv); kv === nothing && continue
             w = Float64.(gia["host_w"][:, :, k]); Ig = Float64.(gia["host_Ig"][:, :, k]); Ch = Float64.(gia["host_C"][:, :, k])
@@ -106,11 +108,13 @@ function main(args)
             Cown = ifelse.(a .> 1e-12, (C .- Ch) ./ max.(a, 1e-12), 0.0)
             dI = (Ig .- I0) .+ (ifelse.(a .> 1e-12, a .* H .* (1 .- Cown), 0.0) .- ifelse.(a0 .> 1e-12, a0 .* heq .* (1 .- C0own), 0.0))
             lhs = sum(C .* rsl .* A); rhs = -(ri / rw) * sum(dI .* A); fi = sum(F .* A)
-            res = lhs - (rhs + fi)
             ktt = findfirst(x -> abs(x - tt) < 1e-6, t); vil2 = ktt === nothing ? NaN : bi[ktt] * ao[ktt]
-            @printf(io, "| %g | %.5e | %.5e | %.5e | %.2e | %.3e | %.3e | %.2e |\n", tt, lhs, rhs, vil2, rhs / vil2 - 1, fi, res, abs(res) / max(abs(lhs), 1e-30))
+            fint = hasfill ? Float64(vil["fill_int"][kv]) : NaN; fown = hasfill ? Float64(vil["fill_int_own"][kv]) : NaN
+            res = lhs - (rhs + (hasfill ? fint : fi))
+            maxres = max(maxres, abs(res) / max(abs(lhs), 1e-30))
+            @printf(io, "| %g | %.5e | %.5e | %.5e | %.2e | %.3e | %.5e | %.2e | %.3e | %.2e |\n", tt, lhs, rhs, vil2, rhs / vil2 - 1, fi, fint, (fint - fown - fi) / max(abs(fint), 1e-30), res, abs(res) / max(abs(lhs), 1e-30))
         end
-        println(io, "\nThe recomputed grounded-ice term reproduces VILMA2's own bsl_ive A_ocn (column 5). The residual of the balance is the own part's subgrid fill, a zeta0 (C_own - C0_own), which needs zeta0 (not an output); it is nearly constant in time (set by the coast shift at t0 against the reference).")
+        @printf(io, "\nmax residual / abs(int C rsl dA): %.3e (bound 1e-6) -> %s\n", maxres, !hasfill ? "fill_int is not in the vilma stream: the own part's fill is missing, not evaluated" : maxres <= 1e-6 ? "PASS" : "FAIL")
     end
     s = String(take!(io)); print(s); md === nothing || write(md, s)
     return 0

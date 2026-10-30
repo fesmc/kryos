@@ -10,10 +10,10 @@ M=${MAPS:-$G/maps/S5}
 case ${1:-} in
   g1)
     for g in grl ant ant-full nor; do
-        K=$S/kryos VILMA=1 STACK=S7 MAPS=$M $RK $g cont
+        K=$S/kryos KSHA=$KSHA VILMA=1 STACK=S7 MAPS=$M $RK $g cont
     done
     for g in sci sci-const; do
-        K=$S/kryos VILMA=1 STACK=S7 MAPS=$M TOOLS=$P/kryos $RKK $g cont
+        K=$S/kryos KSHA=$KSHA VILMA=1 STACK=S7 MAPS=$M TOOLS=$P/kryos $RKK $g cont
     done ;;
   *) echo "usage: gate_S7.sh g1"; exit 1 ;;
 esac
