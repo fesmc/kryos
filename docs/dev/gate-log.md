@@ -621,3 +621,12 @@ and VILMA2's host check rejects `host_w` = 1 + 2.8e-9 at the polar row: runs wit
 G2a (lmax 170): adapter == `vilma.x` to <= 6e-10 of max |field| (step 1) and <= 1e-12 after, with equal spin-up; the default spin-up tolerance stops the two at different passes (21 % at the cap centre).
 G3 (400 yr): merge closure 7.1e-13, `mass_resid` 2.1e-15, `bsl_ive` against the gathered ice 4.3e-7 as volumes, `A_ocn_ref` +0.23 %. G4: cont2 == cont and rounding (max error / tolerance 0.977, bundles identical) pass; chunk != cont at round-off (1e-14 `bsl`, 7e-12 m `dz_bed`) in the Earth's state.
 Science par `par/kryos_NH-ANT_vilma2.nml` (+ conversion note, generator `tools/bin/kryos-vilma2-par.jl`); `par/kryos_Antarctica.nml`, `par/kryos_NH-ANT.nml` regenerated (they predated the shelf move).
+
+## Phase 4 WP7, part 1b: S7 (2026-10-30)
+
+Report `gate-reports/p4-wp7b.md`. fesm-utils `phase0-kryos` f30d952 (pushed): conservative_planar pre-pass arrays renamed (ifx), `test_conservative_project` (fails on the old code with ifx). kryos `p4-wp7` 7e631a2 on main ffe745c:
+producer-side clip of `host_w` and `host_C` in the gather (`HOST_CLIP_TOL` 1e-6, excess logged), `HUB_TOL` 1e-9, test fixes, plan 4.5 and 13.2, vilma-variables.md synchronised with vilma2 d2006c8, `fill_int` in the `vilma` stream,
+science par from PaleoMIST at -80 ka in both domains. Stack S7 = S6 + fesm-utils f30d952 + vilma2 d2006c8 + kryos 7e631a2 (`tools/setup_S7.sh`).
+G0: `make check` passes on stock code, both builds. G1: grl, ant, ant-full, nor, sci, sci-const bit identical to the previous K and K3-sci. G1b: sci-hub bit identical to K3-sci, hub closure 2.6e-10 / 1.5e-10 (< 1e-9), `globe_ice.nc` equals the offline merge.
+Stock science run (400 yr, PaleoMIST start): no stop, clip excess 2.8e-9; t0: recon takes record 1, ice vs PaleoMIST -80 ka ESL difference -0.17 m (North) and -0.48 m (Antarctica). G3: closure 1.2e-12, `mass_resid` 2.2e-15,
+(iii) full balance with `fill_int` 1.6e-13, (iv) as volumes 1.7e-6, `A_ocn_ref` +0.23 %. G4: cont2 == cont, rounding passes (0.977, bundles identical); chunk vs cont differs only in `pc_tau_max` (known) and the Maxwell memory `tau_*`, at 1e-28 Pa.
