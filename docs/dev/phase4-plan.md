@@ -250,7 +250,7 @@ narrowing anywhere) holds `type(solid_earth) :: se`. Lifecycle (`core` §3, adap
 | `init_state(PASS_INIT)` | nothing put |
 | `init_state(PASS_GEOMETRY)` | after `gia_reference`: `solid_earth_init(se, z_bed_eq = z_bed_ref, h_ice_eq = H_ice_ref, grid = gauss grid, w = host_w, I_g = host_Ig_ref, C = host_C_ref)` (no `h_ice_init`: `ht` Q5); stop if VILMA2 built a remap (`se%remap`), i.e. the grid was not recognised as its Gauss grid; put the exports at the reference (`dz_bed = dz_ss = dphi = bsl = 0`, `C_ocn` = reference) so the domains find them (§8.1) |
 | `init_state(PASS_STATE)` (cold only) | `solid_earth_spinup(se, H_ice_ext, w, I_g, C, F)` (a no-op unless `equil_time_max > 0` or `pre_spinup_1d`), then `solid_earth_update(se, H_ice_ext, 0, w, I_g, C, F)` (the seed), put the exports |
-| `update(st)` | `dt = st%t1 − st%t0` [yr, `dp`]; `solid_earth_update(se, H_ice_ext, dt, host_w, host_Ig, host_C, host_F)`; put `dz_bed = gg%dz_bed`, `dz_ss = gg%dz_ss − se%dphi`, `dphi`, `bsl`, `bsl_ive`, `A_ocn`, `C_ocn`, `mass_resid` at `st%t1` |
+| `update(st)` | `dt = st%t1 − st%t0` [yr, `dp`]; `solid_earth_update(se, H_ice_ext, dt, host_w, host_Ig, host_C, host_F)`; put `dz_bed = se%dz_bed`, `dz_ss = se%dz_ss − se%dphi`, `C_ocn = se%C` (VILMA2's host-grid outputs, never `se%gg`: the Gauss state is north first, the grid ascends), `dphi`, `bsl`, `bsl_ive`, `A_ocn` (∫C over VILMA2's sphere), `mass_resid` at `st%t1` |
 | `restart_write(dir, t)` | `vilma_restart_write(se, se%time, filename = "<name>_restart.nc", folder = dir)` |
 | `restart_read(dir, t)` | `vilma_restart_read(se, file)` into the model built by `PASS_GEOMETRY` (last slice) |
 | `write_output(stream)` | default writer for the exports; backend streams `gia` and `vilma` (§9) |
@@ -361,9 +361,10 @@ lon180 = .false., x0 = 0)` with `nlat = 2 lmax + 2`,
 `maps/grid_GAUSS-L<lmax>.txt` (explicit `yvals`, so any coupler resolves it by name);
 `coupler_add_grid` in the globe's coupler: its default model area (`grid%area·xy_conv²`) is
 already the quadrature area, so no `coupler_set_area` for this grid (the adapter checks the
-planet radius of the grid against `se%par%r_earth` and stops on a mismatch). `grid_is_gauss` (VILMA2, 1e-6° on
+planet radius of the grid against `se%par%r_earth` and stops on a mismatch). `gauss_axes_rows` (VILMA2, 1e-6° on
 every axis value) is the check that kryos's grid is VILMA2's: the adapter stops if
-`se%remap` is true after init. Longitudes start at 0 (SHTns).
+`se%remap` is true after init. Longitudes start at 0 (SHTns). Latitudes ascend; VILMA2's
+state is north first, so the passthrough reverses the rows both ways (`se%host_rows`).
 
 ## 4. The global ice field (gather)
 
