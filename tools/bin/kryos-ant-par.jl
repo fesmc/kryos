@@ -1,0 +1,102 @@
+#!/usr/bin/env julia
+# The G5 par files (phase 4 WP7c): ANT as the only active domain, from the NH + ANT science files, as a text edit by group.
+#   julia tools/bin/kryos-ant-par.jl IN OUT [T0 [DT_GEO]]
+# IN: par/kryos_NH-ANT_vilma2.nml (-> geo = vilma2) or the FastIsostasy file par/kryos_NH-ANT.nml (-> geo = fastisostasy, the same run).
+# Edits: [kryos] domains = "Antarctica" (the North groups stay in the file, unused; with vilma2 the whole NH ice is the external
+# PaleoMIST of [globe_ice]); [clock] transient from T0 (default -20e3) to 0, forcing time = model time; [coef_alpha] the glacial
+# index series; [recon_ant] the start from PaleoMIST at T0 (the file's 2.5-kyr records: the slice nearest T0), [Antarctica] experiments;
+# [climate_ant] terms = "lgm" "ocean", with the DJF group as the second tas of the PMIP3 snapshots (the paleo forcing of yelmox scripts/ant-paleo/params.sh, antpal_lgp: the PMIP3 LGM anomaly
+# weighted by alpha, and dTo; the base file has no term at all: a constant present-day climate).
+function groups(lines)
+    out = Tuple{String,Int,Int}[]
+    i = 1
+    while i <= length(lines)
+        m = match(r"^&(\w+)", lines[i])
+        if m !== nothing
+            j = i
+            while !startswith(strip(lines[j]), "/"); j += 1; end
+            push!(out, (String(m.captures[1]), i, j)); i = j
+        end
+        i += 1
+    end
+    out
+end
+grp(L, name) = first(filter(x -> x[1] == name, groups(L)))
+function replace_group(L, name, body); g = grp(L, name); vcat(L[1:g[2]-1], body, L[g[3]+1:end]); end
+function insert_after(L, name, body);  g = grp(L, name); vcat(L[1:g[3]], [""], body, L[g[3]+1:end]); end
+function setkey(L, name, key, val)      # keeps the comment
+    g = grp(L, name); L = copy(L)
+    for i in g[2]:g[3]
+        m = match(Regex("^(\\s*" * key * "\\s*=\\s*)([^!]*?)(\\s*!.*)?\$"), L[i])
+        if m !== nothing
+            L[i] = m[1] * val * (m[3] === nothing ? "" : "   " * strip(m[3])); return L
+        end
+    end
+    error("no key $key in &$name")
+end
+
+function main(args)
+    length(args) >= 2 || (println(stderr, "usage: kryos-ant-par.jl IN OUT [T0]"); return 2)
+    t0 = length(args) >= 3 ? args[3] : "-20e3"
+    L = readlines(args[1])
+    k = findfirst(startswith("&kryos"), L); L = L[k:end]
+    L = setkey(L, "kryos", "domains", "\"Antarctica\"")
+    L = replace_group(L, "clock", split("""
+&clock
+    time_init      = $t0     ! [yr] G5: PaleoMIST at this time is the start (the nearest slice of its 2.5-kyr records)
+    time_end       = 0.0       ! [yr] present day
+    dtt            = 10.0      ! yelmox ctrl.dtt
+    method         = "rel"     ! transient: the forcing time is the model time
+    time_ref       = 1950.0    ! yelmox ctrl.calendar_ref
+    calendar       = "365_day"
+    year           = "tropical"
+    ticks_per_year = 36000
+/""", "\n"))
+    # alpha series
+    g = grp(L, "coef_alpha")
+    body = filter(l -> !occursin(r"^\s*norm_t[01]\s*=", l), L[g[2]:g[3]])
+    body = map(l -> replace(replace(l, r"^(\s*method\s*=\s*)\"const\"\s*" => s"\1\"series\"  "),
+                            r"^(\s*series_file\s*=\s*)\"\"\s*" => s"\1\"input/alpha_combined_125kyr_interp.dat\"  "), body)
+    L = replace_group(L, "coef_alpha", body)
+    # start from PaleoMIST
+    recon = split("""
+&recon_ant
+    kind          = "recon"
+    recon_path    = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"   ! the domain's PaleoMIST history ("years ago")
+    recon_var     = "H_ice"
+    recon_time    = $t0         ! [yr] model time of the state (the nearest record)
+    recon_regions = "all"         ! every cell of the ice grid
+    recon_zb_min  = -1e5          ! [m] no bed filter: marine ice is kept
+    recon_smooth_sigma = 0.0      ! [cells] no smoothing
+    recon_H_float_min  = 0.0      ! [m] no floating-ice minimum
+/""", "\n")
+    if any(g -> g[1] == "recon_ant", groups(L))
+        L = replace_group(L, "recon_ant", recon)
+    else
+        L = insert_after(L, "North", recon)         # any group; the order is not significant
+    end
+    L = setkey(L, "Antarctica", "experiments", "\"recon_ant\"")
+    L = setkey(L, "climate_ant", "terms", "\"lgm\" \"ocean\"")
+    # the summer of Antarctica is DJF (yelmox antpal_lgp): the second tas group of the PMIP3 snapshots (North is not active)
+    for nm in ("snapshot_picontrol", "snapshot_lgm")
+        L = setkey(L, nm, "tas", "\"pmip3_mean_tas_ann\" \"pmip3_mean_tas_djf\"")
+    end
+    L = insert_after(L, "pmip3_mean_tas_jja", split("""
+&pmip3_mean_tas_djf
+    filename = "fesmdata/Global/{grid_global}/{grid_global}_Paleoclimate-PMIP3-{exp}-mean.nc"
+    name     = "t2m_djf"
+    units    = "degC" "K"
+    scaling  = 1.0 273.15
+    time     = 0 0 0 0 1
+    remap    = "bilin"
+    grid_src = "{grid_global}"
+/""", "\n"))
+    open(args[2], "w") do io
+        println(io, "! kryos par file of gate G5 (phase 4 WP7c): Antarctica as the only active domain, generated by tools/bin/kryos-ant-par.jl from ", basename(args[1]), ".")
+        println(io, "! Start: PaleoMIST at ", t0, " yr; paleo forcing terms lgm + ocean (alpha series, dTo); see docs/dev/gate-reports/p4-wp7c.md.")
+        println(io)
+        foreach(l -> println(io, l), L)
+    end
+    return 0
+end
+exit(main(ARGS))
