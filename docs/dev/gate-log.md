@@ -636,3 +636,9 @@ Stock science run (400 yr, PaleoMIST start): no stop, clip excess 2.8e-9; t0: re
 Report `gate-reports/p4-s8.md`. fesm-utils `phase0-kryos` a13cd38 (pushed): `nc_read` no longer sets values below 1e-30 to zero (the flush was in the reader only), `test_ncio_tiny`; vilma2 main 4419636 (pushed): `test_restart_3d` with tiny values in the six memories (fails on the old ncio),
 the `read_exact` bypass dropped. Stack S8 = S7 + a13cd38 + 4419636 + kryos e4453dc (`tools/setup_S8.sh`).
 G1: grl, ant, ant-full, nor, sci, sci-const bit identical to the previous K and K3-sci. G4: cont2 == cont; chunk == cont except `pc_tau_max` (the known Yelmo diagnostic); the VILMA2 memories `tau_*` bit identical (S7: 1e-28 Pa); rounding 0.977, bundles identical.
+
+## Phase 4, S9: exact `pc_tau_max` and `-0.0` (2026-10-30)
+
+Report `gate-reports/p4-s9.md`. yelmo `topo-prepared` 30361f96 and `dev` 18b41e3d (pushed): the restart holds the `pc_taus` window and `pc_tau`, `pc_tau_masked`, `pc_tau_max`, read back; `tests/bench/check_restart.sh` (fails on the old code).
+fesm-utils `phase0-kryos` 45e09c2 (pushed): `nc_read` keeps a stored `-0.0`, `test_ncio_tiny` extended. Stack S9 = S8 + 45e09c2 + 30361f96 + kryos 624f686 (`tools/setup_S9.sh`).
+G1: grl, ant, ant-full, nor, sci, sci-const bit identical to K(S8) and K3-sci (0 failing, 0 absent, 0 new). G4: cont2 == cont; chunk == cont with no skip (3206 variables): `pc_tau_max` exact, VILMA2 memories exact; rounding 0.977, bundles identical.
