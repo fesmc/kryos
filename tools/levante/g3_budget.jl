@@ -116,6 +116,7 @@ function main(args)
         println(io, "(iii) int C rsl dA = -(rho_i/rho_w) int dI_g dA + fill_int, from the lossless run's streams (fill_int: VILMA2's flooded-area fill integral of the whole sphere, the host's F and the own part's share):\n")
         println(io, "| t [yr] | int C rsl dA [m3] | -(ri/rw) int dI_g dA [m3] | VILMA2 bsl_ive A_ocn [m3] | rhs / VILMA2 - 1 | int F_host dA [m3] | fill_int [m3] | (fill_int - fill_int_own - F_host) / fill_int | balance residual [m3] | residual / abs(lhs) |\n|---|---|---|---|---|---|---|---|---|---|")
         maxres = 0.0
+        glk = collect(keys(gl)); rowsd = []     # (t, host part, domains' ESL, own part, external ESL): (iv) from the streams, in m3
         for (k, tt) in enumerate(tg)
             kv = findfirst(x -> abs(x - tt) < 1e-6, tv); kv === nothing && continue
             w = Float64.(gia["host_w"][:, :, k]); Ig = Float64.(gia["host_Ig"][:, :, k]); Ch = Float64.(gia["host_C"][:, :, k])
@@ -127,9 +128,24 @@ function main(args)
             lhs = sum(C .* rsl .* A); rhs = -(ri / rw) * sum(dI .* A); fi = sum(F .* A)
             ktt = findfirst(x -> abs(x - tt) < 1e-6, t); vil2 = ktt === nothing ? NaN : bi[ktt] * ao[ktt]
             fint = hasfill ? Float64(vil["fill_int"][kv]) : NaN; fown = hasfill ? Float64(vil["fill_int_own"][kv]) : NaN
+            kg = findfirst(x -> abs(x - (tt - dt)) < 1e-6, glk)
+            if kg !== nothing
+                g = gl[glk[kg]]
+                push!(rowsd, (tt, -(ri / rw) * sum((Ig .- I0) .* A), sum(values(g.doms)) * aref[2],
+                              rhs + (ri / rw) * sum((Ig .- I0) .* A), g.ext * aref[2]))
+            end
             res = lhs - (rhs + (hasfill ? fint : fi))
             maxres = max(maxres, abs(res) / max(abs(lhs), 1e-30))
             @printf(io, "| %g | %.5e | %.5e | %.5e | %.2e | %.3e | %.5e | %.2e | %.3e | %.2e |\n", tt, lhs, rhs, vil2, rhs / vil2 - 1, fi, fint, (fint - fown - fi) / max(abs(fint), 1e-30), res, abs(res) / max(abs(lhs), 1e-30))
+        end
+        if !isempty(rowsd)
+            # the host part of bsl_ive A_ocn from the streams: -(rho_i/rho_w) int (I_g - I_g_ref) dA (what bsl_ive_host A_ocn is)
+            relh = [abs(r[2] - r[3]) / max(abs(r[3]), 1e-12) for r in rowsd]; km = argmax(relh)
+            fl = [r[5] - r[4] for r in rowsd]; relf = [(r[5] - r[4]) / max(abs(r[5]), 1e-12) for r in rowsd]
+            @printf(io, "\n(iv) from the streams (the host part -(rho_i/rho_w) int (I_g - I_g_ref) dA, the value of bsl_ive_host A_ocn, against the domains' ESL A_sea; %d records): max relative difference %.3e at t = %g yr (bound 1e-6) -> %s\n",
+                    length(rowsd), relh[km], rowsd[km][1], maximum(relh) <= 1e-6 ? "PASS" : "FAIL")
+            @printf(io, "    for information: floating external ice (external ESL A_sea of the log, all ice, minus VILMA2's own part): max %.3e m3 at t = %g yr, last %.3e m3; relative to the external volume: max %.3e, last %.3e\n",
+                    maximum(abs.(fl)), rowsd[argmax(abs.(fl))][1], fl[end], maximum(abs.(relf)), relf[end])
         end
         @printf(io, "\nmax residual / abs(int C rsl dA): %.3e (bound 1e-6) -> %s\n", maxres, !hasfill ? "fill_int is not in the vilma stream: the own part's fill is missing, not evaluated" : maxres <= 1e-6 ? "PASS" : "FAIL")
     end
