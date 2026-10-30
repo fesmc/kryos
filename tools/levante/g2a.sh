@@ -14,7 +14,7 @@ set -uo pipefail
 module load python3 >/dev/null 2>&1 || true
 export PATH=$HOME/.juliaup/bin:$HOME/.local/bin:$PATH JULIA_DEPOT_PATH=/work/ba1442/robinson/kryos-gate/julia-depot
 G=/work/ba1442/robinson/kryos-gate; STK=${STK:-S11}; S=$G/stacks/$STK; K=$S/kryos; T=$G/p4w7/kryos/tools
-SHA=$(git -C $K rev-parse --short=7 HEAD); OUT=$G/runs/g2a/kx-$SHA/$STK/${TAG:-cap}
+SHA=$(cut -d- -f1 $K/libkryos/bin/.kryos_sha); OUT=$G/runs/g2a/kx-$SHA/$STK/${TAG:-cap}
 [ -e $OUT ] && { echo "exists: $OUT"; exit 1; }
 mkdir -p $OUT/maps $OUT/input; cd $OUT
 for f in $S/yelmox/input/*; do ln -sf $f input/; done
@@ -35,5 +35,6 @@ echo "== standalone, lon-lat inputs $(date -Is)"
 /usr/bin/time -v ./vilma.x vilma_g2a_ll.nml > vilma_ll.log 2>&1; echo "vilma.x (lon-lat) exit $?"
 grep -E "PROFILE setup|solid_earth_update  =|Maximum resident|Elapsed" vilma_ll.log
 echo "== compare $(date -Is)"
-julia +1.13 --project=$T $K/tools/levante/g2a_compare.jl $OUT --md $OUT/g2a.md; echo "compare exit $?"
-julia +1.13 --project=$T $K/tools/levante/g2a_compare.jl $OUT --ll --md $OUT/g2a-ll.md; echo "compare (lon-lat) exit $?"
+F=0; [ "${G2A_SPINUP:-1}" = 0 ] && F=1     # without spin-up the seeds are not comparable
+julia +1.13 --project=$T $K/tools/levante/g2a_compare.jl $OUT --from $F --md $OUT/g2a.md; echo "compare exit $?"
+julia +1.13 --project=$T $K/tools/levante/g2a_compare.jl $OUT --ll --from $F --md $OUT/g2a-ll.md; echo "compare (lon-lat) exit $?"

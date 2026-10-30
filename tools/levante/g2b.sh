@@ -17,7 +17,7 @@
 # the Gauss maps of each lmax made once; the grids are unchanged by the row-order fix of S11).
 set -uo pipefail
 G=/work/ba1442/robinson/kryos-gate; W=$G/p4g2b; STK=${STK:-S11}; S=$G/stacks/$STK
-if [ $STK = S9 ]; then K=$W/kryos; VX=$W/vilma2/bin/vilma.x; SHA=${SHA:-wip}; else K=$S/kryos; VX=$S/vilma2/bin/vilma.x; SHA=$(git -C $K rev-parse --short=7 HEAD); fi
+if [ $STK = S9 ]; then K=$W/kryos; VX=$W/vilma2/bin/vilma.x; SHA=${SHA:-wip}; else K=$S/kryos; VX=$S/vilma2/bin/vilma.x; SHA=$(cut -d- -f1 $K/libkryos/bin/.kryos_sha); fi
 LMAX=${LMAX:-170}; NSTEP=${NSTEP:-2100}; MODE=${MODE:?MODE=kryos|vilma}; TAG=${TAG:-l$LMAX}; SPIN=${SPIN:-1}
 OUT=$G/runs/g2b/kx-$SHA/$STK/$TAG/$MODE
 [ -e $OUT ] && { echo "exists: $OUT"; exit 1; }

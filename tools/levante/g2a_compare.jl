@@ -1,7 +1,9 @@
 # G2a: kryos_out.nc (tests/g2a_cap.f90) against vilma_out.nc (vilma.x, same load); prints per record and variable
 # max |kryos - standalone|, max |standalone| and their ratio, and the maximum over all records. The files are aligned by
 # their lat axes (kryos: the host grid, ascending; vilma.x: VILMA2's layout, north first); other axes stop.
-#   julia --project=tools tools/levante/g2a_compare.jl <run folder> [--md FILE] [--ll]
+#   julia --project=tools tools/levante/g2a_compare.jl <run folder> [--md FILE] [--ll] [--from N]
+# --from N: compare records N on (default 0; 1 without spin-up, whose seeds are not comparable: the standalone seed solves with the
+# reference ice).
 # --ll: the independent variant, vilma_out_ll.nc (vilma.x remapped the 0.5 degree lon-lat inputs itself). No bitwise
 # expectation: the tolerance is the remap error of the load, the relative L2 difference of the Gauss-grid ice h_ice of
 # vilma_out_ll.nc against vilma_out.nc (the exact Gauss load); dz_bed and dz_ss of kryos against vilma_out_ll.nc must differ
@@ -15,6 +17,7 @@ function main(args)
     md = nothing
     i = findfirst(==("--md"), args); i === nothing || (md = args[i+1])
     ll = "--ll" in args
+    i = findfirst(==("--from"), args); r0 = i === nothing ? 1 : parse(Int, args[i+1]) + 1      # first record compared (1-based)
     k = NCDataset(joinpath(dir, "kryos_out.nc")); v = NCDataset(joinpath(dir, ll ? "vilma_out_ll.nc" : "vilma_out.nc"))
     latk = Float64.(k["lat"][:]); latv = Float64.(v["lat"][:])
     maximum(abs.(Float64.(k["lon"][:]) .- Float64.(v["lon"][:]))) <= 1e-6 || error("lon axes differ")
@@ -31,7 +34,7 @@ function main(args)
     nt = length(k["time"][:])
     io = IOBuffer()
     println(io, "# G2a: adapter (geo_glob) vs vilma.x", ll ? " on the lon-lat inputs (remap_input = .true.)" : "", "\n")
-    println(io, "records: ", nt, " (0 = after the spin-up and seed), standalone records: ", length(v["time"][:]), "\n")
+    println(io, "records: ", nt, " (0 = after the spin-up and seed), standalone records: ", length(v["time"][:]), "; compared from record ", r0 - 1, "\n")
     println(io, "lat axes: kryos ", latk[1] < latk[end] ? "ascending" : "descending", ", vilma.x ", latv[1] < latv[end] ? "ascending" : "descending", flip ? " (vilma.x rows reversed for the comparison)" : "", "\n")
     println(io, "| variable | max over records of max abs diff | max abs value (standalone) | ratio | first record with a difference |")
     println(io, "|---|---|---|---|---|")
@@ -40,7 +43,7 @@ function main(args)
         a = sa(Float64.(Array(k[kn]))); b = vrows(v[vn])
         n = min(size(a, 3), size(b, 3))
         dmax = 0.0; bmax = 0.0; first = -1
-        for r in 1:n
+        for r in r0:n
             d = maximum(abs.(a[:, :, r] .- b[:, :, r])); dmax = max(dmax, d); bmax = max(bmax, maximum(abs.(b[:, :, r])))
             d > 0 && first < 0 && (first = r - 1)
         end
@@ -65,11 +68,11 @@ function main(args)
         for (kn, vn) in pairs[1:2]
             a = sa(Float64.(Array(k[kn]))); b = vrows(v[vn]); bm = b[:, end:-1:1, :]
             e = [rel2(a[:, :, r], b[:, :, r]) for r in 1:n]; em = [rel2(a[:, :, r], bm[:, :, r]) for r in 1:n]
-            ok = all(e[r] <= tol[r] for r in 1:n if tol[r] > 0); pass &= ok
-            @printf(io, "| %s | %s | %.2e | %.2e | %s | %.2e |\n", kn, join([@sprintf("%.2e", x) for x in e], " "), maximum(e),
-                    maximum(tol), ok ? "yes" : "NO", minimum(em))
+            ok = all(e[r] <= tol[r] for r in r0:n if tol[r] > 0); pass &= ok
+            @printf(io, "| %s | %s | %.2e | %.2e | %s | %.2e |\n", kn, join([@sprintf("%.2e", x) for x in e], " "), maximum(e[r0:n]),
+                    maximum(tol[r0:n]), ok ? "yes" : "NO", minimum(em[r0:n]))
         end
-        println(io, "\nverdict: ", pass ? "PASS" : "FAIL", " (relative L2 of dz_bed and dz_ss within the load's remap error at every record)")
+        println(io, "\nverdict: ", pass ? "PASS" : "FAIL", " (relative L2 of dz_bed and dz_ss within the load's remap error at every record from ", r0 - 1, ")")
         close(g)
     end
     s = String(take!(io)); print(s)
