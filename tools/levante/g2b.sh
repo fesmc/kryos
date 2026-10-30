@@ -11,12 +11,15 @@
 # Env: LMAX (170), NSTEP (2100), MODE (kryos|vilma), TAG, SPIN (1; 0: no spin-up, smoke), SHA (label of the harness), RATE_TOL (1e-5), TIME_MAX (2e4), NOUT (10),
 # FESM (the fesmdata folder; g2b_visc_mirror.sh makes one with the 3D viscosity mirrored north-south). The diagnosis runs used
 # -p shared, no --exclusive, --mem=24G, -t 01:10:00 (L85).
-# Run folder $G/runs/g2b/kx-$SHA/S9/$TAG/{kryos,vilma}. Workspace $G/p4g2b: kryos (a copy of the S9 checkout, library as built there, plus the harness),
-# vilma2 (a copy of the S9 clone, bin/vilma.x), data (g2b_prep.jl), maps (writable; the S6 maps linked, the Gauss maps of each lmax made once).
+# STK (S11): the stack; its kryos checkout (g2b_replay.x) and vilma2 clone (bin/vilma.x). STK=S9 with SHA: the diagnosis workspace
+# $G/p4g2b (kryos: a copy of the S9 checkout plus the harness; vilma2: a copy of the S9 clone).
+# Run folder $G/runs/g2b/kx-$SHA/$STK/$TAG/{kryos,vilma}. Shared from $G/p4g2b: data (g2b_prep.jl), maps (writable; the S6 maps linked,
+# the Gauss maps of each lmax made once; the grids are unchanged by the row-order fix of S11).
 set -uo pipefail
-G=/work/ba1442/robinson/kryos-gate; W=$G/p4g2b; S=$G/stacks/S9; K=$W/kryos
-LMAX=${LMAX:-170}; NSTEP=${NSTEP:-2100}; MODE=${MODE:?MODE=kryos|vilma}; TAG=${TAG:-l$LMAX}; SPIN=${SPIN:-1}; SHA=${SHA:-wip}
-OUT=$G/runs/g2b/kx-$SHA/S9/$TAG/$MODE
+G=/work/ba1442/robinson/kryos-gate; W=$G/p4g2b; STK=${STK:-S11}; S=$G/stacks/$STK
+if [ $STK = S9 ]; then K=$W/kryos; VX=$W/vilma2/bin/vilma.x; SHA=${SHA:-wip}; else K=$S/kryos; VX=$S/vilma2/bin/vilma.x; SHA=$(git -C $K rev-parse --short=7 HEAD); fi
+LMAX=${LMAX:-170}; NSTEP=${NSTEP:-2100}; MODE=${MODE:?MODE=kryos|vilma}; TAG=${TAG:-l$LMAX}; SPIN=${SPIN:-1}
+OUT=$G/runs/g2b/kx-$SHA/$STK/$TAG/$MODE
 [ -e $OUT ] && { echo "exists: $OUT"; exit 1; }
 mkdir -p $OUT/input; cd $OUT
 for f in $S/yelmox/input/*; do ln -sf $f input/; done
@@ -37,7 +40,7 @@ else
   mkdir maps
   G2B_NMLONLY=1 $K/libkryos/bin/g2b_replay.x $LMAX $NSTEP > nml.log 2>&1 || { cat nml.log; exit 1; }
   echo "== vilma.x lmax $LMAX nstep $NSTEP $(date -Is)"
-  /usr/bin/time -v $W/vilma2/bin/vilma.x vilma_g2b.nml > run.log 2>&1; echo "vilma.x exit $?"
+  /usr/bin/time -v $VX vilma_g2b.nml > run.log 2>&1; echo "vilma.x exit $?"
   grep -E "PROFILE setup|solid_earth_update  =|vilma_write_step|Maximum resident|Elapsed" run.log
 fi
 echo "== done $(date -Is)"
