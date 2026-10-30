@@ -20,6 +20,7 @@ function groups(lines)           # [(name, first line, last line)] of the &group
     out
 end
 
+grp0(lines, name) = first(filter(x -> x[1] == name, groups(lines)))
 function replace_group(lines, name, body)      # body: lines of the new group (with &name ... /)
     g = first(filter(x -> x[1] == name, groups(lines)))
     vcat(lines[1:g[2]-1], body, lines[g[3]+1:end])
@@ -46,9 +47,10 @@ const HEADER = """
 !   [recon_nor], [recon_ant]  both domains start from PaleoMIST at -80 ka over the whole domain (the base: NH from ICE-6G_C at -26 ka in
 !                 North America, ANT without a reconstruction); [Antarctica] experiments = "recon_ant"
 !   removed       [barysealevel], [isos_nor], [isos_ant] (FastIsostasy only)
-!   added         [vilma] (CLIMBER-X set: PREM, 11 layers, Bagge 3D structure 6, lmax 170, 1-D pre-spin-up),
+!   [out_rst]     restart bundle every 5 kyr (was 20 kyr; phase 4 G7, Q12)
+!   added         [vilma] (CLIMBER-X set: PREM, 11 layers, Bagge 3D structure 6, lmax 170, 1-D pre-spin-up, spin-up 2e4 yr / 1e-5 m/yr),
 !                 [globe_ice] and the three datasrc groups of the PaleoMIST history on GLOBAL-0.5DEG (X at 0 ka, anomaly of the history)
-! A run shorter than 80 ka: -p clock.time_end=<t>. The smb_simple variant is a -p list (conversion note).
+! A run shorter than 80 ka: -p clock.time_end=<t>. The smb_simple variant: par/gate/g6-smb.nml (tools/bin/kryos-smb-par.jl).
 """
 
 function main(args)
@@ -103,6 +105,11 @@ function main(args)
     L = delete_group(L, "isos_nor")
     L = delete_group(L, "isos_ant")
 
+    # restart bundles every 5 kyr (G7, Q12; the job end writes one as well)
+    let g = grp0(L, "out_rst")
+        L = map(l -> occursin(r"^\s*dt\s*=\s*20e3", l) ? replace(l, r"20e3\s*! yelmox tm_rst.dt" => "5e3                                ! yelmox tm_rst.dt = 20e3; 5 kyr (phase 4 G7, Q12)") : l, L)
+    end
+
     # cold start of both domains from PaleoMIST at -80 ka over the whole domain (marine ice kept)
     for (nm, sfx) in (("recon_nor", "nor"), ("recon_ant", "ant"))
         body = split("""
@@ -146,7 +153,8 @@ function main(args)
     visc_3d_file      = "fesmdata/Global/GLOBAL-T170/GLOBAL-T170_SolidEarth-Bagge2021.nc"
     visc_3d_structure = 6
     pre_spinup_1d     = .true.    ! VILMA2's own spin-up under the t0 load (phase4-plan Q7): the 1-D pre-equilibration
-    equil_time_max    = 0.0       ! [yr] the full-model relaxation after it: 0 until gate G2c has chosen
+    equil_time_max    = 2.0e4     ! [yr] cap of the full-model relaxation after it (G2c, Alex: converges after about 14 kyr at the tolerance below)
+    equil_rate_tol    = 1.0e-5    ! [m/yr] mean bed rate that ends a pass (both phases; G2c, Alex: 1e-3 leaves 15 % of the equilibrium deflection)
 /
 
 &globe_ice

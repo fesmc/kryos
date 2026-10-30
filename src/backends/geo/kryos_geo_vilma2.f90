@@ -398,8 +398,8 @@ contains
         logical,              intent(in)    :: init
 
         character(len=*), parameter :: DIMS_LL(3) = [character(len=32) :: "lon", "lat", "time"]
-        character(len=*), parameter :: VARS_VILMA(11) = [character(len=12) :: "h_ice", "rsl", "z_bed", "C_ocean", &
-            "dz_bed", "dz_ss", "bsl", "dphi", "bsl_ive", "fill_int", "fill_int_own"]
+        character(len=*), parameter :: VARS_VILMA(12) = [character(len=12) :: "h_ice", "rsl", "z_bed", "C_ocean", &
+            "dz_bed", "dz_ss", "bsl", "dphi", "bsl_ive", "bsl_ive_host", "fill_int", "fill_int_own"]
         type(var_io_type) :: row
         real(dp), allocatable :: a(:,:)
         integer :: hs(5), i, ncid, n
@@ -458,6 +458,7 @@ contains
             call fields_put(self%exports, self%h_dphi,       se%dphi,                    t1=t1)
             call fields_put(self%exports, self%h_bsl,        se%bsl,                     t1=t1)
             call fields_put(self%exports, self%h_bsl_ive,    se%bsl_ive,                 t1=t1)
+            call fields_put(self%exports, self%h_bsl_ive_host, se%bsl_ive_host,          t1=t1)
             call fields_put(self%exports, self%h_A_ocn,      A_ocn,                      t1=t1)
             call fields_put(self%exports, self%h_mass_resid, se%worst_mass_resid,        t1=t1)
         end associate

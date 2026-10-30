@@ -2,6 +2,7 @@
 # Stage and submit a run of the science case with geo = vilma2 on stack S6 (phase 4 WP7), kryos built with vilma=1.
 #   [K=$S/kryos] [MAPS=$G/maps/S6] [PAR=par/kryos_NH-ANT_vilma2.nml (relative to K, or absolute)] [THREADS=64] [JOBTIME=02:00:00] [PART=compute] \
 #   [CT0= CTM= CTE=] run_vilma2.sh <gate> cont|cont2|chunk|mapgen [set_nml args: group.key=value ...]
+# SINGLE=1: any other run name is one run like cont (WP7c gates).
 # cont, cont2: one run, mapgen: a run in a writable map folder $G/maps/gen/S6 (copy of $MAPS) that creates the missing maps;
 # chunk: c00 CT0 -> CTM and c01 CTM -> CTE from c00/restart-<CTM> (afterok). The run folder is $G/runs/<gate>/kx-<sha>/S6/<run>.
 # The node is exclusive (VILMA2 at lmax 170 needs 20-25 GB); OMP_PROC_BIND=spread. The extra args are set in the par file
@@ -65,7 +66,7 @@ exit \$rc
 JOB
 }
 case $RUN in
-  cont|cont2|mapgen|lossless)
+  cont|cont2|mapgen|lossless|single)
     stage $OUT $GATE-$RUN "$@"
     echo "$GATE $RUN $SHA $(cd $OUT && sbatch --parsable job.submit) $OUT" ;;
   chunk)
@@ -76,5 +77,5 @@ case $RUN in
     stage $OUT/c01 $GATE-c01 clock.time_init=$CTM clock.time_end=$CTE "kryos.restart=\"$OUT/c00/restart-$RD\"" "$@"
     j1=$(cd $OUT/c01 && sbatch --parsable --dependency=afterok:$j0 job.submit)
     echo "$GATE chunk $SHA $j0 $j1 $OUT" ;;
-  *) echo "unknown run $RUN"; exit 1 ;;
+  *) if [ -n "${SINGLE:-}" ]; then stage $OUT $GATE-$RUN "$@"; echo "$GATE $RUN $SHA $(cd $OUT && sbatch --parsable job.submit) $OUT"; else echo "unknown run $RUN"; exit 1; fi ;;
 esac

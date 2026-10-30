@@ -282,6 +282,7 @@ contains
         case ("dphi");       handle = g%c%h_dphi
         case ("bsl");        handle = g%c%h_bsl
         case ("bsl_ive");    handle = g%c%h_bsl_ive
+        case ("bsl_ive_host"); handle = g%c%h_bsl_ive_host
         case ("A_ocn");      handle = g%c%h_A_ocn
         case ("mass_resid"); handle = g%c%h_mass_resid
         case default;        handle = 0
@@ -301,8 +302,9 @@ contains
         a = field(g, "C_ocn");   ok = ok .and. all(a == d%gg%C)
         call check(ok, what//": dz_bed, dz_ss (= VILMA2's minus dphi), C_ocn bitwise equal to the direct calls")
         call check(scalar(g, "dphi") == d%dphi .and. scalar(g, "bsl") == d%bsl .and. &
-                   scalar(g, "bsl_ive") == d%bsl_ive .and. scalar(g, "mass_resid") == d%worst_mass_resid, &
-                   what//": dphi, bsl, bsl_ive, mass_resid bitwise equal")
+                   scalar(g, "bsl_ive") == d%bsl_ive .and. scalar(g, "bsl_ive_host") == d%bsl_ive_host .and. &
+                   scalar(g, "mass_resid") == d%worst_mass_resid, &
+                   what//": dphi, bsl, bsl_ive, bsl_ive_host, mass_resid bitwise equal")
         call check(scalar(g, "A_ocn") == d%par%r_earth**2 * sht_grid_surface_integral(d%sht, d%gg%C), &
                    what//": A_ocn = r_earth^2 times the integral of C")
     end subroutine compare

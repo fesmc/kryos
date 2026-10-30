@@ -1,0 +1,37 @@
+# Gate g6 (phase 4 WP7c, G6): the science case with geo = vilma2 (par/kryos_NH-ANT_vilma2.nml; both domains, lmax 170, Bagge 3D) for 2000 yr from -80 ka, run by tools/levante/g6.sh. Check: chunk (restart at -79000) == cont, bundles included.
+gate     = "g6"
+kind     = "kryos"
+time_end = -78000.0
+chunks   = [-80000.0, -79000.0, -78000.0]
+restart_times = [-79000.0, -78000.0]
+domain_order  = ["North", "Antarctica"]
+skip     = []
+
+[domains.North.instances]
+domain     = "North"
+ice        = "ice_nor"
+geo        = "geo_nor"
+climate    = "climate_nor"
+surface    = "surface_nor"
+shelf      = "shelf_nor"
+geothermal = "ghf_nor"
+sediments  = "sed_nor"
+forcing    = "forcing"
+geo_glob   = "geo_glob"
+
+[domains.Antarctica.instances]
+domain     = "Antarctica"
+ice        = "ice_ant"
+geo        = "geo_ant"
+climate    = "climate_ant"
+surface    = "surface_ant"
+shelf      = "shelf_ant"
+geothermal = "ghf_ant"
+sediments  = "sed_ant"
+forcing    = "forcing"
+geo_glob   = "geo_glob"
+
+[[check]]
+type = "chunks"
+ref  = "cont"
+run  = "chunk"

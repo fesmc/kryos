@@ -10,8 +10,12 @@
 #         dI_g = (I_g - I_g_ref) + [a ice (1 - C_own) - a0 ice_eq (1 - C0_own)], a = 1 - w, C_own = (C - C_hat)/a, C0_own from
 #         (z_bed_eq, h_ice_eq) with VILMA2's flotation rule; F is the host part of the fill only (the own part's fill needs
 #         zeta0, not output): the residual is reported against both |lhs| and |rhs|
-#   (iv)  bsl_ive (series, at t_n) against the sea-level equivalent of the grounded-ice change of the gather at t_n - dt
-#         (log: domains + external, with the run's rho_ice/rho_sw and the sea surface area of the constants)
+#   (iv)  bsl_ive_host (series, at t_n), the host part of VILMA2's ice-volume equivalent, times VILMA2's ocean area against the sum
+#         over the domains of the sea-level equivalent of the grounded-ice change of the gather at t_n - dt times the sea surface
+#         area of the constants (log; the run's rho_ice/rho_sw), as volumes, bound 1e-6. Yelmo owns the host part (its flotation).
+#         For information, not a bound: the own part (bsl_ive - bsl_ive_host) times VILMA2's ocean area, which counts only the
+#         grounded external ice by VILMA2's flotation, against the external sea-level equivalent of the log, which counts all
+#         PaleoMIST ice of the 1 - w part, floating included; the difference is the floating external ice.
 #   (v)   the ocean area of the reference against the sea surface (log)
 using NCDatasets, Printf, Statistics
 
@@ -20,7 +24,7 @@ function parse_log(file)
     aref = (NaN, NaN); rho = (NaN, NaN)
     for l in eachline(file)
         if occursin("sea-level equivalent of the ice change", l)
-            m = match(r"t = (\S+) yr, sea-level equivalent of the ice change \[m\]:(.*), external (\S+); clipped external ice (\S+) Gt; merge closure (\S+)", l)
+            m = match(r"t = (\S+) yr, sea-level equivalent of the ice change \[m\]:(.*), external (?:ice, all \(floating included\) )?(\S+); clipped external ice (\S+) Gt; merge closure (\S+)", l)
             m === nothing && continue
             t = parse(Float64, m[1])
             parts = split(strip(m[2]))
@@ -54,6 +58,8 @@ function main(args)
     ts = NCDataset(joinpath(rdir, "geo_glob_ts.nc"))
     t = Float64.(Array(ts["time"])); mr = Float64.(Array(ts["mass_resid"])); bi = Float64.(Array(ts["bsl_ive"]))
     bs = Float64.(Array(ts["bsl"])); ao = Float64.(Array(ts["A_ocn"]))
+    hasbh = haskey(ts, "bsl_ive_host")
+    bh = hasbh ? Float64.(Array(ts["bsl_ive_host"])) : fill(NaN, length(t))
     @printf(io, "(ii) VILMA2 mass_resid: max %.3e over %d steps (sle_tol 1e-7; reported, proposed bound 1e-6)\n\n", maximum(abs.(mr)), length(mr))
     rows = []
     for n in eachindex(t)
@@ -62,20 +68,31 @@ function main(args)
         k === nothing && continue
         g = gl[collect(keys(gl))[k]]
         esl = sum(values(g.doms)) + g.ext
-        push!(rows, (t[n], bi[n], esl, bs[n], ao[n]))
+        push!(rows, (t[n], bi[n], esl, bs[n], ao[n], bh[n], sum(values(g.doms)), g.ext))
     end
     if !isempty(rows)
-        rel = [abs(r[2] - r[3]) / max(abs(r[3]), 1e-12) for r in rows]
-        @printf(io, "(iv) bsl_ive against the sea-level equivalent of the gathered grounded-ice change: %d steps, max relative difference %.3e (proposed bound 1%%); last: bsl_ive %.4f m, ESL %.4f m, bsl %.4f m\n\n",
-                length(rows), maximum(rel), rows[end][2], rows[end][3], rows[end][4])
         asea = aref[2]
-        relv = [abs(r[2] * r[5] - r[3] * asea) / max(abs(r[3] * asea), 1e-12) for r in rows]
-        @printf(io, "    as volumes (bsl_ive times the ocean area of VILMA2's solve against the ESL times the sea surface area of the constants, i.e. without the change of the ocean area): max relative difference %.3e\n\n", maximum(relv))
-        println(io, "| t [yr] | bsl_ive [m] | ESL of the gather at t-dt [m] | bsl [m] | rel. diff | rel. diff as volumes |\n|---|---|---|---|---|---|")
-        for r in rows[unique([1; round.(Int, range(1, length(rows), length = min(9, length(rows)))); length(rows)])]
-            @printf(io, "| %g | %.5f | %.5f | %.5f | %.2e | %.2e |\n", r[1], r[2], r[3], r[4], abs(r[2] - r[3]) / max(abs(r[3]), 1e-12), abs(r[2] * r[5] - r[3] * asea) / max(abs(r[3] * asea), 1e-12))
+        if !hasbh
+            println(io, "(iv) bsl_ive_host is not in the series (a run before the export): not evaluated\n")
+        else
+            # volumes: host part of VILMA2 over its ocean area against the domains' equivalent over the sea surface of the constants
+            vh = [r[6] * r[5] for r in rows]; vd = [r[7] * asea for r in rows]
+            relh = abs.(vh .- vd) ./ max.(abs.(vd), 1e-12)
+            kmax = argmax(relh)
+            @printf(io, "(iv) bsl_ive_host A_ocn against the sum over the domains of ESL A_sea, as volumes: %d steps, max relative difference %.3e at t = %g yr (bound 1e-6) -> %s\n    last: bsl_ive_host %.5f m, domains' ESL %.5f m, A_ocn %.5e m2, A_sea %.5e m2\n\n",
+                    length(rows), relh[kmax], rows[kmax][1], maximum(relh) <= 1e-6 ? "PASS" : "FAIL", rows[end][6], rows[end][7], rows[end][5], asea)
+            # information: the own part and the external ESL (all ice, floating included)
+            vo = [(r[2] - r[6]) * r[5] for r in rows]; ve = [r[8] * asea for r in rows]
+            fl = ve .- vo; relf = fl ./ max.(abs.(ve), 1e-12)
+            @printf(io, "    for information (no bound): own part (bsl_ive - bsl_ive_host) A_ocn, grounded external ice by VILMA2's flotation, against the external ESL A_sea of the log, all ice, floating included:\n    floating external ice (ESL A_sea - own part): max %.3e m3, last %.3e m3; relative to the external volume: max %.3e, last %.3e\n    (bsl_ive A_ocn against the full ESL A_sea: max relative difference %.3e)\n\n",
+                    maximum(abs.(fl)), fl[end], maximum(abs.(relf)), relf[end],
+                    maximum(abs((r[2] * r[5] - r[3] * asea) / max(abs(r[3] * asea), 1e-12)) for r in rows))
+            println(io, "| t [yr] | bsl_ive_host A_ocn [m3] | domains ESL A_sea [m3] | rel. diff | own part A_ocn [m3] | external ESL (all ice) A_sea [m3] | floating external [m3] | floating / external |\n|---|---|---|---|---|---|---|---|")
+            for k in unique([1; round.(Int, range(1, length(rows), length = min(9, length(rows)))); length(rows)])
+                @printf(io, "| %g | %.5e | %.5e | %.2e | %.5e | %.5e | %.3e | %.2e |\n", rows[k][1], vh[k], vd[k], relh[k], vo[k], ve[k], fl[k], relf[k])
+            end
+            println(io)
         end
-        println(io)
     end
     # (v)
     @printf(io, "(v) ocean area of the reference %.5e m2 against the sea surface %.5e m2 (the constants): %+.3f %% (bound 1%%) -> %s\n    VILMA2 A_ocn (series): first %.5e, last %.5e m2\n\n",
@@ -99,6 +116,7 @@ function main(args)
         println(io, "(iii) int C rsl dA = -(rho_i/rho_w) int dI_g dA + fill_int, from the lossless run's streams (fill_int: VILMA2's flooded-area fill integral of the whole sphere, the host's F and the own part's share):\n")
         println(io, "| t [yr] | int C rsl dA [m3] | -(ri/rw) int dI_g dA [m3] | VILMA2 bsl_ive A_ocn [m3] | rhs / VILMA2 - 1 | int F_host dA [m3] | fill_int [m3] | (fill_int - fill_int_own - F_host) / fill_int | balance residual [m3] | residual / abs(lhs) |\n|---|---|---|---|---|---|---|---|---|---|")
         maxres = 0.0
+        glk = collect(keys(gl)); rowsd = []     # (t, host part, domains' ESL, own part, external ESL): (iv) from the streams, in m3
         for (k, tt) in enumerate(tg)
             kv = findfirst(x -> abs(x - tt) < 1e-6, tv); kv === nothing && continue
             w = Float64.(gia["host_w"][:, :, k]); Ig = Float64.(gia["host_Ig"][:, :, k]); Ch = Float64.(gia["host_C"][:, :, k])
@@ -110,9 +128,24 @@ function main(args)
             lhs = sum(C .* rsl .* A); rhs = -(ri / rw) * sum(dI .* A); fi = sum(F .* A)
             ktt = findfirst(x -> abs(x - tt) < 1e-6, t); vil2 = ktt === nothing ? NaN : bi[ktt] * ao[ktt]
             fint = hasfill ? Float64(vil["fill_int"][kv]) : NaN; fown = hasfill ? Float64(vil["fill_int_own"][kv]) : NaN
+            kg = findfirst(x -> abs(x - (tt - dt)) < 1e-6, glk)
+            if kg !== nothing
+                g = gl[glk[kg]]
+                push!(rowsd, (tt, -(ri / rw) * sum((Ig .- I0) .* A), sum(values(g.doms)) * aref[2],
+                              rhs + (ri / rw) * sum((Ig .- I0) .* A), g.ext * aref[2]))
+            end
             res = lhs - (rhs + (hasfill ? fint : fi))
             maxres = max(maxres, abs(res) / max(abs(lhs), 1e-30))
             @printf(io, "| %g | %.5e | %.5e | %.5e | %.2e | %.3e | %.5e | %.2e | %.3e | %.2e |\n", tt, lhs, rhs, vil2, rhs / vil2 - 1, fi, fint, (fint - fown - fi) / max(abs(fint), 1e-30), res, abs(res) / max(abs(lhs), 1e-30))
+        end
+        if !isempty(rowsd)
+            # the host part of bsl_ive A_ocn from the streams: -(rho_i/rho_w) int (I_g - I_g_ref) dA (what bsl_ive_host A_ocn is)
+            relh = [abs(r[2] - r[3]) / max(abs(r[3]), 1e-12) for r in rowsd]; km = argmax(relh)
+            fl = [r[5] - r[4] for r in rowsd]; relf = [(r[5] - r[4]) / max(abs(r[5]), 1e-12) for r in rowsd]
+            @printf(io, "\n(iv) from the streams (the host part -(rho_i/rho_w) int (I_g - I_g_ref) dA, the value of bsl_ive_host A_ocn, against the domains' ESL A_sea; %d records): max relative difference %.3e at t = %g yr (bound 1e-6) -> %s\n",
+                    length(rowsd), relh[km], rowsd[km][1], maximum(relh) <= 1e-6 ? "PASS" : "FAIL")
+            @printf(io, "    for information: floating external ice (external ESL A_sea of the log, all ice, minus VILMA2's own part): max %.3e m3 at t = %g yr, last %.3e m3; relative to the external volume: max %.3e, last %.3e\n",
+                    maximum(abs.(fl)), rowsd[argmax(abs.(fl))][1], fl[end], maximum(abs.(relf)), relf[end])
         end
         @printf(io, "\nmax residual / abs(int C rsl dA): %.3e (bound 1e-6) -> %s\n", maxres, !hasfill ? "fill_int is not in the vilma stream: the own part's fill is missing, not evaluated" : maxres <= 1e-6 ? "PASS" : "FAIL")
     end
