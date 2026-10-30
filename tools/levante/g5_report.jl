@@ -46,6 +46,20 @@ function main(args)
                 isempty(dZ[ga]) ? NaN : mean(dZ[ga]), isempty(dZ[ga]) ? NaN : mean(dZ[ga] .< 0), maximum(dZ), minimum(dZ), maximum(abs.(dS)))
     end
     println(io)
+    println(io, "### (a2) the same per 500-yr interval (changes between consecutive records)\n")
+    println(io, "Lost: cells with dH < -50 m in the interval; gained: dH > 50 m. Slope: least-squares d(dz_bed) against dH over the cells with |dH| > 20 m (the bed moves by this many m per m of ice: < 0 is the expected sign; the loading of the neighbours, the ocean load and the earlier history are in it).\n")
+    println(io, "| interval | lost cells | mean dH | mean d(dz_bed) | uplift fraction | gained cells | mean dH | mean d(dz_bed) | subsidence fraction | slope [m/m] | R |\n|---|---|---|---|---|---|---|---|---|---|---|")
+    for k in 2:length(tg)
+        kk = findfirst(x -> abs(x - tg[k]) < 1e-6, ti); k0 = findfirst(x -> abs(x - tg[k-1]) < 1e-6, ti); (kk === nothing || k0 === nothing) && continue
+        dH = rd(iv, "H_ice")[:, :, kk] .- rd(iv, "H_ice")[:, :, k0]; dZ = rd(gv, "dz_bed")[:, :, k] .- rd(gv, "dz_bed")[:, :, k-1]
+        lo = dH .< -50; ga = dH .> 50; sel = abs.(dH) .> 20
+        x = dH[sel]; y = dZ[sel]
+        sl = length(x) > 3 ? sum((x .- mean(x)) .* (y .- mean(y))) / sum((x .- mean(x)) .^ 2) : NaN
+        r = length(x) > 3 ? cor(x, y) : NaN
+        @printf(io, "| %g to %g | %d | %.0f | %.2f | %.3f | %d | %.0f | %.2f | %.3f | %.3f | %.2f |\n", tg[k-1], tg[k], count(lo), isempty(dH[lo]) ? NaN : mean(dH[lo]), isempty(dZ[lo]) ? NaN : mean(dZ[lo]),
+                isempty(dZ[lo]) ? NaN : mean(dZ[lo] .> 0), count(ga), isempty(dH[ga]) ? NaN : mean(dH[ga]), isempty(dZ[ga]) ? NaN : mean(dZ[ga]), isempty(dZ[ga]) ? NaN : mean(dZ[ga] .< 0), sl, r)
+    end
+    println(io)
     # ---- (b) bsl against the ESL of the ANT ice change
     ts = NCDataset(joinpath(rv, "geo_glob_ts.nc")); t = rd(ts, "time"); bsl = rd(ts, "bsl"); bi = rd(ts, "bsl_ive")
     gl = gather_log(joinpath(rv, "out.out"))
