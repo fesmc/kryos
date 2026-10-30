@@ -630,3 +630,9 @@ science par from PaleoMIST at -80 ka in both domains. Stack S7 = S6 + fesm-utils
 G0: `make check` passes on stock code, both builds. G1: grl, ant, ant-full, nor, sci, sci-const bit identical to the previous K and K3-sci. G1b: sci-hub bit identical to K3-sci, hub closure 2.6e-10 / 1.5e-10 (< 1e-9), `globe_ice.nc` equals the offline merge.
 Stock science run (400 yr, PaleoMIST start): no stop, clip excess 2.8e-9; t0: recon takes record 1, ice vs PaleoMIST -80 ka ESL difference -0.17 m (North) and -0.48 m (Antarctica). G3: closure 1.2e-12, `mass_resid` 2.2e-15,
 (iii) full balance with `fill_int` 1.6e-13, (iv) as volumes 1.7e-6, `A_ocn_ref` +0.23 %. G4: cont2 == cont, rounding passes (0.977, bundles identical); chunk vs cont differs only in `pc_tau_max` (known) and the Maxwell memory `tau_*`, at 1e-28 Pa.
+
+## Phase 4, S8: ncio returns the values as stored (2026-10-30)
+
+Report `gate-reports/p4-s8.md`. fesm-utils `phase0-kryos` a13cd38 (pushed): `nc_read` no longer sets values below 1e-30 to zero (the flush was in the reader only), `test_ncio_tiny`; vilma2 main 4419636 (pushed): `test_restart_3d` with tiny values in the six memories (fails on the old ncio),
+the `read_exact` bypass dropped. Stack S8 = S7 + a13cd38 + 4419636 + kryos e4453dc (`tools/setup_S8.sh`).
+G1: grl, ant, ant-full, nor, sci, sci-const bit identical to the previous K and K3-sci. G4: cont2 == cont; chunk == cont except `pc_tau_max` (the known Yelmo diagnostic); the VILMA2 memories `tau_*` bit identical (S7: 1e-28 Pa); rounding 0.977, bundles identical.
