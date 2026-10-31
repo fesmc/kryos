@@ -270,5 +270,5 @@ Run - PaleoMIST at 80, 60, 22.5, 10 ka, +-50 m; black: the 22.5 ka ice margin.
 ### Not as planned
 
 - T3 emulated through the forcing as planned (Bm: + (rho_w/rho_i) times the present water depth where grounded on today's ocean), then also against the 80 ka state (Bm80) once R80 showed the reference matters, and as the binary ocean load (`sle_subgrid = .false.`, a VILMA2 option, no source change).
-- T5 added the 80 ka reference (R80) and k_s, after the step convention and the topography of SELEN were read in its source; the scheme `trap` and the combination at cfl 0.1 were cancelled (cfl 0.1 alone already 0.5 m).
+- T5 added the 80 ka reference (R80) and k_s, after the step convention and the topography of SELEN were read in its source; the scheme `trap` was cancelled (cfl 0.1 alone already 0.5 m); the SELEN emulation at cfl 0.1 (`diag/D_all_c01`, on the present-day reference) finished but is not compared.
 - The SELEN sea level was computed from Gowan's Stokes coefficients (bundle) rather than taken from Zenodo; Gowan's own grid program needs 40 ms per point, so the grid is synthesised in Julia and checked against it at points.
