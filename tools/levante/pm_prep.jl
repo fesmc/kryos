@@ -8,6 +8,10 @@
 # pm_force_A.nc : the 22.5 ka ice held, two slices (-22500, -22500 + DT_STEP): the spin-up under it is the A run.
 # pm_force_S.nc : smoke, the records 25, 22.5, 20 ka as for B.
 # Model time t = -age (years before 1950).
+#   julia --project=tools tools/levante/pm_prep.jl visc1d <profile.csv> <out.nc>
+# pm_visc_bm.nc : the 1-D profile of pre_spinup_1d (pm_visc1d.x: per FE node, the lateral mean of the 3-D log10 eta) as a
+#                 laterally uniform field in the form of the FesmData Bagge2021 product (log10_visc(lon, lat, depth,
+#                 structure), one structure), on the node depths, so that vilma.x reads it back at its nodes unchanged.
 using NCDatasets
 
 const DT_STEP = 1.0     # [yr] the ramp of a record step; << the shortest Maxwell time (~15 yr at log10 eta = 19.5)
@@ -38,7 +42,29 @@ function steps(ages, ice)
     t, s
 end
 
+function write_visc_uniform(csv, f)
+    l = filter(!isempty ∘ strip, readlines(csv)); h = split(l[1], ',')
+    col(name) = [parse(Float64, split(r, ',')[findfirst(==(name), h)]) for r in l[2:end]]
+    depth = col("depth"); v = col("log10_visc_mean")
+    p = sortperm(depth); depth = depth[p]; v = v[p]
+    depth[1] = max(depth[1], 0.0)                                      # the surface node (6371 km - r rounding)
+    lon = collect(0.0:30.0:330.0); lat = collect(-90.0:30.0:90.0)
+    isfile(f) && rm(f)
+    NCDataset(f, "c") do nc
+        defDim(nc, "lon", length(lon)); defDim(nc, "lat", length(lat)); defDim(nc, "depth", length(depth)); defDim(nc, "structure", 1)
+        defVar(nc, "lon", lon, ("lon",); attrib = ["units" => "degrees_east"])
+        defVar(nc, "lat", lat, ("lat",); attrib = ["units" => "degrees_north"])
+        defVar(nc, "depth", depth, ("depth",); attrib = ["units" => "m", "positive" => "down", "comment" => "the FE node depths of vilma.x"])
+        defVar(nc, "structure", Int32[1], ("structure",))
+        defVar(nc, "log10_visc", [v[k] for i in lon, j in lat, k in eachindex(depth), s in 1:1], ("lon", "lat", "depth", "structure");
+               attrib = ["units" => "log10(Pa s)", "long_name" => "lateral mean of log10 viscosity (pre_spinup_1d profile), laterally uniform"])
+        nc.attrib["source"] = csv
+    end
+    println("wrote ", f, ": ", length(depth), " depths, log10 eta ", round(minimum(v), digits = 3), " to ", round(maximum(v), digits = 3))
+end
+
 function main(args)
+    args[1] == "visc1d" && return write_visc_uniform(args[2], args[3])
     fesmdata, out = args[1], args[2]; grid = length(args) >= 3 ? args[3] : "GLOBAL-0.25DEG"
     mkpath(out)
     src = joinpath(fesmdata, "Global", grid, "$(grid)_IceHistory-PaleoMIST.nc")
