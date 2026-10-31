@@ -671,3 +671,9 @@ G2b: the difference falls with lmax, `bsl` 0.36-0.42 % of the range, `dz_bed` ho
 `g3_budget.jl` by lat). G4: cont2 == cont, chunk == cont (3200, bundles identical), rounding 0.977. G6: no stop, G3 each step, chunk == cont (3200; smb 3008); drift as S9 (NH -0.53, ANT +2.02 m per kyr).
 G2c: 1e-5 / 2e4 still converges (full phase 7 passes, 8.6 kyr, 0.87 tol; 39 min job against 55 on S8). VILMA2 restarts from before S11 are invalid. G5 and G7 predate the fix (G7's cost holds; G5 to be rerun).
 
+## Phase 4, S11: G5 rerun (2026-10-31)
+
+Report `gate-reports/p4-s11.md` (G5 rerun). ANT only, -20 to 0 ka, VILMA2 global on S11 with the chosen spin-up; FastIsostasy runs of S8 reused. 2000 steps, no stop, 2.85 node-h.
+G3: (i) 1.3e-12, (ii) 1.8e-15, (iii) 1.7e-14, (iv) host part 9.8e-8 (series) / 6.7e-13 (streams), (v) +0.233 %: **PASS**. ANT still grows (+24.6 m, S8 +27.8): not a deglaciation.
+Against S8: lost cells uplift from -15 ka (S8 -12 ka), 87-100 % per interval from -12 ka, +1 to +8 m per 500 yr; gained cells subside 98.7-100 %; min `dz_bed` -470 m (S8 -430).
+The full spin-up from the LGM load hit `equil_time_max` (2e4 yr, v 2.2 tol).

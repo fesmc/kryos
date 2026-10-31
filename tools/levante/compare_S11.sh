@@ -6,12 +6,13 @@
 #SBATCH --mem=64G
 #SBATCH --job-name=cmp-S11
 #SBATCH --output=/work/ba1442/robinson/kryos-gate/reports/S11/cmp-S11-%j.log
-# sbatch --export=ALL compare_S11.sh g2b|g4|g3|g6|g2c; reports and summary.txt in $G/reports/S11 (scripts of the stack checkout).
+# sbatch --export=ALL compare_S11.sh g2b|g4|g3|g6|g2c|g5; reports and summary.txt in $G/reports/S11 (scripts of the stack checkout).
 #   g2b: g2b_compare.jl over l085 l128 l170 (and the S9 diagnosis runs for the before/after table), g2b_diag.jl for l085.
 #   g4:  sci-vilma2 cont2 == cont, chunk == cont, rounding (cmp_g4.sh).
 #   g3:  g3_budget.jl on sci-vilma2 (cont with its lossless twin) and on the g6 cont (lossless itself).
 #   g6:  chunk == cont for g6 and g6-smb (kryos-gate-kk.jl, bundles included), drift against K3-sci (g6_report.jl).
 #   g2c: g2c_report.jl on the S11 spin-up run.
+#   g5:  g5_report.jl, g3_budget.jl, g5_iv.jl on the S11 VILMA2 run; FastIsostasy runs of S8 (unaffected by the row order).
 set -uo pipefail
 module load python3 >/dev/null 2>&1 || true
 export PATH=$HOME/.juliaup/bin:$HOME/.local/bin:$PATH
@@ -50,6 +51,14 @@ case ${1:-} in
   g2c)
     $J $L/g2c_report.jl $G/runs/g2c/kx-$KSHA/S11 --md $OUT/g2c.md > $OUT/g2c.log 2>&1
     echo "g2c | exit $? | g2c.md" >> $OUT/summary.txt ;;
-  *) echo "usage: compare_S11.sh g2b|g4|g3|g6|g2c"; exit 1 ;;
+  g5)
+    R=$G/runs/g5/kx-$KSHA/S11/vilma2-full; F=$G/runs/g5/kx-e4453dc/S8
+    $J $L/g5_report.jl $R $F/fastiso-full $F/fastiso-sealevel-file --md $OUT/g5.md > $OUT/g5.log 2>&1
+    echo "g5 | exit $? | g5.md" >> $OUT/summary.txt
+    $J $S11T/g3_budget.jl $R $R $K/libkryos/bin/hub_areas.x --md $OUT/g5-g3.md > $OUT/g5-g3.log 2>&1
+    echo "g3 g5 | exit $? | g5-g3.md" >> $OUT/summary.txt
+    $J $L/g5_iv.jl $R --md $OUT/g5-iv.md > $OUT/g5-iv.log 2>&1
+    echo "g5 iv | exit $? | g5-iv.md" >> $OUT/summary.txt ;;
+  *) echo "usage: compare_S11.sh g2b|g4|g3|g6|g2c|g5"; exit 1 ;;
 esac
 echo "== $(date -Is) done $1" >> $OUT/summary.txt
