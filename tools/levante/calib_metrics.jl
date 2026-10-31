@@ -3,7 +3,7 @@
 #   julia calib_metrics.jl <run dir> <Antarctica|North> <pd|lgm> <out prefix>
 # Writes <prefix>.md (tables), <prefix>_ts.tsv (V_sle, V_ice_g, A_ice_g of the 1-D file every 500 yr), North: <prefix>_reg_ts.tsv (V_af of GRL/NA/EUR
 # of every 2-D record), and <prefix>_fields.nc (model and reference
-# grounded thickness, for the maps of tools/calib_maps.jl). Grounded ice: H_ice where f_grnd >= 0.5 (model, BedMachine, GEBCO); the history files hold
+# grounded thickness, the ice masks of the model and (pd) the reference, for the maps of tools/calib_maps.jl). Grounded ice: H_ice where f_grnd >= 0.5 (model, BedMachine, GEBCO); the history files hold
 # grounded ice only (PaleoMIST) or ice thickness (GLAC-1D, ICE-6G_C: every H > 0 is taken as grounded; the bed there is z_srf - H_ice).
 # V_af: ice above flotation as sea level equivalent, rho_i 917, rho_sw 1028, ocean area 3.625e14 m2, flotation against the sea level of the state
 # (model: z_sl of the output; references: 0 for the present day, -120 m for the LGM). Cell areas: Yelmo's `area` of the run (the same for the references).
@@ -59,8 +59,8 @@ function main(args)
     stats(H, g, zb, zsl) = (V = sum(area .* H .* g) / 1e15, Vaf = sle(H, g, zb, zsl), A = sum(area .* g) / 1e12, Hmax = maximum(H .* g))
     # references: name => (H grounded, grounded mask, z_bed, z_sl)
     refs = Vector{Tuple{String,Matrix{Float64},BitMatrix,Matrix{Float64},Float64}}()
+    topo = "$fd" * (dom == "Antarctica" ? "_TOPO-BedMachine-v4.nc" : "_TOPO-GEBCO2026.nc")
     if case == "pd"
-        topo = "$fd" * (dom == "Antarctica" ? "_TOPO-BedMachine-v4.nc" : "_TOPO-GEBCO2026.nc")
         H = clean(rd(topo, "H_ice")); g = (clean(rd(topo, "f_grnd")) .>= 0.5) .& (H .> 0)
         push!(refs, ((dom == "Antarctica" ? "BedMachine v4" : "GEBCO 2026"), H .* g, g, clean(rd(topo, "z_bed")), 0.0))
     else
@@ -85,7 +85,8 @@ function main(args)
         join([@sprintf("%.1f", vsle[findmin(abs.(tt .- (tt[1] + k*5e3)))[2]]) for k in 0:6 if tt[1] + k*5e3 <= tt[end]], " ")))
     println(io, "| reference | V ref [1e6 km3] | V_af ref [m SLE] | A ref [1e6 km2] | dV_af (model - ref) [m] | dA [1e6 km2] | model-only / ref-only area [1e6 km2] | thickness bias / rms, union [m] | bias / rms, overlap [m] | GL dist model->ref mean / median / p90 [km] | ref->model mean [km] |")
     println(io, "|---|---|---|---|---|---|---|---|---|---|---|")
-    flds = Dict{String,Matrix{Float64}}("H_model" => Hg_m, "z_bed_model" => zb)
+    flds = Dict{String,Matrix{Float64}}("H_model" => Hg_m, "z_bed_model" => zb, "ice_model" => Float64.(Hm .> 1))   # ice_*: ice mask (H > 1 m, grounded and floating)
+    case == "pd" && (flds["ice_ref"] = Float64.(clean(rd(topo, "H_ice")) .> 1))
     for (nm, H, g, zbr, zlr) in refs
         sr = stats(H, g, zbr, fill(zlr, size(H)))
         un = gm .| g; ov = gm .& g; d = Hg_m .- H

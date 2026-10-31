@@ -1,8 +1,8 @@
 #!/usr/bin/env julia
-# Maps and series of the calib-cf report (Mac, CairoMakie): from the files of tools/levante/calib_metrics.jl.
+# Maps and series of the calib-cf report (CairoMakie; run on Levante, not on the Mac): from the files of tools/levante/calib_metrics.jl.
 #   julia tools/calib_maps.jl <dir with <label>_fields.nc, _ts.tsv, .md (and _reg_ts.tsv)> <out dir>
 # label: ant|nor - pd|lgm|lgmrecon [-tag] (the out prefix of calib_metrics.jl). One map figure per label (<label>-maps.png; the model and
-# model - reference for each reference of the fields file, PaleoMIST 22.5 ka left out), V_sle series per domain (vsle-series.png) and the
+# model - reference for each reference of the fields file, PaleoMIST 22.5 ka left out; ice fronts dashed on the model panel), V_sle series per domain (vsle-series.png) and the
 # regional V_af series of the North LGM runs with the range of the references (nor-lgm-regions.png).
 using CairoMakie, NCDatasets, DelimitedFiles, Printf
 dir, out = ARGS; mkpath(out)
@@ -19,6 +19,8 @@ function maps(lab)
     ax = Axis(fig[1, 1]; title = "model grounded H [m]", aspect = DataAspect()); hidedecorations!(ax)
     hm = heatmap!(ax, x, y, replace(Hm, 0.0 => NaN); colormap = :ice, colorrange = (0, 4500)); Colorbar(fig[2, 1], hm; vertical = false, flipaxis = false, ticks = 0:1500:4500)
     contour!(ax, x, y, Float64.(Hm .> 0); levels = [0.5], color = :black, linewidth = 0.8)
+    ds = NCDataset(f); fr = [k for k in ("ice_model", "ice_ref") if haskey(ds, k)]; close(ds)        # ice fronts (grounded and floating), dashed
+    for (k, col) in zip(fr, (:black, :magenta)); contour!(ax, x, y, rdf(f, k); levels = [0.5], color = col, linewidth = 0.8, linestyle = :dash); end
     for (k, key) in enumerate(refs)
         Hr = rdf(f, key); d = Hm .- Hr; d[(Hm .== 0) .& (Hr .== 0)] .= NaN
         ax = Axis(fig[1, k + 1]; title = "model - $(refname(key)) [m]", aspect = DataAspect()); hidedecorations!(ax)
@@ -26,7 +28,7 @@ function maps(lab)
         contour!(ax, x, y, Float64.(Hr .> 0); levels = [0.5], color = :magenta, linewidth = 0.8)
         contour!(ax, x, y, Float64.(Hm .> 0); levels = [0.5], color = :black, linewidth = 0.8)
     end
-    Label(fig[0, 1:n+1], "$lab: black = model grounded margin, magenta = reference", fontsize = 14)
+    Label(fig[0, 1:n+1], "$lab: black = model grounded margin, magenta = reference" * (isempty(fr) ? "" : "; dashed (left): ice front"), fontsize = 14)
     save(joinpath(out, "$lab-maps.png"), fig)
 end
 foreach(maps, labels)
