@@ -78,7 +78,50 @@ function indicator_figures(dir, lon, lat, land)
     save(joinpath(dir, "pm_ind_map.png"), fig, px_per_unit = 1)
 end
 
+# pm-diag: julia --project=<julia-plot> pm_maps.jl diag <pm_compare.jl diag folder> <ref run> <run>=<label> ...
+# pm_diag_series.png : against PaleoMIST per record: glaciated RMS, ocean bias, and RSL relative to present at the sites
+# pm_diag_maps.png   : run - PaleoMIST at 22.5, 15, 10 ka for the reference and the runs
+function diag_figures(dir, ref, runs)
+    d, h = readdlm(joinpath(dir, "pm_diag.csv"), ',', header = true)
+    col(n) = d[:, findfirst(==(n), vec(h))]
+    run = col("run"); tgt = col("target"); age = Float64.(col("age")) ./ 1000
+    show = [ref => ref; runs]
+    cols = Makie.wong_colors()
+    fig = Figure(size = (1350, 640), fontsize = 12)
+    panels = [("glac_rms", "glaciated RMS [m]"), ("ocean_bias", "ocean bias [m]"), ("Hudson_Bay", "Hudson Bay RSL [m]"),
+              ("Ross_embayment", "Ross embayment RSL [m]"), ("Weddell_embayment", "Weddell embayment RSL [m]"), ("Barbados", "Barbados RSL [m]")]
+    local ax
+    for (p, (v, lbl)) in enumerate(panels)
+        ax = Axis(fig[(p - 1) ÷ 3 + 1, (p - 1) % 3 + 1], xlabel = "time [ka]", ylabel = lbl, xreversed = true)
+        if p > 2
+            m = (run .== "target") .& (tgt .== "PM"); o = sortperm(age[m])
+            scatterlines!(ax, age[m][o], Float64.(col(v)[m][o]), color = :black, linestyle = :dash, markersize = 5, label = "PaleoMIST")
+        end
+        for (n, (rn, rl)) in enumerate(show)
+            m = (run .== rn) .& (tgt .== "PM"); o = sortperm(age[m])
+            lines!(ax, age[m][o], Float64.(col(v)[m][o]), color = cols[mod1(n, length(cols))], linewidth = rn == ref ? 2.2 : 1.4, label = rl)
+        end
+    end
+    Legend(fig[3, 1:3], ax, orientation = :horizontal, framevisible = false, merge = true)
+    save(joinpath(dir, "pm_diag_series.png"), fig, px_per_unit = 1)
+
+    ds = NCDataset(joinpath(dir, "pm_diag_fields.nc"))
+    lon = Float64.(ds["lon"][:]); lat = Float64.(ds["lat"][:]); ages = Float64.(ds["age"][:]); H = Float64.(ds["H_lgm"][:, :])
+    PM = Float64.(ds["rsl_PM"][:, :, :]); nr = length(ages)
+    rows = [(rn, rl) for (rn, rl) in show if haskey(ds, "rsl_" * rn)]
+    fig = Figure(size = (430 * nr + 100, 230 * length(rows)), fontsize = 12)
+    local hm
+    for (r, (rn, rl)) in enumerate(rows), (c, a) in enumerate(ages)
+        hm = gmap!(fig, (r, c), lon, lat, Float64.(ds["rsl_" * rn][:, :, c]) .- PM[:, :, c], 50, @sprintf("%s - PaleoMIST, %.1f ka", rl, a / 1000); ice = H)
+    end
+    Colorbar(fig[1:length(rows), nr+1], hm, label = "RSL difference [m]")
+    close(ds)
+    save(joinpath(dir, "pm_diag_maps.png"), fig, px_per_unit = 1)
+    println("wrote figures to ", dir)
+end
+
 function main(args)
+    args[1] == "diag" && return diag_figures(args[2], args[3], [String(split(a, '=')[1]) => String(split(a, '=')[2]) for a in args[4:end]])
     dir = args[1]
     ds = NCDataset(joinpath(dir, "pm_fields.nc"))
     lon = Float64.(ds["lon"][:]); lat = Float64.(ds["lat"][:]); ages = Float64.(ds["age"][:])
