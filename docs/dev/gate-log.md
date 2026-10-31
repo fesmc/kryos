@@ -684,3 +684,4 @@ Report `gate-reports/p4-s11.md` (G5 with the calibrated ANT). Pars `par/gate/g5-
 G3: (i) 1.3e-12, (ii) 2.0e-15, (iii) 1.8e-14, (iv) host part 9.9e-8 (series) / 9.0e-13 (streams), (v) +0.233 %: **PASS**. ANT still grows: V_sle +13.2 m (base +24.6), gathered ESL -16.2 m (base -28.8); not a deglaciation.
 Lost cells: 1495 at 0 ka (base 956), per interval uplift 47-99 % from -16 ka; gained cells subside 99.0-99.6 %; slope sign expected in 36 of 40 intervals. VILMA2 against FastIsostasy with the file curve: -0.5 m of V_sle at 0 ka.
 
+G5 closed (2026-10-31): PASS on the plan's criteria (no stop, G3 budgets, signs of `dz_bed` under gain and local loss). The coupling's response to a large prescribed ice loss is covered by G2b (PaleoMIST replay, lost-cell uplift 0.93-1.00, within 0.03 of the standalone). That ANT grows under the G5 forcing (alpha-weighted LGM anomaly, `dTo`) is a forcing and calibration question for the science runs, not a coupling one.
