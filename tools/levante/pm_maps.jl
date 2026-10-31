@@ -2,6 +2,10 @@
 #   julia --project=<julia-plot> tools/levante/pm_maps.jl <compare folder>
 # pm_B1_vs_PM.png  : RSL of PaleoMIST, of B1 (lmax 256) and their difference at 22.5, 15, 10 ka
 # pm_effects.png   : lmax 170 - 256 (B1) and 3-D - 1-D (B3 - B1, lmax 170) at the same records
+# pm_decomp.png    : the 3-D effect split: lithosphere (B1_L80 - B1), radial profile (B1_bm - B1_L80), lateral (B3 - B1_bm), lmax 170
+# pm_ind_sites.png : RSL relative to present at the best-constrained indicator sites: the indicators (index points: 2-sigma boxes,
+#                    marine limiting: up triangles, terrestrial limiting: down triangles) and the models
+# pm_ind_map.png   : per site, RMS of the normalized misfit of the index points, PaleoMIST and B1 (lmax 256)
 # pm_A_minus_B.png : equilibrium - transient at 22.5 ka (A - B), RSL and u, 1-D (lmax 256) and 3-D
 # pm_rsl0.png      : the present-day disequilibrium of B (rsl at 0 ka against the relaxed reference), 1-D and 3-D
 # pm_sites.png     : RSL relative to present at the sites, B runs (every output step) and PaleoMIST (records)
@@ -16,6 +20,62 @@ function gmap!(fig, pos, lon, lat, F, lim, title; cmap = :balance, ice = nothing
     ice === nothing || contour!(ax, lon, lat, ice; levels = [1.0], color = :black, linewidth = 0.5)
     limits!(ax, -180, 180, -90, 90)
     hm
+end
+
+const MODEL_STYLE = Dict("PaleoMIST" => (:black, :dash, 1.6), "B1_l256" => (:royalblue, :solid, 1.6), "B1_l170" => (:lightskyblue, :solid, 1.0),
+                         "B1_L80" => (:darkorange, :solid, 1.4), "B1_bm" => (:seagreen, :solid, 1.4), "B3_l170" => (:firebrick, :solid, 1.6))
+
+function indicator_figures(dir, lon, lat, land)
+    c, _ = readdlm(joinpath(dir, "pm_ind_curves.csv"), ',', header = true)
+    o, h = readdlm(joinpath(dir, "pm_ind_samples.csv"), ',', header = true)
+    col(n) = o[:, findfirst(==(n), vec(h))]
+    site = col("site"); t = Float64.(col("time")) ./ 1000; t0 = Float64.(col("time_min")) ./ 1000; t1 = Float64.(col("time_max")) ./ 1000
+    r = Float64.(col("rsl")); r0 = Float64.(col("rsl_min")); r1 = Float64.(col("rsl_max")); ty = Int.(col("type"))
+    sites = unique(c[:, 2]); srcs = unique(c[:, 1]); nc = 4
+    fig = Figure(size = (1500, 300 * cld(length(sites), nc) + 60), fontsize = 11)
+    local ax
+    for (n, st) in enumerate(sites)
+        m = site .== st
+        grp = c[findfirst(==(st), c[:, 2]), 3]
+        tmax = min(80.0, maximum(t1[m]) + 1.0)
+        ax = Axis(fig[(n - 1) ÷ nc + 1, (n - 1) % nc + 1], title = "$(replace(st, '_' => ' ')) ($grp)", xlabel = "time [ka]", ylabel = "RSL [m]",
+                  titlesize = 12)
+        ip = findall(m .& (ty .== 0))
+        isempty(ip) || poly!(ax, [Rect2f(-t1[i], r0[i], t1[i] - t0[i], r1[i] - r0[i]) for i in ip], color = (:gray, 0.35),
+                             strokecolor = :gray30, strokewidth = 0.4)
+        ml = findall(m .& (ty .== -1)); tl = findall(m .& (ty .== 1))
+        isempty(ml) || scatter!(ax, -t[ml], r[ml], marker = :utriangle, color = :steelblue, markersize = 6)
+        isempty(tl) || scatter!(ax, -t[tl], r[tl], marker = :dtriangle, color = :sienna, markersize = 6)
+        lo, hi = extrema(vcat(r0[m], r1[m]))
+        for src in srcs
+            k = (c[:, 1] .== src) .& (c[:, 2] .== st)
+            a = Float64.(c[k, 4]) ./ 1000; v = Float64.(c[k, 5]); w = a .<= tmax
+            col_, ls, lw = get(MODEL_STYLE, src, (:gray, :solid, 1.0))
+            lines!(ax, -a[w], v[w], color = col_, linestyle = ls, linewidth = lw, label = src)
+            lo = min(lo, minimum(v[w])); hi = max(hi, maximum(v[w]))
+        end
+        xlims!(ax, -tmax, 0.5); ylims!(ax, lo - 0.05 * (hi - lo) - 1, hi + 0.05 * (hi - lo) + 1)
+    end
+    Legend(fig[cld(length(sites), nc) + 1, 1:nc], ax, orientation = :horizontal, framevisible = false, merge = true)
+    save(joinpath(dir, "pm_ind_sites.png"), fig, px_per_unit = 1)
+
+    s, hs = readdlm(joinpath(dir, "pm_ind_sites.csv"), ',', header = true)
+    sc(n) = s[:, findfirst(==(n), vec(hs))]
+    model = sc("model"); nip = Int.(sc("n_ip")); rz = Float64.(sc("rms_z")); la = Float64.(sc("lat")); lo_ = Float64.(sc("lon"))
+    show = [mn for mn in ("PaleoMIST", "B1_l256") if mn in model]
+    fig = Figure(size = (560 * length(show) + 120, 340), fontsize = 12)
+    local hm
+    for (j, mn) in enumerate(show)
+        k = (model .== mn) .& (nip .> 0)
+        ax = Axis(fig[1, j], title = "$mn: RMS of z per site (index points)", aspect = DataAspect())
+        hidedecorations!(ax)
+        land === nothing || contour!(ax, lon, lat, land; levels = [0.5], color = :gray60, linewidth = 0.5)
+        hm = scatter!(ax, lo_[k], la[k], color = max.(rz[k], 0.1), colormap = :viridis, colorscale = log10, colorrange = (0.5, 100),
+                      markersize = 4 .+ 1.5 .* sqrt.(nip[k]), strokecolor = :black, strokewidth = 0.3)
+        limits!(ax, -180, 180, -90, 90)
+    end
+    Colorbar(fig[1, length(show) + 1], hm, label = "RMS z per site")
+    save(joinpath(dir, "pm_ind_map.png"), fig, px_per_unit = 1)
 end
 
 function main(args)
@@ -52,6 +112,20 @@ function main(args)
         end
         save(joinpath(dir, "pm_effects.png"), fig, px_per_unit = 1)
     end
+    rows = [(k1, k2, lbl) for (k1, k2, lbl) in (("rsl_B1_L80", "rsl_B1_170", "lithosphere: B1_L80 - B1"),
+                                                 ("rsl_B1_bm", "rsl_B1_L80", "radial profile: B1_bm - B1_L80"),
+                                                 ("rsl_B3", "rsl_B1_bm", "lateral: B3 - B1_bm")) if has(k1) && has(k2)]
+    if !isempty(rows)
+        fig = Figure(size = (430 * nr + 100, 250 * length(rows)), fontsize = 12)
+        for (r, (k1, k2, lbl)) in enumerate(rows)
+            local h
+            for (c, a) in enumerate(ages)
+                h = gmap!(fig, (r, c), lon, lat, get3(k1)[:, :, c] .- get3(k2)[:, :, c], 30, @sprintf("%s, %.1f ka", lbl, a / 1000); ice = H)
+            end
+            Colorbar(fig[r, nr+1], h, label = "RSL difference [m]")
+        end
+        save(joinpath(dir, "pm_decomp.png"), fig, px_per_unit = 1)
+    end
     pairs = [(b, lbl) for (b, lbl) in (("B1", "1-D, l256"), ("B3", "3-D, l170")) if has("AmB_rsl_" * b)]
     if !isempty(pairs)
         fig = Figure(size = (2 * 430 + 100, 250 * length(pairs)), fontsize = 12)
@@ -72,7 +146,10 @@ function main(args)
         Colorbar(fig[1, length(zs)+1], h, label = "[m]")
         save(joinpath(dir, "pm_rsl0.png"), fig, px_per_unit = 1)
     end
+    land = has("land") ? Float64.(ds["land"][:, :]) : nothing
     close(ds)
+
+    isfile(joinpath(dir, "pm_ind_curves.csv")) && indicator_figures(dir, lon, lat, land)
 
     s, _ = readdlm(joinpath(dir, "pm_sites.csv"), ',', header = true)
     sites = unique(s[:, 2]); srcs = unique(s[:, 1])
