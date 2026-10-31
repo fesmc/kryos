@@ -1,6 +1,8 @@
 #!/usr/bin/env julia
-# Maps and series of the calib-cf report (CairoMakie; run on Levante, not on the Mac): from the files of tools/levante/calib_metrics.jl.
-#   julia tools/calib_maps.jl <dir with <label>_fields.nc, _ts.tsv, .md (and _reg_ts.tsv)> <out dir>
+# Maps and series of the calib-cf report (CairoMakie): from the files of tools/levante/calib_metrics.jl. On Levante only, as a job
+# (tools/levante/calib_maps.sh, the script copied to $G/calib/calib_maps.jl):
+#   JULIA_DEPOT_PATH=$G/julia-depot julia +1.13 --project=$G/julia-plot calib_maps.jl <dir with <label>_fields.nc, _ts.tsv, .md (and _reg_ts.tsv)> <out dir>
+# $G = /work/ba1442/robinson/kryos-gate; $G/julia-plot: the plot environment (CairoMakie, NCDatasets, DelimitedFiles), see calib_maps.sh.
 # label: ant|nor - pd|lgm|lgmrecon [-tag] (the out prefix of calib_metrics.jl). One map figure per label (<label>-maps.png; the model and
 # model - reference for each reference of the fields file, PaleoMIST 22.5 ka left out; ice fronts dashed on the model panel), V_sle series per domain (vsle-series.png) and the
 # regional V_af series of the North LGM runs with the range of the references (nor-lgm-regions.png).
