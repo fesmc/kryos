@@ -235,7 +235,112 @@ function indicators(fesmdata, out, R, lon, lat, ages, sl)
 end
 nan0(x) = isnan(x) ? 0.0 : x
 
+# --- pm-diag: one-factor variants of B1 against PaleoMIST ------------------------------------------------------------------------
+#   julia --project=tools pm_compare.jl diag <fesmdata> <out> <ref run folder> [<target>=<nc> ...] <run folder> ...
+# Per run, at MAP_AGES and over all records 2.5-80 ka: RSL relative to present minus the target (PM: FesmData dz_sl; SELEN: PaleoMIST's
+# own SELEN sea level from its Stokes coefficients, pm_prep.jl selen: e.g. SELEN = the final ice, SELEN_h = its 500-yr version) by region
+# (RMS, bias), the ocean
+# mean over PaleoMIST's ocean of the time (z_bed(t) < 0, no ice), the sites, and the change against the reference run (B1_l170).
+# The record state of a run: t_k + 1 yr for the step forcings, t_k for the linear one (the first of the two present).
+const DIAG_AGES = [80000.0, 60000.0, 22500.0, 10000.0]
+trun(r::Run, a) = a == 80000.0 ? -80000.0 : (any(x -> abs(x - (-a + 1.0)) < 0.01, r.t) ? -a + 1.0 : -a)
+function diag(args)
+    fesmdata, out, refdir = args[1], args[2], args[3]
+    opts = [split(a, '=')[1] => split(a, '=')[2] for a in args[4:end] if occursin('=', a)]
+    dirs = [refdir; [a for a in args[4:end] if !occursin('=', a)]]
+    R = [r for r in read_run.(dirs) if r !== nothing]
+    mkpath(out)
+    pm = NCDataset(joinpath(fesmdata, "Global", "GLOBAL-0.5DEG", "GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc"))
+    lon = Float64.(pm["lon"][:]); lat = Float64.(pm["lat"][:]); ages = Float64.(pm["time"][:])
+    sl = Float64.(nomissing(pm["dz_sl"][:, :, :], NaN)); H = Float64.(nomissing(pm["H_ice"][:, :, :], 0.0))
+    zb = Float64.(nomissing(pm["z_bed"][:, :, :], NaN))
+    close(pm)
+    targets = [("PM", sl)]
+    for (tn, file) in opts
+        S = fill(NaN, size(sl))
+        NCDataset(file) do ds
+            slon = Float64.(ds["lon"][:]); slat = Float64.(ds["lat"][:]); sa = Float64.(ds["time"][:]); v = ds["dz_sl"][:, :, :]
+            ii = [findfirst(x -> abs(mod(x - l + 180, 360) - 180) < 0.01, slon) for l in lon]; jj = [findfirst(x -> abs(x - l) < 0.01, slat) for l in lat]
+            for (k, a) in enumerate(ages); S[:, :, k] = Float64.(v[ii, jj, findfirst(==(a), sa)]); end
+        end
+        push!(targets, (String(tn), S))
+    end
+    w = [cosd(lat[j]) for i in eachindex(lon), j in eachindex(lat)]
+    glac = (dropdims(maximum(H; dims = 3); dims = 3) .> 0) .& (H[:, :, end] .== 0)
+    ocean = (zb[:, :, end] .< 0) .& (H[:, :, end] .== 0) .& .!glac
+    regions = [glac, ocean, trues(size(w))]
+    kage(a) = findfirst(==(a), ages)
+    rel(r, a) = bilin(r.rsl[:, :, tindex(r, trun(r, a))] .- r.rsl[:, :, end], r.lon, r.lat, lon, lat)
+    pocean(f, a) = (m = (zb[:, :, kage(a)] .< 0) .& (H[:, :, kage(a)] .== 0) .& .!isnan.(f); sum(w[m] .* f[m]) / sum(w[m]))
+    site = [(nm, argmin(abs.(mod.(lon .- so .+ 180, 360) .- 180)), argmin(abs.(lat .- sa))) for (nm, so, sa) in SITES if nm != "Gulf of Bothnia" && nm != "Barents Sea"]
+    F = Dict((r.name, a) => rel(r, a) for r in R for a in ages if a > 0 && any(x -> abs(x - trun(r, a)) < 0.01, r.t))
+    ref = R[1].name
+    f1(x) = @sprintf("%.1f", x)
+    io = open(joinpath(out, "pm_diag.md"), "w")
+    println(io, "RSL relative to present, run - target [m] (area weighted, 0.5 degree): glaciated / ocean / global RMS, bias; the ocean mean over ",
+            "PaleoMIST's ocean of the time (target in brackets); sites; change against $(ref) (glaciated RMS, ocean bias of run - $(ref)). ",
+            "'all' = mean over the records 2.5-80 ka.\n")
+    for (tn, T) in targets
+        println(io, "\n### against $(tn)\n")
+        println(io, "| run | ka | glac RMS | glac bias | ocean RMS | ocean bias | global RMS | ocean mean (target) | ",
+                join([s[1] for s in site], " | "), " | vs $(ref): glac RMS | ocean bias |")
+        println(io, "|---|---|---|---|---|---|---|---|", repeat("---|", length(site)), "---|---|")
+        tt = [(tn2, T2) for (tn2, T2) in targets if tn2 != tn]
+        for (rn, A) in [[(r.name, a -> get(F, (r.name, a), nothing)) for r in R]; [(tn2 * " (target)", a -> T2[:, :, kage(a)]) for (tn2, T2) in tt]]
+            for a in [MAP_AGES; 0.0]
+                if a > 0
+                    f = A(a); f === nothing && continue
+                    d = f .- T[:, :, kage(a)]; s = [stats(d, w, m) for m in regions]
+                    dr = haskey(F, (ref, a)) ? f .- F[(ref, a)] : fill(NaN, size(f))
+                    sr = [stats(dr, w, m) for m in regions[1:2]]
+                    println(io, "| ", a == MAP_AGES[1] ? rn : "", " | ", a / 1000, " | ", f1(s[1].rms), " | ", f1(s[1].bias), " | ", f1(s[2].rms), " | ",
+                            f1(s[2].bias), " | ", f1(s[3].rms), " | ", f1(pocean(f, a)), " (", f1(pocean(T[:, :, kage(a)], a)), ") | ",
+                            join([f1(f[i, j] - T[i, j, kage(a)]) for (_, i, j) in site], " | "), " | ", f1(sr[1].rms), " | ", f1(sr[2].bias), " |")
+                else          # mean over all records 2.5-80 ka
+                    as = [x for x in ages if x > 0 && A(x) !== nothing]
+                    isempty(as) && continue
+                    m = [let d = A(x) .- T[:, :, kage(x)]; [stats(d, w, regions[1]).rms, stats(d, w, regions[1]).bias, stats(d, w, regions[2]).rms,
+                         stats(d, w, regions[2]).bias, stats(d, w, regions[3]).rms] end for x in as]
+                    mm = sum(m) ./ length(m)
+                    println(io, "| | all | ", join(f1.(mm[1:5]), " | "), " | | ", repeat(" | ", length(site)), " | |")
+                end
+            end
+        end
+    end
+    close(io)
+    # per record: the metrics against each target, the ocean mean and the site values (RSL relative to present)
+    open(joinpath(out, "pm_diag.csv"), "w") do c
+        println(c, "run,target,age,glac_rms,glac_bias,ocean_rms,ocean_bias,global_rms,ocean_mean,", join([replace(s[1], " " => "_") for s in site], ","))
+        for (tn, T) in targets, r in R, a in ages
+            haskey(F, (r.name, a)) || continue
+            f = F[(r.name, a)]; d = f .- T[:, :, kage(a)]; s = [stats(d, w, m) for m in regions]
+            println(c, join((r.name, tn, a, s[1].rms, s[1].bias, s[2].rms, s[2].bias, s[3].rms, pocean(f, a), (f[i, j] for (_, i, j) in site)...), ","))
+        end
+        for (tn, T) in targets, a in ages
+            a > 0 || continue
+            f = T[:, :, kage(a)]
+            println(c, join(("target", tn, a, NaN, NaN, NaN, NaN, NaN, pocean(f, a), (f[i, j] for (_, i, j) in site)...), ","))
+        end
+    end
+    # fields at DIAG_AGES for pm_maps.jl diag
+    f = joinpath(out, "pm_diag_fields.nc"); isfile(f) && rm(f)
+    NCDataset(f, "c") do nc
+        defDim(nc, "lon", length(lon)); defDim(nc, "lat", length(lat)); defDim(nc, "rec", length(DIAG_AGES))
+        defVar(nc, "lon", lon, ("lon",)); defVar(nc, "lat", lat, ("lat",)); defVar(nc, "age", DIAG_AGES, ("rec",))
+        defVar(nc, "H_lgm", H[:, :, kage(22500.0)], ("lon", "lat"))
+        for (tn, T) in targets
+            defVar(nc, "rsl_" * tn, cat([T[:, :, kage(a)] for a in DIAG_AGES]...; dims = 3), ("lon", "lat", "rec"))
+        end
+        for r in R
+            all(a -> haskey(F, (r.name, a)), DIAG_AGES) || continue
+            defVar(nc, "rsl_" * r.name, cat([F[(r.name, a)] for a in DIAG_AGES]...; dims = 3), ("lon", "lat", "rec"))
+        end
+    end
+    println("wrote ", out)
+end
+
 function main(args)
+    args[1] == "diag" && return diag(args[2:end])
     fesmdata, runs, out = args[1], args[2], args[3]
     folders = Dict(RUNS); foreach(a -> (kv = split(a, '='); folders[kv[1]] = kv[2]), args[4:end])
     mkpath(out)

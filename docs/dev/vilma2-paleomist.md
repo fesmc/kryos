@@ -13,8 +13,8 @@ Branch `vilma-paleomist`. Question: does the standalone VILMA2 (`vilma.x`, vilma
 | resolution | degree 256, 1 degree output | lmax 256 (and 170), Gauss grid 1024 x 514; compared on the 0.5 degree PaleoMIST grid |
 | Earth | 1-D: 120 km elastic lithosphere, UM 4e20, LM 4e22 Pa s | `earth = "PREM"`, 12 layers: elastic 0-80-120 km, Maxwell 4e20 to 670 km (splits 220, 400, 600), 4e22 to the CMB (splits 771, 1428, 2084, 2741 km), fluid core; rho, mu the r^2 shell means of incompressible PREM |
 | load history | 2.5 kyr steps, 80-0 ka | the 33 records as steps (`pm_force_B.nc`): record t_k enters over [t_k, t_k + 1 yr] and is held to t_{k+1} |
-| before 80 ka | not stated | equilibrium with the 80 ka load: spin-up to `equil_rate_tol` 1e-5 m/yr |
-| densities | not stated | VILMA2 defaults rho_ice 931, rho_water 1000 kg/m3 |
+| before 80 ka | not stated (SELEN code: equilibrium with the first column, see "Where the differences come from") | equilibrium with the 80 ka load: spin-up to `equil_rate_tol` 1e-5 m/yr |
+| densities | not stated (SELEN configuration: 910/1000, see below) | VILMA2 defaults rho_ice 931, rho_water 1000 kg/m3 |
 | reference | | present day = PaleoMIST 0 ka `z_bed` and `H_ice`, relaxed (`i_eq = 1`) |
 
 - Ice: FesmData `GLOBAL-0.25DEG_IceHistory-PaleoMIST.nc` (the 0.25 degree product on the cell-centred FesmData grid), remapped conservatively to the Gauss grid by vilma.x (`remap_input`).
@@ -199,3 +199,76 @@ Per site, RMS of z over its index points (marker size: their number), PaleoMIST 
 - Equilibrium with the 80 ka load before the history (assumed); densities 931/1000 (assumed); VILMA2's degree-1 frame (centre of mass) and its flotation and sloping-coast ocean load.
 - Inputs from FesmData: the 0.25 degree product remapped to the cell-centred FesmData grid (forcing), the 0.5 degree product (comparison), not Gowan's gridline-registered 0.25 degree file.
 - The 3-D runs use the science setting (80 km lithosphere, Bagge 2021 on the CLIMBER-X radial profile), not Gowan's layers.
+
+## Where the differences come from
+
+Branch `pm-diag`. Question: are the B1 - PaleoMIST differences (above: 24-29 m RMS over the glaciated areas, far field 6-8 m high, Ross/Weddell rise half of PaleoMIST's, Hudson Bay ~50 m low) model differences, or is our setup configured differently from Gowan's?
+
+- Sources: Gowan et al. (2021) and its Supplementary Information; the PANGAEA bundle (doi:10.1594/PANGAEA.905800, `/work/ba1442/fesmdata-sources/gowan2021_paleomist/ice_reconstruction`: readme, `calc_sl/data.inc` = the configuration file of the SELEN run, the SELEN Stokes coefficients of the standard and the 500-yr version, `volume_sorted.txt`, margins); ICESHEET (github evangowan/icesheet: `global/selen_format.sh`, `global/global_grid/create_global_grid.sh`, `*/topo/create_topo.sh`); Gowan's SELEN fork (github evangowan/selen, branch `old`: SELEN 2.9 source, `pixel/create_selen_input_2.sh`, the PaleoMIST input pipeline of 2019-08; branch `evan_mod`: TABOO of ANICE 2.1); de Boer et al. (2014, GMD 7:2141, refs 44-45 of the paper: the ANICE-SELEN version, App. A ocean function); Spada & Melini (2019, SELEN4). The SELEN source that Gowan ran (the ANICE/Stocchi version with shoreline migration, grounding line and rotation) is not public (the ANICE 2.1 Zenodo archive has its TABOO but not its SLE).
+- Tools: `pm_prep.jl` (`budget`, `margins`, `taboo`, `selen`; forcing variants `pm_force_B{g,l,m,m910,gm910,m80,gm80_910}.nc`, the 80 ka reference `pm_ref80.nc`), `pm_run.sh` (`EARTH=t3`, `REF`, `TMAX=0`, `RHOI`, `ROT`, `DEG1`, `SUBGRID`, `ROTKS`, `CFL`, `ETA_UM/LM`), `pm_selen.sh` (Gowan's `calc_sl` at points), `pm_compare.jl diag`, `pm_maps.jl diag`. Runs `$G/runs/paleomist/diag/D_*` (lmax 170, one factor from B1_l170 each, 2-6 min), SELEN grids `$G/runs/paleomist/selen/`, comparison `diag/final`.
+- PaleoMIST's own SELEN sea level: synthesised from its Stokes coefficients (`pm_prep.jl selen`, 4-pi complex harmonics with Condon-Shortley phase as SELEN's `harmo`), equal to Gowan's `calc_sl` at 9 points x 33 records to 0.3 mm. The FesmData `dz_sl` is this field of the standard version (72_73_74_75/ehgr) to 0.2 m RMS: the comparison target is right. The 500-yr version differs from it by 16 m RMS over the glaciated areas.
+
+### Sources against our assumptions
+
+| | sources | B1 | |
+|---|---|---|---|
+| SLE code | SELEN 2.9 descendant (`calc_sl`: "modified from SELEN 2.9"), ANICE version with shoreline migration, grounding line, rotation (paper; de Boer 2014: ocean function times a grounded/floating flag). `data.inc`: Tegmark R = 60 (66 km pixels, 141 612), lmax 256, 3 iterations, mode 1 (GSC), TLOVE = 1, DEG1 = 1; ocean from `px-table-etopo1-ice` | VILMA2, Kendall SLE (sloping coast, flotation) | formulation, below |
+| Earth | `data.inc` NV = 2, CDE = 0: TABOO, three homogeneous layers 0-120, 120-670 km, 670 km-CMB, fluid core, rho and mu volume means of the 200 s PREM table, incompressible; model "ehgr": 120 km, UM 3.9811e20, LM 3.9811e22 Pa s (Gowan's code table) | 12 PREM shells, 4e20/4e22 | close (T4) |
+| ice density | `data.inc` RHOI = 910, RHOW = 1000 (RHOE 5511.57); Suppl. Table 1 uses 0.91; ICESHEET's flotation 917/1025 | 931/1000 | **differs** (T5) |
+| degree 1, rotation | DEG1 = 1, CM (Gowan's SELEN configs); TLOVE = 1 | cm, rotation on | as SELEN (T5) |
+| time steps | standard version 2.5 kyr Heaviside (`data.inc` NN 32, DELTA 2.5; bundle readme: 72_73_74_75 standard, 72_73_74_75_h "linearly interpolated to 500 year time steps"). The paper's "500-year version" is that separate test | steps | as SELEN (T1) |
+| step convention | SELEN 2.9 applies the column of time t over (t + 2.5 ka, t] (`esl.f90`, `shice.f90`: h(k) = column nn-k); `create_selen_input_2.sh` shifts the columns so that record t_k holds from t_k to t_{k-1}, drops the 2.5 ka ice and copies the 80 ka ice. Check: Gowan's "calculated ESL" is 0.0 m at 2.5 ka | t_k + 1 yr, 2.5 ka ice kept | 2.5 ka differs (T1) |
+| initial state | SELEN 2.9 `sle.f90`: load I(k) = h(k+1) - h(0), the first step from zero: the Earth in equilibrium with the first column (= the 80 ka ice) | equilibrium with the 80 ka load | as SELEN (T2) |
+| topography | SELEN: present topography (ETOPO1 pixels) as the final condition, the paleotopography follows from S; the ocean and the loads are relative to the 80 ka state. PaleoMIST z_bed(t) = RTopo-2 - S(t) | the relaxed present topography is the reference (i_eq = 1), the 80 ka state from the spin-up on it | **differs** (T5, R80) |
+| marine ice | PaleoMIST's pipeline gives SELEN the full ICESHEET thickness on the pixels (`create_selen_input_2.sh`). The older pipeline subtracted (1025/917) x present water depth "as of SELEN 2.8, there is no accounting for grounded ice" (`selen_format.sh`). Whether the ANICE version removes the water that grounded ice displaces is not documented | Kendall: removed | tested (T3) |
+| ice volume | FesmData H_ice (0.25 and 0.5 degree identical) 44.0e6 km3 at 22.5 ka against present; Gowan's "calculated ESL" equals 0.91 x this volume / 361e6 km2 at every record checked (-111.4 against -110.9 m at 22.5 ka). Suppl. Table 1 and `volume_sorted.txt` give 40.4 (Antarctica 4.0 against 6.5e6 km3): the table, and FesmData `SeaLevel-PaleoMIST` built from it, are ~9 % low, not the grids. NA ice overlaps Gowan's margins 0.96 (centroid 20-35 km west) | FesmData 0.25 degree | as SELEN (T0) |
+| mass balance | PaleoMIST's mean of dz_sl over the *present* ocean equals that fixed-area ESL (80, 60, 22.5, 10 ka: -9.5, -79.0, -111.8, -28.9 against -9.5, -78.9, -111.4, -28.2 m), i.e. SELEN conserves the water over the present ocean function; over the ocean of the time the mean is 1-5 m lower | over the ocean of the time | formulation |
+
+Tables: `figures/vilma2-paleomist/pm_budget.md` (volumes), `pm_margins.md` (registration).
+
+### Tests
+
+One factor changed from B1_l170 at a time; RSL relative to present minus PaleoMIST (`dz_sl`), at 22.5 ka, and the mean over the 32 records 2.5-80 ka. Sites: run - PaleoMIST at 22.5 ka. All runs: `figures/vilma2-paleomist/pm_diag.md` (also against SELEN and its 500-yr version).
+
+| test | run | change | glac RMS 22.5 / 15 ka | ocean bias 22.5 ka | global RMS 22.5 ka | Hudson Bay / Ross / Weddell / Barbados | all records: glac RMS, ocean bias |
+|---|---|---|---|---|---|---|---|
+| | B1_l170 | reference | 23.7 / 29.0 | 8.5 | 10.2 | -62 / -86 / -57 / 9 | 18.5, 4.0 |
+| T1 | D_g | Gowan's input: 0 ka ice from 2.5 ka | 23.8 / 29.1 | 8.5 | 10.2 | -62 / -89 / -61 / 9 | 18.4, 4.1 |
+| T1 | D_l | records linear in time | 33.0 / 30.2 | 8.3 | 12.0 | -44 / -77 / -51 / 8 | 26.9, 3.9 |
+| T2 | D_n | no spin-up: load switched on at 80 ka | 23.8 / 29.1 | 8.5 | 10.2 | -63 / -87 / -58 / 9 | 21.0, 4.3 |
+| T3 | D_m | no displaced water (forcing `Bm`) | 19.2 / 23.6 | 1.3 | 5.2 | -40 / 6 / 5 / 2 | 14.6, 1.3 |
+| T3 | D_b | binary ocean load (`sle_subgrid` off) | 22.8 / 27.5 | -1.3 | 5.9 | -36 / 7 / 12 / -1 | 15.3, 0.3 |
+| T4 | D_t3 | SELEN's Earth (3 TABOO layers) | 23.8 / 29.3 | 8.4 | 10.2 | -59 / -87 / -57 / 9 | 19.2, 4.0 |
+| T5 | D_i910 | rho_ice 910 | 24.7 / 30.8 | 11.1 | 12.3 | -66 / -88 / -58 / 12 | 19.4, 5.1 |
+| T5 | D_r | rotation off | 24.6 / 30.1 | 8.6 | 12.4 | -73 / -87 / -51 / 3 | 18.4, 4.1 |
+| T5 | D_ks | k_s from the flattening (0.943) | 23.7 / 29.0 | 8.5 | 10.2 | -62 / -86 / -57 / 9 | 18.5, 4.0 |
+| T5 | D_cf | degree 1 `cf` | 37.6 / 38.2 | 8.2 | 22.5 | -98 / -59 / -34 / -17 | 22.5, 4.0 |
+| T5 | D_R80 | SELEN's reference: PaleoMIST's 80 ka state, no spin-up | 18.4 / 22.0 | 5.9 | 7.6 | 13 / -73 / -52 / 7 | 18.9, 2.2 |
+| num | D_c01 | fe sub-steps cfl 0.1 (10 yr) | 23.7 / 29.1 | 8.5 | 10.2 | -62 / -87 / -58 / 9 | 18.5, 4.0 |
+| comb | D_R80m | R80 + no displaced water (vs 80 ka) | 15.5 / 18.2 | 0.8 | 4.6 | 9 / 4 / -16 / 2 | 17.3, 0.8 |
+| comb | D_R80b | R80 + binary ocean load | 16.6 / 21.1 | -2.6 | 5.0 | -50 / 2 / 18 / -2 | 14.8, -1.1 |
+| comb | D_R80all | SELEN emulation: R80 + no displaced water + 910 + t3 + 2.5 ka step | 16.9 / 20.7 | 3.5 | 5.6 | 7 / 0 / -20 / 4 | 18.8, 1.9 |
+
+D_l against SELEN's 500-yr version: 27.2 m glaciated RMS at 22.5 ka, B1 against it 33.7. lmax 170 against 256: 0.4 m (above). With LM 3.98e21 (`ehgG`, R80m on t3) against SELEN's own ehgG coefficients the residual is of the same size (25-35 m glaciated RMS, Hudson Bay -22 to -42 m).
+
+![diagnosis series](figures/vilma2-paleomist/pm_diag_series.png)
+
+Against PaleoMIST per record: glaciated RMS, ocean bias, RSL relative to present at the sites. m: no displaced water; R80: PaleoMIST's 80 ka state as reference; b: binary ocean load; SELEN emulation: R80 + m + 910 + t3 + 2.5 ka step.
+
+![diagnosis maps](figures/vilma2-paleomist/pm_diag_maps.png)
+
+Run - PaleoMIST at 80, 60, 22.5, 10 ka, +-50 m; black: the 22.5 ka ice margin.
+
+### Findings
+
+12. **The largest part is the sea-level equation, not the setup: PaleoMIST's SELEN keeps the water that grounded marine ice displaces.** Adding that water column as ice-equivalent load (net load rho_i H, ocean volume -(rho_i/rho_w) H, as in an SLE without the topography term on grounding) moves the far field from +8.5 to +1.3 m (Barbados +9 to +2), the Ross and Weddell embayments from -86 and -57 to +6 and +5 m, and halves the global RMS (10.2 to 5.2 m). The full binary load (no topography term anywhere) does the same for the far field and Antarctica but not for Hudson Bay. This is the hypothesis of finding 1; VILMA2's Kendall SLE is the physically consistent one. The ANICE-SELEN ocean function excludes grounded ice (de Boer 2014), so the load misses the removal of the column it replaces; only the SELEN source can confirm the exact form.
+13. **Two of our settings differ from Gowan's.** (a) The ice density is 910 kg/m3 in SELEN (`data.inc`, and 0.91 in Gowan's ESL), 931 in B1: alone it raises the far field by 2.6 m (less ice mass). (b) SELEN's reference is the 80 ka state with the present topography as final condition; B1's is the relaxed present topography (i_eq = 1), so that at 80 ka Hudson Bay (85 W, 60 N) is sea in B1 (bed -145 m) and land in PaleoMIST (+213 m, 370 m above today's -157 m); B1's own bed there at 0 ka is -455 m. With PaleoMIST's 80 ka state as reference, Hudson Bay moves from -62 to +13 m at 22.5 ka and the glaciated RMS from 23.7 to 18.4 m. Neither is a VILMA2 change; B1 is not rebased on them.
+14. **Matching as assumed:** the 2.5-kyr steps (not the 500-yr version), the step at t_k, equilibrium with the 80 ka load, CM degree 1, rotation on, lmax, the ice volume (FesmData = SELEN's load; the paper's table is low). Gowan dropped the 2.5 ka ice (0 ka ice from 2.5 ka): 1 m. SELEN's three-layer Earth against our 12 shells: 1.3 m RMS. VILMA2's time stepping is converged (cfl 0.1: 0.5 m); the rotation k_s does not matter.
+15. **What remains after the SELEN emulation** (D_R80all): over the glaciated areas 17-21 m RMS during the deglaciation (B1 24-29), global RMS 5.6-6.6 m (B1 8.8-10.2), the far field 3-4 m high. Its pattern is an east-west dipole over the Laurentide (+-50 m) and -20 to -30 m in the Weddell embayment, and in MIS 4-5 the Hudson Bay present-day signal: relative to the 80 ka state SELEN's bed sinks ~100 m more from 57 ka on (equal to 60 ka), so dz_sl differs by ~100 m at 80-62 ka but < 20 m after the LGM. The far-field 3-4 m matches SELEN's water balance over the present ocean (finding row "mass balance"), which VILMA2 cannot reproduce by configuration. The rest is not explained by any configuration tested: the SELEN code itself, the load geometry (SELEN: 5 km grids on 66 km pixels; FesmData: 25 km filtered 0.25 degree, NA centroid 20-35 km west of the margins) and normal modes against VILMA2's finite elements remain; with LM 4e21 the residual against SELEN's own run of that Earth is as large.
+16. **Split of the B1 misfit at 22.5 ka:** formulation (displaced water, water balance) 7-9 m of the far-field bias and ~90/60 m in Ross/Weddell; setup (reference state, density, Earth layering, 2.5 ka step) ~75 m in Hudson Bay and ~5 m of glaciated RMS, partly cancelling in the far field (+2.6 m density, -2.6 m reference); unexplained 17-21 m glaciated RMS, 3-4 m far field.
+
+### Not as planned
+
+- T3 emulated through the forcing as planned (Bm: + (rho_w/rho_i) times the present water depth where grounded on today's ocean), then also against the 80 ka state (Bm80) once R80 showed the reference matters, and as the binary ocean load (`sle_subgrid = .false.`, a VILMA2 option, no source change).
+- T5 added the 80 ka reference (R80) and k_s, after the step convention and the topography of SELEN were read in its source; the scheme `trap` and the combination at cfl 0.1 were cancelled (cfl 0.1 alone already 0.5 m).
+- The SELEN sea level was computed from Gowan's Stokes coefficients (bundle) rather than taken from Zenodo; Gowan's own grid program needs 40 ms per point, so the grid is synthesised in Julia and checked against it at points.
