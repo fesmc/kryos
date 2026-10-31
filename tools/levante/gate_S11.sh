@@ -7,6 +7,8 @@
 #   gate_S11.sh g6     G6: the science par (spin-up 1e-5 / 2e4), 2 kyr cont and chunk at -79000; smb_simple 1 kyr cont and chunk at -79500
 #   gate_S11.sh g2c    G2c: the chosen spin-up (1e-5, 2e4 yr) with the science par, 100 yr (run e2e4_t1em5)
 #   gate_S11.sh g5     G5: ANT deglaciation -20 ka to 0, VILMA2 (par/gate/g5-vilma2.nml, the chosen spin-up), settings of g5.sh (run vilma2-full)
+#   gate_S11.sh g5 calib  the same with par/gate/g5-vilma2-calib.nml (copy in $G/s11/par) and the FastIsostasy twins of g5-fastiso-calib.nml
+#                         (32 threads, own sea level and the file curve): runs vilma2-full-calib, fastiso-full-calib, fastiso-sealevel-file-calib
 # Compare with compare_S11.sh.
 set -euo pipefail
 G=/work/ba1442/robinson/kryos-gate; export STK=S11; S=$G/stacks/S11; K=$S/kryos; L=$K/tools/levante
@@ -42,7 +44,14 @@ case ${1:-} in
     PAR=$K/par/kryos_NH-ANT_vilma2.nml SINGLE=1 JOBTIME=01:30:00 $RV g2c e2e4_t1em5 clock.time_end=-79900 out_2D.dt=10 out_1D.dt=10 \
         'geo_glob.out_gia="out_2D"' 'geo_glob.out_vilma="out_2D"' kryos.write_lossless=True ;;
   g5)
-    MAPS=$G/maps/gen/S6-g5mg-e4453dc PAR=$K/par/gate/g5-vilma2.nml SINGLE=1 JOBTIME=06:00:00 $RV g5 vilma2-full out_2D.dt=500 out_2Dsm.dt=100 out_1D.dt=10 \
-        out_rst.dt=5000 kryos.write_lossless=True 'geo_glob.out_gia="out_2Dsm"' 'geo_glob.out_vilma="out_2Dsm"' ;;
+    V=${2:-}; SFX=${V:+-$V}; PG=$K/par/gate; [ -n "$V" ] && PG=$G/s11/par     # pars added after the stack was set up
+    COM=(out_2D.dt=500 out_2Dsm.dt=100 out_1D.dt=10 out_rst.dt=5000 kryos.write_lossless=True)
+    export MAPS=$G/maps/gen/S6-g5mg-e4453dc SINGLE=1
+    PAR=$PG/g5-vilma2$SFX.nml JOBTIME=06:00:00 $RV g5 vilma2-full$SFX "${COM[@]}" 'geo_glob.out_gia="out_2Dsm"' 'geo_glob.out_vilma="out_2Dsm"'
+    if [ -n "$V" ]; then
+        PAR=$PG/g5-fastiso$SFX.nml THREADS=32 JOBTIME=03:00:00 $RV g5 fastiso-full$SFX "${COM[@]}"
+        PAR=$PG/g5-fastiso$SFX.nml THREADS=32 JOBTIME=03:00:00 $RV g5 fastiso-sealevel-file$SFX "${COM[@]}" \
+            'barysealevel.method="file"' 'barysealevel.sl_path="input/sl_deglaciation.dat"'
+    fi ;;
   *) echo "usage: gate_S11.sh g0|g2a|g2b|g4|g6|g2c|g5"; exit 1 ;;
 esac
