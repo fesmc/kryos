@@ -6,6 +6,7 @@
 #   gate_S11.sh g4     G3 and G4: sci-vilma2 cont, cont2, chunk, lossless (400 yr from -80 ka; g34_vilma2.sh, as S10)
 #   gate_S11.sh g6     G6: the science par (spin-up 1e-5 / 2e4), 2 kyr cont and chunk at -79000; smb_simple 1 kyr cont and chunk at -79500
 #   gate_S11.sh g2c    G2c: the chosen spin-up (1e-5, 2e4 yr) with the science par, 100 yr (run e2e4_t1em5)
+#   gate_S11.sh g5     G5: ANT deglaciation -20 ka to 0, VILMA2 (par/gate/g5-vilma2.nml, the chosen spin-up), settings of g5.sh (run vilma2-full)
 # Compare with compare_S11.sh.
 set -euo pipefail
 G=/work/ba1442/robinson/kryos-gate; export STK=S11; S=$G/stacks/S11; K=$S/kryos; L=$K/tools/levante
@@ -40,5 +41,8 @@ case ${1:-} in
   g2c)
     PAR=$K/par/kryos_NH-ANT_vilma2.nml SINGLE=1 JOBTIME=01:30:00 $RV g2c e2e4_t1em5 clock.time_end=-79900 out_2D.dt=10 out_1D.dt=10 \
         'geo_glob.out_gia="out_2D"' 'geo_glob.out_vilma="out_2D"' kryos.write_lossless=True ;;
-  *) echo "usage: gate_S11.sh g0|g2a|g2b|g4|g6|g2c"; exit 1 ;;
+  g5)
+    MAPS=$G/maps/gen/S6-g5mg-e4453dc PAR=$K/par/gate/g5-vilma2.nml SINGLE=1 JOBTIME=06:00:00 $RV g5 vilma2-full out_2D.dt=500 out_2Dsm.dt=100 out_1D.dt=10 \
+        out_rst.dt=5000 kryos.write_lossless=True 'geo_glob.out_gia="out_2Dsm"' 'geo_glob.out_vilma="out_2Dsm"' ;;
+  *) echo "usage: gate_S11.sh g0|g2a|g2b|g4|g6|g2c|g5"; exit 1 ;;
 esac
