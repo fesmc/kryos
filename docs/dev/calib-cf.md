@@ -8,14 +8,14 @@ Runs `$G/runs/calib/kx-624f686/S9/<Domain>-<case><TAG>`, metrics `$G/calib/out/<
 No optimisation: Yelmo's elevation scaling of cf_ref, one cf_ref per domain, judged on the present-day (PD) and LGM states.
 
 - `[ytill_ant]`: `scale_zb = 2` (exp), z0/z1 = -400/0 m, cf_min 0.01. `[ytill_nor]`: exp, -100/100 m, cf_min 0.001.
-- Science variants `par/kryos_NH-ANT_calib.nml`, `par/kryos_NH-ANT_vilma2_calib.nml` (`tools/bin/kryos-calib-par.jl sci`): rounds 1-2 cf_ref 0.2 both domains; from round 3 ANT 0.05, North 0.2 (`CF_ANT`, `CF_NOR` in the generator). `par/kryos_NH-ANT_vilma2.nml` unchanged.
-- `par/calib/*.nml` are regenerated from the science variant, so they carry ANT 0.05 from round 3; the round 1-2 ANT runs had 0.2 (now `ytill_ant.cf_ref=0.2`).
+- Science variants `par/kryos_NH-ANT_calib.nml`, `par/kryos_NH-ANT_vilma2_calib.nml` (`tools/bin/kryos-calib-par.jl sci`): rounds 1-2 cf_ref 0.2 both domains; round 3 ANT 0.05, North 0.2; from round 4 ANT 0.05, North 0.1 (`CF_ANT`, `CF_NOR` in the generator; North 0.1 is the value of the base). `par/kryos_NH-ANT_vilma2.nml` unchanged.
+- `par/calib/*.nml` are regenerated from the science variant, so they carry ANT 0.05 from round 3 and North 0.1 from round 4; earlier runs are reproduced with `ytill_ant.cf_ref=` / `ytill_nor.cf_ref=` overrides.
 - Single domain, FastIsostasy, frozen forcing (`tools/bin/kryos-calib-par.jl run`, pars `par/calib/`):
   - pd: t 0 -> 30 kyr, alpha 0, sea level 0, orbit 0 ka, cold start from the hub reference.
   - lgm: t 30 -> 60 kyr, restarted from pd, alpha 1, sea level -120 m, orbit -21 ka.
   - lgmrecon (North): lgm forcing, cold start from PaleoMIST (`recon_nor`, whole domain, no bed filter, smoothing or float cut, as the science par at -80 ka; `recon_time = -21e3` selects the 20 ka record), t 0 -> 20 kyr.
   - lgm-ext (North): lgm restarted from the 60 kyr bundle of lgm, t 60 -> 90 kyr.
-- Submit `tools/levante/calib.sh <Domain> <case> [set_nml ...]` (TAG, FROM, RSTT); cf_ref variants by `ytill_ant.cf_ref=...` / `ytill_nor.cf_ref=...`. Metrics `tools/levante/calib_metrics.sh` -> `calib_metrics.jl`; maps `tools/calib_maps.jl` (CairoMakie).
+- Submit `tools/levante/calib.sh <Domain> <case> [set_nml ...]` (TAG, FROM, RSTT); cf_ref variants by `ytill_ant.cf_ref=...` / `ytill_nor.cf_ref=...`. Metrics `tools/levante/calib_metrics.sh` -> `calib_metrics.jl`; maps `tools/calib_maps.jl` (CairoMakie; rounds 1-4 rendered on the Mac, from now on on Levante only, which needs a CairoMakie environment in the gate depot).
 - V_af: grounded ice above flotation as m SLE (rho_i 917, rho_sw 1028, ocean 3.625e14 m2). References: PD BedMachine v4 (ANT), GEBCO 2026 (North); LGM PaleoMIST 20/22.5 ka, GLAC-1D 21 ka, ICE-6G_C 21 ka. North regions are lon/lat boxes (GRL, NA, EUR; see the metrics file).
 - Rate: Yelmo V_sle over the last 5 kyr. Wall about 52 min per 30 kyr (ANT), 60-80 min (North).
 
@@ -80,14 +80,36 @@ Shelf budget of the final states (`tools/levante/calib_shelf_diag.jl`, `$G/calib
 - **No advance with less melt**: grounded area 13.843 against 13.836 M km2, V_af 67.94 against 67.92 m, the maps are indistinguishable (`ant-lgm-cf05-melt01-maps.png`). At the LGM the melt is already small (the LGM ocean cools the shelf, tf 1.6 -> 0.5 K) and calving is six times larger.
 - **The ice margin is pinned at its PD position.** The total ice area is 14.4-14.8 M km2 in every PD and LGM run; at the LGM the grounding line advances inside the PD calving front and the shelves shrink (2.2 -> 0.9 M km2). `[ycalv_ant]` has `calv_flt_method = calv_grnd_method = "equil"` with the level set: the calving rate is minus the ice velocity, the front does not move. The reference LGM sheets (17-20 M km2 grounded) lie beyond that front, so no friction, melt or sea level setting can reach them. (`[ycalv_nor]`: `vm-m16`, a moving front.)
 
+## Round 4: ANT moving calving front (cf_ref 0.05)
+
+pd (cold start, 30 kyr) and lgm (restart, 30 kyr) with `[ycalv_ant]` set as `[ycalv_nor]`: `calv_grnd_method = "zero"`, `H_min_grnd = H_min_flt = 0`, `tau_ice_flt = tau_ice_grnd = 85e3`, and `calv_flt_method = "vm-m16"` (TAG `-cf05-vm`) or, as the one alternative, `"threshold"` (`Hc_ref_flt` 200 m as in the file; TAG `-cf05-thr`). Overrides on `calib.sh`, every other key as round 2 (`equil`, TAG `-cf05`).
+Ice front (`calib_shelf_diag.jl`, `$G/calib/out/ant-shelf-diag-calving.log`): ice area H > 1 m, grounded and floating; mismatch = model-only / BedMachine-only ice area. Maps: dashed lines on the model panel are the ice fronts (`ant-*-cf05{,-vm,-thr}-maps.png`).
+
+| calving | PD V_af [m] (56.83) | PD grounded A (12.30) | PD ice area (14.41) | PD floating (2.10) | PD front mismatch | PD GL median / p90 [km] | PD rate |
+|---|---|---|---|---|---|---|---|
+| equil | 62.88 (+6.05) | 12.32 | 14.50 | 2.17 (H 261 m) | 0.32 / 0.23 | 0 / 32 | 0.03 |
+| vm-m16 | 61.40 (+4.57) | 12.20 | 14.52 | 2.32 (H 158 m) | 0.92 / 0.80 | 0 / 45 | 0.02 |
+| threshold | 63.07 (+6.24) | 12.35 | 13.96 | 1.61 (H 304 m) | 0.47 / 0.92 | 0 / 45 | 0.04 |
+
+| calving | LGM V_af [m] (69.3-71.8) | LGM grounded A (17.0-20.5) | LGM ice area | LGM - PD V_af (12.5-15.0) | GL vs PaleoMIST 20 ka median / p90 [km] | overlap bias vs PaleoMIST [m] | LGM rate [m/kyr] |
+|---|---|---|---|---|---|---|---|
+| equil | 67.92 | 13.84 | 14.77 | 5.0 | 143 / 421 | +82 | 0.00 |
+| vm-m16 | 63.15 | 13.34 | 15.51 | 1.8 | 172 / 699 | -44 | -0.02 |
+| threshold | 73.69 | 14.87 | 16.26 | 10.6 | 91 / 298 | +254 | +0.15 |
+
+- **vm-m16**: PD grounded state close to equil (V_af 1.5 m lower), but thin shelves (mean 158 m) and a rearranged front (Ross, Ronne fronts retreat, other coasts advance; mismatch 0.9 / 0.8 M km2). At the LGM the front moves out (ice area 15.5) but the grounded ice retreats in the Weddell sector (Filchner-Ronne inland, -1500 m) after a peak at 35 kyr (V_sle 65.5 -> 64.5): less grounded area and V_af than equil, 7 m below PaleoMIST.
+- **threshold**: PD grounded state as equil (V_af +6.2, area 12.35, GL unchanged), shelves smaller (1.6 against 2.1 M km2; Ross and Ronne fronts behind BedMachine). At the LGM the grounding line advances, the Weddell embayment grounds, Ross does not (`ant-lgm-cf05-thr-maps.png`): grounded area +1.0 M km2 on equil, GL median 91 km against 143, LGM - PD V_af doubles (10.6 m against 5.0). V_af 73.7 is 1.9-4.4 m above the references and still growing (0.15 m/kyr); the interior is thicker (+254 m overlap).
+- Not tuned: `Hc_ref_flt` (threshold) or `tau_ice` (vm-m16).
+
 ## Recommendation for the science par
 
-- **Antarctica: cf_ref 0.05** (round 2; in the science variants from round 3). Halves the PD excess (+6.0 m against +11.2, overlap bias +207 m against +406), grounding line unchanged, converged. LGM V_af 67.9 m is 1.4-3.9 m below the references on a 3.2 M km2 smaller area: with the shelves grounded it would be in range. The LGM area deficit does not depend on cf_ref (13.78-13.84 M km2) nor on shelf melt (round 3): the calving front is fixed at its PD position (`equil` calving), so it is not a friction problem and should not be tuned with cf_ref. Lower than 0.05 would thin the PD further but the remaining PD pattern (EAIS thick, WAIS thin) points to the elevation scaling or the climate, not cf_ref alone.
-- **North: cf_ref 0.1** (round 3; replaces "keep 0.2" of round 2). Better PD (+0.69 m, GRL +0.56 m, overlap bias halved), slightly less LGM overgrowth, no downside seen. The LGM overgrowth is mostly SMB and is not a reason to go lower. Not yet in the science variant (`CF_NOR` still 0.2), pending agreement.
+- **Antarctica: cf_ref 0.05** (round 2; in the science variants from round 3). Halves the PD excess (+6.0 m against +11.2, overlap bias +207 m against +406), grounding line unchanged, converged. LGM V_af 67.9 m is 1.4-3.9 m below the references on a 3.2 M km2 smaller area: with the shelves grounded it would be in range. The LGM area deficit does not depend on cf_ref (13.78-13.84 M km2) nor on shelf melt (round 3): the calving front is fixed at its PD position (`equil` calving), so it is not a friction problem and should not be tuned with cf_ref (round 4: with a moving front the cf_ref 0.05 LGM V_af is 73.7 m, above the references). Lower than 0.05 would thin the PD further but the remaining PD pattern (EAIS thick, WAIS thin) points to the elevation scaling or the climate, not cf_ref alone.
+- **North: cf_ref 0.1** (round 3; replaces "keep 0.2" of round 2). Better PD (+0.69 m, GRL +0.56 m, overlap bias halved), slightly less LGM overgrowth, no downside seen. The LGM overgrowth is mostly SMB and is not a reason to go lower. In the science variants from round 4.
+
+- **ANT calving: threshold** (round 4). The only setting with LGM advance (Weddell grounded, LGM - PD 10.6 m against 5.0 with equil); the PD grounded ice is as with equil. vm-m16 is worse than equil at the LGM. Cost: PD shelves 0.5 M km2 (24 %) smaller than BedMachine, fronts of Ross and Ronne too far back. Not in the generator: it is better at the LGM, not at PD (equil holds the PD front by construction), so it needs a decision.
 
 ## Open questions
 
-1. ANT calving: the LGM extent needs a moving front. `calv_flt_method` (and `calv_grnd_method`) other than `equil` for `[ycalv_ant]`, e.g. `vm-m16` as the North or `threshold`; this changes the PD front too and needs its own PD check. Not run (a decision outside this brief).
+1. ANT calving: adopt `threshold` despite the smaller PD shelves (one `[ycalv_ant]` block in the generator: method, `calv_grnd_method` zero, `H_min` 0, as the North)? Ross does not ground at the LGM with any setting.
 2. Frozen 21 ka forcing overstates the LGM SMB over the glacial cycle; is the lgmrecon drift an acceptable criterion, or should the North be judged in a transient run (-80 ka start of the science par)?
 3. GRL is above the LGM references in all North LGM runs (15.8-16.5 against 12.3-14.5 m) and above GEBCO at PD (+0.56 m at 0.1): `[ytill_nor]` scaling for Greenland?
-4. Apply North 0.1 to the science variants (`CF_NOR`)?

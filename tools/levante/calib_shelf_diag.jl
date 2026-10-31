@@ -1,7 +1,10 @@
 #!/usr/bin/env julia
 # calib-cf (docs/dev/calib-cf.md): ice-shelf budget of the final state of ANT calib runs: dTo, ice and grounded area, floating area and mean thickness,
-# area-mean bmb_shlf/bmb/smb/cmb over floating ice, shelf T and thermal forcing. On Levante: jl.sh <log> calib_shelf_diag.jl <run dir> ...
+# area-mean bmb_shlf/bmb/smb/cmb over floating ice, shelf T and thermal forcing; the ice front against BedMachine v4 (ice area, floating area,
+# model-only / BedMachine-only ice area). On Levante: jl.sh <log> calib_shelf_diag.jl <run dir> ...
 using NCDatasets, Statistics, Printf
+const BM = "/work/ba1442/fesmdata/Antarctica/ANT-32KM/ANT-32KM_TOPO-BedMachine-v4.nc"
+rd2(f, v) = (ds = NCDataset(f); x = Float64.(nomissing(ds[v][:, :], 0.0)); close(ds); x)
 lastf(f, v) = (ds = NCDataset(f); n = length(ds["time"]); x = Float64.(nomissing(ds[v][:, :, n], NaN)); close(ds); x)
 for r in ARGS
     println("=== ", r)
@@ -11,6 +14,9 @@ for r in ARGS
     fl = (H .> 1) .& (fg .< 0.5)
     println(@sprintf("ice area (H > 1 m) %.3f M km2, grounded %.3f", sum(a .* (H .> 1)) / 1e6, sum(a .* ((H .> 1) .& (fg .>= 0.5))) / 1e6))
     println(@sprintf("floating area %.3f M km2, mean H float %.0f m", sum(a .* fl) / 1e6, mean(H[fl])))
+    Hb = rd2(BM, "H_ice"); ib = Hb .> 1; ii = H .> 1
+    println(@sprintf("BedMachine: ice area %.3f, floating %.3f M km2; model-only / BedMachine-only ice area %.3f / %.3f M km2", sum(a .* ib) / 1e6,
+        sum(a .* (ib .& (rd2(BM, "f_grnd") .< 0.5))) / 1e6, sum(a .* (ii .& .!ib)) / 1e6, sum(a .* (ib .& .!ii)) / 1e6))
     y = joinpath(r, "ice_ant_yelmo.nc")
     for v in ("bmb_shlf", "bmb", "smb", "cmb")
         x = lastf(y, v); ok = .!isnan.(x) .& fl

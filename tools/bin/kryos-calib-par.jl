@@ -45,7 +45,7 @@ end
 body(s) = split(s, "\n")
 
 const CF_ANT = "0.05"   # calib-cf round 2 (docs/dev/calib-cf.md)
-const CF_NOR = "0.2"    # calib-cf rounds 1-2
+const CF_NOR = "0.1"    # calib-cf round 3 (docs/dev/calib-cf.md)
 
 function sci(L)
     L = setkey(L, "ytill_ant", "scale_zb", "2"; note="2: exp with z0/z1 below (calib-cf; the base has 0: none)")
