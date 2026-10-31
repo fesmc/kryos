@@ -101,12 +101,32 @@ Ice front (`calib_shelf_diag.jl`, `$G/calib/out/ant-shelf-diag-calving.log`): ic
 - **threshold**: PD grounded state as equil (V_af +6.2, area 12.35, GL unchanged), shelves smaller (1.6 against 2.1 M km2; Ross and Ronne fronts behind BedMachine). At the LGM the grounding line advances, the Weddell embayment grounds, Ross does not (`ant-lgm-cf05-thr-maps.png`): grounded area +1.0 M km2 on equil, GL median 91 km against 143, LGM - PD V_af doubles (10.6 m against 5.0). V_af 73.7 is 1.9-4.4 m above the references and still growing (0.15 m/kyr); the interior is thicker (+254 m overlap).
 - Not tuned: `Hc_ref_flt` (threshold) or `tau_ice` (vm-m16).
 
+## Round 5: ANT vm-m16 tuning (on hold)
+
+Decision (Alex, 2026-10-31): ANT calving is the level set with `vm-m16`, tuned; replaces the round-4 `threshold` choice. **On hold** (2026-10-31): the ANT friction setup of rounds 1-4 is off (`docs/dev/setup-diagnosis.md` on main); the sweep is redone on the corrected setup. The four PD runs were cancelled before they started (empty folders `Antarctica-pd-cf05-vm{60,120,170,240}` in the run root).
+
+Knobs (yelmo 30361f96 of S9, `calc_ytopo_calving_lsf` in `yelmo_topography.f90`, `physics/calving/calving_ac.f90`):
+- `vm-m16`: calving rate c = -u max(0, tau_vm / `tau_ice_flt`) on the floating front faces (Morlighem et al. 2016, Eq. 4), tau_vm = sqrt(3) B eps_t^(1/n) the tensile von Mises stress from the positive principal strain rates (Eq. 6-7), B = ATT_bar^(-1/n). The front moves at u (1 - tau_vm / tau_ice_flt): it stands where tau_vm = tau_ice_flt and advances where tau_vm is lower (thin, slowly spreading ice). One knob: `tau_ice_flt`.
+- ATT_bar carries the enhancement factor, so `ymat_ant.enh_shlf` (0.5) scales tau_vm as enh^(-1/3): on floating ice it is the same knob as tau_ice_flt (not tuned).
+- Marine-grounded faces (f_grnd_acx > 0, not land-land): `calv_grnd_method`; `"vm-m16"` exists (same law with `tau_ice_grnd`). Kept `"zero"` (tau_ice_grnd unused): the PD states have 41-48 marine-grounded front cells against 530-820 floating ones, and at the LGM a grounded law can only hold back the advance.
+- Unused with the level set: `calv_tau`, `calv_thin`, `Hc_ref_*`, `k2`, `kt_*`, `sd_*`, `w2` (tau_eff only). Used, kept: `H_min_flt/grnd` 0 (thin-margin removal), `H_min_tau`, `[ytopo_ant] front_subgrid = "marine"`, `front_H_eff_min` 50 m, `lsf_method = "snap"`, `dt_lsf = -1`.
+
+Planned range, `tau_ice_flt` 60 / 120 / 170 / 240 kPa (log steps of sqrt 2 around round 4's 85; overrides as round 4, `tools/levante/calib.sh` with `ycalv_ant.calv_flt_method="vm-m16"`, `calv_grnd_method="zero"`, `H_min_grnd=H_min_flt=0.0`, `tau_ice_flt=<t>e3`, `tau_ice_grnd=85.0e3`, TAG `-cf05-vm<t>`). tau_vm at the ice front of the round-4 PD states (`calib_shelf_diag.jl`, `front`, last restart; `$G/calib/out/ant-front-r4.log`), p10 / p25 / p50 / p75 / p90 [kPa]:
+
+| PD run | all front cells | Ross | Filchner-Ronne | Ross / F-R model-only, BedMachine-only [M km2] |
+|---|---|---|---|---|
+| equil (front near BedMachine) | 46 / 67 / 97 / 137 / 174 | 29 / 40 / 59 / 86 / 96 | 50 / 56 / 99 / 134 / 140 | 0.02, 0.03 / 0.02, 0.00 |
+| vm-m16 85 kPa | 24 / 43 / 87 / 185 / 232 | 16 / 20 / 42 / 77 / 152 | 27 / 45 / 107 / 157 / 188 | 0.06, 0.11 / 0.06, 0.27 |
+| threshold | 89 / 105 / 126 / 150 / 181 | 88 / 97 / 106 / 129 / 153 | 84 / 104 / 114 / 127 / 139 | 0.00, 0.32 / 0.02, 0.23 |
+
+- At a front near BedMachine (equil) tau_vm spans 46-174 kPa (p10-p90), median 97; Filchner-Ronne needs about 100-135 kPa to hold, Ross about 60-90. With 85 kPa the Filchner-Ronne front retreats (0.27 M km2 BedMachine-only) and thin unconfined shelves on other coasts advance (low tau_vm). The range brackets the BedMachine front stress; a single tau_ice_flt trades the Filchner-Ronne retreat against the advance elsewhere, which is the question of the sweep.
+
 ## Recommendation for the science par
 
 - **Antarctica: cf_ref 0.05** (round 2; in the science variants from round 3). Halves the PD excess (+6.0 m against +11.2, overlap bias +207 m against +406), grounding line unchanged, converged. LGM V_af 67.9 m is 1.4-3.9 m below the references on a 3.2 M km2 smaller area: with the shelves grounded it would be in range. The LGM area deficit does not depend on cf_ref (13.78-13.84 M km2) nor on shelf melt (round 3): the calving front is fixed at its PD position (`equil` calving), so it is not a friction problem and should not be tuned with cf_ref (round 4: with a moving front the cf_ref 0.05 LGM V_af is 73.7 m, above the references). Lower than 0.05 would thin the PD further but the remaining PD pattern (EAIS thick, WAIS thin) points to the elevation scaling or the climate, not cf_ref alone.
 - **North: cf_ref 0.1** (round 3; replaces "keep 0.2" of round 2). Better PD (+0.69 m, GRL +0.56 m, overlap bias halved), slightly less LGM overgrowth, no downside seen. The LGM overgrowth is mostly SMB and is not a reason to go lower. In the science variants from round 4.
 
-- **ANT calving: threshold** (round 4; decided 2026-10-31, in the science variants from round 5). The science case is the glacial cycle, so the LGM extent decides: threshold is the only setting with LGM advance (Weddell grounded, LGM - PD 10.6 m against 5.0 with equil), and the PD grounded ice is as with equil. vm-m16 is worse than equil at the LGM. `[ycalv_ant]` in the generator: `calv_flt_method = "threshold"` (`Hc_ref_flt` 200 m of the file), `calv_grnd_method = "zero"`, `H_min_grnd = H_min_flt = 0`, `tau_ice_flt = tau_ice_grnd = 85e3` (unused by threshold; as `[ycalv_nor]`), the setting of run `Antarctica-*-cf05-thr`.
+- **ANT calving: threshold** (round 4; decided 2026-10-31, in the science variants from round 5; to be replaced by tuned vm-m16, round 5 on hold). The science case is the glacial cycle, so the LGM extent decides: threshold is the only setting with LGM advance (Weddell grounded, LGM - PD 10.6 m against 5.0 with equil), and the PD grounded ice is as with equil. vm-m16 is worse than equil at the LGM. `[ycalv_ant]` in the generator: `calv_flt_method = "threshold"` (`Hc_ref_flt` 200 m of the file), `calv_grnd_method = "zero"`, `H_min_grnd = H_min_flt = 0`, `tau_ice_flt = tau_ice_grnd = 85e3` (unused by threshold; as `[ycalv_nor]`), the setting of run `Antarctica-*-cf05-thr`.
   **PD cost** (accepted, documented): PD shelves 1.61 against 2.10 M km2 in BedMachine (-24 %), ice area 13.96 against 14.41, the Ross and Ronne fronts behind BedMachine (model-only / BedMachine-only ice area 0.47 / 0.92 M km2, equil 0.32 / 0.23). At the LGM V_af is 1.9-4.4 m above the references and not converged (0.15 m/kyr); Ross does not ground.
 
 ## Open questions
