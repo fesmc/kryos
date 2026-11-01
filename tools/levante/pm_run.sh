@@ -16,7 +16,8 @@
 #      the 80 ka load switched on at 80 ka), EARTH=t3 (SELEN's Earth of PaleoMIST), ROT (.true.), DEG1 (cm | cf), RHOI (931), RHOW (1000),
 #      REF (the reference file in $P/data, pm_ref | pm_ref80: SELEN's initial state, with TMAX=0), SUBGRID (sle_subgrid: .true. the
 #      sloping-coast ocean load s = C rsl - z0 (C - C0) | .false. the binary C rsl, an SLE without the topography term),
-#      ROTKS (rotation_k_s: 0 = the model's own fluid Love number; 0.94349 = the value from the observed flattening that vilma.x
+#      RSLREF (pm-ref: an rsl field on this run's Gauss grid; i_eq = 3, the reference bed is the present-day bed + RSLREF, the
+#      iterated reference of pm_iterref.sh), ROTKS (rotation_k_s: 0 = the model's own fluid Love number; 0.94349 = the value from the observed flattening that vilma.x
 #      prints, the revised rotation theory), SCHEME (the memory scheme, fe | trap), CFL (the Maxwell-number ceiling of the fe sub-steps, 1.0), ROOT (the parent folder of the
 #      run, $P). The vilma2 clone of S11 is at c17d513, whose tree is that of 523b660 ($P/provenance.txt).
 # Inputs from pm_prep.jl in $P/data; run folder $P/$RUN; the remap weights are built per run in $RUN/maps.
@@ -26,7 +27,7 @@ VX=$S/vilma2/bin/vilma.x
 RUN=${RUN:?}; LMAX=${LMAX:?}; EARTH=${EARTH:?1d|l80|bm|3d|t3}; FORCE=${FORCE:?A|B|S|Bg|Bl|Bm|Bm910|Bgm910|Bm80|Bgm80_910}
 TMAX=${TMAX:-5.0e5}; RATE_TOL=${RATE_TOL:-1.0e-5}
 ROT=${ROT:-.true.}; DEG1=${DEG1:-cm}; RHOI=${RHOI:-931.0}; RHOW=${RHOW:-1000.0}; ROOT=${ROOT:-$P}
-SCHEME=${SCHEME:-fe}; CFL=${CFL:-1.0}; REF=${REF:-pm_ref}; SUBGRID=${SUBGRID:-.true.}; ROTKS=${ROTKS:-0.0}
+SCHEME=${SCHEME:-fe}; CFL=${CFL:-1.0}; REF=${REF:-pm_ref}; SUBGRID=${SUBGRID:-.true.}; ROTKS=${ROTKS:-0.0}; RSLREF=${RSLREF:-}
 [ -f $P/data/pm_force_$FORCE.nc ] || { echo "missing $P/data/pm_force_$FORCE.nc (pm_prep.jl)"; exit 1; }
 # The Earths: layers (Gowan's 12 | the science setting's 11, PREM rho and mu as r^2 shell means), eta per layer, lateral structure.
 #   1d : Gowan et al. (2021): 120 km elastic lithosphere, upper mantle 4e20 Pa s to 670 km, lower mantle 4e22 Pa s; the layers split on the
@@ -99,14 +100,14 @@ cat > pm.nml <<EOF
  remap_input = .true.
  name_lon = "lon"
  name_lat = "lat"
- i_eq = 1
+ i_eq = $([ -n "$RSLREF" ] && echo 3 || echo 1)
  z_bed_ref_file = "$P/data/$REF.nc"
  h_ice_ref_file = "$P/data/$REF.nc"
  name_z_bed_ref = "z_bed"
  name_h_ice_ref = "H_ice"
  z_bed_eq_file = ""
  h_ice_eq_file = ""
- rsl_restart_file = ""
+ rsl_restart_file = "$RSLREF"
  name_rsl = "rsl"
  restart_in_file = ""
 /

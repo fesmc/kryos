@@ -120,7 +120,32 @@ function diag_figures(dir, ref, runs)
     println("wrote figures to ", dir)
 end
 
+# pm-ref: julia --project=<julia-plot> pm_maps.jl ref <ref folder> <base>
+# pm_ref_correction.png : the converged reference correction r (i_eq = 3: z_bed_eq = today's bed + r) and the 0 ka bed misfit per
+#                         iteration (from <base>_iter.log)
+function ref_figures(dir, base)
+    fs = sort(filter(f -> startswith(f, base * "_rslref_") && endswith(f, ".nc"), readdir(dir)); by = f -> parse(Int, match(r"_(\d+)\.nc$", f)[1]))
+    lon, lat, r = NCDataset(joinpath(dir, fs[end])) do ds
+        Float64.(ds["lon"][:]), Float64.(ds["lat"][:]), Float64.(ds["rsl"][:, :])
+    end
+    p = sortperm(mod.(lon .+ 180, 360) .- 180); q = sortperm(lat)
+    lo = (mod.(lon .+ 180, 360) .- 180)[p]; la = lat[q]; r = r[p, q]
+    log = filter(l -> occursin("max |d| =", l), readlines(joinpath(dir, base * "_iter.log")))
+    mx = [parse(Float64, match(r"max \|d\| = ([0-9.]+)", l)[1]) for l in log]
+    rms = [parse(Float64, match(r"RMS ([0-9.]+)", l)[1]) for l in log]
+    fig = Figure(size = (1250, 380), fontsize = 12)
+    hm = gmap!(fig, (1, 1), lo, la, r, 300, "reference correction r = rsl(0 ka) of the converged run [m]")
+    Colorbar(fig[1, 2], hm, label = "[m]")
+    ax = Axis(fig[1, 3], xlabel = "run", ylabel = "0 ka bed misfit [m]", yscale = log10, title = "convergence")
+    scatterlines!(ax, 0:length(mx)-1, mx, label = "max"); scatterlines!(ax, 0:length(rms)-1, rms, label = "RMS")
+    hlines!(ax, [1.0], color = :gray, linestyle = :dash); axislegend(ax)
+    colsize!(fig.layout, 1, Relative(0.62))
+    save(joinpath(dir, "pm_ref_correction.png"), fig, px_per_unit = 1)
+    println("wrote ", joinpath(dir, "pm_ref_correction.png"), ": r in ", extrema(r))
+end
+
 function main(args)
+    args[1] == "ref" && return ref_figures(args[2], args[3])
     args[1] == "diag" && return diag_figures(args[2], args[3], [String(split(a, '=')[1]) => String(split(a, '=')[2]) for a in args[4:end]])
     dir = args[1]
     ds = NCDataset(joinpath(dir, "pm_fields.nc"))

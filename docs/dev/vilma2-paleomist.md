@@ -221,7 +221,7 @@ Branch `pm-diag`. Question: are the B1 - PaleoMIST differences (above: 24-29 m R
 | initial state | SELEN 2.9 `sle.f90`: load I(k) = h(k+1) - h(0), the first step from zero: the Earth in equilibrium with the first column (= the 80 ka ice) | equilibrium with the 80 ka load | as SELEN (T2) |
 | topography | SELEN: present topography (ETOPO1 pixels) as the final condition, the paleotopography follows from S; the ocean and the loads are relative to the 80 ka state. PaleoMIST z_bed(t) = RTopo-2 - S(t) | the relaxed present topography is the reference (i_eq = 1), the 80 ka state from the spin-up on it | **differs** (T5, R80) |
 | marine ice | PaleoMIST's pipeline gives SELEN the full ICESHEET thickness on the pixels (`create_selen_input_2.sh`). The older pipeline subtracted (1025/917) x present water depth "as of SELEN 2.8, there is no accounting for grounded ice" (`selen_format.sh`). Whether the ANICE version removes the water that grounded ice displaces is not documented | Kendall: removed | tested (T3) |
-| ice volume | FesmData H_ice (0.25 and 0.5 degree identical) 44.0e6 km3 at 22.5 ka against present; Gowan's "calculated ESL" equals 0.91 x this volume / 361e6 km2 at every record checked (-111.4 against -110.9 m at 22.5 ka). Suppl. Table 1 and `volume_sorted.txt` give 40.4 (Antarctica 4.0 against 6.5e6 km3): the table, and FesmData `SeaLevel-PaleoMIST` built from it, are ~9 % low, not the grids. NA ice overlaps Gowan's margins 0.96 (centroid 20-35 km west) | FesmData 0.25 degree | as SELEN (T0) |
+| ice volume | FesmData H_ice (0.25 and 0.5 degree identical) 44.0e6 km3 at 22.5 ka against present; Gowan's "calculated ESL" equals 0.91 x this volume / 361e6 km2 at every record checked (-111.4 against -110.9 m at 22.5 ka). Suppl. Table 1 and `volume_sorted.txt` give 40.4 (Antarctica 4.0 against 6.5e6 km3): the table, and FesmData `SeaLevel-PaleoMIST` v2.0.0 built from it, are ~9 % low, not the grids (fixed in FesmData SeaLevel v2.0.1, now from the gridded ice). NA ice overlaps Gowan's margins 0.96 (centroid 20-35 km west: the filtered fringe, not a registration error; see the load-geometry section) | FesmData 0.25 degree | as SELEN (T0) |
 | mass balance | PaleoMIST's mean of dz_sl over the *present* ocean equals that fixed-area ESL (80, 60, 22.5, 10 ka: -9.5, -79.0, -111.8, -28.9 against -9.5, -78.9, -111.4, -28.2 m), i.e. SELEN conserves the water over the present ocean function; over the ocean of the time the mean is 1-5 m lower | over the ocean of the time | formulation |
 
 Tables: `figures/vilma2-paleomist/pm_budget.md` (volumes), `pm_margins.md` (registration).
@@ -272,3 +272,53 @@ Run - PaleoMIST at 80, 60, 22.5, 10 ka, +-50 m; black: the 22.5 ka ice margin.
 - T3 emulated through the forcing as planned (Bm: + (rho_w/rho_i) times the present water depth where grounded on today's ocean), then also against the 80 ka state (Bm80) once R80 showed the reference matters, and as the binary ocean load (`sle_subgrid = .false.`, a VILMA2 option, no source change).
 - T5 added the 80 ka reference (R80) and k_s, after the step convention and the topography of SELEN were read in its source; the scheme `trap` was cancelled (cfl 0.1 alone already 0.5 m); the SELEN emulation at cfl 0.1 (`diag/D_all_c01`, on the present-day reference) finished but is not compared.
 - The SELEN sea level was computed from Gowan's Stokes coefficients (bundle) rather than taken from Zenodo; Gowan's own grid program needs 40 ms per point, so the grid is synthesised in Julia and checked against it at points.
+
+## The iterated reference, and the load geometry
+
+Branch `pm-ref`. Ice density 910 kg/m3 from here on (Alex). The SLE formulation difference (finding 12) is taken as given and not emulated.
+
+- Check of the SELEN emulation at cfl 0.1 (`diag/D_all_c01` against `D_all`): 0.7 m glaciated RMS at 22.5 ka. The time stepping is converged in the combination too.
+
+### Iterated present-day reference
+
+SELEN takes the present topography as the final condition; B1 takes it as the relaxed reference (i_eq = 1), so its own bed at 0 ka is not today's (Hudson Bay -455 against -157 m). VILMA2's `i_eq = 3` (`vilma_drive.f90` `setup_reference`) sets z_bed_eq = z_bed_ref + r with r read from `rsl_restart_file`, and the bed at 0 ka is z_bed_eq - rsl(0 ka). The 0 ka bed misfit is therefore r - rsl(0 ka), and the fixed point is r = rsl(0 ka) of the run with reference r: iterate r_{n+1} = rsl_n(0 ka) from r_0 = 0 (B1). No VILMA2 change is needed. `pm_iterref.sh` (one job: `pm_run.sh` with `RSLREF`, then `pm_prep.jl rslref`), B1 at lmax 170 and 910 kg/m3, spin-up to equilibrium with the 80 ka load on each reference as before. Runs `$G/runs/paleomist/ref/I910_it*`, 7 min each.
+
+| run | max 0 ka bed misfit [m] | RMS [m] |
+|---|---|---|
+| it0 (B1, i_eq = 1) | 287.2 (Hudson Bay) | 24.6 |
+| it1 | 40.1 | 1.93 |
+| it2 | 7.2 | 0.23 |
+| it3 | 1.5 | 0.044 |
+| it4 | 0.32 | 0.009 |
+
+Each iteration reduces the misfit about 5-fold; it4 (5 runs) is the converged run. The converged correction r (the relaxed reference minus today's bed, i.e. the rebound still to come) is up to 263 m over Hudson Bay (min -23 m on the Laurentide forebulge), 72 m over Fennoscandia, 55 m in the Barents Sea, 126 m in Antarctica, -31 to +11 m in the far field.
+
+![reference correction](figures/vilma2-paleomist/pm_ref_correction.png)
+
+The converged reference correction and the 0 ka bed misfit per run.
+
+| RSL - PaleoMIST [m] | glac RMS 22.5 / 15 / 10 ka | ocean bias 22.5 ka | global RMS 22.5 ka | Hudson Bay / Ross / Weddell / Barbados 22.5 ka | all records: glac RMS, ocean bias |
+|---|---|---|---|---|---|
+| B1, 910 (I910_it0) | 24.7 / 30.8 / 30.6 | 11.1 | 12.3 | -66 / -88 / -58 / 12 | 19.4, 5.1 |
+| iterated reference (I910_it4) | 19.6 / 24.6 / 24.0 | 8.9 | 10.0 | -12 / -83 / -53 / 10 | 18.8, 3.6 |
+| R80, 910 (D_R80i910) | 19.0 / 23.6 / 22.9 | 8.6 | 9.6 | 9 / -75 / -53 / 9 | 19.6, 3.4 |
+
+All rows and records: `figures/vilma2-paleomist/pm_ref_diag.md`; series: `pm_ref_series.png`.
+
+- The iterated reference gives most of what PaleoMIST's 80 ka state as reference (R80) gives: Hudson Bay from -66 to -12 m (R80: +9), the glaciated RMS from 24.7 to 19.6 m (R80: 19.0), the far field 2.2 m lower (R80: 2.6). It is the self-consistent form of SELEN's final condition (VILMA2's own history, not PaleoMIST's paleotopography), so the remaining difference to R80 (about 20 m in Hudson Bay) is the difference between the two models' present-day disequilibrium, not a setup choice. The far field and the marine embayments are unchanged: that part is the SLE formulation (finding 12).
+- In kryos: a glacial-cycle run that starts from an equilibrium state needs a reference that is today's bed plus the rebound still to come at the end of the run. The correction r would be computed once per Earth model and ice history in exactly this way (standalone VILMA2 under the forcing ice history, 3-5 iterations to < 1-2 m), stored as a field next to the reference topography, and passed to VILMA2 with `i_eq = 3` (`rsl_restart_file`). The coupled run then ends on today's bed instead of one 100-300 m too deep under the former ice sheets. When the coupled ice history differs from the forcing history, r is only approximate; it can be updated from the coupled run's own 0 ka rsl (the same fixed-point step).
+
+### Load geometry: FesmData against Gowan's 5 km grids
+
+`pm_prep.jl native`: the regional ICESHEET grids (`ice_reconstruction_files/<region>/thickness`, gridline nodes in m) mapped to lon-lat with GMT `mapproject` and the projections of `projection_info.sh` (checked: the North America projection centre comes out at Gowan's offset 4104009.41/2625682.63 m), binned onto the 0.25 degree cells of FesmData and compared with its H_ice. Table: `figures/vilma2-paleomist/pm_native.md`.
+
+| 22.5 ka | dV native / FesmData [1e6 km3] | FesmData - native, RMS / max abs [m] | ice area native / FesmData [1e6 km2] | mask centroid FesmData - native, E, N [km] |
+|---|---|---|---|---|
+| North America | 30.14 / 30.14 | 49 / 945 | 17.67 / 18.29 | -12, 14 |
+| Eurasia | 7.05 / 7.05 | 29 / 312 | 5.08 / 5.29 | -8, -6 |
+| Antarctica (to 80 S) | 6.49 / 6.51 | 82 / 3534 | 12.55 / 12.89 | -7, -13 |
+| Patagonia | 0.29 / 0.29 | 74 / 405 | 0.53 / 0.62 | 6, 9 |
+
+- The FesmData ice is the native ice with Gowan's 25 km Gaussian filter: the volumes per ice sheet agree to 0.3 % at every record checked (80, 22.5, 15, 10 ka), the thickness differs by 30-80 m RMS (up to ~1 km at steep margins and mountains, a few km in single Antarctic cells), and the filter spreads thin ice beyond the margins (area +3-6 %). The native grids confirm finding 14's volume check: Gowan's `volume_sorted.txt` (Antarctica 4.0e6 km3) is not the volume of his own grids (6.5e6).
+- The 20-35 km westward offset against the margins (pm_margins.md) is mostly the filtered fringe: the centroid of the native ice mask lies 11-15 km from that of the margin polygons (22.5-10 ka, Laurentide core box), FesmData's 23-35 km, and native and FesmData differ by 1-28 km. There is no registration error (lon convention, cell centre against gridline: FesmData's remap handles Gowan's gridline grid correctly, and the volumes and positions agree). At 80 ka the small ice caps give larger mask offsets (native 160 km, FesmData 330 km from the margins: the filter fringe and ice outside the drawn margins are a large part of a small area) with the same volume.
+- These differences are well below the resolution of lmax 170 (~120 km) and conserve the load, so the run with a native-grid load was skipped. SELEN's own load (the 5 km grids on 66 km pixels) is coarser than either.
