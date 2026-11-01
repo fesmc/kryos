@@ -40,6 +40,7 @@ program test_geo_vilma2
                                geo_restart_write, geo_restart_read, geo_write_output, geo_end
     use kryos_geo_vilma2, only: vilma_earth_t, vilma2_gauss_dims
     use vilma_params,    only: vilma_par_load
+    use vilma_constants, only: rho_ice_vilma_default => rho_ice, rho_water_vilma_default => rho_water
     use vilma_coupling,  only: solid_earth, solid_earth_init, solid_earth_update, solid_earth_spinup, &
                                solid_earth_finalize
     use vilma_sht,       only: sht_grid_surface_integral
@@ -368,8 +369,11 @@ contains
         type(geo_slot_t), intent(in) :: g
         select type (c => g%c)
         type is (vilma_earth_t)
-            call check(c%se%par%rho_ice == ctxg%cnst%rho_ice .and. c%se%par%rho_water == ctxg%cnst%rho_sw .and. &
-                       c%se%par%rho_ice /= 931.0_dp, "densities of VILMA2 are the run's rho_ice, rho_sw")
+            ! the run's pair must differ from VILMA2's defaults, or the second check proves nothing
+            call check(ctxg%cnst%rho_ice /= rho_ice_vilma_default .and. ctxg%cnst%rho_sw /= rho_water_vilma_default, &
+                       "the run's rho_ice, rho_sw differ from VILMA2's defaults")
+            call check(c%se%par%rho_ice == ctxg%cnst%rho_ice .and. c%se%par%rho_water == ctxg%cnst%rho_sw, &
+                       "densities of VILMA2 are the run's rho_ice, rho_sw, not its defaults")
         end select
     end subroutine test_densities
 
