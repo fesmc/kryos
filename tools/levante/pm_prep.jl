@@ -27,6 +27,8 @@
 #                  Supplementary Table 1.
 #   julia --project=tools tools/levante/pm_prep.jl margins <fesmdata> <PaleoMIST bundle>
 #                  registration of FesmData H_ice against Gowan's margin polygons (areas, overlap, centroid offset).
+#   julia --project=tools tools/levante/pm_prep.jl rslref <vilma_out.nc> <out.nc> [<previous>]
+#                  pm-ref: the next i_eq = 3 reference correction (rsl at 0 ka) and the 0 ka bed misfit of the run.
 #   julia --project=tools tools/levante/pm_prep.jl taboo <prem200.dat>
 #                  the layer means of TABOO (NV = 2, CDE = 0) for 120 km lithosphere, as SELEN's Earth of PaleoMIST (pm_run.sh t3).
 #   julia --project=tools tools/levante/pm_prep.jl selen <shs.bin> <NN> <DELTA [kyr]> <out.nc> [<rsl_spreadsheet.dat>]
@@ -349,11 +351,148 @@ function margins(fesmdata, bundle)
     close(ds)
 end
 
+# --- pm-ref: the iterated present-day reference (i_eq = 3) -----------------------------------------------------------------------
+#   pm_prep.jl rslref <run>/vilma_out.nc <out.nc> [<previous rslref.nc>]
+# vilma.x with i_eq = 3 takes z_bed_eq = z_bed_ref + r (r = rsl_restart_file), and its bed at 0 ka is z_bed_eq - rsl(0 ka), so the bed
+# misfit against today's bed is r - rsl(0 ka). The next reference is r' = rsl(0 ka) of the run (the fixed point: the modelled
+# present-day bed equals today's). Writes r' on the run's own Gauss grid (vilma.x reads it as it is), prints the misfit of the run.
+function rslref(outnc, f, prev = "")
+    lon, lat, r1 = NCDataset(outnc) do ds
+        Float64.(ds["lon"][:]), Float64.(ds["lat"][:]), Float64.(ds["rsl"][:, :, end])
+    end
+    r0 = isempty(prev) ? zeros(size(r1)) : NCDataset(ds -> Float64.(ds["rsl"][:, :]), prev)
+    d = r0 .- r1                                                  # modelled 0 ka bed - today's bed
+    w = [cosd(lat[j]) for i in eachindex(lon), j in eachindex(lat)]
+    k = argmax(abs.(d))
+    println("bed misfit at 0 ka (run ", outnc, "): max |d| = ", round(abs(d[k]), digits = 2), " m at ", round(lon[k[1]], digits = 1), " E ",
+            round(lat[k[2]], digits = 1), " N, RMS ", round(sqrt(sum(w .* d .^ 2) / sum(w)), digits = 3), " m; next reference correction: max ",
+            round(maximum(r1), digits = 1), ", min ", round(minimum(r1), digits = 1), " m")
+    isfile(f) && rm(f)
+    NCDataset(f, "c") do nc
+        defDim(nc, "lon", length(lon)); defDim(nc, "lat", length(lat))
+        defVar(nc, "lon", lon, ("lon",); attrib = ["units" => "degrees_east"]); defVar(nc, "lat", lat, ("lat",); attrib = ["units" => "degrees_north"])
+        defVar(nc, "rsl", r1, ("lon", "lat"); attrib = ["units" => "m", "comment" => "rsl at 0 ka of $(outnc): reference correction for i_eq = 3"])
+    end
+end
+
+# --- pm-ref: the load geometry, FesmData 0.25 degree H_ice against Gowan's native 5 km regional grids ------------------------------
+#   bash -lc "module load gmt; julia --project=tools pm_prep.jl native <fesmdata> <PaleoMIST bundle> <out folder>"
+# The regional ICESHEET grids (ice_reconstruction_files/<region>/thickness/<age>.nc, gridline nodes, x and y in m) are mapped to
+# lon-lat with GMT mapproject and the projections of projection_info.sh (Lambert azimuthal equal-area, origin at the lower-left corner;
+# Antarctica polar stereographic true at 71 S, origin at the pole), and binned onto the 0.25 degree cells of FesmData as the
+# area-weighted mean of the nodes in each cell (node area 25 km2, divided by k^2 in the stereographic grid; volume-conserving where the
+# cells are larger than the nodes; the few cells near the poles without a node take the next one in latitude). pm_native.md: volumes per domain, thickness differences, ice masks
+# and centroid offsets (native, FesmData, Gowan's margins); pm_native_H.nc: both fields at the records shown. The node binning is
+# noisy south of 80 S (cells narrower than the nodes), so the thickness statistics and masks exclude |lat| > 80 (volumes do not).
+const NATIVE_PROJ = Dict("North_America" => "-R-135/25/3/58r -JA-94/60/15c -F -I", "Eurasia" => "-R-12/47/108/65r -JA0/90/14c -F -I",
+                         "Patagonia" => "-R-80/-57/-65/-26r -JA-73/-45/8c -F -I",
+                         "Antarctica" => "-R-180/180/-90/-60 -Js0/-90/-71/1:48000000 -F -C -I")
+function native_lonlat(bundle, nm)
+    x, y = NCDataset(joinpath(bundle, "ice_reconstruction_files", nm, "thickness", "0.nc")) do ds
+        Float64.(ds["x"][:]), Float64.(ds["y"][:])
+    end
+    xy = Float64[]; sizehint!(xy, 2 * length(x) * length(y))
+    for j in eachindex(y), i in eachindex(x)                                            # (x, y) pairs, x fastest
+        push!(xy, x[i], y[j])
+    end
+    fi, fo = tempname(), tempname()
+    write(fi, xy)
+    run(pipeline(`gmt mapproject $(split(NATIVE_PROJ[nm])) -bi2d -bo2d`; stdin = fi, stdout = fo))
+    ll = reinterpret(Float64, read(fo)); rm(fi); rm(fo)
+    lo = reshape(ll[1:2:end], length(x), length(y)); la = reshape(ll[2:2:end], length(x), length(y))
+    k = nm == "Antarctica" ? (1 + sind(71)) ./ (1 .+ sind.(abs.(la))) : ones(size(la))   # stereographic scale factor
+    x, y, mod.(lo .+ 180, 360) .- 180, la, 25.0e6 ./ k .^ 2                               # node area [m2]
+end
+function native_binned(bundle, ages)
+    lon = collect(-179.875:0.25:179.875); lat = collect(-89.875:0.25:89.875)
+    A = [cellarea(lat[j], 0.25, 0.25) * 1e6 for i in eachindex(lon), j in eachindex(lat)]
+    H = zeros(length(lon), length(lat), length(ages))
+    for nm in REGIONS                           # per region the mean of its nodes, then the regions added (as Gowan's global grid)
+        x, y, lo, la, an = native_lonlat(bundle, nm)
+        ii = clamp.(floor.(Int, (lo .+ 180) ./ 0.25) .+ 1, 1, 1440); jj = clamp.(floor.(Int, (la .+ 90) ./ 0.25) .+ 1, 1, 720)
+        V = zeros(length(lon), length(lat), length(ages)); W = zeros(length(lon), length(lat))
+        for n in eachindex(an); W[ii[n], jj[n]] += an[n]; end
+        for (k, a) in enumerate(ages)
+            h = NCDataset(ds -> Float64.(nomissing(ds["z"][:, :], 0.0)), joinpath(bundle, "ice_reconstruction_files", nm, "thickness", "$(Int(a)).nc"))
+            for n in eachindex(h)
+                h[n] > 0 && (V[ii[n], jj[n], k] += h[n] * an[n])
+            end
+        end
+        for j in eachindex(lat), i in eachindex(lon)
+            jn = j                               # an empty polar cell: the next cell in latitude with nodes, towards the equator
+            while W[i, jn] == 0 && (lat[j] < 0 ? jn < 360 : jn > 361) && abs(lat[jn]) > 85; jn += lat[j] < 0 ? 1 : -1; end
+            W[i, jn] > 0 && (H[i, j, :] .+= V[i, jn, :] ./ W[i, jn])
+        end
+    end
+    lon, lat, H
+end
+function native(fesmdata, bundle, out)
+    ds = NCDataset(joinpath(fesmdata, "Global", "GLOBAL-0.25DEG", "GLOBAL-0.25DEG_IceHistory-PaleoMIST.nc"))
+    ages = Float64.(ds["time"][:]); lon = Float64.(ds["lon"][:]); lat = Float64.(ds["lat"][:])
+    @assert isapprox(lon[1], -179.875) && isapprox(lat[1], -89.875)
+    show = [80000.0, 22500.0, 15000.0, 10000.0, 0.0]
+    _, _, N = native_binned(bundle, show)
+    F = Float64.(nomissing(ds["H_ice"][:, :, [findfirst(==(a), ages) for a in show]], 0.0)); F[F .< 0] .= 0
+    close(ds)
+    A = [cellarea(lat[j], 0.25, 0.25) for i in eachindex(lon), j in eachindex(lat)]
+    reg = [region_of(lon[i], lat[j]) for i in eachindex(lon), j in eachindex(lat)]
+    pol = [abs(lat[j]) <= 80 for i in eachindex(lon), j in eachindex(lat)]
+    k0 = findfirst(==(0.0), show)
+    vec3(i, j) = [cosd(lat[j]) * cosd(lon[i]), cosd(lat[j]) * sind(lon[i]), sind(lat[j])]
+    function offset(m1, m2)                     # centroid of mask m1 minus that of m2: east, north [km]
+        c(m) = (v = sum(A[i, j] .* vec3(i, j) for i in eachindex(lon), j in eachindex(lat) if m[i, j]); v ./ sqrt(sum(v .^ 2)))
+        c1 = c(m1); c2 = c(m2); lo = atand(c2[2], c2[1]); la = asind(c2[3])
+        d = 6371.0 .* (c1 .- c2)
+        (round(sum(d .* [-sind(lo), cosd(lo), 0.0])), round(sum(d .* [-sind(la) * cosd(lo), -sind(la) * sind(lo), cosd(la)])))
+    end
+    r1(x) = round(x, digits = 2); r0(x) = round(x, digits = 0)
+    open(joinpath(out, "pm_native.md"), "w") do io
+        println(io, "FesmData 0.25 degree H_ice (F) against Gowan's native 5 km ICESHEET grids binned volume-conserving onto the same cells (N). ",
+                "Volume change against 0 ka [1e6 km3]; thickness F - N over cells with ice in either [m]; ice area (H > 0) [1e6 km2]; ",
+                "centroid of the F mask minus that of the N mask, east, north [km]. Domains as pm_budget.md.\n")
+        println(io, "| ka | domain | dV native | dV FesmData | F - N: RMS / max abs / mean | area N / F | centroid F - N [km] |")
+        println(io, "|---|---|---|---|---|---|---|")
+        for (k, a) in enumerate(show)
+            a == 0 && continue
+            for r in 1:4
+                m = reg .== r
+                dvn = sum((A .* (N[:, :, k] .- N[:, :, k0]))[m]) / 1e9; dvf = sum((A .* (F[:, :, k] .- F[:, :, k0]))[m]) / 1e9
+                mi = m .& pol .& ((N[:, :, k] .> 0) .| (F[:, :, k] .> 0)); d = (F[:, :, k] .- N[:, :, k])[mi]; w = A[mi]
+                mn = m .& pol .& (N[:, :, k] .> 0); mf = m .& pol .& (F[:, :, k] .> 0)
+                println(io, "| ", r == 1 ? a / 1000 : "", " | ", REGIONS[r], " | ", r1(dvn), " | ", r1(dvf), " | ",
+                        r0(sqrt(sum(w .* d .^ 2) / sum(w))), " / ", r0(maximum(abs.(d))), " / ", r0(sum(w .* d) / sum(w)), " | ",
+                        r1(sum(A[mn]) / 1e6), " / ", r1(sum(A[mf]) / 1e6), " | ", any(mn) && any(mf) ? offset(mf, mn) : "-", " |")
+            end
+        end
+    end
+    # North America, Laurentide core box (as pm_margins.md): centroid of the native and the FesmData masks against Gowan's margins
+    open(joinpath(out, "pm_native.md"), "a") do io
+        println(io, "\nNorth America within 140-60 W, 38-68 N: ice mask centroid minus that of Gowan's margin polygons, east, north [km].\n")
+        println(io, "| ka | native - margins | FesmData - margins |\n|---|---|---|")
+        for (k, a) in enumerate(show)
+            f = joinpath(bundle, "margins", "North_America", "$(Int(a)).gmt"); (a > 0 && isfile(f)) || continue
+            P = read_gmt_polygons(f); xs = [q[1] for p in P for q in p]; ys = [q[2] for p in P for q in p]
+            box = [(-140 <= lon[i] <= -60) && (38 <= lat[j] <= 68) && reg[i, j] == 1 for i in eachindex(lon), j in eachindex(lat)]
+            M = [box[i, j] && (minimum(ys) <= lat[j] <= maximum(ys)) && (minimum(xs) <= lon[i] <= maximum(xs)) && inside(P, lon[i], lat[j])
+                 for i in eachindex(lon), j in eachindex(lat)]
+            println(io, "| ", a / 1000, " | ", offset(box .& (N[:, :, k] .> 0), M), " | ", offset(box .& (F[:, :, k] .> 0), M), " |")
+        end
+    end
+    NCDataset(joinpath(out, "pm_native_H.nc"), "c") do nc
+        defDim(nc, "lon", length(lon)); defDim(nc, "lat", length(lat)); defDim(nc, "time", length(show))
+        defVar(nc, "lon", lon, ("lon",)); defVar(nc, "lat", lat, ("lat",)); defVar(nc, "time", show, ("time",))
+        defVar(nc, "H_native", Float32.(N), ("lon", "lat", "time")); defVar(nc, "H_fesmdata", Float32.(F), ("lon", "lat", "time"))
+    end
+    println("wrote ", out)
+end
+
 function main(args)
     args[1] == "visc1d" && return write_visc_uniform(args[2], args[3])
     args[1] == "budget" && return budget(args[2], args[3], args[4])
     args[1] == "taboo" && return taboo(args[2])
     args[1] == "margins" && return margins(args[2], args[3])
+    args[1] == "rslref" && return rslref(args[2:end]...)
+    args[1] == "native" && return native(args[2:end]...)
     args[1] == "selen" && return selen_grid(args[2:end]...)
     fesmdata, out = args[1], args[2]; grid = length(args) >= 3 ? args[3] : "GLOBAL-0.25DEG"
     mkpath(out)
