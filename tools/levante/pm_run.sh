@@ -13,7 +13,7 @@
 #      FORCE (A: 22.5 ka ice held | B: 80 -> 0 ka steps | S: smoke, 25 -> 20 ka), TMAX (spin-up cap [yr], 5e5),
 #      RATE_TOL (1e-5 m/yr), NTHR (OpenMP threads, 64).
 #      pm-diag: FORCE also Bg | Bl | Bm | Bm910 | Bgm910 | Bm80 | Bgm80_910 (pm_prep.jl), TMAX=0 (no spin-up: the Earth relaxed to the present-day reference,
-#      the 80 ka load switched on at 80 ka), EARTH=t3 (SELEN's Earth of PaleoMIST), ROT (.true.), DEG1 (cm | cf), RHOI (931), RHOW (1000),
+#      the 80 ka load switched on at 80 ka), EARTH=t3 (SELEN's Earth of PaleoMIST), ROT (.true.), DEG1 (cm | cf), RHOI (910, PaleoMIST's SELEN; the B1 runs used 931), RHOW (1000),
 #      REF (the reference file in $P/data, pm_ref | pm_ref80: SELEN's initial state, with TMAX=0), SUBGRID (sle_subgrid: .true. the
 #      sloping-coast ocean load s = C rsl - z0 (C - C0) | .false. the binary C rsl, an SLE without the topography term),
 #      RSLREF (pm-ref: an rsl field on this run's Gauss grid; i_eq = 3, the reference bed is the present-day bed + RSLREF, the
@@ -26,7 +26,7 @@ G=/work/ba1442/robinson/kryos-gate; P=$G/runs/paleomist; S=$G/stacks/S11
 VX=$S/vilma2/bin/vilma.x
 RUN=${RUN:?}; LMAX=${LMAX:?}; EARTH=${EARTH:?1d|l80|bm|3d|t3}; FORCE=${FORCE:?A|B|S|Bg|Bl|Bm|Bm910|Bgm910|Bm80|Bgm80_910}
 TMAX=${TMAX:-5.0e5}; RATE_TOL=${RATE_TOL:-1.0e-5}
-ROT=${ROT:-.true.}; DEG1=${DEG1:-cm}; RHOI=${RHOI:-931.0}; RHOW=${RHOW:-1000.0}; ROOT=${ROOT:-$P}
+ROT=${ROT:-.true.}; DEG1=${DEG1:-cm}; RHOI=${RHOI:-910.0}; RHOW=${RHOW:-1000.0}; ROOT=${ROOT:-$P}
 SCHEME=${SCHEME:-fe}; CFL=${CFL:-1.0}; REF=${REF:-pm_ref}; SUBGRID=${SUBGRID:-.true.}; ROTKS=${ROTKS:-0.0}; RSLREF=${RSLREF:-}
 [ -f $P/data/pm_force_$FORCE.nc ] || { echo "missing $P/data/pm_force_$FORCE.nc (pm_prep.jl)"; exit 1; }
 # The Earths: layers (Gowan's 12 | the science setting's 11, PREM rho and mu as r^2 shell means), eta per layer, lateral structure.
