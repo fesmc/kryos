@@ -34,7 +34,7 @@ Bands (`$G/calib/out/af-bands.md`): H bias mean [m] on the grounded BedMachine i
 
 ## Per-basin cf_ref (till_cf)
 
-Branch `till-cf` with Yelmo `till-cf-field`. Yelmo's `cf_ref` is a field (`dyn%now%cf_ref`, written as a 2D variable): `ytill.cf_ref` everywhere after `yelmo_init` and `yelmo_restart_init`, not read from the restart. The key `till_cf` of the ice instance names a group of the par file that gives ids their own value (Yelmo's `set_cf_ref_ids`, exact id match), applied after both calls, so a changed group takes effect on a restart:
+Branch `till-cf` with Yelmo `till-cf-field`. Yelmo's `cf_ref` is a field (`dyn%now%cf_ref`, a 2D output variable, also in the backend's `ice_<dom>_yelmo.nc`; written to the restart, not read): `ytill.cf_ref` everywhere after `yelmo_init` and `yelmo_restart_init`, not read from the restart. The key `till_cf` of the ice instance names a group of the par file that gives ids their own value (Yelmo's `set_cf_ref_ids`, exact id match), applied after both calls, so a changed group takes effect on a restart:
 
 ```
 &ice_ant

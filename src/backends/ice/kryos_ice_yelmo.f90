@@ -30,9 +30,9 @@ module kryos_ice_yelmo
     public :: yelmo_ice_t, yelmo_ice_constraints, yelmo_ice_publish
 
     ! Variable sets of the streams yelmo and yelmo_sm (yelmox kryos_output.f90)
-    character(len=56), parameter :: YELMO_VARS_2D(24) = [ character(len=56) :: &
+    character(len=56), parameter :: YELMO_VARS_2D(25) = [ character(len=56) :: &
         "H_ice","z_srf","z_bed","mask_bed","uxy_b","uxy_s","uxy_bar", &
-        "ux_bar","uy_bar","cb_ref","N_eff","beta","taub","taud","visc_bar", &
+        "ux_bar","uy_bar","cf_ref","cb_ref","N_eff","beta","taub","taud","visc_bar", &
         "T_prime_b","hyd_W_til","mb_net","smb","bmb","cmb","z_sl","bmb_shlf", &
         "H_ice_ref" ]
     character(len=56), parameter :: YELMO_VARS_2D_SM(10) = [ character(len=56) :: &
