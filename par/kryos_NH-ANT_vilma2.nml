@@ -132,13 +132,13 @@
 /
 
 &X_z_bed
-    filename = "/work/ba1442/robinson/kryos-gate/refcorr/PaleoMIST-sci/{grid_name}/{grid_name}_REFCORR.nc"   ! PaleoMIST's 0 ka bed + r (gia_refcorr.sh)
+    filename = "kryos_data/refcorr/PaleoMIST-sci/{grid_name}/{grid_name}_REFCORR.nc"   ! PaleoMIST's 0 ka bed + r (gia_refcorr.sh)
     name     = "z_bed"
     mode     = "static"
 /
 
 &X_H_ice
-    filename = "/work/ba1442/robinson/kryos-gate/refcorr/PaleoMIST-sci/{grid_name}/{grid_name}_REFCORR.nc"   ! PaleoMIST's 0 ka ice (unchanged)
+    filename = "kryos_data/refcorr/PaleoMIST-sci/{grid_name}/{grid_name}_REFCORR.nc"   ! PaleoMIST's 0 ka ice (unchanged)
     name     = "H_ice"
     mode     = "static"
 /
@@ -391,7 +391,7 @@
 /
 
 &topo_nor
-    path         = "/work/ba1442/robinson/kryos-gate/refcorr/PaleoMIST-sci/{domain}/{grid_name}/{grid_name}_TOPO-GEBCO2026-refcorr.nc"   ! today's topography + r (gia_refcorr.sh)
+    path         = "kryos_data/refcorr/PaleoMIST-sci/{domain}/{grid_name}/{grid_name}_TOPO-GEBCO2026-refcorr.nc"   ! today's topography + r (gia_refcorr.sh)
     vars         = "z_bed" "z_srf" "H_ice"
     remap        = "con"
     z_bed_f_sd   = 0.0    ! Preparation of the reference (hub): z_bed = z_bed + f_sd*z_bed_sd
@@ -1207,7 +1207,7 @@
 /
 
 &topo_ant
-    path         = "/work/ba1442/robinson/kryos-gate/refcorr/PaleoMIST-sci/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v4-refcorr.nc"   ! today's topography + r (gia_refcorr.sh)
+    path         = "kryos_data/refcorr/PaleoMIST-sci/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v4-refcorr.nc"   ! today's topography + r (gia_refcorr.sh)
     vars         = "z_bed" "z_srf" "H_ice" "z_bed_sd"
     remap        = "con"
     z_bed_f_sd   = 0.0    ! Preparation of the reference (hub): z_bed = z_bed + f_sd*z_bed_sd

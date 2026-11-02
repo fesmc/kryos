@@ -59,7 +59,7 @@ const HEADER = """
 # reference bed of every component is today's bed + r, the rebound still to come at 0 ka, so that the run ends on today's bed
 # (docs/dev/vilma2-paleomist.md, "Present-day reference correction for kryos"). Only the reference topography changes: the domains'
 # [topo_*] path and the globe_ice background X; H_ice stays present-day.
-const REFCORR = "/work/ba1442/robinson/kryos-gate/refcorr/PaleoMIST-sci"
+const REFCORR = "kryos_data/refcorr/PaleoMIST-sci"
 
 function main(args)
     length(args) == 2 || (println(stderr, "usage: kryos-vilma2-par.jl IN OUT"); return 2)

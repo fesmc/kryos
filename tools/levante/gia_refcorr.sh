@@ -10,7 +10,7 @@
 # today's (r_{n+1} = rsl_n(0 ka), r_0 = 0), then the kryos reference files (today's topography + r, H_ice present-day).
 #   sbatch --export=ALL,CASE=PaleoMIST-sci,PAR=<kryos par file> gia_refcorr.sh
 # Env:
-#   CASE     name of the case: everything goes to $G/refcorr/$CASE
+#   CASE     name of the case: everything goes to $KD/refcorr/$CASE (KD: /work/ba1442/kryos_data, the kryos_data link of a run)
 #   PAR      kryos par file: its &vilma group (overrides of the stack's input/vilma_defaults.nml, as the geo = vilma2 backend reads it)
 #   STACK    the stack of vilma.x (S11)
 #   HIST     the ice history (FesmData IceHistory product, lon-lat, years ago; default PaleoMIST on GLOBAL-0.25DEG)
@@ -32,7 +32,7 @@ RHOI=${RHOI:-910.0}; RHOW=${RHOW:-1028.0}; TOL=${TOL:-1.5}; NMAX=${NMAX:-8}; NTH
 XGRID=${XGRID:-GLOBAL-0.5DEG}; XHIST=${XHIST:-$F/Global/$XGRID/${XGRID}_IceHistory-$(basename $HIST | sed 's/.*_IceHistory-//')}
 DOMAINS=${DOMAINS:-"North:NH-32KM:North/NH-32KM/NH-32KM_TOPO-GEBCO2026.nc Antarctica:ANT-16KM:Antarctica/ANT-16KM/ANT-16KM_TOPO-BedMachine-v4.nc"}
 VX=$G/stacks/$STACK/vilma2/bin/vilma.x
-O=$G/refcorr/$CASE; mkdir -p $O/data
+KD=${KD:-/work/ba1442/kryos_data}; O=$KD/refcorr/$CASE; mkdir -p $O/data
 cp $PAR $O/par.nml
 # the &vilma group of the par file (the geo = vilma2 backend reads it over the stack's defaults)
 awk '/^&vilma[ \t]*$/{f=1} f{print} f&&/^\//{exit}' $PAR | sed '1d;$d' > $O/vilma.nml
