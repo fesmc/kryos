@@ -9,7 +9,7 @@ module kryos_exp_opt_cb_ref
     !   friction bounds cf_min, cf_max are seeded from ytill (also on a restore,
     !   where cb_ref comes from Yelmo's restart).
     ! HOOK_COLD_PRE_STATE: the cold-start guess: cf_init > 0 a constant, else
-    !   the till friction of the bed (calc_cb_ref).
+    !   the till friction of the bed (calc_ydyn_cb_ref, with Yelmo's cf_ref field).
     ! HOOK_STEP_BEGIN, in the window [cf_time_init, cf_time_end] of the elapsed
     !   time: optimize_cb_ref on the Yelmo state of the previous step.
     ! method = "none" keeps the first two (an external, constant cb_ref) and
@@ -18,7 +18,7 @@ module kryos_exp_opt_cb_ref
 
     use precision,       only: sp, dp
     use fesm_log,        only: fesm_error
-    use basal_dragging,  only: calc_cb_ref
+    use yelmo_dynamics,  only: calc_ydyn_cb_ref
     use ice_optimization, only: optimize_cb_ref
     use kryos_config,    only: config_read
     use kryos_domain,    only: domain_t
@@ -109,12 +109,8 @@ contains
                 if (self%cf_init > 0.0_sp) then
                     c%ylmo%dyn%now%cb_ref = self%cf_init
                 else
-                    associate (par => c%ylmo%dyn%par, bnd => c%ylmo%bnd)
-                        call calc_cb_ref(c%ylmo%dyn%now%cb_ref, bnd%z_bed, bnd%z_bed_sd, bnd%z_sl, bnd%H_sed, &
-                                         par%till_f_sed, par%till_sed_min, par%till_sed_max, par%till_cf_ref, &
-                                         par%till_cf_min, par%till_z0, par%till_z1, par%till_n_sd, &
-                                         par%till_scale_zb, par%till_scale_sed)
-                    end associate
+                    call calc_ydyn_cb_ref(c%ylmo%dyn%now%cb_ref, c%ylmo%dyn%par, c%ylmo%bnd, &
+                                          c%ylmo%dyn%now%cf_ref, c%ylmo%dyn%now%z_bed_reg)
                 end if
             case (HOOK_STEP_BEGIN)
                 if (st%t_elapsed < self%cf_time_init .or. st%t_elapsed > self%cf_time_end) return

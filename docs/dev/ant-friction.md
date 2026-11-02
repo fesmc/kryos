@@ -32,9 +32,26 @@ Bands (`$G/calib/out/af-bands.md`): H bias mean [m] on the grounded BedMachine i
 - **cf_ref** shifts every band together (0.05 -> 0.1: +60-110 m on EAIS land / marine and the margin), as before. 0.1 balances the WAIS (-1 to -40 m) only with a thicker EAIS and margin (+120-140 m) and V_af +2.6-3.3 m.
 - Recommended: **cf_ref 0.05, z0/z1 = -1600/0** (`af05-z1600_0`): lowest rms (334, as -1000/-200), all bands within -70..+83 m, interior -1 m, V_af +1.3 m, WAIS sliding area halved (0.56 -> 0.28) and WAIS speed closest to Rignot of the 0.05 runs.
 
+## Per-basin cf_ref (till_cf)
+
+Branch `till-cf` with Yelmo `till-cf-field`. Yelmo's `cf_ref` is a field (`dyn%now%cf_ref`, a 2D output variable, also in the backend's `ice_<dom>_yelmo.nc`; written to the restart, not read): `ytill.cf_ref` everywhere after `yelmo_init` and `yelmo_restart_init`, not read from the restart. The key `till_cf` of the ice instance names a group of the par file that gives ids their own value (Yelmo's `set_cf_ref_ids`, exact id match), applied after both calls, so a changed group takes effect on a restart:
+
+```
+&ice_ant
+    till_cf = "till_cf_ant"   ! "" (default): ytill.cf_ref everywhere
+/
+&till_cf_ant
+    ids    = "basins"         ! "basins" (Yelmo's bnd%basins) | "regions" (bnd%regions)
+    codes  = 1 2              ! ids with their own cf_ref
+    cf_ref = 0.05 0.1         ! [-- or deg]
+/
+```
+
+`ids = "basins"` is Yelmo's basin set, `[yelmo_masks_ant] basins` (`[Antarctica] basins` does not change it; smoke runs 2026-11-02, `/work/ba1442/robinson/till-cf/runs`). init stops on an unknown key or `ids`, a different number of `codes` and `cf_ref`, or a code not in the id field. `cf_min` and the `scale_zb` / `scale_sed` scaling apply on top (the law runs from `cf_min` to the cell's `cf_ref`). No science par file has a `till_cf` group yet.
+
 ## Open
 
 1. The EAIS is 30-40 % faster than Rignot 2011 with enh_shear 3 while the land beds are still +80 m thick: enh_shear 2 may balance speed and thickness better (not run).
-2. WAIS still -70 m and the trend with the e-folding depth has not flattened: a weaker scaling (-3200/0, or scale_zb 0 with cf_ref 0.05) may close it; the till-regions scheme is the structural answer.
+2. WAIS still -70 m and the trend with the e-folding depth has not flattened: a weaker scaling (-3200/0, or scale_zb 0 with cf_ref 0.05) may close it; a per-basin cf_ref (`till_cf`, above) is the structural answer.
 3. The calving front (vm-m16 at 85 kPa, untuned) is unchanged from round 4; the tau_ice_flt sweep (calib-cf round 5) comes on this friction setup.
 4. Not in the generator yet: `tools/bin/kryos-calib-par.jl` still has enh_shear 1 (base) and z0/z1 -400/0 for ANT.

@@ -9,7 +9,7 @@ module kryos_ice_yelmo
     use precision,       only: sp, dp
     use fesm_log,        only: LOG_INFO, log_msg, fesm_error, to_str
     use fesm_fields,     only: fields_get, fields_put
-    use nml,             only: nml_read, nml_has_param
+    use nml,             only: nml_read, nml_has_param, nml_has_group, nml_group_keys, nml_key_len
     use kryos_component, only: init_ctx_t, step_time_t, constraints_t, grid_ref_t, &
                                component_write_output, NAME_LEN, PATH_LEN, &
                                PASS_INIT, PASS_GEOMETRY, PASS_STATE, PASS_SPINUP, PASS_RESTART
@@ -20,6 +20,7 @@ module kryos_ice_yelmo
                                yelmo_restart_write, yelmo_restart_init, yelmo_regions_update, &
                                yelmo_regions_write, yelmo_write_init, yelmo_write_step
     use yelmo_io,         only: yelmo_restart_read_topo_bnd
+    use basal_dragging,   only: set_cf_ref_ids
     use yelmo_topography, only: calc_ytopo_diagnostic
     use topography,       only: calc_H_grnd, calc_f_grnd_subgrid_linear, calc_f_grnd_subgrid_area
 
@@ -29,9 +30,9 @@ module kryos_ice_yelmo
     public :: yelmo_ice_t, yelmo_ice_constraints, yelmo_ice_publish
 
     ! Variable sets of the streams yelmo and yelmo_sm (yelmox kryos_output.f90)
-    character(len=56), parameter :: YELMO_VARS_2D(24) = [ character(len=56) :: &
+    character(len=56), parameter :: YELMO_VARS_2D(25) = [ character(len=56) :: &
         "H_ice","z_srf","z_bed","mask_bed","uxy_b","uxy_s","uxy_bar", &
-        "ux_bar","uy_bar","cb_ref","N_eff","beta","taub","taud","visc_bar", &
+        "ux_bar","uy_bar","cf_ref","cb_ref","N_eff","beta","taub","taud","visc_bar", &
         "T_prime_b","hyd_W_til","mb_net","smb","bmb","cmb","z_sl","bmb_shlf", &
         "H_ice_ref" ]
     character(len=56), parameter :: YELMO_VARS_2D_SM(10) = [ character(len=56) :: &
@@ -43,6 +44,10 @@ module kryos_ice_yelmo
         character(len=NAME_LEN) :: group = "yelmo"        ! Yelmo's top group in the par file
         real(sp) :: init_equil_time = 0.0_sp              ! [yr] cold start: yelmo_update_equil, 0 = none
         real(sp) :: init_time_thrm  = 0.0_sp              ! [yr] then equilibrate with topography fixed, 0 = none
+        character(len=NAME_LEN) :: till_cf = ""           ! group of the till cf_ref per basin or region, "" = none (ytill.cf_ref)
+        character(len=16) :: till_cf_ids = ""             ! its id field: "basins" (bnd%basins) | "regions" (bnd%regions)
+        integer,  allocatable :: till_cf_codes(:)         ! ids with their own cf_ref
+        real(sp), allocatable :: till_cf_ref(:)           ! [-- or deg] their cf_ref
         real(dp) :: t_Q_geo = -huge(1.0_dp), t_H_sed = -huge(1.0_dp)   ! publication times last copied
         integer(int64) :: tick_prepared = -1                  ! clock tick (st%tick) of the last prepare
     contains
@@ -108,6 +113,7 @@ contains
 
         call region_files(self)
         call reference_check(self, topo)
+        call till_cf_apply(self)
     end subroutine yelmo_init_
 
     subroutine yelmo_init_state_(self, st, pass)
@@ -246,6 +252,7 @@ contains
                                          self%ylmo%par%restart_interpolated, self%ylmo%grd, &
                                          self%ylmo%par%domain, self%ylmo%par%grid_name, file, t)
         call yelmo_restart_init(self%ylmo, file, t)
+        call till_cf_apply(self)                        ! cf_ref is not in the restart: from the par file again
         self%ylmo%par%use_restart = .true.
     end subroutine yelmo_restart_read_
 
@@ -295,7 +302,94 @@ contains
             call nml_read(ctx%par_file, ctx%instance, "init_equil_time", self%init_equil_time)
         if (nml_has_param(ctx%par_file, ctx%instance, "init_time_thrm")) &
             call nml_read(ctx%par_file, ctx%instance, "init_time_thrm", self%init_time_thrm)
+        if (nml_has_param(ctx%par_file, ctx%instance, "till_cf")) &
+            call nml_read(ctx%par_file, ctx%instance, "till_cf", self%till_cf)
+        if (len_trim(self%till_cf) > 0) call till_cf_read(self, ctx)
     end subroutine group_read
+
+    subroutine till_cf_read(self, ctx)
+        ! The group named by till_cf (in the par file): ids ("basins" | "regions"),
+        ! codes (the ids with their own cf_ref) and cf_ref (one value per code).
+        class(yelmo_ice_t), intent(inout) :: self
+        type(init_ctx_t),   intent(in)    :: ctx
+
+        character(len=*), parameter :: proc = "kryos_ice_yelmo::init"
+        integer, parameter :: n_max = 64                ! entries counted up to n_max + 1
+        character(len=8), parameter :: req(3) = [character(len=8) :: "ids", "codes", "cf_ref"]
+        character(len=64) :: sv(n_max+1)
+        character(len=:), allocatable :: grp, who
+        character(len=nml_key_len), allocatable :: keys(:)
+        integer :: k, n, m
+
+        grp = trim(self%till_cf)
+        who = "instance "//trim(self%name)//": till_cf = '"//grp//"'"
+        if (.not. nml_has_group(ctx%par_file, grp)) &
+            call fesm_error(proc, "group &"//grp//" of till_cf is missing from the par file", who)
+        keys = nml_group_keys(ctx%par_file, grp)
+        do k = 1, size(keys)
+            if (.not. any(req == keys(k))) &
+                call fesm_error(proc, "&"//grp//": unknown key '"//trim(keys(k))//"'", who//"; keys: ids, codes, cf_ref")
+        end do
+        do k = 1, size(req)
+            if (.not. any(keys == req(k))) &
+                call fesm_error(proc, "&"//grp//": key '"//trim(req(k))//"' is missing", who)
+        end do
+
+        call nml_read(ctx%par_file, grp, "ids", self%till_cf_ids)
+        select case (trim(self%till_cf_ids))
+        case ("basins", "regions")
+        case default
+            call fesm_error(proc, "&"//grp//": ids = '"//trim(self%till_cf_ids)//"' is not recognised", &
+                            who//"; use basins (bnd%basins) or regions (bnd%regions)")
+        end select
+
+        sv = ""
+        call nml_read(ctx%par_file, grp, "codes", sv)
+        n = count(len_trim(sv) > 0)
+        sv = ""
+        call nml_read(ctx%par_file, grp, "cf_ref", sv)
+        m = count(len_trim(sv) > 0)
+        if (n /= m .or. n == 0 .or. n > n_max) then
+            call fesm_error(proc, "&"//grp//": codes and cf_ref must have the same number of entries (1 to "// &
+                            to_str(n_max)//")", who//"; got "//to_str(n)//" codes, "//to_str(m)//" cf_ref")
+        end if
+        allocate(self%till_cf_codes(n), self%till_cf_ref(n))
+        call nml_read(ctx%par_file, grp, "codes",  self%till_cf_codes)
+        call nml_read(ctx%par_file, grp, "cf_ref", self%till_cf_ref)
+    end subroutine till_cf_read
+
+    subroutine till_cf_apply(self)
+        ! cf_ref of the ids of till_cf (set_cf_ref_ids on Yelmo's cf_ref, which
+        ! yelmo_init and yelmo_restart_init set to ytill.cf_ref everywhere).
+        ! Every code must be in the id field.
+        class(yelmo_ice_t), intent(inout) :: self
+
+        character(len=*), parameter :: proc = "kryos_ice_yelmo::till_cf"
+        real(sp), allocatable :: ids(:,:)
+        integer :: k, n
+
+        if (len_trim(self%till_cf) == 0) return
+
+        select case (trim(self%till_cf_ids))
+        case ("basins")
+            ids = self%ylmo%bnd%basins
+        case ("regions")
+            ids = self%ylmo%bnd%regions
+        end select
+
+        do k = 1, size(self%till_cf_codes)
+            n = count(nint(ids) == self%till_cf_codes(k))
+            if (n == 0) then
+                call fesm_error(proc, "&"//trim(self%till_cf)//": code "//to_str(self%till_cf_codes(k))// &
+                                " is not in the id field "//trim(self%till_cf_ids), "instance "//trim(self%name))
+            end if
+            call log_msg(LOG_INFO, "kryos_ice_yelmo", "till_cf: "//trim(self%till_cf_ids)//" "// &
+                         to_str(self%till_cf_codes(k))//": cf_ref = "//to_str(self%till_cf_ref(k))// &
+                         " ("//to_str(n)//" cells)", "instance "//trim(self%name))
+        end do
+
+        call set_cf_ref_ids(self%ylmo%dyn%now%cf_ref, ids, self%till_cf_codes, self%till_cf_ref)
+    end subroutine till_cf_apply
 
     subroutine reference_narrow(self, ref, topo)
         ! The core's reference on this grid as Yelmo's topography input (sp).
