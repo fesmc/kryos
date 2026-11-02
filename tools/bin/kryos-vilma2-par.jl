@@ -47,11 +47,19 @@ const HEADER = """
 !   [recon_nor], [recon_ant]  both domains start from PaleoMIST at -80 ka over the whole domain (the base: NH from ICE-6G_C at -26 ka in
 !                 North America, ANT without a reconstruction); [Antarctica] experiments = "recon_ant"
 !   removed       [barysealevel], [isos_nor], [isos_ant] (FastIsostasy only)
+!   [topo_nor], [topo_ant], [X_z_bed], [X_H_ice]  the reference bed is today's + r, the present-day reference correction of
+!                 tools/levante/gia_refcorr.sh (case PaleoMIST-sci); H_ice stays present-day
 !   [out_rst]     restart bundle every 5 kyr (was 20 kyr; phase 4 G7, Q12)
 !   added         [vilma] (CLIMBER-X set: PREM, 11 layers, Bagge 3D structure 6, lmax 170, 1-D pre-spin-up, spin-up 2e4 yr / 1e-5 m/yr),
 !                 [globe_ice] and the three datasrc groups of the PaleoMIST history on GLOBAL-0.5DEG (X at 0 ka, anomaly of the history)
 ! A run shorter than 80 ka: -p clock.time_end=<t>. The smb_simple variant: par/gate/g6-smb.nml (tools/bin/kryos-smb-par.jl).
 """
+
+# The present-day reference correction r (tools/levante/gia_refcorr.sh, case PaleoMIST-sci: this Earth, PaleoMIST 80 -> 0 ka): the
+# reference bed of every component is today's bed + r, the rebound still to come at 0 ka, so that the run ends on today's bed
+# (docs/dev/vilma2-paleomist.md, "Present-day reference correction for kryos"). Only the reference topography changes: the domains'
+# [topo_*] path and the globe_ice background X; H_ice stays present-day.
+const REFCORR = "kryos_data/refcorr/PaleoMIST-sci"
 
 function main(args)
     length(args) == 2 || (println(stderr, "usage: kryos-vilma2-par.jl IN OUT"); return 2)
@@ -104,6 +112,17 @@ function main(args)
     end
     L = delete_group(L, "isos_nor")
     L = delete_group(L, "isos_ant")
+
+    # the domains' reference topography: the corrected copy written by gia_refcorr.sh (same grids, same variables)
+    for nm in ("topo_nor", "topo_ant")
+        g = [x for x in groups(L) if x[1] == nm][1]
+        for i in g[2]:g[3]
+            m = match(r"^(\s*path\s*=\s*)\"fesmdata/(\{domain\}/\{grid_name\}/\{grid_name\}_TOPO-[^\"]*)\.nc\"(.*)$", L[i])
+            m === nothing && continue
+            L[i] = m[1] * "\"" * REFCORR * "/" * m[2] * "-refcorr.nc\"   ! today's topography + r (gia_refcorr.sh)"
+        end
+        any(i -> occursin("-refcorr.nc", L[i]), g[2]:g[3]) || error("[$nm]: no fesmdata TOPO path to correct")
+    end
 
     # restart bundles every 5 kyr (G7, Q12; the job end writes one as well)
     let g = grp0(L, "out_rst")
@@ -168,15 +187,15 @@ function main(args)
 /
 
 &X_z_bed
-    filename = "fesmdata/Global/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"
+    filename = "$REFCORR/{grid_name}/{grid_name}_REFCORR.nc"   ! PaleoMIST's 0 ka bed + r (gia_refcorr.sh)
     name     = "z_bed"
-    mode     = "transient"
+    mode     = "static"
 /
 
 &X_H_ice
-    filename = "fesmdata/Global/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"
+    filename = "$REFCORR/{grid_name}/{grid_name}_REFCORR.nc"   ! PaleoMIST's 0 ka ice (unchanged)
     name     = "H_ice"
-    mode     = "transient"
+    mode     = "static"
 /
 
 &X_dH_ice

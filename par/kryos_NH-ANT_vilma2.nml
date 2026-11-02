@@ -8,6 +8,8 @@
 !   [recon_nor], [recon_ant]  both domains start from PaleoMIST at -80 ka over the whole domain (the base: NH from ICE-6G_C at -26 ka in
 !                 North America, ANT without a reconstruction); [Antarctica] experiments = "recon_ant"
 !   removed       [barysealevel], [isos_nor], [isos_ant] (FastIsostasy only)
+!   [topo_nor], [topo_ant], [X_z_bed], [X_H_ice]  the reference bed is today's + r, the present-day reference correction of
+!                 tools/levante/gia_refcorr.sh (case PaleoMIST-sci); H_ice stays present-day
 !   [out_rst]     restart bundle every 5 kyr (was 20 kyr; phase 4 G7, Q12)
 !   added         [vilma] (CLIMBER-X set: PREM, 11 layers, Bagge 3D structure 6, lmax 170, 1-D pre-spin-up, spin-up 2e4 yr / 1e-5 m/yr),
 !                 [globe_ice] and the three datasrc groups of the PaleoMIST history on GLOBAL-0.5DEG (X at 0 ka, anomaly of the history)
@@ -130,15 +132,15 @@
 /
 
 &X_z_bed
-    filename = "fesmdata/Global/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"
+    filename = "kryos_data/refcorr/PaleoMIST-sci/{grid_name}/{grid_name}_REFCORR.nc"   ! PaleoMIST's 0 ka bed + r (gia_refcorr.sh)
     name     = "z_bed"
-    mode     = "transient"
+    mode     = "static"
 /
 
 &X_H_ice
-    filename = "fesmdata/Global/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"
+    filename = "kryos_data/refcorr/PaleoMIST-sci/{grid_name}/{grid_name}_REFCORR.nc"   ! PaleoMIST's 0 ka ice (unchanged)
     name     = "H_ice"
-    mode     = "transient"
+    mode     = "static"
 /
 
 &X_dH_ice
@@ -389,7 +391,7 @@
 /
 
 &topo_nor
-    path         = "fesmdata/{domain}/{grid_name}/{grid_name}_TOPO-GEBCO2026.nc"
+    path         = "kryos_data/refcorr/PaleoMIST-sci/{domain}/{grid_name}/{grid_name}_TOPO-GEBCO2026-refcorr.nc"   ! today's topography + r (gia_refcorr.sh)
     vars         = "z_bed" "z_srf" "H_ice"
     remap        = "con"
     z_bed_f_sd   = 0.0    ! Preparation of the reference (hub): z_bed = z_bed + f_sd*z_bed_sd
@@ -1205,7 +1207,7 @@
 /
 
 &topo_ant
-    path         = "fesmdata/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v4.nc"
+    path         = "kryos_data/refcorr/PaleoMIST-sci/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v4-refcorr.nc"   ! today's topography + r (gia_refcorr.sh)
     vars         = "z_bed" "z_srf" "H_ice" "z_bed_sd"
     remap        = "con"
     z_bed_f_sd   = 0.0    ! Preparation of the reference (hub): z_bed = z_bed + f_sd*z_bed_sd

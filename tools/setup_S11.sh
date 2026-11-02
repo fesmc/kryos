@@ -43,7 +43,7 @@ for C in kryos kryos-v0; do
   KSHA=$(git -C $D rev-parse --short=7 HEAD)
   for p in fesm-utils yelmo FastIsostasy chion insol; do ln -sfn $R/$p $D/$p; done
   ln -sfn $S/vilma2 $D/vilma2
-  for d in ice_data fesmdata isostasy_data; do ln -sfn /work/ba1442/$d $D/$d; done
+  for d in ice_data fesmdata isostasy_data kryos_data; do ln -sfn /work/ba1442/$d $D/$d; done
   (cd $D && $CM config kryos --only -m dkrz_levante -c ifx > /dev/null && $CM deps . > /dev/null)
   (cd $D && make kryos openmp=1 vilma=$V DFLAGS_NODEBUG="$GF" > $D/build.log 2>&1) || { tail -30 $D/build.log; exit 1; }
   ls -l $D/libkryos/bin/kryos.x

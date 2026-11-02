@@ -39,7 +39,7 @@ stage () {   # stage <dir> <jobname> <set_nml args...>
     for f in $G/stacks/$STACK/yelmox/input/*; do ln -sf $f input/; done
     for f in $K/input/*; do ln -sf $f input/; done
     ln -sf $K/fesm-utils/par/datasrc_defaults.nml input/datasrc_defaults.nml
-    for d in fesmdata ice_data isostasy_data; do ln -s /work/ba1442/$d $d; done
+    for d in fesmdata ice_data isostasy_data kryos_data; do ln -s /work/ba1442/$d $d; done
     ln -s $K/fesm-utils fesm-utils; ln -s $MAPS maps
     cp ${PARDIR:-$K/par/gate}/$PAR.nml par.nml; cp $K/libkryos/bin/kryos.x .
     local args=("${KP[@]}" "$@")

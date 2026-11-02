@@ -322,3 +322,28 @@ All rows and records: `figures/vilma2-paleomist/pm_ref_diag.md`; series: `pm_ref
 - The FesmData ice is the native ice with Gowan's 25 km Gaussian filter: the volumes per ice sheet agree to 0.3 % at every record checked (80, 22.5, 15, 10 ka), the thickness differs by 30-80 m RMS (up to ~1 km at steep margins and mountains, a few km in single Antarctic cells), and the filter spreads thin ice beyond the margins (area +3-6 %). The native grids confirm finding 14's volume check: Gowan's `volume_sorted.txt` (Antarctica 4.0e6 km3) is not the volume of his own grids (6.5e6).
 - The 20-35 km westward offset against the margins (pm_margins.md) is mostly the filtered fringe: the centroid of the native ice mask lies 11-15 km from that of the margin polygons (22.5-10 ka, Laurentide core box), FesmData's 23-35 km, and native and FesmData differ by 1-28 km. There is no registration error (lon convention, cell centre against gridline: FesmData's remap handles Gowan's gridline grid correctly, and the volumes and positions agree). At 80 ka the small ice caps give larger mask offsets (native 160 km, FesmData 330 km from the margins: the filter fringe and ice outside the drawn margins are a large part of a small area) with the same volume.
 - These differences are well below the resolution of lmax 170 (~120 km) and conserve the load, so the run with a native-grid load was skipped. SELEN's own load (the 5 km grids on 66 km pixels) is coarser than either.
+
+## Present-day reference correction for kryos
+
+Branch `refcorr`. The iterated reference (above) as a kryos tool output: the reference bed of a glacial-cycle run is today's bed + r, r the rebound still to come at 0 ka, so that the run ends on today's bed.
+
+- **Where it enters kryos (no source change):** only the reference topography, shared by every component. The domains read it from their hub group (`[topo_nor]`, `[topo_ant]` `path`: `htopo_init` prepares the hub reference, `make_refs` remaps it to every grid; Yelmo takes the core's reference as its `z_bed_ref`, `kryos_ice_yelmo` checks it bit for bit); the global VILMA2 reference is the globe_ice merge of the domains' references and the background X (`[X_z_bed]`, `[X_H_ice]`, now `mode = "static"`). H_ice stays present-day.
+- **Tool:** `tools/levante/gia_refcorr.sh` (+ `gia_refcorr.jl`, `gia_refcorr_plot.jl`), the generalisation of `pm_iterref.sh`: standalone vilma.x of a stack with the `&vilma` group of a kryos par file (over the stack's `input/vilma_defaults.nml`, as the geo = vilma2 backend reads it) and the densities of the run, under a FesmData ice history (linear in time, or SELEN's steps), iterated with `i_eq = 3` to `TOL`, then the reference files under `/work/ba1442/kryos_data/refcorr/<case>/` (`kryos_data/` in a run folder, linked like `fesmdata/`: kryos-made inputs): `<X grid>/<X grid>_REFCORR.nc` (the history's 0 ka bed + r, its 0 ka ice), `<domain>/<hub>/<topo>-refcorr.nc` (the domain topography with z_bed + r and z_srf moved with it as htopo's `calc_z_srf`, the other variables copied unchanged), `GLOBAL-0.5DEG_r.nc` and the figure. Restartable per iteration.
+- **Science case** (`CASE=PaleoMIST-sci`, `PAR=par/kryos_NH-ANT_vilma2.nml`): the science Earth (PREM 11 layers, Bagge 2021 structure 6 in 3-D, lmax 170, 1-D pre-spin-up, spin-up cap 2e4 yr at 1e-5 m/yr, rotation and degree 1 as the stack's defaults), PaleoMIST minimal 80 -> 0 ka linear in time (0.25 degree), rho_ice 910, rho_w 1028 (kryos phys_const `Earth`, which the backend passes to VILMA2), stack S11. 4 runs, 2 h each (64 threads):
+
+| run | max 0 ka bed misfit [m] | where | RMS [m] |
+|---|---|---|---|
+| it0 (i_eq = 1) | 399.8 | 72 W 53 N (Quebec) | 24.3 |
+| it1 | 15.2 | 63.5 W 79.6 S (Ronne) | 1.13 |
+| it2 | 1.92 | 63 W 79.1 S | 0.054 |
+| it3 (converged, TOL 1.5 m) | 0.23 | 65 W 79.1 S | 0.017 |
+
+- **The converged correction r:** up to 396 m over Quebec-Labrador (72 W 53 N), -47 m on the Laurentide forebulge, 123 m over the Gulf of Bothnia, 62 m in the Barents Sea, 126 m under the Ronne-Filchner ice (73 W 79 S), -27 to +11 m in the far field, 24 m RMS globally. Against the 1-D Earth of B1 (263 m, Hudson Bay) the 3-D Earth keeps more rebound in the east (the stiff lower mantle of Bagge under Quebec) and in Fennoscandia, and converges faster (Antarctica sets the last iterations).
+
+![reference correction, science case](figures/vilma2-paleomist/refcorr_PaleoMIST-sci.png)
+
+The converged correction r of the science case and the 0 ka bed misfit per run.
+
+- **Config:** `tools/bin/kryos-vilma2-par.jl` (constant `REFCORR`) points `[topo_nor]` (NH-32KM GEBCO2026), `[topo_ant]` (ANT-16KM BedMachine-v4), `[X_z_bed]`, `[X_H_ice]` (GLOBAL-0.5DEG) of `par/kryos_NH-ANT_vilma2.nml` at `kryos_data/refcorr/PaleoMIST-sci`; nothing else changes (regenerated file: the four lines only). `par/gate/g6-smb.nml` is not regenerated.
+- **Check:** kryos.x of S11 (main's source) ran the regenerated par for 100 yr (-80000 -> -79900, files written from a provisional r): the datasrc reads X as `static`, htopo reads both corrected hubs, `domain_check_reference` finds the four components' z_bed_ref equal to the domain references (max |diff| 0), VILMA2's spin-up and the steps run, exit 0.
+- **Limits:** r is computed with the history's own 0 ka bed as VILMA2's reference (PaleoMIST, RTopo-2), not with the kryos merge (GEBCO, BedMachine on the hubs); r is smooth (lmax 170), so the difference is second order. The ice is the history, not the ice the coupled run produces: after a first coupled run, r can be refreshed with its own 0 ka rsl (one fixed-point step, `gia_refcorr.jl next`). A different Earth or history needs its own case.

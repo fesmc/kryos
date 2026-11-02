@@ -19,7 +19,7 @@ SHA=$(cut -d- -f1 $K/libkryos/bin/.kryos_sha); OUT=$G/runs/g2a/kx-$SHA/$STK/${TA
 mkdir -p $OUT/maps $OUT/input; cd $OUT
 for f in $S/yelmox/input/*; do ln -sf $f input/; done
 for f in $K/input/*; do ln -sf $f input/; done
-for d in fesmdata ice_data isostasy_data; do ln -s /work/ba1442/$d $d; done
+for d in fesmdata ice_data isostasy_data kryos_data; do ln -s /work/ba1442/$d $d; done
 ln -s $K/fesm-utils fesm-utils
 cp $K/libkryos/bin/g2a_cap.x .; cp $S/vilma2/bin/vilma.x .
 export OMP_NUM_THREADS=64 OMP_PROC_BIND=spread OMP_PLACES=cores OMP_STACKSIZE=512M
