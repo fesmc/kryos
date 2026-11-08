@@ -3,8 +3,9 @@ submodule (kryos_ice) kryos_ice_factory
     ! the dynamic type from the backend name, sets its constraints and admits
     ! it (decision 12), so a stub stops here, before init.
 
-    use fesm_log,        only: fesm_error
-    use kryos_ice_yelmo, only: yelmo_ice_t, yelmo_ice_constraints
+    use fesm_log,          only: fesm_error
+    use kryos_ice_yelmo,   only: yelmo_ice_t, yelmo_ice_constraints
+    use kryos_ice_plastic, only: plastic_ice_t, plastic_ice_constraints
 
     implicit none
 
@@ -20,10 +21,13 @@ contains
         case ("yelmo")
             allocate(yelmo_ice_t :: ice%c)
             con = yelmo_ice_constraints()
+        case ("plastic")
+            allocate(plastic_ice_t :: ice%c)
+            con = plastic_ice_constraints()
         ! phase 2: case ("data")
         case default
             call fesm_error("kryos_ice::ice_create", "unknown ice backend '"//trim(ctx%backend)//"'", &
-                            "instance "//trim(ctx%instance)//"; known: yelmo")
+                            "instance "//trim(ctx%instance)//"; known: yelmo, plastic")
         end select
         call component_identity(ice%c, ctx, "ice", con)
         call backend_admit(ice%c, census)

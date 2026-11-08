@@ -96,6 +96,13 @@ INC_VILMA = -I${VILMAROOT}/libvilma/include
 LIB_VILMA = -L${VILMAROOT}/libvilma/include -lvilma
 VILMA_ARCHIVE = $(VILMAROOT)/libvilma/include/libvilma.a
 
+# PlasticIceSheet (ice = plastic): the Fortran library libplastic.a (module plastic_ice, dp, no
+# dependencies, no OpenMP regions), a sibling checkout or symlink `PlasticIceSheet`.
+PLASTICROOT = PlasticIceSheet
+INC_PLASTIC = -I${PLASTICROOT}/libplastic/include
+LIB_PLASTIC = -L${PLASTICROOT}/libplastic/include -lplastic
+PLASTIC_ARCHIVE = $(PLASTICROOT)/libplastic/include/libplastic.a
+
 SHTNS_NAME = shtns
 SHTNS_DIR  = shtns-serial
 ifeq ($(openmp), 1)
@@ -118,10 +125,11 @@ insol        ?= 1
 cism         ?= 0
 pism         ?= 0
 vilma        ?= 0
+plastic      ?= 0
 rembo        ?= 0
 
 # The switch settings, recorded in the object-dir stamp (config/Makefile).
-backend_config = yelmo$(yelmo)-fastisostasy$(fastisostasy)-chion$(chion)-insol$(insol)-cism$(cism)-pism$(pism)-vilma$(vilma)-rembo$(rembo)
+backend_config = yelmo$(yelmo)-fastisostasy$(fastisostasy)-chion$(chion)-insol$(insol)-cism$(cism)-pism$(pism)-vilma$(vilma)-plastic$(plastic)-rembo$(rembo)
 
 INC_BACKENDS   =
 LIB_BACKENDS   =
@@ -211,6 +219,19 @@ ifeq ($(vilma), 1)
 else
     kryos_geo_vilma2_obj = $(objdir)/kryos_geo_vilma2_stub.o
     test_skip += $(testdir)/test_geo_vilma2.f90 $(testdir)/test_gia_sequence.f90
+endif
+
+ifeq ($(plastic), 1)
+    kryos_ice_plastic_obj = $(objdir)/kryos_ice_plastic.o
+    INC_BACKENDS   += $(INC_PLASTIC)
+    LIB_BACKENDS   += $(LIB_PLASTIC)
+    dep_archives   += $(PLASTIC_ARCHIVE)
+    backend_roots  += $(PLASTICROOT)
+    build_info_libs += plastic:$(PLASTICROOT)
+    backend_static += plastic-static
+else
+    kryos_ice_plastic_obj = $(objdir)/kryos_ice_plastic_stub.o
+    test_skip += $(testdir)/test_ice_plastic.f90
 endif
 
 # Backends whose adapters arrive in later phases (design section 14).
