@@ -1,0 +1,192 @@
+! kryos par file: Gowan et al. (2021) PaleoMIST online on Gowan's Earth (docs/dev/plastic-backend.md), the configuration scored
+! against the GAPSLIP indicators beside the standalone VILMA2 run B1 under PaleoMIST's ice (docs/dev/vilma2-paleomist.md).
+! As par/kryos_North_plastic_vilma2.nml (NH-32KM, ice = plastic, geo = vilma2, the ice outside the NH footprint from the PaleoMIST
+! history), with B1's Earth and reference: Gowan's 1-D Earth (120 km elastic lithosphere, upper mantle 4e20 Pa s to 670 km, lower
+! mantle 4e22 Pa s, 12 layers on PREM, lmax 170, rotation, VILMA2's relaxation to the 80 ka load capped at 2 Myr), the relaxed
+! present-day reference (no correction r): PaleoMIST's 0 ka bed and ice as background, today's topography (GEBCO2026) on NH-32KM.
+! Densities: the run's (910, 1028; B1 used 931, 1000, I910_it0 910, 1000).
+! Build: plastic=1 vilma=1 (yelmo=0 is enough).
+
+&kryos
+    domains         = "North"
+    globe           = "globe"
+    clock           = "clock"
+    restart         = "None"
+    restart_out     = "out_rst"
+    out_dir         = "./"
+    map_fldr        = "maps"
+    phys_const      = "Earth"                ! rho_ice 910, rho_sw 1028, g 9.81: the plastic keys below equal them
+    phys_const_file = "input/phys_const.nml"
+    write_lossless  = False
+    log_level       = "info"
+    timing          = True
+/
+
+&clock
+    time_init      = -80e3     ! [yr] the first PaleoMIST slice (80 ka)
+    time_end       = 0.0       ! [yr] present day
+    dtt            = 100.0     ! [yr] one plastic solve and one VILMA2 step per 100 yr (PaleoMIST: 2.5 kyr slices)
+    method         = "rel"
+    time_ref       = 1950.0
+    calendar       = "365_day"
+    year           = "tropical"
+    ticks_per_year = 36000
+/
+
+&out_1D
+    method = "const"
+    dt     = 100.0
+/
+
+&out_2D
+    method = "const"
+    dt     = 2500.0            ! [yr] the PaleoMIST slice times (comparison with H_ice of the history)
+/
+
+&out_rst
+    method = "const"
+    dt     = 10e3
+/
+
+&globe
+    geo = "geo_glob"
+/
+
+&geo_glob
+    backend         = "vilma2"
+    grid            = ""                 ! the Gauss grid GAUSS-L<lmax>, built by the backend
+    dt              = 100.0              ! [yr] cadence of the Earth (science case: 10)
+    phase           = 0.0
+    clock           = "model"
+    out_2D          = "out_2D"           ! dz_bed, dz_ss, C_ocn on the Gauss grid (lon, lat)
+    out_1D          = "out_1D"           ! the series geo_glob_ts.nc
+    out_vars        = ""
+    vilma           = "vilma"            ! the &vilma group
+    ice_bg          = "globe_ice"        ! the global ice field group
+    allow_no_spinup = False              ! the run needs VILMA2's spin-up (pre_spinup_1d in [vilma])
+    out_gia         = "none"             ! schedule of geo_glob_gia.nc (what VILMA2 got): G3 runs set it
+    out_vilma       = "out_2D"           ! geo_glob_vilma.nc (VILMA2's own diagnostics: rsl, bsl, bsl_ive; the GAPSLIP scores)
+/
+
+&vilma
+    ! Gowan et al. (2021) as B1 (tools/levante/pm_run.sh EARTH=1d, LMAX=170): overrides of input/vilma_defaults.nml.
+    lmax              = 170
+    rotation          = .true.
+    earth             = "PREM"
+    n_layer           = 12
+    r_top             = 6371.0e3, 6291.0e3, 6251.0e3, 6151.0e3, 5971.0e3, 5771.0e3, 5701.0e3, 5600.0e3, 4943.0e3, 4287.0e3, 3630.0e3, 3480.0e3
+    r_bot             = 6291.0e3, 6251.0e3, 6151.0e3, 5971.0e3, 5771.0e3, 5701.0e3, 5600.0e3, 4943.0e3, 4287.0e3, 3630.0e3, 3480.0e3, 0.0
+    eta               = 1.0e40, 1.0e40, 4.0e20, 4.0e20, 4.0e20, 4.0e20, 4.0e22, 4.0e22, 4.0e22, 4.0e22, 4.0e22, 0.0
+    rheology          = 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2
+    l_visc_3d         = .false.
+    pre_spinup_1d     = .false.
+    equil_time_max    = 2.0e6     ! [yr] relaxation to the 80 ka load (B1)
+    equil_rate_tol    = 1.0e-5    ! [m/yr]
+/
+
+&globe_ice
+    grid      = "GLOBAL-0.5DEG"         ! background grid (phase4-plan Q3)
+    z_bed_ref = "X_z_bed"               ! background bed X at ext_tref
+    H_ice_ref = "X_H_ice"               ! background ice X at ext_tref
+    ext       = "file"                  ! ice outside the footprints: X + the history's anomaly
+    ext_field = "X_dH_ice"
+    ext_tref  = 0.0                     ! [yr] model time of the history's present day (its last record, 0 ka)
+    out_2D    = "none"                  ! schedule of globe_ice.nc (the hub output)
+/
+
+&X_z_bed
+    filename     = "fesmdata/Global/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"   ! PaleoMIST's 0 ka bed (read at ext_tref; B1's pm_ref)
+    name         = "z_bed"
+    mode         = "transient"
+    out_of_range = "error"
+/
+
+&X_H_ice
+    filename     = "fesmdata/Global/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"   ! PaleoMIST's 0 ka ice (read at ext_tref)
+    name         = "H_ice"
+    mode         = "transient"
+    out_of_range = "error"
+/
+
+&X_dH_ice
+    filename     = "fesmdata/Global/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"
+    name         = "H_ice"
+    mode         = "transient"
+    anomaly_ref  = "slice"
+    ref_time     = 0.0                  ! [yr] = ext_tref
+    out_of_range = "error"              ! the gather itself holds the history after ext_tref; a run before the first record stops
+/
+
+&geo_nor
+    backend     = "vilma2"
+    grid        = "NH-32KM"   ! the ice grid
+    dt          = 100.0       ! the cadence of geo_glob (a different value stops)
+    phase       = 0.0
+    clock       = "model"
+    out_2D      = "out_2D"
+    out_1D      = "out_1D"
+    out_vars    = ""
+/
+
+&North
+    grid_hub    = "NH-32KM"
+    topo        = "topo_nor"
+    regions     = "regions_nor"
+    basins      = "domain"
+    out_2D      = "none"
+    ice         = "ice_nor"
+    geo         = "geo_nor"
+/
+
+&ice_nor
+    backend            = "plastic"
+    grid               = ""             ! the hub grid, NH-32KM
+    dt                 = 0.0            ! every step
+    phase              = 0.0
+    clock              = "model"
+    out_2D             = "out_2D"
+    out_1D             = "out_1D"
+    out_vars           = ""
+    drive              = "taub"
+    mode               = "surface"      ! z_s directly, with the bed ("full" does not converge on 32 km beds)
+    relax              = 0.5
+    warm_frac_max      = 0.1
+    n_outer            = 100
+    max_sweeps         = 200
+    tol                = 1.0e-6
+    outer_tol          = 1.0e-3
+    rho_i              = 910.0          ! kryos Earth / PaleoMIST runs (library default 917)
+    rho_w              = 1028.0
+    g                  = 9.81
+    H_min              = 1.0
+    margin_file        = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"   ! "years ago", 80 -> 0 ka
+    margin_var         = "H_ice"
+    margin_H_min       = 1.0            ! [m] PaleoMIST's H_ice is smoothed, with near-zero rims
+    margin_interp      = "sdist"        ! "nearest": Gowan's slices as they are
+    margin_extrapolate = "error"
+    taub_method        = "domains"      ! Gowan's domains, time dependent (PaleoMIST 1.0)
+    taub_const         = 1.0e5          ! [Pa] taub_method = "const" only
+    taub_domain_file   = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST_taub.nc"   ! before its release
+                                        ! in FesmData: -p ice_nor.taub_domain_file=<absolute path>
+    taub_domain_var    = "taub_domain"
+    taub_id_var        = "domain_id"
+    taub_value_var     = "taub"
+    taub_time_var      = "taub_t"
+    taub_override      = ""
+    taub_default       = 5000.0         ! [Pa] cells without a domain: Gowan's value outside every polygon
+    out_plastic        = "out_2D"       ! ice_nor_plastic.nc: mask, sdist, tau_b, convergence
+/
+
+&topo_nor
+    path         = "fesmdata/{domain}/{grid_name}/{grid_name}_TOPO-GEBCO2026.nc"   ! today's topography (no correction r)
+    vars         = "z_bed" "z_srf" "H_ice"
+    remap        = "con"
+    z_bed_f_sd   = 0.0
+    remove_lakes = True
+    H_ice_min    = 1.0
+    grad_lim_zb  = 0.5
+/
+
+&regions_nor
+    path_regions = "fesmdata/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
+/

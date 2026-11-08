@@ -65,7 +65,7 @@
     ice_bg          = "globe_ice"        ! the global ice field group
     allow_no_spinup = False              ! the run needs VILMA2's spin-up (pre_spinup_1d in [vilma])
     out_gia         = "none"             ! schedule of geo_glob_gia.nc (what VILMA2 got): G3 runs set it
-    out_vilma       = "none"             ! schedule of geo_glob_vilma.nc (VILMA2's own diagnostics)
+    out_vilma       = "out_2D"           ! geo_glob_vilma.nc (VILMA2's own diagnostics: rsl, bsl, bsl_ive; the GAPSLIP scores)
 /
 
 &vilma
