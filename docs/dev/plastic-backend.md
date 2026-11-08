@@ -180,25 +180,38 @@ shelf.
 
 Build: kryos `plastic=1 yelmo=0 vilma=1` (stack S11 dependencies) against PlasticIceSheet `fortran-port`
 (`/work/ba1442/robinson/PlasticIceSheet-fortran/ifx`); runs in `/work/ba1442/robinson/kryos-ice-plastic/runs`.
+tau_b: the product `NH-32KM_IceHistory-PaleoMIST_taub.nc` (`/work/ba1442/robinson/fesmdata-taub`, not yet in
+FesmData), domains with the time series, `taub_default` 5000 Pa. `mode = "flat"`.
 
-`par/kryos_North_plastic.nml` (NH-32KM, today's bed, z_sl = 0, `mode = "flat"`, 80 ka -> 0, dtt = 100 yr, 800
-solves): 20 s in all on 4 cores, the solve about 0.004 s per step (`timing.txt`); every solve converged. The ice
-mask equals PaleoMIST's (H > 0) at every slice time. Against PaleoMIST's `H_ice` at the 33 slice times (over its
-ice):
+`par/kryos_North_plastic.nml` (NH-32KM, today's bed, z_sl = 0, 80 ka -> 0, dtt = 100 yr, 800 solves): 22 s in
+all on 4 cores, the solve about 0.004 s per step (`timing.txt`); every solve converged. The ice mask is
+PaleoMIST's (H > 1 m) at every slice time. Restart: 0 -> 40 ka bundle, continued to 0 (tau_b const): every
+record of `ice_nor_plastic.nc`, `ice_nor.nc`, `ice_nor_ts.nc` after the restart and every file of the final
+bundle equal to the continuous run (1284 variables and records, bit for bit).
 
-| tau_b (uniform) | bias [m] | rms [m] | volume / PaleoMIST |
+Against PaleoMIST's `H_ice` at its 33 slices, over its ice:
+
+| Setup | bias [m] | rms [m] | volume / PaleoMIST |
 |---|---|---|---|
-| 1e5 Pa | +640 to +1420 | 750 to 1550 | 1.59 to 2.10 |
-| 3.5e4 Pa | -68 to +218 | 475 to 660 | 0.96 to 1.26 |
+| kryos run, today's bed, tau_b uniform 1e5 Pa | +640 to +1420 | 750 to 1550 | 1.59 to 2.10 |
+| kryos run, today's bed, tau_b uniform 3.5e4 Pa | -68 to +218 | 475 to 660 | 0.96 to 1.26 |
+| kryos run, today's bed, Gowan tau_b | +270 to +490 | 410 to 615 | 1.18 to 1.55 |
+| `plastic_slices`, PaleoMIST's bed of the slice, Gowan tau_b | +285 to +550 | 425 to 650 | 1.18 to 1.55 (m SLE) |
+| the same, `mode = "full"` (100 outer iterations, none converged) | -196 to +306 | 355 to 580 | 0.89 to 1.29 (m SLE) |
 
-A uniform tau_b matches the volume but not the shape (rms ~500 m): the Gowan domains are needed (and the bed
-of the time: PaleoMIST's ice sits on its own deformed bed). `margin_interp = "nearest"` gives the same values at
-the slice times (fixed bed, `"flat"`: the solve has no memory).
+The offline check (`tests/plastic_slices.f90`: at each slice PaleoMIST's own bed, z_sl = 0, its margin, Gowan's
+tau_b of that time, cold flat solve) does not reproduce PaleoMIST: the thickness is 300 to 500 m too high and the
+NH volume 20 to 50 % too large (20 ka: 132.6 against 112.5 m SLE; 0 ka: 10.6 against 7.5 m). The bed of the time
+changes little (the kryos run on today's bed gives the same misfit), so the difference is in the solve or in
+tau_b (the flat mode ignores the bed slope; Gowan's ICESHEET integrates the surface along flowlines with the
+bed). The `"full"` mode, not converged but usable, removes most of the bias (20 ka: 100.1 against 112.5 m SLE;
+62.5 ka: 74.0 against 73.7; 0 ka: 8.6 against 7.5): the bed slope is the missing term. To be redone with the
+library's direct `"surface"` mode.
 
-Restart: 0 -> 40 ka bundle, continued to 0: every record of `ice_nor_plastic.nc`, `ice_nor.nc`,
-`ice_nor_ts.nc` after the restart and every file of the final bundle equal to the continuous run (1284
-variables and records, bit for bit).
-
+PaleoMIST's ice area by threshold (NH-32KM, 1e6 km2; `H > 0`, `> 1 m`, `> 10 m`): 80 ka 5.55, 4.94, 4.60; 65 ka
+16.31, 15.66, 15.30; 45 ka 12.05, 11.46, 11.08; 20 ka 28.33, 27.66, 27.23; 0 ka 3.13, 2.66, 2.42. The rims below
+1 m are 2 to 15 % of the area; the margin threshold moves the plastic volume by about 10 % (80 ka: 21.6, 19.2,
+17.9 m SLE for 0, 1, 10 m).
 ## Open
 
 - `mode = "full"` and `drive = "smb"` do not converge on 32 km grids (library, Julia too): the runs use
