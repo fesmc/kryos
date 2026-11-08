@@ -203,7 +203,8 @@
     margin_file        = ""                    ! required; {domain}, {grid_name} replaced (as recon_path); its time axis
                                                ! "years ago" / "BP" / "ka ..." is converted to model time
     margin_var         = "H_ice"               ! the thickness variable
-    margin_H_min       = 0.0                   ! [m] ice where the slice's thickness exceeds this
+    margin_H_min       = 1.0                   ! [m] ice where the slice's thickness exceeds this (PaleoMIST: smoothed,
+                                               ! near-zero rims)
     margin_interp      = "sdist"               ! "sdist": signed distance to the margin, linear between the slices |
                                                ! "nearest": the nearest slice (Gowan et al. 2021 offline)
     margin_extrapolate = "error"               ! outside the slices' (and the tau_b series') time range: "error" | "hold"
@@ -212,11 +213,12 @@
     taub_const         = 0.0                   ! [Pa] "const": the value (> 0)
     taub_file          = ""                    ! "file": a static field (x, y) on the instance grid ({domain}, {grid_name})
     taub_var           = "taub"                ! "file": its variable
-    taub_domain_file   = ""                    ! "domains": the product {grid_name}_TauB-Gowan2021.nc ({domain}, {grid_name})
-    taub_domain_var    = "taub_domain"         ! "domains": the domain id of each cell (x, y), 0 = none
+    taub_domain_file   = ""                    ! "domains": the product {grid_name}_IceHistory-PaleoMIST_taub.nc ({domain}, {grid_name})
+    taub_domain_var    = "taub_domain"         ! "domains": the domain id of each cell (x, y), <= 0 = none (product: -9999)
     taub_id_var        = "domain_id"           ! "domains": the ids (n)
     taub_value_var     = "taub"                ! "domains": their tau_b [Pa] (n)
-    taub_time_var      = "taub_t"              ! "domains": their series [Pa] (n, time), used when the file has it
+    taub_time_var      = "taub_t"              ! "domains": their series [Pa] (n, time), used when the file has it (PaleoMIST
+                                               ! 1.0: time dependent, linear between its slices)
     taub_override      = ""                    ! "domains": group of a table (codes, taub [Pa]) overriding the value of
                                                ! those ids, constant in time; "" = none
     taub_default       = 0.0                   ! [Pa] "domains": cells without a domain; 0 = none (such a cell in the

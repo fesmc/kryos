@@ -532,7 +532,7 @@ contains
         integer  :: interp
 
         who = "instance "//trim(self%name)
-        margin_file = "";  margin_var = "H_ice";  margin_H_min = 0.0_dp;  margin_interp = "sdist"
+        margin_file = "";  margin_var = "H_ice";  margin_H_min = 1.0_dp;  margin_interp = "sdist"
         margin_extrapolate = "error"
         taub_method = "const";  taub_const = 0.0_dp;  taub_file = "";  taub_var = "taub"
         taub_domain_file = "";  taub_domain_var = "taub_domain";  taub_id_var = "domain_id";  taub_value_var = "taub"

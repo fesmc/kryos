@@ -5,7 +5,7 @@ module kryos_plastic_taub
     !   "const"    one value everywhere;
     !   "file"     a static gridded field (x, y);
     !   "domains"  Gowan et al. (2021): a map of domain ids (0 = none) and one value per id, static or a
-    !              series per id (linear in time), as the FesmData product {GRID}_TauB-Gowan2021.nc; a par
+    !              series per id (linear in time), as the product {grid}_IceHistory-PaleoMIST_taub.nc; a par
     !              table (codes, values) overrides the value of some ids, constant in time, or gives ids of
     !              the map the file has no value for; every id of the map must then have one. Cells without
     !              a domain take `default` (0: such a cell in the ice mask stops the solve, kryos_ice_plastic).
@@ -142,7 +142,7 @@ contains
     end subroutine taub_set_domains
 
     subroutine taub_read_domains(tb, file, dom_var, id_var, val_var, ser_var, default, hold, nx, ny, codes, values, table)
-        ! The product {GRID}_TauB-Gowan2021.nc: dom_var (x, y) the domain id of each cell (0 = none),
+        ! The product {grid}_IceHistory-PaleoMIST_taub.nc: dom_var (x, y) the domain id of each cell (<= 0: none),
         ! id_var (n) the ids, val_var (n) their tau_b [Pa]; ser_var (n, time) their series when the
         ! file has it (either dimension order; the time coordinate is the variable named like its
         ! dimension, converted from its units). The override table as taub_set_domains.

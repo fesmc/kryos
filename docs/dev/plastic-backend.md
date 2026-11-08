@@ -104,16 +104,19 @@ Outside the slices' time range: stop (`margin_extrapolate = "error"`), or hold t
 
 - `"const"`: `taub_const` [Pa] everywhere;
 - `"file"`: the static field `taub_var` (x, y) [Pa] of `taub_file`;
-- `"domains"` (Gowan's): the product `{grid}_TauB-Gowan2021.nc` (FesmData, in preparation): `taub_domain_var`
-  (x, y) the domain id of each cell (0 = none), `taub_id_var` (n) the ids, `taub_value_var` (n) their tau_b
+- `"domains"` (Gowan's): the product `{grid}_IceHistory-PaleoMIST_taub.nc` (FesmData, not yet merged):
+  `taub_domain_var` (x, y) the domain id of each cell (<= 0 = none; the product: -9999), `taub_id_var` (n) the ids, `taub_value_var` (n) their tau_b
   [Pa], and, when the file has it, `taub_time_var` (n, time; either dimension order) a series per id, linear
   in time. The group named by `taub_override` (keys `codes`, `taub`, as the `till_cf` group of the yelmo
   backend) sets the value of some ids, constant in time, or gives an id of the map the file has no value for;
   an id of the map without a value stops at init. Cells without a domain take `taub_default` (0 = none: such
   a cell in the ice mask stops the run).
 
-The variable names are keys because the product is not released yet (its 2-D convenience field `taub(x, y)`
-can be read with `taub_method = "file"`).
+The product (949 domains, all regions in every file): `domain_id` = region*1000 + Gowan's id, `taub` (Gowan's
+domains_max), `taub_t` (time, domain) in NetCDF order, years ago, 80 ka to 0, oldest first: tau_b is time
+dependent in PaleoMIST 1.0, so the series is used, linear between its records. Ids 1000, 2000, 3000 are Gowan's
+domains outside every polygon (5000 Pa); cells without a domain take `taub_default` (the par files: 5000 Pa).
+Its 2-D base field `taub_map` can be read with `taub_method = "file"`.
 
 ## Passes (core-design 3.2)
 
@@ -142,7 +145,7 @@ continuous one), `H_prev` and `z_srf`, lossless; the read checks the grid and th
 | `rho_i` | 910 | [kg m-3] the kryos `Earth` constant and the PaleoMIST runs (library default 917) |
 | `rho_w`, `g` | 1028, 9.81 | the kryos `Earth` constants (library defaults 1025, 9.80665) |
 | `H_min` | 1 | [m] floor of H inside the mask |
-| `margin_file`, `margin_var`, `margin_H_min` | `""`, `"H_ice"`, 0 | the margin slices |
+| `margin_file`, `margin_var`, `margin_H_min` | `""`, `"H_ice"`, 1 | the margin slices |
 | `margin_interp`, `margin_extrapolate` | `"sdist"`, `"error"` | see above |
 | `taub_method`, `taub_const` | `"const"`, 0 | |
 | `taub_file`, `taub_var` | `""`, `"taub"` | `"file"` |
@@ -173,8 +176,30 @@ shelf.
   mb_net, M_ice), a restart round trip stepped on bit for bit, the flotation binding.
 - `tests/test_build.f90`: the factory admits `plastic` when linked.
 
+## Smoke runs (Levante, 2026-11-09)
+
+Build: kryos `plastic=1 yelmo=0 vilma=1` (stack S11 dependencies) against PlasticIceSheet `fortran-port`
+(`/work/ba1442/robinson/PlasticIceSheet-fortran/ifx`); runs in `/work/ba1442/robinson/kryos-ice-plastic/runs`.
+
+`par/kryos_North_plastic.nml` (NH-32KM, today's bed, z_sl = 0, `mode = "flat"`, 80 ka -> 0, dtt = 100 yr, 800
+solves): 20 s in all on 4 cores, the solve about 0.004 s per step (`timing.txt`); every solve converged. The ice
+mask equals PaleoMIST's (H > 0) at every slice time. Against PaleoMIST's `H_ice` at the 33 slice times (over its
+ice):
+
+| tau_b (uniform) | bias [m] | rms [m] | volume / PaleoMIST |
+|---|---|---|---|
+| 1e5 Pa | +640 to +1420 | 750 to 1550 | 1.59 to 2.10 |
+| 3.5e4 Pa | -68 to +218 | 475 to 660 | 0.96 to 1.26 |
+
+A uniform tau_b matches the volume but not the shape (rms ~500 m): the Gowan domains are needed (and the bed
+of the time: PaleoMIST's ice sits on its own deformed bed). `margin_interp = "nearest"` gives the same values at
+the slice times (fixed bed, `"flat"`: the solve has no memory).
+
+Restart: 0 -> 40 ka bundle, continued to 0: every record of `ice_nor_plastic.nc`, `ice_nor.nc`,
+`ice_nor_ts.nc` after the restart and every file of the final bundle equal to the continuous run (1284
+variables and records, bit for bit).
+
 ## Open
 
 - `mode = "full"` and `drive = "smb"` do not converge on 32 km grids (library, Julia too): the runs use
   `"flat"` and `"taub"`; a direct `"surface"` mode of the library needs no backend change.
-- The variable names of the tau_b product are assumed (keys).
