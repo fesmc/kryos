@@ -4,21 +4,23 @@ program plastic_slices
     ! the sea level of the time, so z_sl = 0), with its margin (the slice, margin_H_min) and Gowan's tau_b at
     ! that time (the product's series), cold, against the history's H_ice: rms and bias over PaleoMIST's ice,
     ! the volume [m SLE] of both, and the area of PaleoMIST's ice above 0, 1 and 10 m. The same modules as the
-    ! backend (kryos_plastic_margin, kryos_plastic_taub) and the library; no run. Needs plastic=1:
+    ! backend (kryos_plastic_margin, kryos_plastic_taub) and the library; no run. Also the stress residual
+    ! (plastic_stress_residual: median and max over the ice). With <out.nc>: H and PaleoMIST's H_ice of every
+    ! slice (xc, yc, time [ka]), for maps. Needs plastic=1:
     !
     !     make libkryos/bin/plastic_slices.x plastic=1
-    !     plastic_slices.x <history.nc> <taub.nc> <mode> [<margin_H_min> [<taub_default>]]
+    !     plastic_slices.x <history.nc> <taub.nc> <mode> [<margin_H_min> [<taub_default> [<out.nc>]]]
 
     use precision, only: dp
-    use ncio,      only: nc_read, nc_size, nc_read_attr
+    use ncio,      only: nc_read, nc_size, nc_read_attr, nc_create, nc_write_dim, nc_write
     use kryos_plastic_margin, only: margin_t, margin_init, margin_at, model_time_axis, MARGIN_NEAREST
     use kryos_plastic_taub,   only: taub_t, taub_read_domains, taub_at
-    use plastic_ice, only: plastic_par_t, plastic_t, plastic_init, plastic_solve
+    use plastic_ice, only: plastic_par_t, plastic_t, plastic_init, plastic_solve, plastic_stress_residual
 
     implicit none
 
     real(dp), parameter :: RHO_I = 910.0_dp, RHO_SW = 1028.0_dp, G = 9.81_dp, A_OCN = 3.618e14_dp   ! kryos Earth
-    character(len=512) :: hist, tfile, arg
+    character(len=512) :: hist, tfile, arg, outf
     character(len=16)  :: mode
     character(len=256) :: units
     type(margin_t)      :: mg
@@ -27,7 +29,8 @@ program plastic_slices
     type(plastic_t)     :: ps
     real(dp), allocatable :: x(:), y(:), t(:), zb(:,:), Hp(:,:), tau(:,:), sd(:,:), zsl(:,:), d(:,:)
     logical,  allocatable :: mask(:,:), pm(:,:)
-    real(dp) :: H_min, tdef, dx, dy, ca, rms, bias, sle, sle_pm, a0, a1, a10
+    real(dp) :: H_min, tdef, dx, dy, ca, rms, bias, sle, sle_pm, a0, a1, a10, rmax, rmed
+    real(dp), allocatable :: r(:,:), rr(:)
     integer  :: nx, ny, nt, k, stat, n
 
     call get_command_argument(1, hist)
@@ -40,6 +43,8 @@ program plastic_slices
     if (command_argument_count() >= 5) then
         call get_command_argument(5, arg);  read(arg, *) tdef
     end if
+    outf = ""
+    if (command_argument_count() >= 6) call get_command_argument(6, outf)
 
     nx = nc_size(hist, "xc");  ny = nc_size(hist, "yc");  nt = nc_size(hist, "time")
     allocate(x(nx), y(ny), t(nt), zb(nx,ny), Hp(nx,ny), tau(nx,ny), sd(nx,ny), zsl(nx,ny), d(nx,ny), mask(nx,ny), pm(nx,ny))
@@ -53,9 +58,17 @@ program plastic_slices
     par%rho_i = RHO_I;  par%rho_w = RHO_SW;  par%g = G;  par%mode = trim(mode)
     call plastic_init(ps, nx, ny, dx, dy, par, stat=stat)
     zsl = 0.0_dp
+    allocate(r(nx, ny))
+    if (len_trim(outf) > 0) then
+        call nc_create(trim(outf))
+        call nc_write_dim(trim(outf), "xc", x=x, units="km")
+        call nc_write_dim(trim(outf), "yc", x=y, units="km")
+        call nc_write_dim(trim(outf), "time", x=-t/1.0e3_dp, units="ka")
+    end if
 
     write(*,"(a,a,a,f6.1,a,f8.1,a)") "# ", trim(hist), ", mode ", H_min, " m margin, taub_default ", tdef, " Pa"
-    write(*,"(a)") "#  t [ka]  rms [m] bias [m]  SLE [m] SLE_pm [m]  A0     A1    A10 [1e6 km2]  stat n_outer n_bad"
+    write(*,"(a)") "#  t [ka]  rms [m] bias [m]  SLE [m] SLE_pm [m]  A0     A1    A10 [1e6 km2]  stat n_outer n_bad"// &
+                   "  res_med res_max"
     do k = 1, nt
         call nc_read(hist, "z_bed", zb, start=[1,1,k], count=[nx,ny,1])
         call nc_read(hist, "H_ice", Hp, start=[1,1,k], count=[nx,ny,1])
@@ -72,8 +85,42 @@ program plastic_slices
         sle    = sum(ps%H)*ca*RHO_I/RHO_SW/A_OCN
         sle_pm = sum(Hp, mask=pm)*ca*RHO_I/RHO_SW/A_OCN
         a0 = count(Hp > 0.0_dp)*ca*1.0e-12_dp;  a1 = count(Hp > 1.0_dp)*ca*1.0e-12_dp;  a10 = count(Hp > 10.0_dp)*ca*1.0e-12_dp
-        write(*,"(f9.1,2f9.1,2f10.2,3f7.3,i9,i8,i6)") -t(k)/1.0e3_dp, rms, bias, sle, sle_pm, a0, a1, a10, stat, &
-                                                       ps%n_outer_used, n
+        call plastic_stress_residual(ps, zb, zsl, tau, mask, rmax, r=r)
+        rr = pack(r, mask .and. ps%H > 0.0_dp)
+        rmed = 0.0_dp
+        if (size(rr) > 0) rmed = sorted_mid(rr)
+        write(*,"(f9.1,2f9.1,2f10.2,3f7.3,i9,i8,i6,2f9.3)") -t(k)/1.0e3_dp, rms, bias, sle, sle_pm, a0, a1, a10, stat, &
+                                                             ps%n_outer_used, n, rmed, rmax
+        if (len_trim(outf) > 0) then
+            call nc_write(trim(outf), "H", ps%H, dim1="xc", dim2="yc", dim3="time", start=[1,1,k], count=[nx,ny,1], units="m")
+            call nc_write(trim(outf), "H_pm", Hp, dim1="xc", dim2="yc", dim3="time", start=[1,1,k], count=[nx,ny,1], units="m")
+            call nc_write(trim(outf), "z_bed", zb, dim1="xc", dim2="yc", dim3="time", start=[1,1,k], count=[nx,ny,1], units="m")
+        end if
     end do
+
+contains
+
+    function sorted_mid(v) result(m)
+        ! The median: shell sort, then the middle.
+        real(dp), intent(in) :: v(:)
+        real(dp) :: m
+        real(dp), allocatable :: a(:)
+        real(dp) :: x
+        integer :: n, gap, i, j
+        a = v;  n = size(a);  gap = n/2
+        do while (gap > 0)
+            do i = gap + 1, n
+                x = a(i);  j = i
+                do while (j > gap)
+                    if (a(j - gap) <= x) exit
+                    a(j) = a(j - gap);  j = j - gap
+                end do
+                a(j) = x
+            end do
+            gap = gap/2
+        end do
+        m = a((n + 1)/2)
+        if (mod(n, 2) == 0) m = 0.5_dp*(a(n/2) + a(n/2 + 1))
+    end function sorted_mid
 
 end program plastic_slices
