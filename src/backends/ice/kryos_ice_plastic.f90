@@ -29,7 +29,7 @@ module kryos_ice_plastic
                                     taub_read_field, taub_read_domains, taub_at
     use plastic_ice,     only: plastic_par_t, plastic_t, plastic_glen_t, plastic_sliding_t, plastic_init, &
                                plastic_solve, plastic_solve_smb, plastic_end, plastic_velocity, plastic_smb_implied, &
-                               PLASTIC_OK, PLASTIC_NOT_CONVERGED
+                               plastic_stress_residual, PLASTIC_OK, PLASTIC_NOT_CONVERGED
 
     implicit none
 
@@ -250,13 +250,15 @@ contains
 
     subroutine plastic_write_output_(self, file, t, stream, init)
         ! Stream `plastic` (out_plastic, <instance>_plastic.nc): the state of the last solve and its
-        ! inputs (table ice-plastic); any other: the default writer.
+        ! inputs (table ice-plastic), its convergence and stress residual (0-D); any other: the default
+        ! writer.
         class(plastic_ice_t), intent(inout) :: self
         character(len=*),     intent(in)    :: file, stream
         real(dp),             intent(in)    :: t
         logical,              intent(in)    :: init
 
-        integer :: ncid, n
+        integer  :: ncid, n
+        real(dp) :: rmed, rmax
 
         select case (trim(stream))
         case ("plastic")
@@ -282,6 +284,11 @@ contains
                           ncid=ncid, units="1", long_name="The last solve converged")
             call nc_write(file, "n_outer_used", self%ps%n_outer_used, dim1="time", start=[n], count=[1], ncid=ncid, &
                           units="1", long_name="Outer iterations of the last solve")
+            call stress_residual(self, rmed, rmax)
+            call nc_write(file, "stress_res_median", rmed, dim1="time", start=[n], count=[1], ncid=ncid, units="1", &
+                          long_name="Median over the ice of |rho_i g H |grad z_srf| - tau_b| / tau_b (last solve)")
+            call nc_write(file, "stress_res_max", rmax, dim1="time", start=[n], count=[1], ncid=ncid, units="1", &
+                          long_name="Maximum over the ice of |rho_i g H |grad z_srf| - tau_b| / tau_b (last solve)")
             call nc_close(ncid)
         case default
             call component_write_output(self, file, t, stream, init)
@@ -400,6 +407,60 @@ contains
         call fesm_error("kryos_ice_plastic", what//" failed (stat "//to_str(stat)//"): "//trim(self%ps%msg), &
                         "instance "//trim(self%name))
     end subroutine status_check
+
+    subroutine stress_residual(self, rmed, rmax)
+        ! The relative stress residual |rho_i g H |grad z_srf| - tau_b| / tau_b of the last solve
+        ! (plastic_stress_residual, cell-centred: 1 at the first ice cell by construction), its median and
+        ! maximum over the ice cells; computed when the stream is written, not every step.
+        class(plastic_ice_t), intent(inout) :: self
+        real(dp),             intent(out)   :: rmed, rmax
+
+        real(dp), allocatable :: r(:,:)
+        integer :: stat
+
+        allocate(r(self%nx, self%ny))
+        call plastic_stress_residual(self%ps, self%z_bed, self%z_sl, self%tau_b, self%mask, rmax, r=r, stat=stat)
+        call status_check(self, stat, "plastic_stress_residual")
+        rmed = median(pack(r, self%mask .and. self%ps%H > 0.0_dp .and. self%tau_b > 0.0_dp))
+    end subroutine stress_residual
+
+    function median(v) result(m)
+        ! The median of v (0 for an empty v): quickselect on a copy.
+        real(dp), intent(in) :: v(:)
+        real(dp) :: m
+
+        real(dp), allocatable :: a(:)
+        real(dp) :: p, t
+        integer  :: n, k, lo, hi, i, j
+
+        n = size(v)
+        m = 0.0_dp
+        if (n == 0) return
+        a = v
+        k = (n + 1)/2
+        lo = 1;  hi = n
+        do while (lo < hi)
+            p = a((lo + hi)/2)
+            i = lo;  j = hi
+            do while (i <= j)
+                do while (a(i) < p);  i = i + 1;  end do
+                do while (a(j) > p);  j = j - 1;  end do
+                if (i <= j) then
+                    t = a(i);  a(i) = a(j);  a(j) = t
+                    i = i + 1;  j = j - 1
+                end if
+            end do
+            if (k <= j) then
+                hi = j
+            else if (k >= i) then
+                lo = i
+            else
+                exit
+            end if
+        end do
+        m = a(k)
+        if (mod(n, 2) == 0) m = 0.5_dp*(m + minval(a(k+1:n)))
+    end function median
 
     function driving_stress(self) result(tau)
         ! [Pa] rho_i g H |grad z_srf| (centred differences, one-sided at the edges): tau_b of a plastic
@@ -537,7 +598,7 @@ contains
         taub_method = "const";  taub_const = 0.0_dp;  taub_file = "";  taub_var = "taub"
         taub_domain_file = "";  taub_domain_var = "taub_domain";  taub_id_var = "domain_id";  taub_value_var = "taub"
         taub_time_var = "taub_t";  taub_override_grp = "";  taub_default = 0.0_dp
-        mode = "flat"
+        mode = "surface"
         rheo_A = 0.0_dp;  rheo_n = 3.0_dp
         slide_law = "none";  slide_beta = 0.0_dp;  slide_m = 1.0_dp;  slide_C = 0.0_dp;  slide_u0 = 0.0_dp
 

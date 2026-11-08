@@ -186,8 +186,9 @@
     drive              = "taub"                ! "taub": plastic_solve with the tau_b below | "smb": plastic_solve_smb with
                                                ! the imported smb (needs rheo_A and slide_law)
     ! solver (plastic_par_t)
-    mode               = "flat"                ! the library's mode, passed through: "flat" (the bed slope does not enter
-                                               ! the force balance) | "full" (it does; does not converge on 32 km beds)
+    mode               = "surface"             ! the library's mode, passed through: "surface" (z_s directly, one sweep,
+                                               ! with the bed) | "flat" (no bed slope) | "full" (w = H**2 with the bed slope
+                                               ! by a fixed point; does not converge on 32 km beds)
     relax              = 0.5                   ! under-relaxation of the outer ("full") iteration
     warm_frac_max      = 0.1                   ! "full": a warm start only if at most this fraction of the ice cells is new
     n_outer            = 100                   ! maximum outer iterations ("full")

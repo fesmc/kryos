@@ -148,7 +148,7 @@
     out_1D             = "out_1D"
     out_vars           = ""
     drive              = "taub"
-    mode               = "flat"         ! "full" does not converge on 32 km beds (library docs)
+    mode               = "surface"      ! z_s directly, with the bed ("full" does not converge on 32 km beds)
     relax              = 0.5
     warm_frac_max      = 0.1
     n_outer            = 100
