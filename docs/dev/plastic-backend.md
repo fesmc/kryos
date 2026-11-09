@@ -22,6 +22,7 @@ level of the geo backend (VILMA2) at every coupling step. The solver is the Fort
 | `tests/test_ice_plastic.f90` | the backend through the ice wrappers (`plastic=1` only) |
 | `tests/plastic_slices.f90` | the offline check against PaleoMIST per slice (`plastic=1`) |
 | `tools/levante/plastic_maps.jl`, `pm_kryos_out.jl`, `plastic_score.sh` | maps of the offline check; a kryos VILMA2 stream as a standalone `vilma_out.nc`; the GAPSLIP scoring with `pm_compare.jl` |
+| `tools/levante/plastic_taub_scale.jl`, `plastic_esmda.jl`, `plastic_esmda.sh`, `plastic_esmda.toml` | the tau_b calibration: scale groups and multiplier files; ES-MDA; its jobs; its config |
 
 Build: `plastic=1` adds `INC_PLASTIC` / `LIB_PLASTIC` (`config/common.mk`: the sibling `PlasticIceSheet`,
 `libplastic/include` with `libplastic.a` and the `.mod` files; `make -C PlasticIceSheet static
@@ -137,6 +138,15 @@ dependent in PaleoMIST 1.0, so the series is used, linear between its records. I
 domains outside every polygon (5000 Pa); cells without a domain take `taub_default` (the par files: 5000 Pa).
 Its 2-D base field `taub_map` can be read with `taub_method = "file"`.
 
+`taub_scale_file` (`"domains"` only; `""` = none): multipliers of tau_b per scale group, time dependent (the calibration
+below). NetCDF, dimensions `domain`, `scale_group`, `node`: `domain_id(domain)`, `group(domain)` (the scale group of each id,
+1 to the number of groups, 0 = unscaled), `time(node)` (any order, its units as the margin's: `years ago`, ...),
+`log_factor(scale_group, node)` (natural log of the multiplier). tau_b of a domain is its value (the series, after the
+override table) times exp(log_factor of its group at t), log_factor linear in time between the nodes and held outside them;
+the `taub_default` of the cells without a domain is not scaled. An id of the product missing from the file is unscaled; an id
+of the file with a group but no tau_b stops. Init logs the number of groups, of scaled domains and nodes and the factor range.
+Without the key the backend is unchanged (bit for bit, below).
+
 ## Passes (core-design 3.2)
 
 | Pass | What the backend does |
@@ -171,6 +181,7 @@ continuous one), `H_prev` and `z_srf`, lossless; the read checks the grid and th
 | `taub_file`, `taub_var` | `""`, `"taub"` | `"file"` |
 | `taub_domain_file`, `taub_domain_var`, `taub_id_var`, `taub_value_var`, `taub_time_var` | `""`, `"taub_domain"`, `"domain_id"`, `"taub"`, `"taub_t"` | `"domains"` |
 | `taub_override`, `taub_default` | `""`, 0 | `"domains"` |
+| `taub_scale_file` | `""` | `"domains"`: the multipliers per scale group (above) |
 | `rheo_A`, `rheo_n` | 0, 3 | Glen rate factor [Pa-n yr-1] (0: no velocity), exponent |
 | `slide_law` | `"none"` | `"linear"`, `"weertman"` (`slide_beta`, `slide_m`), `"coulomb"` (`slide_C`, `slide_u0`, `slide_m`) |
 | `out_plastic` | `"none"` | schedule of the stream `plastic` |
@@ -190,7 +201,9 @@ shelf.
   signed distance of a slice; two disks: the slices at their times, the margin within one cell of the linear
   radius at nine times, the area halfway, the footprint, `nearest`; a margin file in `kyr BP` with a fill
   value; hold and the stop outside the range; tau_b domains (static, override, a series in either dimension
-  order, an id added by the table, the stops).
+  order, an id added by the table, the stops); the tau_b scale (groups by id, an id added by the table, linear in
+  time between unordered nodes, held outside, times the series, the default unscaled, factor 1 bit for bit, the
+  stops).
 - `tests/test_ice_plastic.f90` (`plastic=1`): the backend on a toy grid (flat bed, two disks, tau_b const,
   `mode = "flat"`): the plastic profile at the centre, the masks, the static exports, an update (dHidt,
   mb_net, M_ice), a restart round trip stepped on bit for bit, the flotation binding.
@@ -207,6 +220,9 @@ domains with the time series, `taub_default` 5000 Pa; the margin `H_ice` > 1 m (
 4 cores; `"surface"` 10 ms, `"flat"` 4 ms per solve; every solve converged; the ice mask is PaleoMIST's (H > 1 m) at
 every slice. Restart (flat, tau_b const): the 40 ka bundle continued to 0 equals the continuous run bit for bit
 (1284 variables and records).
+
+The fixed-bed, offline and online results in this section up to "Baseline" used the margin `H_ice` > 1 m at the
+ice-free cell centres (the library before `margin_frac`).
 
 **Offline check** (`tests/plastic_slices.f90`): at each of the 33 slices PaleoMIST's own bed (relative to the sea
 level of the time, so z_sl = 0), its margin, Gowan's tau_b of that time, a cold solve, against its `H_ice` over its
@@ -268,10 +284,161 @@ PaleoMIST's ice area by threshold (NH-32KM, 1e6 km2; `H > 0`, `> 1 m`, `> 10 m`)
 16.31, 15.66, 15.30; 45 ka 12.05, 11.46, 11.08; 20 ka 28.33, 27.66, 27.23; 0 ka 3.13, 2.66, 2.42; the threshold moves
 the plastic volume by about 10 % (flat, 80 ka: 21.6, 19.2, 17.9 m SLE).
 
+**Baseline** (2026-11-09, restored PaleoMIST files; margin `f_ice` > 0.5, `margin_position = "sdist"`, the library
+with `margin_frac`). Offline check, `"surface"`, volume [m SLE] by margin variable and position (at the slices `"sdist"` is
+`"face"`):
+
+| margin | bias [m] | rms [m] | volume / PaleoMIST | 80 ka | 65 ka | 45 ka | 20 ka | 0 ka |
+|---|---|---|---|---|---|---|---|---|
+| PaleoMIST | | | | 12.9 | 53.7 | 40.6 | 112.5 | 7.5 |
+| `f_ice` > 0.5, sdist | +88 to +166 | 146 to 204 | 1.07 to 1.10 | 13.8 | 58.1 | 43.5 | 122.4 | 8.0 |
+| `f_ice` > 0.5, centre | +171 to +244 | 211 to 292 | 1.10 to 1.17 | 14.9 | 60.2 | 45.0 | 124.3 | 8.6 |
+| `H_ice` > 1 m, sdist | +225 to +386 | 273 to 440 | 1.14 to 1.39 | 17.4 | 63.4 | 47.6 | 128.3 | 9.8 |
+| `H_ice` > 1 m, centre (before) | +257 to +502 | 309 to 558 | 1.16 to 1.50 | 18.7 | 65.6 | 49.2 | 130.0 | 10.5 |
+
+The margin variable takes most of the excess, the position within the cells the rest of the half cell: 7-10 % more
+volume than PaleoMIST remain (the native-grid check of the library: 5-7 % at 30 km is the resolution). The misfit is
+positive and broad, larger near the margins; the patch at the head of Baffin Bay persists, smaller: at 20 ka 18 cells
+over +500 m (max +936 m at 77.5 N 65.8 W, the Greenland side of Smith Sound) against 87 with the old margin
+(max +1082 m); 6 cells over +500 m in the Canadian Arctic today (max +894 m, northern Ellesmere).
+
+![H - PaleoMIST, new baseline](figures/plastic-backend/plastic_dH_fice.png)
+
+Online with VILMA2 (`par/kryos_North_plastic_vilma2_b1.nml`, run `runs/vilma2-b1-fice`): 13.6 min on 16 threads (3 runs
+on a node). ESL [m]:
+
+| ka | 80 | 65 | 60 | 45 | 30 | 22.5 | 20 | 15 | 10 | 5 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| PaleoMIST | -10.0 | -51.1 | -78.6 | -38.4 | -61.7 | -110.9 | -115.6 | -81.0 | -29.3 | -5.0 |
+| I910_it0 (B1 at 910) | -10.2 | -52.6 | -82.4 | -39.2 | -63.8 | -117.8 | -122.8 | -84.5 | -29.5 | -5.1 |
+| online plastic, old margin | -12.5 | -61.4 | -94.4 | -44.7 | -72.4 | -131.7 | -137.7 | -96.2 | -34.0 | -5.2 |
+| online plastic, baseline | -10.1 | -55.7 | -88.8 | -41.4 | -67.2 | -125.4 | -131.7 | -92.3 | -32.6 | -5.0 |
+
+GAPSLIP 2.1 (as above):
+
+| set | model | RMS z | median abs(z) | abs(z) <= 2 | mean d | ML viol. | TL viol. |
+|---|---|---|---|---|---|---|---|
+| all | PaleoMIST | 29.5 | 4.42 | 0.30 | 1.5 | 0.45 | 0.30 |
+| | B1_l170 | 30.4 | 4.41 | 0.30 | 2.9 | 0.42 | 0.30 |
+| | I910_it0 | 30.3 | 4.36 | 0.31 | 3.2 | 0.42 | 0.30 |
+| | online, old margin | 25.5 | 4.03 | 0.32 | 1.1 | 0.41 | 0.36 |
+| | online, baseline | 25.9 | 3.95 | 0.34 | 1.8 | 0.39 | 0.33 |
+| Laurentide | PaleoMIST | 9.0 | 4.13 | 0.26 | 2.9 | 0.20 | 0.28 |
+| | B1_l170 | 9.6 | 5.32 | 0.19 | 1.3 | 0.25 | 0.25 |
+| | I910_it0 | 9.4 | 5.12 | 0.20 | 1.3 | 0.25 | 0.24 |
+| | online, old margin | 9.8 | 4.73 | 0.28 | 4.3 | 0.19 | 0.31 |
+| | online, baseline | 9.4 | 4.72 | 0.28 | 3.0 | 0.21 | 0.28 |
+| Greenland | PaleoMIST | 107.1 | 11.12 | 0.04 | -22.2 | 0.69 | 0.01 |
+| | B1_l170 | 110.6 | 9.28 | 0.09 | -15.1 | 0.60 | 0.02 |
+| | I910_it0 | 110.2 | 9.60 | 0.09 | -15.3 | 0.60 | 0.02 |
+| | online, old margin | 88.9 | 9.22 | 0.07 | -19.4 | 0.58 | 0.02 |
+| | online, baseline | 91.7 | 10.21 | 0.14 | -12.4 | 0.52 | 0.02 |
+| Fennoscandia/Barents | PaleoMIST | 19.9 | 7.80 | 0.17 | 6.4 | 0.32 | 0.41 |
+| | B1_l170 | 16.5 | 5.82 | 0.27 | 3.8 | 0.26 | 0.44 |
+| | I910_it0 | 16.2 | 5.55 | 0.28 | 3.4 | 0.25 | 0.44 |
+| | online, old margin | 14.6 | 4.82 | 0.28 | 2.9 | 0.23 | 0.52 |
+| | online, baseline | 13.2 | 4.30 | 0.32 | 1.8 | 0.23 | 0.49 |
+| far field | PaleoMIST | 13.6 | 2.85 | 0.41 | 1.3 | 0.46 | 0.16 |
+| | B1_l170 | 16.0 | 3.23 | 0.39 | 5.1 | 0.44 | 0.18 |
+| | I910_it0 | 16.1 | 3.20 | 0.39 | 6.0 | 0.44 | 0.20 |
+| | online, old margin | 15.3 | 3.07 | 0.38 | 1.4 | 0.47 | 0.17 |
+| | online, baseline | 15.4 | 3.14 | 0.39 | 3.1 | 0.45 | 0.17 |
+
+The baseline ESL is 14 % above PaleoMIST's at 20 ka (old margin 19 %, I910_it0 6 %); it scores better than B1 on every NH
+set but RMS z of Greenland (dominated by a few points, below) and violates fewer terrestrial limiting data than the old
+margin.
+
+Checks on the restored files: the baseline with `taub_scale_file = ""` and without the key give the same output, every
+file bit for bit; `margin_position = "centre"` with the new library and the old margin (`H_ice` > 1 m) gives the old
+binary's ice bit for bit, and VILMA2's sea-level diagnostics (`bsl`, `mass_resid`) and the stress residual to 2e-14.
+
+## Calibration of tau_b (ES-MDA)
+
+Gowan tuned tau_b by hand against RSL and GIA data; here per-group, time-dependent multipliers on his tau_b are calibrated
+online, VILMA2 in the loop, against the GAPSLIP 2.1 sea-level index points, by an ensemble smoother with multiple data
+assimilation (ES-MDA, Emerick and Reynolds 2013). Tools in `tools/levante`: `plastic_esmda.toml` (the config),
+`plastic_taub_scale.jl` (groups, multiplier files), `plastic_esmda.jl` (init, scoring, update), `plastic_esmda.sh` (the jobs).
+
+**Parameters**: theta = the log multipliers of 3 groups x 9 nodes (80, 60, 40, 25, 20, 15, 10, 5, 0 ka) = 27, linear in time
+between the nodes (`taub_scale_file`). Groups (`[[scale.groups]]`, by Gowan's region of the domain): Laurentide (region 1 without
+Greenland; 101 domains with cells on NH-32KM, 24771 cells), Greenland (109, 3830), Eurasia (region 2; 159, 10075); Antarctica is
+not calibrated (no cells on NH-32KM). Greenland: a region-1 domain whose cells on the grid lie more than half in Greenland of the
+FesmData REGIONS map (`region_2` = 103, a partition of land and shelf by territory). The rule is clear-cut except for four
+domains at the Nares Strait and Baffin Bay (fraction in Greenland: 1056 0.49, 1063 0.27, 1000 0.16, 1055 0.04: Laurentide; the
+next highest 0.86 and above: Greenland); `groups.csv` of a calibration lists them all. Prior: N(0, C), sigma 0.3 (a factor
+0.74-1.35 at one sigma), exponential correlation in time (10 kyr) within a group, groups independent.
+
+**Observations**: the index points of GAPSLIP 2.1 (primary, 0-80 ka) of pm_compare.jl's groups Laurentide (896),
+Greenland (276), Fennoscandia/Barents (1088) and the far field (2445): 4705. The model RSL at a point is the scorer's
+(`pm_kryos_out.jl` makes the run's VILMA2 stream a `vilma_out.nc`, `pm_compare.jl`'s `read_run` and `series_run`, RSL relative
+to 0 ka, bilinear in space, linear in time between the 2.5-kyr records): the residual d = model - rsl is the d of the scores.
+sigma is the scorer's `ip_sigma`: half the 2-sigma elevation range on the side of d, and the age uncertainty times the model
+slope, evaluated at the ensemble-mean RSL of the iteration and fixed within it (`sigma_add` adds a model error in quadrature;
+0 by default). Index points without a model value in some member are left out of that iteration. The limiting data
+(marine 2436, terrestrial 1353 in those groups) are not assimilated; their violation fractions are reported.
+
+**Update**: Ne members (32) and N_a iterations with inflation alpha (9.333, 7, 4, 2); perturbed observations
+y + sqrt(alpha) sigma e; in units of sigma, theta_a = theta + dTheta (I + G S)^-1 G (y_pert - D) with S the scaled
+anomalies of the predictions, dTheta those of theta and G = S'/alpha (Woodbury: the Kalman gain with an Ne x Ne solve; no
+localisation). Each iteration also runs the mean member (m000: the prior mean, Gowan's tau_b, in iteration 1; the ensemble
+mean after an update); after the last update the posterior mean is run (`final = "mean"`; or the ensemble, or nothing). A
+member that fails (exit code, missing output) is dropped and logged; fewer than `min_members` (half) stops the calibration.
+
+**Jobs**: `plastic_esmda.sh start <config> <folder>` runs the init as a job (the prior ensemble, the multiplier files and par
+files of iteration 1, a frozen copy of `kryos.x`, `input/` and the par file with the `set` overrides) and submits iteration 1:
+the members as a job array (one kryos run each, `-c threads`), then the analysis after them (`afterany`), which scores,
+updates and submits the next iteration until `next` says done. The folder: `esmda.md` (the report: per iteration the mean
+member's scores and the ensemble's, chi2, ESL at 20 ka, theta before and after as factors), `iter_kk/theta.csv`,
+`scores.csv` (per member and set, the scorer's metrics), `members.csv` (ok, chi2, ESL, run time), `mNNN/` (the run).
+Members write only `geo_glob_vilma.nc` (2.5 kyr) and the 1-D series (no restarts, no 2-D ice output).
+
+**Checks** (Levante, 2026-11-09, the restored PaleoMIST files, the old margin and library): kryos before the key, with the key
+unset, and with a multiplier file of zeros (members' outputs only) give the same `geo_glob_vilma.nc` and 1-D series bit for bit,
+also at 4, 8, 16 and 64 threads, and the same as the earlier online run (all output files); `pm_compare.jl` after the
+refactor scores that run as before. `plastic_esmda.jl selftest`: four ES-MDA steps (alpha 9.333, 7, 4, 2, N = 4000) on a
+linear-Gaussian problem give the exact posterior mean to 0.04 sd and its sd to 1.3 %.
+
+**Cost**: VILMA2 dominates and barely scales: a member takes 12.5 min on 8 threads, 15 on 4, 12-14 on 16, 8 on 64 (several
+members on one node; 8 min on 16 threads alone), 2-7 GB. The shared partition bills max(cpus, mem / 0.9 GB): 8 threads with
+10 GB (12 cpus billed) is the cheapest per member, 2.5 cpu-h, against 9 cpu-h on 64. The full calibration, 33 x 4 runs and the
+posterior mean, is about 330 cpu-h (2.6 node-h), about 1-1.5 h of wall time if the array runs at once.
+
+**Smoke test** (`runs/esmda-smoke`: Ne = 8, alpha = 1, then the posterior mean; margin `f_ice` > 0.5, the build before `margin_position`,
+linked while the library was being rebuilt, so its margin position is not certain; its mean member scores within 2 % of
+the baseline): the 9 members ran at once in 12-15 min each on 8 threads, all succeeded;
+scored and updated in 2 min. Prior ensemble (factors 0.43-2.3 across the parameters): RMS z of all index points 18.0 to
+31.4 (mean member 25.8), Greenland 48 to 115, ESL at 20 ka -107 to -148 m (mean member -132): tau_b moves the scores
+well beyond the spread between B1 and the runs. With the indicators' own sigma, chi2/n is about 740 at the mean member:
+1089 of the 4705 index points have |z| > 10 and carry 98 % of the sum of z^2 (104 have |z| > 50: southern Greenland,
+Townsville and Bowen, the eastern Baltic). The one update with alpha = 1 and Ne = 8 < 27 parameters collapsed the ensemble
+(sd ratio 0.03) and sent the mean to factors 0.0004-895; its run did not get through VILMA2's relaxation to the 80 ka load
+in 26 min and was cancelled; the analysis then logged the failure and stopped (`next`: done). The same members, updated
+offline with other settings (median |shift| of theta; factor range; sd after / before):
+
+| alpha | sigma_add | index points | median shift | factors | sd ratio |
+|---|---|---|---|---|---|
+| 1 | 0 | all | 1.73 | 0.00-914 | 0.03 |
+| 9.333 | 0 | all | 1.72 | 0.00-508 | 0.07 |
+| 9.333 | 5 m | all | 0.39 | 0.42-2.7 | 0.23 |
+| 9.333 | 10 m | all | 0.23 | 0.53-2.0 | 0.37 |
+| 9.333 | 0 | abs(z) <= 10 at the mean | 0.11 | 0.66-1.34 | 0.13 |
+| 9.333 | 5 m | abs(z) <= 10 at the mean | 0.14 | 0.68-1.51 | 0.35 |
+
+So the indicators' sigma alone is far below the model error: the full calibration needs a model error (`sigma_add`,
+5-10 m) and/or a gross-error check (|z| at the prior mean), else a few hundred points drive it.
+
+Launch:
+
+```
+bash tools/levante/plastic_esmda.sh start tools/levante/plastic_esmda.toml /work/ba1442/robinson/kryos-ice-plastic/runs/esmda-<name>
+```
+
 ## Open
 
-- The NH ice is 15-50 % too large with Gowan's tau_b although `"surface"` solves the plastic equation: tau_b of
-  the product, resolution or margin (above).
+- The NH ice is 7-10 % too large with Gowan's tau_b and the new margin (was 15-50 %): mostly resolution (above).
+- The calibration's observation error (above): `sigma_add` and/or a gross-error check to decide before the full run;
+  index points of one site are correlated (diagonal R here); the full run's first step with alpha 9.333 and Ne = 32 is
+  untested.
 - `drive = "smb"` does not converge on 32 km grids (library); `"full"` neither (use `"surface"`).
 - The science-Earth variant (`par/kryos_North_plastic_vilma2.nml`, 3-D Bagge, lmax 170, refcorr reference) is not
   run with `"surface"` (its flat run was cancelled in VILMA2's spin-up).
