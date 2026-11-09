@@ -54,7 +54,7 @@ mem       = "10G"                        # the shared partition bills max(cpus, 
 time      = "01:00:00"
 partition = "shared"
 account   = "ba1442"
-throttle  = 0                            # members running at once (0: no limit)
+throttle  = 29                           # members running at once (0: no limit); 29 + the queued analysis = 30 jobs max (Alex, 2026-11-09)
 
 [score]
 fesmdata = "/work/ba1442/fesmdata"
