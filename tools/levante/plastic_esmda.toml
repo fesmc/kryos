@@ -18,22 +18,27 @@ greenland = false
 name      = "Greenland"
 region    = 1
 greenland = true
+tie       = [[80, 60]]                   # nodes sharing one parameter: no index points before 44 ka in Greenland
 
 [[scale.groups]]
 name   = "Eurasia"
 region = 2
+tie    = [[80, 60, 40]]                  # no index points before 25 ka in Fennoscandia/Barents
 
 [prior]                                  # log factors: N(0, sigma^2), exponential correlation in time within a group
 sigma         = 0.3
 corr_time_kyr = 10.0
 seed          = 1
+theta_max     = 1.5                      # every member clipped to |theta| <= theta_max (factor 0.22-4.5)
 
 [esmda]
-ne          = 32                         # ensemble members (and a mean member, m000, in every iteration)
+ne          = 40                         # ensemble members (and a mean member, m000, in every iteration)
 alpha       = [9.333, 7.0, 4.0, 2.0]     # inflation per iteration (sum of 1/alpha = 1); equal: [4.0, 4.0, 4.0, 4.0]
 final       = "mean"                     # after the last update: run "mean" (the posterior mean member), "ensemble" or "none"
 obs_groups  = ["Laurentide", "Greenland", "Fennoscandia/Barents", "far field"]   # pm_compare.jl's GROUPS: index points assimilated
-sigma_add   = 0.0                        # [m] added in quadrature to every index point's sigma (0: the indicator's own)
+sigma_add   = 5.0                        # [m] added in quadrature to every index point's sigma: the model error the indicator
+                                         # lacks (GIA and Earth model, resolution, RSL interpolation)
+z_cut       = 5.0                        # gross-error cut at the prior mean member (iteration 1, fixed): |d| / sigma > z_cut
 min_members = 0.5                        # stop when fewer than this fraction of the ensemble members succeed
 
 [run]                                    # each member: a kryos run of this par file with its multiplier file

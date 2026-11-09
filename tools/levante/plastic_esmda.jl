@@ -3,14 +3,19 @@
 #   julia --project=<tools> plastic_esmda.jl init <config.toml> <calibration folder>   prior ensemble = iteration 1
 #   julia --project=<tools> plastic_esmda.jl update <calibration folder> <k>            score iteration k, update, write k + 1
 #   julia --project=<tools> plastic_esmda.jl selftest                                   the update against a linear-Gaussian posterior
-# Parameters theta: the log multipliers of tau_b per scale group and node (plastic_taub_scale.jl), group-major; prior N(0, C), C of a
-# group sigma^2 exp(-|t_i - t_j| / L), groups independent. Observations: the index points of pm_compare.jl's GROUPS in obs_groups,
+# Parameters theta: the log multipliers of tau_b per scale group and node (plastic_taub_scale.jl), group-major; nodes of a group may be
+# tied to one parameter (`tie` of [[scale.groups]], lists of node ages: the nodes without direct data); prior N(0, C), C of a group
+# sigma^2 exp(-|t_p - t_q| / L) with t_p the mean age of a parameter's nodes, groups independent; every member clipped to
+# |theta| <= theta_max after an update. Observations: the index points of pm_compare.jl's GROUPS in obs_groups,
 # the model RSL at a point the scorer's (series_run: the run's VILMA2 stream as vilma_out.nc by pm_kryos_out.jl, bilinear, linear in
 # time), so d = model - rsl is the d of the scores; sigma the scorer's ip_sigma (elevation on the side of d, and the age through the
-# model slope) at the ensemble-mean RSL of the iteration, fixed within the iteration, plus sigma_add in quadrature. Perturbed
+# model slope) at the ensemble-mean RSL of the iteration, fixed within the iteration, plus sigma_add in quadrature (the model error the
+# indicator lacks: GIA and Earth model, resolution, RSL interpolation). A gross-error cut, fixed in iteration 1 at the prior mean member
+# (m000, Gowan's tau_b): index points with |d| / sqrt(sigma^2 + sigma_add^2) > z_cut there are not assimilated (obs_kept.csv); every
+# score is over all points. Perturbed
 # observations, update in the ensemble subspace (Woodbury: an Ne x Ne solve). Limiting data are not assimilated: their violation
 # fractions are diagnostics.
-# Folder: config.toml, kryos.x, input/, par.nml, groups.csv, obs.csv, esmda.md (the report), next (the iteration to run, or done);
+# Folder: config.toml, kryos.x, input/, par.nml, groups.csv, obs.csv, obs_kept.csv, esmda.md (the report), next (the iteration to run, or done);
 # iter_kk/: theta.csv (all members of the iteration), members.txt (those to run), mNNN/ (taub_scale.nc, par.nml, the run, status:
 # exit code and seconds), scores.csv (per member and set), members.csv (per member: ok, chi2, ESL at 20 ka, run time).
 # Member 0 is the mean member: the prior mean (0, Gowan's tau_b) in iteration 1, the ensemble mean after an update.
@@ -29,28 +34,52 @@ const ESL_AGE = 20000.0
 itdir(C, k) = joinpath(C, @sprintf("iter_%02d", k))
 mdir(C, k, m) = joinpath(itdir(C, k), @sprintf("m%03d", m))
 config(C) = TOML.parsefile(joinpath(C, "config.toml"))
-pnames(sg) = [@sprintf("%s_%g", g, a) for g in sg.names for a in sg.nodes_ka]
+
+# the parameters: (group, its node indices, name, mean age [ka]), group-major, nodes in the order of nodes_ka; `tie` joins nodes
+function params(cfg, sg)
+    P = NamedTuple{(:g, :ks, :name, :t),Tuple{Int,Vector{Int},String,Float64}}[]
+    for (g, spec) in enumerate(cfg["scale"]["groups"])
+        ties = [Float64.(t) for t in get(spec, "tie", Any[])]
+        seen = Set{Int}()
+        for (k, a) in enumerate(sg.nodes_ka)
+            k in seen && continue
+            tset = findfirst(t -> a in t, ties)
+            ks = tset === nothing ? [k] : [findfirst(==(x), sg.nodes_ka) for x in ties[tset]]
+            any(isnothing, ks) && error("group $(sg.names[g]): a tied node is not in nodes_ka: $(ties[tset])")
+            union!(seen, ks)
+            push!(P, (g = g, ks = ks, name = sg.names[g] * "_" * join([@sprintf("%g", sg.nodes_ka[i]) for i in ks], "-"),
+                      t = mean(sg.nodes_ka[ks])))
+        end
+    end
+    P
+end
+pnames(P) = [p.name for p in P]
+# log_factor (group, node) of a parameter vector
+function log_factor(sg, P, θ)
+    lf = zeros(ngroups(sg), nnodes(sg))
+    for (q, p) in enumerate(P), k in p.ks; lf[p.g, k] = θ[q]; end
+    lf
+end
 logline(C, s...) = open(io -> println(io, s...), joinpath(C, "esmda.md"), "a")
 
 # --- prior --------------------------------------------------------------------------------------------------------------------------
-function prior_cov(sg, pr)
-    K = nnodes(sg); s = pr["sigma"]; L = pr["corr_time_kyr"]
-    Cg = [s^2 * exp(-abs(sg.nodes_ka[i] - sg.nodes_ka[j]) / L) for i in 1:K, j in 1:K]
-    cat(fill(Cg, ngroups(sg))...; dims = (1, 2))
+function prior_cov(P, pr)
+    s = pr["sigma"]; L = pr["corr_time_kyr"]
+    [p.g == q.g ? s^2 * exp(-abs(p.t - q.t) / L) : 0.0 for p in P, q in P]
 end
 
 # --- members ------------------------------------------------------------------------------------------------------------------------
 # theta (P x n) of the members ids; run: the ids to run
-function write_iteration(C, k, cfg, sg, ids, Θ, run)
+function write_iteration(C, k, cfg, sg, P, ids, Θ, run)
     It = itdir(C, k); mkpath(It)
     open(joinpath(It, "theta.csv"), "w") do io
-        println(io, "member,", join(pnames(sg), ","))
+        println(io, "member,", join(pnames(P), ","))
         for (j, m) in enumerate(ids); println(io, m, ",", join([@sprintf("%.6f", x) for x in Θ[:, j]], ",")); end
     end
     for (j, m) in enumerate(ids)
         m in run || continue
         D = mdir(C, k, m); mkpath(D)
-        f = write_scale(joinpath(D, "taub_scale.nc"), sg, permutedims(reshape(Θ[:, j], nnodes(sg), ngroups(sg))))
+        f = write_scale(joinpath(D, "taub_scale.nc"), sg, log_factor(sg, P, Θ[:, j]))
         cp(joinpath(C, "par.nml"), joinpath(D, "par.nml"); force = true)
         Base.run(`python3 $(cfg["run"]["set_nml"]) $(joinpath(D, "par.nml")) $("ice_nor.taub_scale_file=\"$f\"")`)
     end
@@ -89,16 +118,19 @@ function init(cfgfile, C)
         for g in og; println(io, g, ",", (count(o -> o.group == g && o.type == t, obs) for t in (0, -1, 1))...); end
     end
 
-    es = cfg["esmda"]; ne = es["ne"]
-    Cθ = prior_cov(sg, cfg["prior"])
-    Θ = cholesky(Symmetric(Cθ)).L * randn(MersenneTwister(cfg["prior"]["seed"]), size(Cθ, 1), ne)
+    es = cfg["esmda"]; ne = es["ne"]; P = params(cfg, sg)
+    Cθ = prior_cov(P, cfg["prior"])
+    Θ = clamp.(cholesky(Symmetric(Cθ)).L * randn(MersenneTwister(cfg["prior"]["seed"]), size(Cθ, 1), ne), -cfg["prior"]["theta_max"],
+               cfg["prior"]["theta_max"])
     ids = collect(0:ne)
-    write_iteration(C, 1, cfg, sg, ids, hcat(zeros(size(Cθ, 1)), Θ), ids)
+    write_iteration(C, 1, cfg, sg, P, ids, hcat(zeros(size(Cθ, 1)), Θ), ids)
     write(joinpath(C, "next"), "1\n")
 
     logline(C, "# ES-MDA calibration of tau_b (plastic backend)\n\nconfig: ", cfgfile, "; ", length(sg.domain_id), " domains, ",
-            ngroups(sg), " groups x ", nnodes(sg), " nodes = ", size(Cθ, 1), " parameters; prior sigma ", cfg["prior"]["sigma"],
-            ", correlation time ", cfg["prior"]["corr_time_kyr"], " kyr; Ne = ", ne, ", alpha = ", es["alpha"], ", final: ", es["final"], "\n")
+            ngroups(sg), " groups x ", nnodes(sg), " nodes, ", size(Cθ, 1), " parameters (", join(pnames(P), ", "), "); prior sigma ",
+            cfg["prior"]["sigma"], ", correlation time ", cfg["prior"]["corr_time_kyr"], " kyr, |theta| <= ", cfg["prior"]["theta_max"],
+            "; Ne = ", ne, ", alpha = ", es["alpha"], ", final: ", es["final"], "; sigma_add ", es["sigma_add"], " m, gross-error cut |z| > ",
+            es["z_cut"], " at the prior mean member\n")
     logline(C, "```\n", join(groups_summary(sg), "\n"), "\n```\n")
     logline(C, "Index points assimilated (GAPSLIP 2.1 primary, 0-80 ka) and limiting data (diagnostics) by group:\n\n",
             "| group | IP | ML | TL |\n|---|---|---|---|")
@@ -153,11 +185,40 @@ function selftest()
     em < 0.1 && es < 0.1 || error("selftest failed")
 end
 
+# The index points kept for the assimilation: in iteration 1, |d| / sqrt(sigma^2 + sigma_add^2) <= z_cut at the prior mean member
+# (m000), written to obs_kept.csv (every index point, its z there and whether kept); later iterations read it.
+function gross_error_cut(C, k, obs, A, res, sadd, zcut)
+    f = joinpath(C, "obs_kept.csv")
+    if k > 1
+        lines = readlines(f)
+        parse(Int, split(lines[1], "=")[2]) == length(obs) || error("obs_kept.csv is for another list of samples")
+        return [parse(Int, split(l, ",")[1]) for l in lines[3:end] if split(l, ",")[end] == "1"]
+    end
+    haskey(res, 0) || error("iteration 1: the prior mean member m000 failed; it sets the gross-error cut")
+    S0 = res[0].S; kept = Int[]
+    open(f, "w") do io
+        println(io, "# n_samples=", length(obs))
+        println(io, "index,group,site,lat,lon,time,rsl,z_prior_mean,kept")
+        for (i, o) in enumerate(obs)
+            o.type == 0 || continue
+            any(isnan, S0[i, :]) && continue
+            mv = PM.tval(A, S0[i, :], o.t); d = mv[1] - o.rsl
+            z = d / sqrt(PM.ip_sigma(o, d, mv[2])^2 + sadd^2)
+            ok = abs(z) <= zcut; ok && push!(kept, i)
+            println(io, join((i, o.group, o.site_name, o.lat, o.lon, o.t, o.rsl, @sprintf("%.3f", z), Int(ok)), ","))
+        end
+    end
+    og = unique(o.group for o in obs)
+    logline(C, "\nGross-error cut at the prior mean member (|z| > ", zcut, " with sigma_add ", sadd, " m): kept ", length(kept), " of ",
+            count(o -> o.type == 0, obs), " index points (", join(["$g $(count(i -> obs[i].group == g, kept)) of $(count(o -> o.group == g && o.type == 0, obs))" for g in og], ", "), ")")
+    kept
+end
+
 function update(C, k)
     C = abspath(C)
     cfg = config(C); es = cfg["esmda"]; α = Float64.(es["alpha"]); Na = length(α)
-    sg = scale_groups(cfg["scale"])
-    og = es["obs_groups"]
+    sg = scale_groups(cfg["scale"]); P = params(cfg, sg)
+    og = es["obs_groups"]; sadd = es["sigma_add"]
     obs = [o for o in PM.read_indicators(cfg["score"]["fesmdata"]) if o.group in og]
     A = sort(NCDataset(ds -> Float64.(ds["time"][:]),
                        joinpath(cfg["score"]["fesmdata"], "Global", "GLOBAL-0.5DEG", "GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc")))
@@ -182,12 +243,14 @@ function update(C, k)
         write(joinpath(C, "next"), "done\n"); error("iteration $k: too few members")
     end
 
-    # the assimilated index points: finite in every member used; their sigma at the mean RSL series of the ensemble (of the mean
-    # member in an evaluation)
+    # the gross-error cut, fixed in iteration 1 at the prior mean member
+    kept = gross_error_cut(C, k, obs, A, res, sadd, es["z_cut"])
+    # the assimilated index points: kept, finite in every member used; their sigma at the mean RSL series of the ensemble (of the
+    # mean member in an evaluation)
     used = isempty(ens) ? collect(keys(res)) : ens
-    ip = [i for (i, o) in enumerate(obs) if o.type == 0 && all(m -> !any(isnan, res[m].S[i, :]), used)]
+    ip = [i for i in kept if all(m -> !any(isnan, res[m].S[i, :]), used)]
     Sbar = mean(res[m].S for m in used)
-    σ = [(mv = PM.tval(A, Sbar[i, :], obs[i].t); sqrt(PM.ip_sigma(obs[i], mv[1] - obs[i].rsl, mv[2])^2 + es["sigma_add"]^2)) for i in ip]
+    σ = [(mv = PM.tval(A, Sbar[i, :], obs[i].t); sqrt(PM.ip_sigma(obs[i], mv[1] - obs[i].rsl, mv[2])^2 + sadd^2)) for i in ip]
     bad = findall(s -> !(s > 0), σ); deleteat!(ip, bad); deleteat!(σ, bad)
     y = [obs[i].rsl for i in ip]
     pred(m) = [PM.tval(A, res[m].S[i, :], obs[i].t)[1] for i in ip]
@@ -213,9 +276,10 @@ function update(C, k)
     # report
     logline(C, "\n## iteration $k", analysis ? " (alpha = $(α[k]))" : " (evaluation)", "\n")
     logline(C, "members run ", length(run), ", succeeded ", length(res), isempty(failed) ? "" : "; failed: " * join(failed, "; "),
-            ". Assimilated index points ", length(ip), isempty(bad) ? "" : " ($(length(bad)) with sigma 0 left out)",
-            " (sigma at the ensemble-mean RSL", es["sigma_add"] > 0 ? ", + $(es["sigma_add"]) m" : "",
-            "). Run time per member ", isempty(res) ? "-" : @sprintf("%.0f-%.0f s", extrema(r.sec for r in values(res))...), ".\n")
+            ". Assimilated index points ", length(ip), " (", join(["$g $(count(i -> obs[i].group == g, ip))" for g in og], ", "), ")",
+            isempty(bad) ? "" : " ($(length(bad)) with sigma 0 left out)", " (sigma at the ensemble-mean RSL", sadd > 0 ? ", + $(sadd) m" : "",
+            "); scores over all index points. Run time per member ",
+            isempty(res) ? "-" : @sprintf("%.0f-%.0f s", extrema(r.sec for r in values(res))...), ".\n")
     logline(C, "| set | n IP | mean member: RMS z | median abs(z) | abs(z) <= 2 | mean d [m] | ML viol. | TL viol. | ensemble RMS z: median [min, max] | ML viol. | TL viol. |")
     logline(C, "|---|---|---|---|---|---|---|---|---|---|---|")
     for (j, (sn, _)) in enumerate(sets)
@@ -243,20 +307,23 @@ function update(C, k)
     Θ = Θall[:, [col[m] for m in ens]]
     D = reduce(hcat, [pred(m) for m in ens]) ./ σ
     Θa = esmda_step(Θ, D, y ./ σ, α[k], MersenneTwister(1000 * cfg["prior"]["seed"] + k))
+    tmax = cfg["prior"]["theta_max"]; nclip = count(abs.(Θa) .> tmax)
+    Θa = clamp.(Θa, -tmax, tmax)
     θm = vec(mean(Θa; dims = 2))
     nxt = k + 1
     run2 = nxt <= Na || es["final"] == "ensemble" ? [0; ens] : es["final"] == "mean" ? [0] : Int[]
-    write_iteration(C, nxt, cfg, sg, [0; ens], hcat(θm, Θa), run2)
+    write_iteration(C, nxt, cfg, sg, P, [0; ens], hcat(θm, Θa), run2)
     write(joinpath(C, "next"), isempty(run2) ? "done\n" : "$nxt\n")
 
     # theta before and after, as factors exp(theta)
     θb = vec(mean(Θ; dims = 2)); sb = vec(std(Θ; dims = 2)); sa = vec(std(Θa; dims = 2))
-    logline(C, "\nUpdate -> iteration $nxt", isempty(run2) ? " (not run)" : "", ": the factor exp(mean theta) before -> after (sd of theta before -> after)\n")
+    logline(C, "\nUpdate -> iteration $nxt", isempty(run2) ? " (not run)" : "", ": ", nclip, " of ", length(Θa),
+            " values clipped to |theta| <= ", tmax, "; the factor exp(mean theta) before -> after (sd of theta before -> after)\n")
     logline(C, "| group | ", join([@sprintf("%g ka", a) for a in sg.nodes_ka], " | "), " |")
     logline(C, "|---|", repeat("---|", nnodes(sg)))
+    pidx = [findfirst(p -> p.g == g && k2 in p.ks, P) for g in 1:ngroups(sg), k2 in 1:nnodes(sg)]
     for (g, gn) in enumerate(sg.names)
-        p = (g - 1) * nnodes(sg) .+ (1:nnodes(sg))
-        logline(C, "| ", gn, " | ", join([@sprintf("%.2f -> %.2f (%.2f -> %.2f)", exp(θb[q]), exp(θm[q]), sb[q], sa[q]) for q in p], " | "), " |")
+        logline(C, "| ", gn, " | ", join([@sprintf("%.2f -> %.2f (%.2f -> %.2f)", exp(θb[q]), exp(θm[q]), sb[q], sa[q]) for q in pidx[g, :]], " | "), " |")
     end
     println("iteration $k: updated, next ", isempty(run2) ? "done" : nxt)
 end
