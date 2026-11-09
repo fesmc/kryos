@@ -7,9 +7,6 @@ using CairoMakie, NCDatasets, Printf, Statistics
 module PM
 include("pm_compare.jl")
 end
-module KO
-include("pm_kryos_out.jl")
-end
 
 const FES = "/work/ba1442/fesmdata"
 const INSTANCES = [("ice_nor", "North", "NH-32KM"), ("ice_ant", "Antarctica", "ANT-16KM"), ("ice_pat", "PatagoniaPaleo", "PAT-PAL-8KM")]
@@ -200,7 +197,6 @@ function sites(window; run = nothing)
     O = obs(); ip = [i for (i, o) in enumerate(O) if o.type == 0 && window[1] <= o.t <= window[2]]
     sc = nothing
     if run !== nothing
-        isfile(joinpath(run, "vilma_out.nc")) || KO.kryos_vilma_out(run, run)
         S = PM.series_run(PM.read_run(run), [O[i].lon for i in ip], [O[i].lat for i in ip], ages())
         sc = Dict(i => PM.score(O[i], ages(), S[k, :]) for (k, i) in enumerate(ip))
         ip = [i for i in ip if isfinite(sc[i].z)]

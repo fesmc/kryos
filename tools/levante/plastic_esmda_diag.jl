@@ -1,8 +1,8 @@
 # Diagnostic figures of a tau_b calibration (plastic_esmda.jl): where the posterior moves the ice, what the sea-level data ask for,
 # and how strongly each group's parameters act on each set of data.
 #   julia --project=<julia-plot> tools/levante/plastic_esmda_diag.jl <calibration folder> <out folder> <prior run> <posterior run>
-# The runs: folders with ice_nor.nc and ice_ant.nc (2-D, the 2.5 kyr records) and vilma_out.nc or geo_glob_vilma.nc (vilma_out.nc is
-# written from it, pm_kryos_out.jl); for v2 the prior is runs/v2-baseline (= m000 of iteration 1, which has no 2-D output) and the
+# The runs: folders with ice_nor.nc and ice_ant.nc (2-D, the 2.5 kyr records) and geo_glob_vilma.nc (read in place by
+# pm_compare.jl's read_run); for v2 the prior is runs/v2-baseline (= m000 of iteration 1, which has no 2-D output) and the
 # posterior m000 of the last iteration. Writes to <out>:
 #   volumes.png    ice volume [m SLE] by scale group (NH-32KM cells by the group of their tau_b domain; ANT-16KM), PaleoMIST, prior and
 #                  posterior; ESL (VILMA2 bsl_ive) against PaleoMIST's and Lambeck et al. (2014); posterior - prior by group
@@ -16,9 +16,6 @@ using CairoMakie, NCDatasets, Printf, Statistics, DelimitedFiles, TOML
 module PM
 include("pm_compare.jl")
 end
-module KO
-include("pm_kryos_out.jl")
-end
 
 const RHO_I, RHO_SW, A_OCN = 910.0, 1028.0, 3.618e14
 const GROUP_COLORS = Dict("Laurentide" => :steelblue, "Greenland" => :seagreen, "Eurasia" => :darkorange, "Antarctica" => :firebrick,
@@ -28,9 +25,6 @@ C, out, prior_dir, post_dir = ARGS
 mkpath(out)
 cfg = TOML.parsefile(joinpath(C, "config.toml"))
 fes = cfg["score"]["fesmdata"]
-for D in (prior_dir, post_dir)
-    isfile(joinpath(D, "vilma_out.nc")) || KO.kryos_vilma_out(D, D)
-end
 
 # --- ice volume by scale group --------------------------------------------------------------------------------------------------------
 gname = Dict(Int(r[1]) => String(r[6]) for r in eachrow(readdlm(joinpath(C, "groups.csv"), ',', Any; skipstart = 1)))

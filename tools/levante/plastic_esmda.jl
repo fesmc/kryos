@@ -9,7 +9,7 @@
 # s(t_p) s(t_q) exp(-|t_p - t_q| / L) with t_p the mean age of a parameter's nodes and s(t) = sigma sin^2(pi t / (2 ramp_ka)) below
 # ramp_ka, sigma above (0 and flat at 0 ka, smooth), groups independent; every member clipped to |theta| <= theta_max after an
 # update. Observations: the index points of pm_compare.jl's GROUPS in obs_groups, the model RSL at a point the scorer's (series_run:
-# the run's VILMA2 stream as vilma_out.nc by pm_kryos_out.jl, bilinear, linear in time), so d = model - rsl is the d of the scores.
+# the run's VILMA2 stream geo_glob_vilma.nc read by pm_compare.jl's read_run, bilinear, linear in time), so d = model - rsl is the d of the scores.
 # Their error covariance R = diag(sigma_i^2) + sigma_m^2 C, sigma_i the scorer's ip_sigma (elevation on the side of d, and the age
 # through the model slope) at the ensemble-mean RSL of the iteration, fixed within the iteration; sigma_m the model error the indicator
 # lacks (GIA and Earth model, resolution, RSL interpolation), correlated between index points: C_ij = exp(-dist_ij / L_s)
@@ -27,9 +27,6 @@ using LinearAlgebra, Printf, Random, Statistics, TOML, NCDatasets
 
 module PM
 include("pm_compare.jl")
-end
-module KO
-include("pm_kryos_out.jl")
 end
 include("plastic_taub_scale.jl")
 
@@ -182,7 +179,6 @@ function member_series(D, obs, A)
     isfile(st) || return nothing, "no status"
     s = split(read(st, String)); s[1] == "0" || return nothing, "exit $(s[1])"
     isfile(joinpath(D, "geo_glob_vilma.nc")) || return nothing, "no geo_glob_vilma.nc"
-    KO.kryos_vilma_out(D, D)
     r = PM.read_run(D)
     all(a -> any(x -> abs(x - PM.trec(a)) < 0.01, r.t), A) || return nothing, "records missing"
     S = PM.series_run(r, [o.lon for o in obs], [o.lat for o in obs], A)

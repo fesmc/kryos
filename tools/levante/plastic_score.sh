@@ -13,5 +13,4 @@ G=/work/ba1442/robinson/kryos-gate; P=$G/runs/paleomist; K=/work/ba1442/robinson
 RUN=$1; LBL=$2; S=$K/runs/score/$LBL
 export PATH=$HOME/.juliaup/bin:$PATH JULIA_DEPOT_PATH=$G/julia-depot
 J="julia +1.13 --project=$G/p4w7/kryos/tools"
-$J $K/tools/levante/pm_kryos_out.jl $RUN $S/$LBL
-$J $K/tools/levante/pm_compare.jl /work/ba1442/fesmdata $S $S/out B1=$P/B1_l170 B1_170=$P/ref/I910_it0 B3=$S/$LBL
+$J $K/tools/levante/pm_compare.jl /work/ba1442/fesmdata $S $S/out B1=$P/B1_l170 B1_170=$P/ref/I910_it0 B3=$RUN

@@ -2,7 +2,7 @@
 # GAPSLIP region, by marine-bed area and by site, the change per site against the first run on maps, RSL curves at the best-sampled
 # sites, ice volume per instance and ESL.
 #   julia --project=<julia-plot> tools/levante/plastic_earth_compare.jl <out folder> <label>=<run folder> ...
-# The runs: kryos folders with geo_glob_vilma.nc (vilma_out.nc is written from it, pm_kryos_out.jl) and <instance>_ts.nc. Index points
+# The runs: kryos folders with geo_glob_vilma.nc (read in place, pm_compare.jl's read_run) and <instance>_ts.nc. Index points
 # as pm_compare.jl: d = model - obs, z = d / sigma; z_m = d / sqrt(sigma^2 + sigma_m^2) with the model error sigma_m (5 m, as
 # plastic_esmda_report.jl). Writes to <out>:
 #   compare.md       tables: volume and ESL; by group; by GAPSLIP region; by marine-bed area (pm_compare.jl FOCUS)
@@ -13,9 +13,6 @@ using CairoMakie, NCDatasets, Printf, Statistics
 
 module PM
 include("pm_compare.jl")
-end
-module KO
-include("pm_kryos_out.jl")
 end
 
 const FES = "/work/ba1442/fesmdata"
@@ -29,9 +26,6 @@ const MAP_BOXES = [("North America and Greenland", (-140.0, -10.0), (35.0, 84.0)
 out = ARGS[1]; mkpath(out)
 runs = [(String(split(a, "=")[1]), abspath(String(split(a, "=", limit = 2)[2]))) for a in ARGS[2:end]]
 length(runs) >= 2 || error("give at least two runs: <label>=<folder>")
-for (_, D) in runs
-    isfile(joinpath(D, "vilma_out.nc")) || KO.kryos_vilma_out(D, D)
-end
 
 obs = PM.read_indicators(FES)
 A = sort(NCDataset(ds -> Float64.(ds["time"][:]), joinpath(FES, "Global", "GLOBAL-0.5DEG", "GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc")))

@@ -15,9 +15,6 @@ using CairoMakie, NCDatasets, Printf, Statistics
 module PM
 include("pm_compare.jl")
 end
-module KO
-include("pm_kryos_out.jl")
-end
 
 const FES = "/work/ba1442/fesmdata"
 const DBINS = [0.0, 10, 25, 50, 100, 200, 400, 800, 1600, 3200, 6400]
@@ -31,7 +28,6 @@ obs = PM.read_indicators(FES)
 A = sort(NCDataset(ds -> Float64.(ds["time"][:]), joinpath(FES, "Global", "GLOBAL-0.5DEG", "GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc")))
 
 function residuals(D)
-    isfile(joinpath(D, "vilma_out.nc")) || KO.kryos_vilma_out(D, D)
     S = PM.series_run(PM.read_run(D), [o.lon for o in obs], [o.lat for o in obs], A)
     sc = [PM.score(o, A, S[i, :]) for (i, o) in enumerate(obs)]
     ip = [i for (i, o) in enumerate(obs) if o.type == 0 && isfinite(sc[i].z) && sc[i].z != 0]

@@ -23,7 +23,7 @@ level of the geo backend (VILMA2) at every coupling step. The solver is the Fort
 | `tests/test_ice_plastic.f90` | the backend through the ice wrappers (`plastic=1` only) |
 | `tests/plastic_slices.f90` | the offline check against PaleoMIST per slice (`plastic=1`) |
 | `tests/plastic_taub_fit.f90` | Stage 1 of calibration v2: a tau_b factor per domain against the present-day thickness (`plastic=1`) |
-| `tools/levante/plastic_maps.jl`, `pm_kryos_out.jl`, `plastic_score.sh` | maps of the offline check; a kryos VILMA2 stream as a standalone `vilma_out.nc`; the GAPSLIP scoring with `pm_compare.jl` |
+| `tools/levante/plastic_maps.jl`, `plastic_score.sh` | maps of the offline check; the GAPSLIP scoring with `pm_compare.jl` (its `read_run` reads a kryos run's VILMA2 stream `geo_glob_vilma.nc` in place) |
 | `tools/levante/plastic_taub_scale.jl`, `plastic_esmda.jl`, `plastic_esmda.sh`, `plastic_esmda.toml`, `plastic_esmda_v2.toml` | the tau_b calibration: scale groups and multiplier files; ES-MDA; its jobs; its configs (v1, v2) |
 | `tools/levante/plastic_esmda_report.jl`, `plastic_taub_fit_report.jl`, `plastic_pd_regions.jl` | the reports: of a calibration; of Stage 1 (lambda, the domain factor file, maps); the present-day thickness per region |
 
@@ -395,7 +395,7 @@ time (10 kyr, between the mean ages of the parameters' nodes) within a group, gr
 
 **Observations**: the index points of GAPSLIP 2.1 (primary, 0-80 ka) of pm_compare.jl's groups Laurentide (896),
 Greenland (276), Fennoscandia/Barents (1088) and the far field (2445): 4705. The model RSL at a point is the scorer's
-(`pm_kryos_out.jl` makes the run's VILMA2 stream a `vilma_out.nc`, `pm_compare.jl`'s `read_run` and `series_run`, RSL relative
+(the run's VILMA2 stream `geo_glob_vilma.nc` by `pm_compare.jl`'s `read_run` and `series_run`, RSL relative
 to 0 ka, bilinear in space, linear in time between the 2.5-kyr records): the residual d = model - rsl is the d of the scores.
 sigma is the scorer's `ip_sigma`: half the 2-sigma elevation range on the side of d, and the age uncertainty times the model
 slope, evaluated at the ensemble-mean RSL of the iteration and fixed within it, and `sigma_add` = 5 m in quadrature: the model
