@@ -1,8 +1,9 @@
 program test_build
     ! Build smoke test (make check): the library links, the run sequence runs
     ! (a clock only, no domain: test_run_clock covers it), and the ice factory
-    ! admits the yelmo backend when it is linked (a stub stops in the factory,
-    ! so with yelmo=0 that check is skipped). Run from the repo root.
+    ! admits the yelmo and plastic backends when they are linked (a stub stops in
+    ! the factory, so with yelmo=0 or plastic=0 that check is skipped). Run from
+    ! the repo root.
 
     use precision, only: dp
     use fesm_clock, only: clock_time
@@ -10,13 +11,14 @@ program test_build
     use kryos_component, only: init_ctx_t, census_t, census_count, constraints_t
     use kryos_ice,       only: ice_slot_t, ice_create, ice_present
     use kryos_ice_yelmo, only: yelmo_ice_constraints
+    use kryos_ice_plastic, only: plastic_ice_constraints
     use kryos_geo,       only: geo_slot_t, geo_create, geo_present
     use kryos_geo_vilma2, only: vilma2_earth_constraints
 
     implicit none
 
     type(run_t)      :: run
-    type(ice_slot_t) :: ice
+    type(ice_slot_t) :: ice, ice_p
     type(geo_slot_t) :: geo
     type(init_ctx_t) :: ctx
     type(census_t)   :: census
@@ -59,6 +61,21 @@ program test_build
         end if
     else
         write(*,'(a)') "test_build: ice factory skipped (yelmo stub)"
+    end if
+
+    con = plastic_ice_constraints()
+    if (con%linked) then
+        ctx%instance = "ice_plastic_test"
+        ctx%backend  = "plastic"
+        census = census_t()
+        call ice_create(ice_p, ctx, census)
+        if (.not. ice_present(ice_p) .or. trim(ice_p%c%backend) /= "plastic" .or. trim(ice_p%c%kind) /= "ice" &
+            .or. census_count(census, "ice:plastic:regional") /= 1) then
+            write(*,'(a)') "test_build: FAILED (ice factory, plastic)"
+            error stop 1
+        end if
+    else
+        write(*,'(a)') "test_build: ice factory (plastic) skipped (stub)"
     end if
 
     con = vilma2_earth_constraints()

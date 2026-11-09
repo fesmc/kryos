@@ -1,0 +1,60 @@
+# The tau_b calibration of the plastic ice backend (docs/dev/plastic-backend.md, "Calibration"): per-group, time-varying
+# multipliers on Gowan et al. (2021)'s tau_b against the GAPSLIP 2.1 sea-level index points, VILMA2 in the loop, by ES-MDA.
+#   tools/levante/plastic_esmda.sh start tools/levante/plastic_esmda.toml <calibration folder>
+
+[scale]                                  # the parameters: plastic_taub_scale.jl
+taub_file      = "/work/ba1442/robinson/fesmdata-taub/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST_taub.nc"
+regions_file   = "/work/ba1442/fesmdata/North/NH-32KM/NH-32KM_REGIONS.nc"
+regions_var    = "region_2"
+greenland_code = 103                     # Greenland in region_2 (FesmData Regions v2)
+nodes_ka       = [80, 60, 40, 25, 20, 15, 10, 5, 0]
+
+[[scale.groups]]
+name      = "Laurentide"                 # North America without Greenland
+region    = 1
+greenland = false
+
+[[scale.groups]]
+name      = "Greenland"
+region    = 1
+greenland = true
+tie       = [[80, 60]]                   # nodes sharing one parameter: no index points before 44 ka in Greenland
+
+[[scale.groups]]
+name   = "Eurasia"
+region = 2
+tie    = [[80, 60, 40]]                  # no index points before 25 ka in Fennoscandia/Barents
+
+[prior]                                  # log factors: N(0, sigma^2), exponential correlation in time within a group
+sigma         = 0.3
+corr_time_kyr = 10.0
+seed          = 1
+theta_max     = 1.5                      # every member clipped to |theta| <= theta_max (factor 0.22-4.5)
+
+[esmda]
+ne          = 40                         # ensemble members (and a mean member, m000, in every iteration)
+alpha       = [9.333, 7.0, 4.0, 2.0]     # inflation per iteration (sum of 1/alpha = 1); equal: [4.0, 4.0, 4.0, 4.0]
+final       = "mean"                     # after the last update: run "mean" (the posterior mean member), "ensemble" or "none"
+obs_groups  = ["Laurentide", "Greenland", "Fennoscandia/Barents", "far field"]   # pm_compare.jl's GROUPS: index points assimilated
+sigma_add   = 5.0                        # [m] added in quadrature to every index point's sigma: the model error the indicator
+                                         # lacks (GIA and Earth model, resolution, RSL interpolation)
+z_cut       = 5.0                        # gross-error cut at the prior mean member (iteration 1, fixed): |d| / sigma > z_cut
+min_members = 0.5                        # stop when fewer than this fraction of the ensemble members succeed
+
+[run]                                    # each member: a kryos run of this par file with its multiplier file
+kryos_dir = "/work/ba1442/robinson/kryos-ice-plastic"   # its libkryos/bin/kryos.x and input/ are copied at init
+par       = "par/kryos_North_plastic_vilma2_b1.nml"
+set_nml   = "/work/ba1442/robinson/kryos-gate/tools/set_nml.py"
+set       = ['ice_nor.taub_domain_file="/work/ba1442/robinson/fesmdata-taub/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST_taub.nc"',
+             'kryos.restart_out="none"', 'ice_nor.out_2D="none"', 'ice_nor.out_plastic="none"', 'geo_nor.out_2D="none"',
+             'geo_glob.out_2D="none"']   # outputs: geo_glob_vilma.nc (2.5 kyr) and the 1-D series only
+maps      = "/work/ba1442/robinson/kryos-ice-plastic-maps"
+threads   = 8                            # VILMA2 barely scales: 8 threads ~12.5 min, 64 ~8 min (2026-11-09)
+mem       = "10G"                        # the shared partition bills max(cpus, mem / 0.9 GB): ~12 cpus
+time      = "01:00:00"
+partition = "shared"
+account   = "ba1442"
+throttle  = 29                           # members running at once (0: no limit); 29 + the queued analysis = 30 jobs max (Alex, 2026-11-09)
+
+[score]
+fesmdata = "/work/ba1442/fesmdata"

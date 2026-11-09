@@ -147,6 +147,9 @@ $(INSOL_ARCHIVE):
 $(VILMA_ARCHIVE):
 	@$(call dep_missing,VILMA2,make -C $(VILMAROOT) vilma-static openmp=$(openmp))
 
+$(PLASTIC_ARCHIVE):
+	@$(call dep_missing,PlasticIceSheet,make -C $(PLASTICROOT) static config=<machine>_<compiler>)
+
 $(SHTNS_ARCHIVE):
 	@$(call dep_missing,SHTns of fesm-utils (one-time),make -C $(FESMUTILSROOT) shtns openmp=$(openmp))
 
@@ -175,6 +178,11 @@ insol-static:
 # VILMA2 links fesm-utils and its SHTns (make -C fesm-utils shtns, one-time; deps-check names it)
 vilma-static: fesmutils-static
 	$(MAKE) -C $(VILMAROOT) vilma-static openmp=$(openmp)
+
+# PlasticIceSheet: dp, no dependencies; its config fragment (PLASTIC_CONFIG) names machine and compiler
+PLASTIC_CONFIG ?= dkrz_levante_ifx
+plastic-static:
+	$(MAKE) -C $(PLASTICROOT) static config=$(PLASTIC_CONFIG)
 
 deps-static: fesmutils-static $(backend_static)
 
@@ -250,7 +258,8 @@ input-check:
 	@sh config/sync_input.sh check input/sync.txt $(input_roots)
 
 .PHONY : build-info usage kryos-static kryos check check-long clean cleanall depend deps-check deps-static \
-         fesmutils-static yelmo-static isostasy-static chion-static insol-static vilma-static sync-input input-check
+         fesmutils-static yelmo-static isostasy-static chion-static insol-static vilma-static plastic-static \
+         sync-input input-check
 usage:
 	@echo ""
 	@echo "    * USAGE * "
@@ -270,7 +279,7 @@ usage:
 	@echo " Options: debug=1|2, openmp=0|1 (default 1), pic=1"
 	@echo " Backends (1 = link the library, 0 = stub that stops at init):"
 	@echo "   yelmo=$(yelmo) fastisostasy=$(fastisostasy) chion=$(chion) insol=$(insol)"
-	@echo "   cism=$(cism) pism=$(pism) vilma=$(vilma) rembo=$(rembo)"
+	@echo "   cism=$(cism) pism=$(pism) vilma=$(vilma) plastic=$(plastic) rembo=$(rembo)"
 	@echo ""
 
 clean:

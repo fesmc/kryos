@@ -180,6 +180,66 @@
     out_yelmo_ts    = "none"                   ! schedule of <instance>_yelmo_ts[_<region>].nc
 /
 
+&ice_plastic
+    ! The perfectly-plastic ice sheet (PlasticIceSheet; docs/dev/plastic-backend.md): at every update the ice
+    ! mask of the margin chronology at t1 and tau_b at t1 on the imported bed and sea level give the thickness.
+    drive              = "taub"                ! "taub": plastic_solve with the tau_b below | "smb": plastic_solve_smb with
+                                               ! the imported smb (needs rheo_A and slide_law)
+    ! solver (plastic_par_t)
+    mode               = "surface"             ! the library's mode, passed through: "surface" (z_s directly, one sweep,
+                                               ! with the bed) | "flat" (no bed slope) | "full" (w = H**2 with the bed slope
+                                               ! by a fixed point; does not converge on 32 km beds)
+    relax              = 0.5                   ! under-relaxation of the outer ("full") iteration
+    warm_frac_max      = 0.1                   ! "full": a warm start only if at most this fraction of the ice cells is new
+    n_outer            = 100                   ! maximum outer iterations ("full")
+    max_sweeps         = 200                   ! maximum fast sweeps per eikonal solve
+    tol                = 1.0e-6                ! [m2] sweep tolerance (change of w = H**2)
+    outer_tol          = 1.0e-3                ! [m] outer tolerance (change of H)
+    rho_i              = 910.0                 ! [kg m-3] ice density: the kryos Earth constants and the PaleoMIST runs (910);
+                                               ! the library default is 917 (a value other than the run's rho_ice is logged)
+    rho_w              = 1028.0                ! [kg m-3] sea-water density (kryos rho_sw; library default 1025)
+    g                  = 9.81                  ! [m s-2] (kryos g; library default 9.80665)
+    H_min              = 1.0                   ! [m] floor of H inside the mask (keeps sqrt(w) regular)
+    ! margin chronology: slices of an ice fraction or thickness (x, y, time) on the instance grid
+    margin_file        = ""                    ! required; {domain}, {grid_name} replaced (as recon_path); its time axis
+                                               ! "years ago" / "BP" / "ka ..." is converted to model time
+    margin_var         = "f_ice"               ! the variable: "f_ice" (PaleoMIST: ice fraction of the unsmoothed 5 km
+                                               ! grid, Gowan's margin) | "H_ice" (smoothed 25 km: reaches beyond it)
+    margin_H_min       = 0.5                   ! ice where the slice's margin_var exceeds this (f_ice: 0.5; H_ice: 1 m)
+    margin_interp      = "sdist"               ! "sdist": signed distance to the margin, linear between the slices |
+                                               ! "nearest": the nearest slice (Gowan et al. 2021 offline)
+    margin_extrapolate = "error"               ! outside the slices' (and the tau_b series') time range: "error" | "hold"
+    margin_position    = "sdist"               ! the margin within the cells (library margin_frac): "sdist" (from the
+                                               ! interpolated signed distance: the faces at the slices, moving between
+                                               ! them) | "face" | "centre" (the ice-free cell centre, PlasticIceSheet.jl)
+    ! tau_b (drive = "taub")
+    taub_method        = "const"               ! "const" | "file" | "domains"
+    taub_const         = 0.0                   ! [Pa] "const": the value (> 0)
+    taub_file          = ""                    ! "file": a static field (x, y) on the instance grid ({domain}, {grid_name})
+    taub_var           = "taub"                ! "file": its variable
+    taub_domain_file   = ""                    ! "domains": the product {grid_name}_IceHistory-PaleoMIST_taub.nc ({domain}, {grid_name})
+    taub_domain_var    = "taub_domain"         ! "domains": the domain id of each cell (x, y), <= 0 = none (product: -9999)
+    taub_id_var        = "domain_id"           ! "domains": the ids (n)
+    taub_value_var     = "taub"                ! "domains": their tau_b [Pa] (n)
+    taub_time_var      = "taub_t"              ! "domains": their series [Pa] (n, time), used when the file has it (PaleoMIST
+                                               ! 1.0: time dependent, linear between its slices)
+    taub_override      = ""                    ! "domains": group of a table (codes, taub [Pa]) overriding the value of
+                                               ! those ids, constant in time; "" = none
+    taub_default       = 0.0                   ! [Pa] "domains": cells without a domain; 0 = none (such a cell in the
+                                               ! ice mask stops the run)
+    taub_scale_file    = ""                    ! "domains": multipliers of tau_b per scale group, time dependent (the
+                                               ! calibration, tools/levante/plastic_esmda.jl; {domain}, {grid_name});
+                                               ! "" = none
+    ! rheology and sliding (the velocity diagnostics ux_s, uy_s and smb_implied; drive = "smb")
+    rheo_A             = 0.0                   ! [Pa-n yr-1] Glen rate factor; 0 = no velocity
+    rheo_n             = 3.0                   ! Glen exponent
+    slide_law          = "none"                ! "none" | "linear" | "weertman" | "coulomb" (regularised)
+    slide_beta         = 0.0                   ! linear [Pa yr m-1], weertman [Pa (yr m-1)^(1/m)]
+    slide_m            = 1.0                   ! weertman, coulomb: stress exponent
+    slide_C            = 0.0                   ! [Pa] coulomb: the cap
+    slide_u0           = 0.0                   ! [m yr-1] coulomb: the threshold velocity
+    out_plastic        = "none"                ! schedule of <instance>_plastic.nc (state, mask, sdist, tau_b, ...)
+/
 &climate_snapshots
     snapshots = "snapshots"
     reference = "pd"
