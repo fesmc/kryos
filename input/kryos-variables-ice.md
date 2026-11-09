@@ -29,3 +29,5 @@ lossless (time series stay lossless) and a unit is required in every row.
 | 19 | H_ice_pd       | xc, yc     | m           | Present-day ice thickness (static)               | 1e-1       |
 | 20 | H_grnd         | xc, yc     | m           | Ice thickness above flotation                    | 1e-1       |
 | 21 | H_grnd_pd      | xc, yc     | m           | Present-day thickness above flotation (static)   | 1e-1       |
+| 22 | smb_tot        |            | Gt yr-1     | Surface mass balance, summed over the grid       | -          |
+| 23 | cmb_tot        |            | Gt yr-1     | Calving mass balance, summed over the grid       | -          |
