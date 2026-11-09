@@ -29,7 +29,8 @@ module kryos_ice_plastic
                                     taub_read_field, taub_read_domains, taub_read_scale, taub_at
     use plastic_ice,     only: plastic_par_t, plastic_t, plastic_glen_t, plastic_sliding_t, plastic_init, &
                                plastic_solve, plastic_solve_smb, plastic_end, plastic_velocity, plastic_smb_implied, &
-                               plastic_stress_residual, PLASTIC_OK, PLASTIC_NOT_CONVERGED
+                               plastic_stress_residual, plastic_margin_frac_from_sdist, PLASTIC_OK, &
+                               PLASTIC_NOT_CONVERGED
 
     implicit none
 
@@ -53,6 +54,9 @@ module kryos_ice_plastic
         real(dp), allocatable :: z_bed(:,:), z_sl(:,:)   ! [m] the bed and sea level of the last solve
         real(dp), allocatable :: tau_b(:,:), sd(:,:)     ! [Pa], [m] its basal shear stress and signed distance
         logical,  allocatable :: mask(:,:)               ! its ice mask
+        real(dp), allocatable :: mfrac(:,:)              ! margin_position = "sdist": the margin's distance from the
+                                                         ! ice-free cell centres [fraction of the spacing]; else
+                                                         ! unallocated (absent in the library calls: par%margin)
         real(dp), allocatable :: H_prev(:,:)             ! [m] the thickness at the previous update (dHidt)
         real(dp), allocatable :: ux(:,:), uy(:,:), speed(:,:), smb_imp(:,:)   ! [m yr-1], [m ice yr-1] (velocity)
         logical :: bed_ref = .false., sl_zero = .false.  ! logged once: the bed or sea level was not imported
@@ -158,7 +162,7 @@ contains
             call exports_rates(self, st)
         case (PASS_RESTART)
             call boundary(self)
-            call margin_at(self%mg, st%t1, self%mask, self%sd)
+            call mask_at(self, st%t1)
             if (trim(self%drive) == "taub") then
                 call forcing_taub(self, st%t1)
             else
@@ -337,11 +341,12 @@ contains
         real(dp), allocatable :: smb(:,:)
         integer :: stat
 
-        call margin_at(self%mg, t, self%mask, self%sd)
+        call mask_at(self, t)
         select case (trim(self%drive))
         case ("taub")
             call forcing_taub(self, t)
-            call plastic_solve(self%ps, self%z_bed, self%z_sl, self%tau_b, self%mask, warm=warm, stat=stat)
+            call plastic_solve(self%ps, self%z_bed, self%z_sl, self%tau_b, self%mask, warm=warm, stat=stat, &
+                               margin_frac=self%mfrac)
         case ("smb")
             if (.not. published(self, self%hi_smb)) then
                 call fesm_error("kryos_ice_plastic::solve", "drive = 'smb' needs the smb import", "instance "// &
@@ -351,7 +356,7 @@ contains
             call fields_get(self%imports, self%hi_smb, smb)
             smb = smb/self%par%rho_i                    ! kg m-2 yr-1 -> m ice yr-1
             call plastic_solve_smb(self%ps, self%z_bed, self%z_sl, smb, self%mask, self%rheo, self%slide, warm=warm, &
-                                   stat=stat)
+                                   stat=stat, margin_frac=self%mfrac)
             self%tau_b = driving_stress(self)
         end select
         if (stat == PLASTIC_NOT_CONVERGED) then
@@ -363,6 +368,18 @@ contains
         end if
         call diagnostics(self)
     end subroutine solve
+
+    subroutine mask_at(self, t)
+        ! The ice mask and signed distance at t (margin chronology) and, with margin_position = "sdist",
+        ! the margin's position on the ice-free cells next to the ice: frac = -sd / sqrt(dx dy) (library
+        ! helper). The backend's sd at a slice's time is the distance to the staircase of its cell faces
+        ! (centre-to-centre distance to the nearest opposite cell less half a cell), so frac = 0.5 there
+        ! ("face"); between the slices the interpolated sd moves the margin within the cells.
+        class(plastic_ice_t), intent(inout) :: self
+        real(dp),             intent(in)    :: t
+        call margin_at(self%mg, t, self%mask, self%sd)
+        if (allocated(self%mfrac)) call plastic_margin_frac_from_sdist(self%sd, self%mask, self%dx, self%dy, self%mfrac)
+    end subroutine mask_at
 
     subroutine forcing_taub(self, t)
         ! tau_b at t (drive = "taub"; with "smb" the solve derives it): positive on every ice cell.
@@ -419,7 +436,8 @@ contains
         integer :: stat
 
         allocate(r(self%nx, self%ny))
-        call plastic_stress_residual(self%ps, self%z_bed, self%z_sl, self%tau_b, self%mask, rmax, r=r, stat=stat)
+        call plastic_stress_residual(self%ps, self%z_bed, self%z_sl, self%tau_b, self%mask, rmax, r=r, stat=stat, &
+                                     margin_frac=self%mfrac)
         call status_check(self, stat, "plastic_stress_residual")
         rmed = median(pack(r, self%mask .and. self%ps%H > 0.0_dp .and. self%tau_b > 0.0_dp))
     end subroutine stress_residual
@@ -584,7 +602,7 @@ contains
         character(len=PATH_LEN) :: margin_file, taub_file, taub_domain_file, taub_scale_file
         character(len=NAME_LEN) :: margin_var, margin_interp, margin_extrapolate, mode, taub_method, taub_var
         character(len=NAME_LEN) :: taub_domain_var, taub_id_var, taub_value_var, taub_time_var, taub_override_grp
-        character(len=NAME_LEN) :: slide_law
+        character(len=NAME_LEN) :: slide_law, margin_position
         character(len=:), allocatable :: who
         real(dp) :: margin_H_min, taub_const, taub_default, rheo_A, rheo_n, slide_beta, slide_m, slide_C, slide_u0
         integer,  allocatable :: codes(:)
@@ -594,7 +612,7 @@ contains
 
         who = "instance "//trim(self%name)
         margin_file = "";  margin_var = "f_ice";  margin_H_min = 0.5_dp;  margin_interp = "sdist"
-        margin_extrapolate = "error"
+        margin_extrapolate = "error";  margin_position = "sdist"
         taub_method = "const";  taub_const = 0.0_dp;  taub_file = "";  taub_var = "taub"
         taub_domain_file = "";  taub_domain_var = "taub_domain";  taub_id_var = "domain_id";  taub_value_var = "taub"
         taub_time_var = "taub_t";  taub_override_grp = "";  taub_default = 0.0_dp;  taub_scale_file = ""
@@ -622,6 +640,7 @@ contains
         call rd_r("margin_H_min", margin_H_min)
         call rd_s("margin_interp", margin_interp)
         call rd_s("margin_extrapolate", margin_extrapolate)
+        call rd_s("margin_position", margin_position)
         ! tau_b
         call rd_s("taub_method", taub_method)
         call rd_r("taub_const", taub_const)
@@ -660,6 +679,16 @@ contains
         case default
             call fesm_error(proc, "margin_extrapolate = '"//trim(margin_extrapolate)//"' is not recognised", &
                             who//"; use error or hold")
+        end select
+        select case (trim(margin_position))
+        case ("sdist")
+            allocate(self%mfrac(self%nx, self%ny))
+            self%mfrac = 0.0_dp
+        case ("face", "centre")
+            self%par%margin = trim(margin_position)
+        case default
+            call fesm_error(proc, "margin_position = '"//trim(margin_position)//"' is not recognised", &
+                            who//"; use sdist, face or centre")
         end select
         if (len_trim(margin_file) == 0) call fesm_error(proc, "margin_file is not set", who)
         call substitute(margin_file, ctx)

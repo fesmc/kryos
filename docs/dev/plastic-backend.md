@@ -100,6 +100,14 @@ At time t, `margin_interp`:
   two slices has ice.
 - `"nearest"`: the nearest slice (a tie keeps the earlier one): Gowan's offline behaviour, for comparison.
 
+Position within the cells (`margin_position`, the library's `margin_frac`, PlasticIceSheet docs/fortran-port.md
+"Margin position"): `"sdist"` (default) places the margin on each ice-free cell next to the ice at -sd / sqrt(dx dy) of
+the spacing from its centre (`plastic_margin_frac_from_sdist`, clamped to [0, 0.99]), with sd the interpolated signed
+distance (positive in the ice, m, cell centres: the library's convention). sd is the centre-to-centre distance to the
+nearest opposite cell less half a cell, so at a slice's time it is the distance to the staircase of cell faces and the
+margin lies at the faces (0.5); between the slices it moves within the cells, linearly in time. `"face"` and `"centre"`
+(the ice-free cell centre, PlasticIceSheet.jl and this backend until 2026-11-09) set `par%margin` and pass no fraction.
+
 Which variable: PaleoMIST's `H_ice` is Gowan's thickness smoothed with a 25 km Gaussian filter, so `H_ice > 1 m`
 reaches beyond his margin, and the plastic ice there makes the NH volume too large (most of the 15-50 % excess
 below). The product's `f_ice` is the ice fraction of the unsmoothed 5 km reconstruction on each cell, and
@@ -158,6 +166,7 @@ continuous one), `H_prev` and `z_srf`, lossless; the read checks the grid and th
 | `H_min` | 1 | [m] floor of H inside the mask |
 | `margin_file`, `margin_var`, `margin_H_min` | `""`, `"f_ice"`, 0.5 | the margin slices: ice where `margin_var` > `margin_H_min` (`"H_ice"`, 1 m: the smoothed thickness) |
 | `margin_interp`, `margin_extrapolate` | `"sdist"`, `"error"` | see above |
+| `margin_position` | `"sdist"` | the margin within the cells (below): `"sdist"`, `"face"`, `"centre"` |
 | `taub_method`, `taub_const` | `"const"`, 0 | |
 | `taub_file`, `taub_var` | `""`, `"taub"` | `"file"` |
 | `taub_domain_file`, `taub_domain_var`, `taub_id_var`, `taub_value_var`, `taub_time_var` | `""`, `"taub_domain"`, `"domain_id"`, `"taub"`, `"taub_t"` | `"domains"` |

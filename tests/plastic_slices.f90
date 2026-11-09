@@ -11,19 +11,22 @@ program plastic_slices
     ! slice (xc, yc, time [ka]), for maps. Needs plastic=1:
     !
     !     make libkryos/bin/plastic_slices.x plastic=1
-    !     plastic_slices.x <history.nc> <taub.nc> <mode> [<margin_var> [<margin_min> [<taub_default> [<out.nc>]]]]
+    !     plastic_slices.x <history.nc> <taub.nc> <mode> [<margin_var> [<margin_min> [<margin_position>
+    !                      [<taub_default> [<out.nc>]]]]]
+    ! margin_position as the backend's (default "sdist"; at the slices' own times, as here, the same as "face").
 
     use precision, only: dp
     use ncio,      only: nc_read, nc_size, nc_read_attr, nc_create, nc_write_dim, nc_write
     use kryos_plastic_margin, only: margin_t, margin_init, margin_at, model_time_axis, MARGIN_NEAREST
     use kryos_plastic_taub,   only: taub_t, taub_read_domains, taub_at
-    use plastic_ice, only: plastic_par_t, plastic_t, plastic_init, plastic_solve, plastic_stress_residual
+    use plastic_ice, only: plastic_par_t, plastic_t, plastic_init, plastic_solve, plastic_stress_residual, &
+                           plastic_margin_frac_from_sdist
 
     implicit none
 
     real(dp), parameter :: RHO_I = 910.0_dp, RHO_SW = 1028.0_dp, G = 9.81_dp, A_OCN = 3.618e14_dp   ! kryos Earth
     character(len=512) :: hist, tfile, arg, outf
-    character(len=64)  :: mvar
+    character(len=64)  :: mvar, mpos
     character(len=16)  :: mode
     character(len=256) :: units
     type(margin_t)      :: mg
@@ -33,22 +36,23 @@ program plastic_slices
     real(dp), allocatable :: x(:), y(:), t(:), zb(:,:), Hp(:,:), tau(:,:), sd(:,:), zsl(:,:), d(:,:)
     logical,  allocatable :: mask(:,:)
     real(dp) :: m_min, tdef, dx, dy, ca, rms, bias, sle, sle_pm, a0, a1, a10, rmax, rmed
-    real(dp), allocatable :: r(:,:), rr(:)
+    real(dp), allocatable :: r(:,:), rr(:), frac(:,:)
     integer  :: nx, ny, nt, k, stat, n
 
     call get_command_argument(1, hist)
     call get_command_argument(2, tfile)
     call get_command_argument(3, mode)
-    mvar = "f_ice";  m_min = 0.5_dp;  tdef = 5000.0_dp
+    mvar = "f_ice";  m_min = 0.5_dp;  mpos = "sdist";  tdef = 5000.0_dp
     if (command_argument_count() >= 4) call get_command_argument(4, mvar)
     if (command_argument_count() >= 5) then
         call get_command_argument(5, arg);  read(arg, *) m_min
     end if
-    if (command_argument_count() >= 6) then
-        call get_command_argument(6, arg);  read(arg, *) tdef
+    if (command_argument_count() >= 6) call get_command_argument(6, mpos)
+    if (command_argument_count() >= 7) then
+        call get_command_argument(7, arg);  read(arg, *) tdef
     end if
     outf = ""
-    if (command_argument_count() >= 7) call get_command_argument(7, outf)
+    if (command_argument_count() >= 8) call get_command_argument(8, outf)
 
     nx = nc_size(hist, "xc");  ny = nc_size(hist, "yc");  nt = nc_size(hist, "time")
     allocate(x(nx), y(ny), t(nt), zb(nx,ny), Hp(nx,ny), tau(nx,ny), sd(nx,ny), zsl(nx,ny), d(nx,ny), mask(nx,ny))
@@ -60,6 +64,11 @@ program plastic_slices
     call margin_init(mg, trim(hist), trim(mvar), m_min, nx, ny, dx, dy, MARGIN_NEAREST, .false.)
     call taub_read_domains(tb, trim(tfile), "taub_domain", "domain_id", "taub", "taub_t", tdef, .false., nx, ny)
     par%rho_i = RHO_I;  par%rho_w = RHO_SW;  par%g = G;  par%mode = trim(mode)
+    if (trim(mpos) == "sdist") then
+        allocate(frac(nx, ny))
+    else
+        par%margin = trim(mpos)
+    end if
     call plastic_init(ps, nx, ny, dx, dy, par, stat=stat)
     zsl = 0.0_dp
     allocate(r(nx, ny))
@@ -70,8 +79,8 @@ program plastic_slices
         call nc_write_dim(trim(outf), "time", x=-t/1.0e3_dp, units="ka")
     end if
 
-    write(*,"(a,a,a,a,a,a,g0,a,f8.1,a)") "# ", trim(hist), ", mode ", trim(mode), ", margin ", trim(mvar)//" > ", m_min, &
-                                        ", taub_default ", tdef, " Pa"
+    write(*,"(a,a,a,a,a,a,g0,a,a,f8.1,a)") "# ", trim(hist), ", mode ", trim(mode), ", margin ", trim(mvar)//" > ", m_min, &
+                                          " at "//trim(mpos), ", taub_default ", tdef, " Pa"
     write(*,"(a)") "#  t [ka]  rms [m] bias [m]  SLE [m] SLE_pm [m]  A0     A1    A10 [1e6 km2]  stat n_outer n_bad"// &
                    "  res_med res_max"
     do k = 1, nt
@@ -82,14 +91,15 @@ program plastic_slices
         n = count(mask .and. zb < -9000.0_dp)            ! bed missing under the ice
         where (zb < -9000.0_dp) zb = 0.0_dp
         call taub_at(tb, t(k), tau)
-        call plastic_solve(ps, zb, zsl, tau, mask, warm=.false., stat=stat)
+        if (allocated(frac)) call plastic_margin_frac_from_sdist(sd, mask, dx, dy, frac)
+        call plastic_solve(ps, zb, zsl, tau, mask, warm=.false., stat=stat, margin_frac=frac)
         d = ps%H - Hp
         rms  = sqrt(sum(d*d, mask=mask)/max(count(mask), 1))
         bias = sum(d, mask=mask)/max(count(mask), 1)
         sle    = sum(ps%H)*ca*RHO_I/RHO_SW/A_OCN
         sle_pm = sum(Hp)*ca*RHO_I/RHO_SW/A_OCN
         a0 = count(Hp > 0.0_dp)*ca*1.0e-12_dp;  a1 = count(Hp > 1.0_dp)*ca*1.0e-12_dp;  a10 = count(Hp > 10.0_dp)*ca*1.0e-12_dp
-        call plastic_stress_residual(ps, zb, zsl, tau, mask, rmax, r=r)
+        call plastic_stress_residual(ps, zb, zsl, tau, mask, rmax, r=r, margin_frac=frac)
         rr = pack(r, mask .and. ps%H > 0.0_dp)
         rmed = 0.0_dp
         if (size(rr) > 0) rmed = sorted_mid(rr)

@@ -209,6 +209,9 @@
     margin_interp      = "sdist"               ! "sdist": signed distance to the margin, linear between the slices |
                                                ! "nearest": the nearest slice (Gowan et al. 2021 offline)
     margin_extrapolate = "error"               ! outside the slices' (and the tau_b series') time range: "error" | "hold"
+    margin_position    = "sdist"               ! the margin within the cells (library margin_frac): "sdist" (from the
+                                               ! interpolated signed distance: the faces at the slices, moving between
+                                               ! them) | "face" | "centre" (the ice-free cell centre, PlasticIceSheet.jl)
     ! tau_b (drive = "taub")
     taub_method        = "const"               ! "const" | "file" | "domains"
     taub_const         = 0.0                   ! [Pa] "const": the value (> 0)
