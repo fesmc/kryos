@@ -45,8 +45,9 @@ config=dkrz_levante_ifx`). `yelmo=0` is enough for these runs. The library's API
    imported smb / rho_i, and tau_b the driving stress rho_i g H |grad z_srf| for the diagnostics);
    `stat = PLASTIC_NOT_CONVERGED` is a warning with the outer iteration count, the last change and the
    library's message, and the run goes on; `PLASTIC_BAD_INPUT` stops;
-5. the velocity and the smb it implies (`plastic_velocity`, `plastic_smb_implied` with the speed, as
-   Julia's `smb_from_velocity`) when the rheology and the sliding law are set;
+5. with `mass_balance = "implied"` (needs the rheology and the sliding law): the divergence of the steady
+   solver's face fluxes on the new geometry, the outflow through the margin faces to land and to the ocean
+   and the surface velocity of the same closure (`plastic_smb_flux_divergence`; "Implied mass balance" below);
 6. the exports.
 
 The ice is imposed, not integrated: no surface, basal or calving flux. The mass change the margin and the bed
@@ -61,14 +62,16 @@ impose is `mb_net`, so the budget of the global geo (and the sea level) closes.
 | `f_ice` | 1 where H > 0 |
 | `f_grnd` | 1 on the ice (plastic ice is grounded by construction), the flotation rule elsewhere |
 | `dHidt` | (H - H_prev)/(t1 - t0), MEAN |
-| `smb`, `bmb`, `cmb` | 0, MEAN |
+| `smb`, `cmb` | 0, or with `mass_balance = "implied"` the mass balance the geometry needs (below), MEAN |
+| `bmb` | 0, MEAN |
 | `mb_net` | rho_i dHidt [kg m-2 yr-1], MEAN |
 | `M_ice` | rho_i sum(H) dx dy [Gt] |
 | `H_grnd` | H - (rho_w/rho_i)(z_sl - z_bed) (as Yelmo's) |
 | `footprint` | static: 1 where some margin slice has ice (every mask the interpolation gives lies in it) |
 | `z_bed_ref`, `H_ice_pd` | static: the domain's reference bed and ice (present day) |
 | `H_ice_ref` | the reference ice (present day), with the geometry (the row ice -> geo reads it at init) |
-| `ux_s`, `uy_s` | only with rheology and sliding: the velocity of `plastic_velocity` at the cell centres (diagnostic) |
+| `ux_s`, `uy_s` | `mass_balance = "implied"`: the surface velocity of the flux closure at the cell centres (diagnostic) |
+| `smb_tot`, `cmb_tot` | `mass_balance = "implied"`: smb and cmb summed over the grid [Gt yr-1], MEAN |
 
 `z_bed_ref`, `H_ice_ref` (rows ice -> geo, init), `footprint`, `H_ice_pd` and the flotation binding (the gather
 of a host-resolved geo, `gia_check`) are what a geo backend needs from any ice; they are not specific to the
@@ -78,10 +81,35 @@ Flotation binding (`caps%has_flotation`): grounded where rho_i H >= rho_w (z_sl 
 densities.
 
 Own stream `plastic` (`out_plastic`, `<instance>_plastic.nc`, table `ice-plastic`): `H_ice`, `z_srf`, `z_bed`,
-`z_sl`, `mask`, `sdist`, `tau_b`, `taub_domain` (domains), `ux`, `uy`, `smb_implied` (velocity), and the 0-D
+`z_sl`, `mask`, `sdist`, `tau_b`, `taub_domain` (domains), with `mass_balance = "implied"` `div_q`, `q_land`,
+`q_marine` and the 0-D `abl_margin`, `discharge` [Gt yr-1], and the 0-D
 `converged`, `n_outer_used` and the stress residual `stress_res_median`, `stress_res_max`
 (`plastic_stress_residual`: |rho_i g H |grad z_srf| - tau_b| / tau_b over the ice, cell-centred, so 1 at the first
 ice cell by construction) of the last solve, computed when the stream is written.
+
+## Implied mass balance
+
+`mass_balance = "implied"`: the mass balance the reconstructed geometry needs, from the flux of a flow closure
+(Glen's law `rheo_A`, `rheo_n` and a sliding law `slide_*`). The flux is the membrane-free DIVA flux of the
+library's steady SMB-driven solver, q = -H (u_b(tau) + 2A/(n+2) tau^n H) grad s / |grad s|, tau = rho_i g H
+|grad s|, on staggered faces, with a one-sided flux from the last ice cell to the margin
+(`plastic_smb_flux_divergence`, PlasticIceSheet `docs/fortran-port.md`). After each solve: div q per ice cell
+and the outflow through its margin faces, `q_land` where the ice-free neighbour's bed is above sea level,
+`q_marine` where it is below (both >= 0; their sum over the grid equals that of div q). The exports, MEAN over
+the step [kg m-2 yr-1]:
+
+- on the ice: smb = rho_i (dHidt + div q - q_land) (the outflow to land ablated in the margin cell: a sub-grid
+  ablation zone), cmb = -rho_i q_marine (calving);
+- on the cells the ice left over the step: their loss rho_i dHidt, as cmb where the bed lies below sea level,
+  else as smb;
+- so smb + cmb summed over the grid is mb_net (the mass change the margin and the bed impose); `smb_tot`,
+  `cmb_tot` the sums [Gt yr-1].
+
+div q and the outflow are those of the geometry at t1. The magnitude scales with the closure (A, sliding): the
+implied mass balance is what this geometry needs with that flow law, not a climate. `ux_s`, `uy_s`: the
+surface velocity of the same closure, u_b(tau) + 2A/(n+1) tau^n H along -grad s (central slopes), for the
+comparison with observed speeds. The velocity-routing path (`plastic_velocity`, `plastic_smb_implied`) is not
+used.
 
 ## Margin chronology
 
@@ -193,8 +221,9 @@ continuous one), `H_prev` and `z_srf`, lossless; the read checks the grid and th
 | `taub_override`, `taub_default` | `""`, 0 | `"domains"` |
 | `taub_domain_factor_file` | `""` | `"domains"`: the factor per domain (above), before the scale groups |
 | `taub_scale_file` | `""` | `"domains"`: the multipliers per scale group (above) |
-| `rheo_A`, `rheo_n` | 0, 3 | Glen rate factor [Pa-n yr-1] (0: no velocity), exponent |
+| `rheo_A`, `rheo_n` | 0, 3 | Glen rate factor [Pa-n yr-1] (0: no closure), exponent |
 | `slide_law` | `"none"` | `"linear"`, `"weertman"` (`slide_beta`, `slide_m`), `"coulomb"` (`slide_C`, `slide_u0`, `slide_m`) |
+| `mass_balance` | `"none"` | `"implied"`: smb, cmb, smb_tot, cmb_tot, ux_s, uy_s from the flux closure (needs `rheo_A`, `slide_law`) |
 | `out_plastic` | `"none"` | schedule of the stream `plastic` |
 
 A density other than the run's `rho_ice` / `rho_sw` is logged as a warning: the ice mass the globe gathers for
