@@ -1,7 +1,8 @@
 # Global maps of kryos plastic runs (included as a module by plastic_lgm_map.jl and plastic_ensemble_sd_map.jl): the Equal Earth
 # projection (Savric et al. 2018, written out here: no GeoMakie), fields on structured meshes drawn as triangles, contours, the VILMA2
 # fields of a run at an age (geo_glob_vilma.nc), the 2-D fields of its plastic instances (<instance>.nc with the grid's lon2D, lat2D),
-# coastlines, ice margins, and the GAPSLIP 2.1 index points scored by pm_compare.jl.
+# coastlines, ice margins, and the GAPSLIP 2.1 index points scored by pm_compare.jl. Regional fields: H_ice, z_srf - z_sl and,
+# when written (mass_balance = "implied"), smb and cmb.
 using CairoMakie, NCDatasets, Printf, Statistics
 
 module PM
@@ -94,11 +95,14 @@ function read_regional(run, age; need = true)
             t = Float64.(ds["time"][:]); k = findfirst(x -> abs(x + age) < 1, t)
             k === nothing && (need ? error("$(f): no record at $(age) years ago (2-D output?)") : return nothing)
             g(v) = Float64.(nomissing(ds[v][:, :, k], NaN))
-            (H = g("H_ice"), zs = g("z_srf") .- g("z_sl"))
+            gi(v) = haskey(ds, v) ? g(v) : fill(NaN, size(ds["H_ice"])[1:2])
+            (H = g("H_ice"), zs = g("z_srf") .- g("z_sl"), smb = gi("smb"), cmb = gi("cmb"))
         end
         r === nothing && continue
         ll = gridll(dom, grid)
-        push!(out, (inst = inst, grid = grid, lon = ll.lon, lat = ll.lat, P = ll.P, H = r.H, zs = r.zs))
+        area = NCDataset(ds -> Float64.(ds["area"][:, :]), joinpath(FES, dom, grid, "$(grid)_grid.nc"))
+        push!(out, (inst = inst, grid = grid, lon = ll.lon, lat = ll.lat, P = ll.P, H = r.H, zs = r.zs, smb = r.smb, cmb = r.cmb,
+                     area = area))
     end
     out
 end

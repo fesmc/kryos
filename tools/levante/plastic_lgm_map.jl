@@ -1,5 +1,5 @@
 # Maps of a kryos plastic run, after Gowan et al. (2021, Fig. 2) (docs/dev/plastic-backend.md; drawing in plastic_mapkit.jl):
-#   julia --project=<julia-plot> tools/levante/plastic_lgm_map.jl <run folder> <out.png> [mode=age|margins] [age=20000] [window=2500]
+#   julia --project=<julia-plot> tools/levante/plastic_lgm_map.jl <run folder> <out.png> [mode=age|margins|smb] [age=20000] [window=2500]
 #         [ages=25000,20000,15000,12500,10000,7500] [label=<text>] [lon0=0]
 # mode = age (default): the run at one age: the ice surface elevation above the sea level of that age (the plastic instances on their
 #   grids, needs their 2-D output; the rest of the world's ice from VILMA2's load), the relative sea level of that age against today over
@@ -7,6 +7,8 @@
 #   and the GAPSLIP 2.1 sites with index points of ages within age +- window, coloured by the RMS of z_m of those points.
 # mode = margins: the target margins at the ages (isochrones), the coastline of today, and every site with index points coloured by the
 #   RMS of z_m over all its points (0-80 kyr).
+# mode = smb: the implied mass balance at the age (mass_balance = "implied"): smb on the ice [m w.e. yr-1] (the land-margin
+#   ablation in the margin cells), the totals of smb and cmb per instance [Gt yr-1], the target margin and the coastlines.
 # z_m = d / sqrt(sigma^2 + sigma_m^2), sigma_m 5 m. Triangles: the ice-sheet groups (Laurentide, Greenland, Fennoscandia/Barents,
 # Antarctica); circles: the far field.
 include(joinpath(@__DIR__, "plastic_mapkit.jl"))
@@ -75,8 +77,28 @@ elseif mode == "margins"
              MarkerElement(marker = :circle, color = :white, strokecolor = :black, strokewidth = 0.9, markersize = 18)]
     axislegend(ax, elems, ["ice-sheet sites", "far-field sites"], position = :lb, labelsize = 20, framevisible = true,
                backgroundcolor = (:white, 0.85))
+elseif mode == "smb"
+    # the implied mass balance at the age (mass_balance = "implied"): smb on the ice [m w.e. yr-1], the margin cells' land ablation
+    # included; the totals [Gt yr-1] of smb and cmb (calving) per instance
+    G = read_global(run, age); R = read_regional(run, age)
+    all(r -> all(isnan, r.smb), R) && error("$(run): no smb in the 2-D ice output (mass_balance = \"implied\", out_vars)")
+    tot(r, F) = sum(F[isfinite.(F)] .* r.area[isfinite.(F)]) * 1e-12
+    txt = join([@sprintf("%s: SMB %.0f, calving %.0f", r.inst, tot(r, r.smb), tot(r, r.cmb)) for r in R], ";  ")
+    fig = Figure(size = (2300, 1150))
+    ax = mapaxis(fig[1, 1], title = "$label: implied mass balance at $(kyr(age))", titlesize = 34,
+                 subtitle = "[Gt yr-1] " * txt, subtitlesize = 22)
+    graticule!(ax)
+    SMBMAP = cgrad([RGBf(0.70, 0.13, 0.15), RGBf(0.97, 0.97, 0.97), RGBf(0.13, 0.35, 0.65)])
+    sms = [meshfield!(ax, r.P, r.smb ./ 1000.0, r.H .> 1, colormap = SMBMAP, colorrange = (-1, 1),   # m w.e. yr-1
+                      lowclip = RGBf(0.4, 0.0, 0.05), highclip = RGBf(0.03, 0.15, 0.40)) for r in R]
+    sm = something(sms...)
+    coasts!(ax, G); margins!(ax, R); frame!(ax)
+    Colorbar(fig[1, 2][1, 1], sm, label = "implied SMB [m w.e. yr-1]", height = Relative(0.85), labelsize = 24)
+    elems = [LineElement(color = MARGIN, linewidth = 2.5), LineElement(color = :black, linewidth = 1.5), LineElement(color = :gray35)]
+    axislegend(ax, elems, ["target ice margin", "coast at $(kyr(age))", "coast today"], position = :lb, labelsize = 20,
+               framevisible = true, backgroundcolor = (:white, 0.85))
 else
-    error("mode: age or margins")
+    error("mode: age, margins or smb")
 end
 colsize!(fig.layout, 2, Auto(0.08))
 save(outpng, fig, px_per_unit = 1.3)
