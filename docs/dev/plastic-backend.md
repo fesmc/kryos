@@ -213,7 +213,7 @@ shelf.
 
 Build: kryos `plastic=1 yelmo=0 vilma=1` (stack S11 dependencies) against PlasticIceSheet `fortran-port`
 (`/work/ba1442/robinson/PlasticIceSheet-fortran/ifx`); runs in `/work/ba1442/robinson/kryos-ice-plastic/runs`.
-tau_b: `NH-32KM_IceHistory-PaleoMIST_taub.nc` (`/work/ba1442/robinson/fesmdata-taub`, not yet in FesmData),
+tau_b: `NH-32KM_IceHistory-PaleoMIST_taub.nc` (FesmData IceHistory v2.3.0),
 domains with the time series, `taub_default` 5000 Pa; the margin `H_ice` > 1 m (the default is now `f_ice` > 0.5).
 
 **Fixed bed** (`par/kryos_North_plastic.nml`: today's bed, z_sl = 0, 80 ka -> 0, dtt = 100 yr, 800 solves): 25 s on
