@@ -9,6 +9,11 @@ module kryos_plastic_taub
     !              table (codes, values) overrides the value of some ids, constant in time, or gives ids of
     !              the map the file has no value for; every id of the map must then have one. Cells without
     !              a domain take `default` (0: such a cell in the ice mask stops the solve, kryos_ice_plastic).
+    !
+    ! "domains" may be scaled (taub_scale_file, the calibration of tools/levante/plastic_esmda.jl): each id
+    ! belongs to a scale group (0 = unscaled) and its value, after the override table, is multiplied by
+    ! exp(log_factor(group, t)), linear in t between the nodes of the groups and held outside them. The
+    ! default of the cells without a domain is not scaled.
 
     use precision, only: dp
     use fesm_log,  only: fesm_error, to_str
@@ -33,11 +38,16 @@ module kryos_plastic_taub
         real(dp), allocatable :: val(:)              ! [Pa] their static value
         real(dp), allocatable :: val_t(:,:)          ! [Pa] (id, time): their series; unallocated: static
         real(dp), allocatable :: time(:)             ! [yr] model time of the series, increasing
+        integer,  allocatable :: sgrp(:)             ! the scale group of each id (0: unscaled); unallocated: no scaling
+        real(dp), allocatable :: stime(:)            ! [yr] model time of the scale nodes, increasing
+        real(dp), allocatable :: slf(:,:)            ! (group, node): natural log of the multiplier
+        character(len=512) :: ssrc = ""              ! messages: the scale file
         character(len=512) :: src = ""               ! messages
     end type taub_t
 
     public :: taub_method_code, taub_set_const, taub_set_field, taub_read_field
     public :: taub_set_domains, taub_read_domains, taub_at
+    public :: taub_set_scale, taub_read_scale, taub_scale_at
 
 contains
 
@@ -262,6 +272,7 @@ contains
             tau = tb%field
         case (TAUB_M_DOMAINS)
             v = values_at(tb, t)
+            if (allocated(tb%sgrp)) call scale_values(tb, t, v)
             do j = 1, size(tau, 2)
                 do i = 1, size(tau, 1)
                     if (tb%idx(i,j) > 0) then
@@ -275,6 +286,130 @@ contains
             call fesm_error("kryos_plastic_taub::taub_at", "tau_b is not set", trim(tb%src))
         end select
     end subroutine taub_at
+
+    subroutine taub_set_scale(tb, ids, grp, time, log_factor, src)
+        ! The multipliers of "domains" (set before): the scale group `grp` of the domain ids `ids` (0 =
+        ! unscaled) and log_factor(group, node) at model times `time` [yr] (any order, distinct). An id of
+        ! tb without an entry is unscaled; an id with a group > 0 must be a domain of tb.
+        type(taub_t),     intent(inout) :: tb
+        integer,          intent(in)    :: ids(:), grp(:)
+        real(dp),         intent(in)    :: time(:), log_factor(:,:)
+        character(len=*), intent(in)    :: src
+
+        character(len=*), parameter :: proc = "kryos_plastic_taub::taub_set_scale"
+        integer, allocatable :: p(:)
+        integer :: k, q, ng
+
+        if (tb%method /= TAUB_M_DOMAINS) call fesm_error(proc, "a tau_b scale needs taub_method = 'domains'", trim(src))
+        ng = size(log_factor, 1)
+        if (size(ids) /= size(grp)) call fesm_error(proc, "one group per domain id is needed", trim(src))
+        if (ng == 0 .or. size(time) == 0 .or. size(log_factor, 2) /= size(time)) then
+            call fesm_error(proc, "log_factor is not (group, node) with at least one of each", trim(src)// &
+                            ": "//to_str(size(log_factor, 1))//" x "//to_str(size(log_factor, 2))//", "// &
+                            to_str(size(time))//" nodes")
+        end if
+        if (any(grp < 0 .or. grp > ng)) call fesm_error(proc, "a group is outside 0 (unscaled) to "//to_str(ng), &
+                                                       trim(src))
+        if (.not. all(abs(log_factor) <= huge(1.0_dp))) call fesm_error(proc, "log_factor is not finite", trim(src))
+        p = time_order(time)
+        do k = 2, size(p)
+            if (.not. time(p(k)) > time(p(k-1))) call fesm_error(proc, "two nodes have the same time", trim(src))
+        end do
+
+        allocate(tb%sgrp(size(tb%ids)))
+        tb%sgrp = 0
+        do k = 1, size(ids)
+            if (count(ids == ids(k)) > 1) call fesm_error(proc, "domain id "//to_str(ids(k))//" is listed twice", &
+                                                         trim(src))
+            q = findloc(tb%ids, ids(k), dim=1)
+            if (q > 0) then
+                tb%sgrp(q) = grp(k)
+            else if (grp(k) > 0) then
+                call fesm_error(proc, "domain id "//to_str(ids(k))//" (group "//to_str(grp(k))//") has no tau_b", &
+                                trim(src)//"; tau_b "//trim(tb%src))
+            end if
+        end do
+        tb%stime = time(p)
+        tb%slf   = log_factor(:, p)
+        tb%ssrc  = src
+    end subroutine taub_set_scale
+
+    subroutine taub_read_scale(tb, file)
+        ! The multiplier file: group(domain) the scale group of each id (0 = unscaled), domain_id(domain),
+        ! time(node) [its units: "years ago", "ka BP", ...], log_factor(scale_group, node).
+        type(taub_t),     intent(inout) :: tb
+        character(len=*), intent(in)    :: file
+
+        character(len=*), parameter :: proc = "kryos_plastic_taub::taub_read_scale"
+        character(len=64), allocatable :: names(:)
+        integer,  allocatable :: dims(:), ids(:), grp(:)
+        real(dp), allocatable :: t(:), lf(:,:)
+        character(len=256) :: units
+        integer :: nd
+        logical :: exists
+
+        inquire(file=trim(file), exist=exists)
+        if (.not. exists) call fesm_error(proc, "the tau_b scale file does not exist", "taub_scale_file = "//trim(file))
+        call nc_dims(file, "domain_id", names, dims)
+        if (size(dims) /= 1) call fesm_error(proc, "`domain_id` is not a list of ids (1-D)", trim(file))
+        nd = dims(1)
+        call nc_dims(file, "group", names, dims)
+        if (size(dims) /= 1 .or. dims(1) /= nd) call fesm_error(proc, "`group` is not one group per domain_id", trim(file))
+        call nc_dims(file, "time", names, dims)
+        if (size(dims) /= 1) call fesm_error(proc, "`time` is not a list of nodes (1-D)", trim(file))
+        allocate(t(dims(1)))
+        call nc_dims(file, "log_factor", names, dims)
+        if (size(dims) /= 2) call fesm_error(proc, "`log_factor` is not (scale_group, node)", trim(file))
+        if (dims(2) /= size(t)) call fesm_error(proc, "`log_factor` is not (scale_group, node): "//to_str(dims(2))// &
+                                               " nodes, `time` "//to_str(size(t)), trim(file))
+        allocate(ids(nd), grp(nd), lf(dims(1), dims(2)))
+        call nc_read(file, "domain_id", ids)
+        call nc_read(file, "group", grp)
+        call nc_read(file, "time", t)
+        units = ""
+        call nc_read_attr(file, "time", "units", units)
+        call nc_read(file, "log_factor", lf)
+        call taub_set_scale(tb, ids, grp, model_time_axis(t, units), lf, trim(file))
+    end subroutine taub_read_scale
+
+    function taub_scale_at(tb, t) result(f)
+        ! log_factor of each group at model time t [yr]: linear between the nodes, held outside.
+        type(taub_t), intent(in) :: tb
+        real(dp),     intent(in) :: t
+        real(dp) :: f(size(tb%slf, 1))
+
+        integer  :: k, n
+        real(dp) :: a
+
+        n = size(tb%stime)
+        if (t <= tb%stime(1)) then
+            f = tb%slf(:, 1)
+        else if (t >= tb%stime(n)) then
+            f = tb%slf(:, n)
+        else
+            k = 1
+            do while (tb%stime(k+1) <= t)
+                k = k + 1
+            end do
+            a = (t - tb%stime(k)) / (tb%stime(k+1) - tb%stime(k))
+            f = (1.0_dp - a)*tb%slf(:, k) + a*tb%slf(:, k+1)
+        end if
+    end function taub_scale_at
+
+    subroutine scale_values(tb, t, v)
+        ! v(id) times exp(log_factor) of its group at t (group 0: unchanged).
+        type(taub_t), intent(in)    :: tb
+        real(dp),     intent(in)    :: t
+        real(dp),     intent(inout) :: v(:)
+
+        real(dp), allocatable :: m(:)
+        integer :: k
+
+        m = exp(taub_scale_at(tb, t))
+        do k = 1, size(v)
+            if (tb%sgrp(k) > 0) v(k) = v(k)*m(tb%sgrp(k))
+        end do
+    end subroutine scale_values
 
     function values_at(tb, t) result(v)
         ! The value of each id at t: static, or the series linear in time.

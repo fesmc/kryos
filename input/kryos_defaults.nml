@@ -224,6 +224,9 @@
                                                ! those ids, constant in time; "" = none
     taub_default       = 0.0                   ! [Pa] "domains": cells without a domain; 0 = none (such a cell in the
                                                ! ice mask stops the run)
+    taub_scale_file    = ""                    ! "domains": multipliers of tau_b per scale group, time dependent (the
+                                               ! calibration, tools/levante/plastic_esmda.jl; {domain}, {grid_name});
+                                               ! "" = none
     ! rheology and sliding (the velocity diagnostics ux_s, uy_s and smb_implied; drive = "smb")
     rheo_A             = 0.0                   ! [Pa-n yr-1] Glen rate factor; 0 = no velocity
     rheo_n             = 3.0                   ! Glen exponent
