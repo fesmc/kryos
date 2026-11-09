@@ -1,7 +1,7 @@
 # The present-day ice thickness of the plastic backend against the observations, per region (docs/dev/plastic-backend.md, "Calibration
 # v2"): the topography hubs of FesmData (NH-32KM: TOPO-GEBCO2026, Greenland from BedMachine v6, elsewhere IceBoost v2 or GEBCO;
-# ANT-16KM: TOPO-BedMachine-v4) and the regions of their REGIONS maps. Included by plastic_taub_fit_report.jl and
-# plastic_esmda_report.jl; as a script, the table of a kryos run (its ice_nor.nc and ice_ant.nc at 0 ka, H_ice):
+# ANT-16KM: TOPO-BedMachine-v4; PAT-PAL-8KM: TOPO-GEBCO2026, IceBoost v2 or GEBCO) and the regions of their REGIONS maps. Included
+# by plastic_taub_fit_report.jl and plastic_esmda_report.jl; as a script, the table of a kryos run (its ice_<instance>.nc at 0 ka):
 #   julia --project=<tools> tools/levante/plastic_pd_regions.jl <run dir> [<fesmdata>]
 # Compared over the cells of the model's ice (the 0 ka margin) where the observation is not floating (the fit cells of Stage 1):
 # volume [m SLE] of both, mean and rms of H - H_obs [m]; and the observed ice outside the margin (not representable).
@@ -17,7 +17,9 @@ const PD_GRIDS = Dict(
                              ("British Isles", "region_3", [10202]), ("Asia", "region_2", [104])]),
     "ANT-16KM" => (domain = "Antarctica", topo = "ANT-16KM_TOPO-BedMachine-v4.nc", instance = "ice_ant",
                    regions = [("West Antarctica", "region_3", [20101]), ("East Antarctica", "region_3", [20102]),
-                              ("Antarctic Peninsula", "region_3", [20103])]))
+                              ("Antarctic Peninsula", "region_3", [20103])]),
+    "PAT-PAL-8KM" => (domain = "PatagoniaPaleo", topo = "PAT-PAL-8KM_TOPO-GEBCO2026.nc", instance = "ice_pat",
+                      regions = [("Patagonia", "region_2", [202])]))
 
 # the observations and regions of a grid: H_obs, the observed mask (3 = floating), the source of each cell, the region masks
 function pd_obs(fes, grid)
