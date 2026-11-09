@@ -1,0 +1,75 @@
+# Calibration v2 of tau_b of the plastic ice backend (docs/dev/plastic-backend.md, "Calibration v2"): per-group, time-varying
+# multipliers on Gowan et al. (2021)'s tau_b times the per-domain factors of the present-day fit (Stage 1), NH-32KM and ANT-16KM,
+# against the GAPSLIP 2.1 sea-level index points with a correlated observation error, VILMA2 in the loop, by ES-MDA.
+#   tools/levante/plastic_esmda.sh start tools/levante/plastic_esmda_v2.toml <calibration folder>
+
+[scale]                                  # the parameters: plastic_taub_scale.jl
+taub_files     = ["/work/ba1442/fesmdata/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST_taub.nc",
+                  "/work/ba1442/fesmdata/Antarctica/ANT-16KM/ANT-16KM_IceHistory-PaleoMIST_taub.nc"]
+regions_files  = ["/work/ba1442/fesmdata/North/NH-32KM/NH-32KM_REGIONS.nc",
+                  "/work/ba1442/fesmdata/Antarctica/ANT-16KM/ANT-16KM_REGIONS.nc"]
+regions_var    = "region_2"
+greenland_code = 103                     # Greenland in region_2 (FesmData Regions v2)
+nodes_ka       = [80, 60, 40, 25, 20, 15, 10, 5, 0]
+pinned_ka      = [0]                     # log factor 0 in every group, no parameter: the present day is Stage 1's fit
+
+[[scale.groups]]
+name      = "Laurentide"                 # North America without Greenland
+region    = 1
+greenland = false
+
+[[scale.groups]]
+name      = "Greenland"
+region    = 1
+greenland = true
+tie       = [[80, 60]]                   # nodes sharing one parameter: no index points before 44 ka in Greenland
+
+[[scale.groups]]
+name   = "Eurasia"
+region = 2
+tie    = [[80, 60, 40]]                  # no index points before 25 ka in Fennoscandia/Barents
+
+[[scale.groups]]
+name   = "Antarctica"                    # all of Gowan's region 3: WAIS/EAIS do not split cleanly (domain 3694, 952 cells: 71 % West)
+region = 3
+tie    = [[80, 60, 40, 25, 20]]          # the 47 index points are 0.5-7.4 ka: one parameter up to the LGM, then 15, 10, 5 ka
+
+[prior]                                  # log factors: N(0, C), sd ramped from 0 at 0 ka, exponential correlation in time within a group
+sigma         = 0.3
+ramp_ka       = 10.0                     # sd = sigma sin^2(pi t / 20 ka) below 10 ka: 0 at 0 ka, 0.15 at 5 ka, sigma from 10 ka
+corr_time_kyr = 20.0
+seed          = 1
+theta_max     = 1.5                      # every member clipped to |theta| <= theta_max (factor 0.22-4.5)
+
+[esmda]
+ne            = 40                       # ensemble members (and a mean member, m000, in every iteration)
+alpha         = [9.333, 7.0, 4.0, 2.0]   # inflation per iteration (sum of 1/alpha = 1)
+final         = "mean"                   # after the last update: run the posterior mean member
+obs_groups    = ["Laurentide", "Greenland", "Fennoscandia/Barents", "Antarctica", "far field"]   # pm_compare.jl's GROUPS
+sigma_m       = 5.0                      # [m] model error, R = diag(sigma_i^2) + sigma_m^2 C
+corr_dist_km  = 150.0                    # C_ij = exp(-dist_ij / 150 km) exp(-|t_i - t_j| / 2 kyr)
+corr_time_kyr = 2.0
+z_cut         = 5.0                      # gross-error cut at the prior mean member (iteration 1, fixed): |d| / sqrt(R_ii) > z_cut
+min_members   = 0.5                      # stop when fewer than this fraction of the ensemble members succeed
+
+[run]                                    # each member: a kryos run of this par file with its multiplier file
+kryos_dir  = "/work/ba1442/robinson/kryos-ice-plastic"   # its libkryos/bin/kryos.x and input/ are copied at init
+par        = "par/kryos_NH-ANT_plastic_vilma2_b1.nml"
+set_nml    = "/work/ba1442/robinson/kryos-gate/tools/set_nml.py"
+set        = ['kryos.restart_out="none"', 'ice_nor.out_2D="none"', 'ice_nor.out_plastic="none"', 'ice_ant.out_2D="none"',
+              'ice_ant.out_plastic="none"', 'geo_nor.out_2D="none"', 'geo_ant.out_2D="none"', 'geo_glob.out_2D="none"']
+                                         # outputs: geo_glob_vilma.nc (2.5 kyr) and the 1-D series only
+scale_keys = ["ice_nor.taub_scale_file", "ice_ant.taub_scale_file"]       # one multiplier file for both instances
+domain_factor_file = "/work/ba1442/robinson/kryos-ice-plastic/runs/taub-fit/taub_domain_factor.nc"   # Stage 1 (frozen at init)
+domain_factor_keys = ["ice_nor.taub_domain_factor_file", "ice_ant.taub_domain_factor_file"]
+final_set  = ['ice_nor.out_2D="out_2D"', 'ice_ant.out_2D="out_2D"']        # the posterior mean member: H_ice every 2.5 kyr
+maps       = "/work/ba1442/robinson/kryos-ice-plastic-maps"
+threads    = 8                           # VILMA2 barely scales: 8 threads ~12.5 min, 64 ~8 min (2026-11-09)
+mem        = "10G"                       # the shared partition bills max(cpus, mem / 0.9 GB): ~12 cpus
+time       = "01:00:00"
+partition  = "shared"
+account    = "ba1442"
+throttle   = 29                          # members running at once; 29 + the queued analysis = 30 jobs max (Alex, 2026-11-09)
+
+[score]
+fesmdata = "/work/ba1442/fesmdata"
