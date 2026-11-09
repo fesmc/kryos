@@ -10,10 +10,12 @@ module kryos_plastic_taub
     !              the map the file has no value for; every id of the map must then have one. Cells without
     !              a domain take `default` (0: such a cell in the ice mask stops the solve, kryos_ice_plastic).
     !
-    ! "domains" may be scaled (taub_scale_file, the calibration of tools/levante/plastic_esmda.jl): each id
-    ! belongs to a scale group (0 = unscaled) and its value, after the override table, is multiplied by
-    ! exp(log_factor(group, t)), linear in t between the nodes of the groups and held outside them. The
-    ! default of the cells without a domain is not scaled.
+    ! "domains" may be scaled. A factor per domain (taub_domain_factor_file, the present-day fit of
+    ! tests/plastic_taub_fit.f90): the value of an id, after the override table, times exp(log_factor(id)),
+    ! constant in time. Then the scale groups (taub_scale_file, the calibration of
+    ! tools/levante/plastic_esmda.jl): each id belongs to a scale group (0 = unscaled) and its value is
+    ! multiplied by exp(log_factor(group, t)), linear in t between the nodes of the groups and held outside
+    ! them. The default of the cells without a domain is scaled by neither.
 
     use precision, only: dp
     use fesm_log,  only: fesm_error, to_str
@@ -41,6 +43,8 @@ module kryos_plastic_taub
         integer,  allocatable :: sgrp(:)             ! the scale group of each id (0: unscaled); unallocated: no scaling
         real(dp), allocatable :: stime(:)            ! [yr] model time of the scale nodes, increasing
         real(dp), allocatable :: slf(:,:)            ! (group, node): natural log of the multiplier
+        real(dp), allocatable :: dfac(:)             ! the factor of each id (exp of its log factor); unallocated: none
+        character(len=512) :: dsrc = ""              ! messages: the domain factor file
         character(len=512) :: ssrc = ""              ! messages: the scale file
         character(len=512) :: src = ""               ! messages
     end type taub_t
@@ -48,6 +52,7 @@ module kryos_plastic_taub
     public :: taub_method_code, taub_set_const, taub_set_field, taub_read_field
     public :: taub_set_domains, taub_read_domains, taub_at
     public :: taub_set_scale, taub_read_scale, taub_scale_at
+    public :: taub_set_domain_factor, taub_read_domain_factor
 
 contains
 
@@ -272,6 +277,7 @@ contains
             tau = tb%field
         case (TAUB_M_DOMAINS)
             v = values_at(tb, t)
+            if (allocated(tb%dfac)) v = v*tb%dfac
             if (allocated(tb%sgrp)) call scale_values(tb, t, v)
             do j = 1, size(tau, 2)
                 do i = 1, size(tau, 1)
@@ -371,6 +377,65 @@ contains
         call nc_read(file, "log_factor", lf)
         call taub_set_scale(tb, ids, grp, model_time_axis(t, units), lf, trim(file))
     end subroutine taub_read_scale
+
+    subroutine taub_set_domain_factor(tb, ids, log_factor, src)
+        ! The factor per domain of "domains" (set before, with its override table): exp(log_factor) of the
+        ! domain ids `ids`, constant in time. An id of tb without an entry keeps factor 1; an id of the list
+        ! that tb has no tau_b for must have log_factor 0.
+        type(taub_t),     intent(inout) :: tb
+        integer,          intent(in)    :: ids(:)
+        real(dp),         intent(in)    :: log_factor(:)
+        character(len=*), intent(in)    :: src
+
+        character(len=*), parameter :: proc = "kryos_plastic_taub::taub_set_domain_factor"
+        integer :: k, q
+
+        if (tb%method /= TAUB_M_DOMAINS) call fesm_error(proc, "a domain factor needs taub_method = 'domains'", trim(src))
+        if (size(ids) /= size(log_factor)) call fesm_error(proc, "one log_factor per domain id is needed", trim(src))
+        if (.not. all(abs(log_factor) <= huge(1.0_dp))) call fesm_error(proc, "log_factor is not finite", trim(src))
+        if (allocated(tb%dfac)) deallocate(tb%dfac)
+        allocate(tb%dfac(size(tb%ids)))
+        tb%dfac = 1.0_dp
+        do k = 1, size(ids)
+            if (count(ids == ids(k)) > 1) call fesm_error(proc, "domain id "//to_str(ids(k))//" is listed twice", &
+                                                         trim(src))
+            q = findloc(tb%ids, ids(k), dim=1)
+            if (q > 0) then
+                tb%dfac(q) = exp(log_factor(k))
+            else if (log_factor(k) /= 0.0_dp) then
+                call fesm_error(proc, "domain id "//to_str(ids(k))//" (log_factor "//to_str(log_factor(k))// &
+                                ") has no tau_b", trim(src)//"; tau_b "//trim(tb%src))
+            end if
+        end do
+        tb%dsrc = src
+    end subroutine taub_set_domain_factor
+
+    subroutine taub_read_domain_factor(tb, file)
+        ! The domain factor file: domain_id(domain), log_factor(domain) (natural log of the factor).
+        type(taub_t),     intent(inout) :: tb
+        character(len=*), intent(in)    :: file
+
+        character(len=*), parameter :: proc = "kryos_plastic_taub::taub_read_domain_factor"
+        character(len=64), allocatable :: names(:)
+        integer,  allocatable :: dims(:), ids(:)
+        real(dp), allocatable :: lf(:)
+        integer :: nd
+        logical :: exists
+
+        inquire(file=trim(file), exist=exists)
+        if (.not. exists) call fesm_error(proc, "the tau_b domain factor file does not exist", &
+                                          "taub_domain_factor_file = "//trim(file))
+        call nc_dims(file, "domain_id", names, dims)
+        if (size(dims) /= 1) call fesm_error(proc, "`domain_id` is not a list of ids (1-D)", trim(file))
+        nd = dims(1)
+        call nc_dims(file, "log_factor", names, dims)
+        if (size(dims) /= 1 .or. dims(1) /= nd) call fesm_error(proc, "`log_factor` is not one value per domain_id", &
+                                                               trim(file))
+        allocate(ids(nd), lf(nd))
+        call nc_read(file, "domain_id", ids)
+        call nc_read(file, "log_factor", lf)
+        call taub_set_domain_factor(tb, ids, lf, trim(file))
+    end subroutine taub_read_domain_factor
 
     function taub_scale_at(tb, t) result(f)
         ! log_factor of each group at model time t [yr]: linear between the nodes, held outside.

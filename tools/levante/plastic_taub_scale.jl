@@ -4,11 +4,13 @@
 # writes a multiplier file with that log factor for every group and node (default 0: Gowan's tau_b), and <out>.groups.csv.
 # Included by plastic_esmda.jl (scale_groups, write_scale).
 #
+# Grids: `taub_files` (the tau_b products of the grids the calibrated instances run on, all with the same domains; or one
+# `taub_file`) and `regions_files` (their REGIONS maps; or `regions_file`): cells are counted over all of them.
 # Groups: [[scale.groups]] in order, each with `name`, `region` (Gowan's region of the domain: 1 North America incl. Greenland,
 # 2 Eurasia, 3 Antarctica) and optionally `greenland` (true/false): a domain is in Greenland when more than half of its cells on
-# the grid lie in the Greenland region of the REGIONS map (`regions_var` = `greenland_code`, FesmData Regions v2: region_2 = 103,
+# the grids lie in the Greenland region of the REGIONS maps (`regions_var` = `greenland_code`, FesmData Regions v2: region_2 = 103,
 # a partition of land and shelf by territory). A domain matching no group is unscaled (group 0); one matching two stops.
-# Nodes: `nodes_ka` [ka BP], any order.
+# Nodes: `nodes_ka` [ka BP], any order. `pinned_ka` (plastic_esmda.jl): nodes held at log factor 0 in every group.
 #
 # File: dimensions domain, scale_group, node; domain_id(domain), group(domain) (0 = unscaled), time(node) ["years ago"],
 # log_factor(scale_group, node) (natural log of the multiplier); attribute group_names.
@@ -27,14 +29,24 @@ ngroups(sg::ScaleGroups) = length(sg.names)
 nnodes(sg::ScaleGroups) = length(sg.nodes_ka)
 
 function scale_groups(sc::AbstractDict)
-    ids, region, dom = NCDataset(sc["taub_file"]) do ds
-        Int.(ds["domain_id"][:]), Int.(ds["region"][:]), Int.(nomissing(ds["taub_domain"][:, :], -9999))
-    end
-    reg = NCDataset(ds -> Int.(nomissing(ds[get(sc, "regions_var", "region_2")][:, :], -9999)), sc["regions_file"])
-    size(reg) == size(dom) || error("the REGIONS map is not on the grid of the tau_b product: $(size(reg)), $(size(dom))")
+    tfiles = haskey(sc, "taub_files") ? String.(sc["taub_files"]) : [String(sc["taub_file"])]
+    rfiles = haskey(sc, "regions_files") ? String.(sc["regions_files"]) : [String(sc["regions_file"])]
+    length(tfiles) == length(rfiles) || error("one REGIONS map per tau_b product is needed: $(tfiles), $(rfiles)")
     gcode = get(sc, "greenland_code", 103)
-    n = [count(==(d), dom) for d in ids]
-    fg = [n[i] == 0 ? 0.0 : count((dom .== d) .& (reg .== gcode)) / n[i] for (i, d) in enumerate(ids)]
+    ids, region = NCDataset(ds -> (Int.(ds["domain_id"][:]), Int.(ds["region"][:])), tfiles[1])
+    n = zeros(Int, length(ids)); ng = zeros(Int, length(ids))
+    for (tf, rf) in zip(tfiles, rfiles)
+        i2, dom = NCDataset(ds -> (Int.(ds["domain_id"][:]), Int.(nomissing(ds["taub_domain"][:, :], -9999))), tf)
+        i2 == ids || error("$tf: the domain ids differ from those of $(tfiles[1])")
+        reg = NCDataset(ds -> Int.(nomissing(ds[get(sc, "regions_var", "region_2")][:, :], -9999)), rf)
+        size(reg) == size(dom) || error("the REGIONS map is not on the grid of the tau_b product: $rf $(size(reg)), $tf $(size(dom))")
+        pos = Dict(d => i for (i, d) in enumerate(ids))
+        for (d, r) in zip(dom, reg)
+            i = get(pos, d, 0); i == 0 && continue
+            n[i] += 1; ng[i] += r == gcode
+        end
+    end
+    fg = [n[i] == 0 ? 0.0 : ng[i] / n[i] for i in eachindex(ids)]
     specs = sc["groups"]
     names = [String(g["name"]) for g in specs]
     grp = zeros(Int, length(ids))

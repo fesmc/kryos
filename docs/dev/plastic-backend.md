@@ -18,11 +18,14 @@ level of the geo backend (VILMA2) at every coupling step. The solver is the Fort
 | `par/kryos_North_plastic.nml` | NH-32KM, fixed bed (no geo) |
 | `par/kryos_North_plastic_vilma2.nml` | NH-32KM with the global VILMA2 Earth of the science case (3-D) |
 | `par/kryos_North_plastic_vilma2_b1.nml` | NH-32KM with VILMA2 on Gowan's 1-D Earth and B1's reference: the run scored against GAPSLIP beside B1 |
+| `par/kryos_NH-ANT_plastic_vilma2_b1.nml` | as `_b1` with a second plastic instance on ANT-16KM (calibration v2) |
 | `tests/test_plastic_margin.f90` | margin and tau_b (runs with `plastic=0`) |
 | `tests/test_ice_plastic.f90` | the backend through the ice wrappers (`plastic=1` only) |
 | `tests/plastic_slices.f90` | the offline check against PaleoMIST per slice (`plastic=1`) |
+| `tests/plastic_taub_fit.f90` | Stage 1 of calibration v2: a tau_b factor per domain against the present-day thickness (`plastic=1`) |
 | `tools/levante/plastic_maps.jl`, `pm_kryos_out.jl`, `plastic_score.sh` | maps of the offline check; a kryos VILMA2 stream as a standalone `vilma_out.nc`; the GAPSLIP scoring with `pm_compare.jl` |
-| `tools/levante/plastic_taub_scale.jl`, `plastic_esmda.jl`, `plastic_esmda.sh`, `plastic_esmda.toml` | the tau_b calibration: scale groups and multiplier files; ES-MDA; its jobs; its config |
+| `tools/levante/plastic_taub_scale.jl`, `plastic_esmda.jl`, `plastic_esmda.sh`, `plastic_esmda.toml`, `plastic_esmda_v2.toml` | the tau_b calibration: scale groups and multiplier files; ES-MDA; its jobs; its configs (v1, v2) |
+| `tools/levante/plastic_esmda_report.jl`, `plastic_taub_fit_report.jl`, `plastic_pd_regions.jl` | the reports: of a calibration; of Stage 1 (lambda, the domain factor file, maps); the present-day thickness per region |
 
 Build: `plastic=1` adds `INC_PLASTIC` / `LIB_PLASTIC` (`config/common.mk`: the sibling `PlasticIceSheet`,
 `libplastic/include` with `libplastic.a` and the `.mod` files; `make -C PlasticIceSheet static
@@ -138,6 +141,13 @@ dependent in PaleoMIST 1.0, so the series is used, linear between its records. I
 domains outside every polygon (5000 Pa); cells without a domain take `taub_default` (the par files: 5000 Pa).
 Its 2-D base field `taub_map` can be read with `taub_method = "file"`.
 
+`taub_domain_factor_file` (`"domains"` only; `""` = none): a factor per domain, constant in time (the present-day fit, Stage 1 of
+calibration v2 below). NetCDF, dimension `domain`: `domain_id(domain)`, `log_factor(domain)` (natural log of the factor). tau_b of a
+domain is its value (the series, after the override table) times exp(log_factor), then times the scale groups' multiplier below; the
+`taub_default` of the cells without a domain is not scaled; an id of the product missing from the file keeps factor 1; an id of the
+file without tau_b stops unless its log_factor is 0 (one file can hold the domains of all grids). A file of zeros gives tau_b bit for
+bit (tested).
+
 `taub_scale_file` (`"domains"` only; `""` = none): multipliers of tau_b per scale group, time dependent (the calibration
 below). NetCDF, dimensions `domain`, `scale_group`, `node`: `domain_id(domain)`, `group(domain)` (the scale group of each id,
 1 to the number of groups, 0 = unscaled), `time(node)` (any order, its units as the margin's: `years ago`, ...),
@@ -181,6 +191,7 @@ continuous one), `H_prev` and `z_srf`, lossless; the read checks the grid and th
 | `taub_file`, `taub_var` | `""`, `"taub"` | `"file"` |
 | `taub_domain_file`, `taub_domain_var`, `taub_id_var`, `taub_value_var`, `taub_time_var` | `""`, `"taub_domain"`, `"domain_id"`, `"taub"`, `"taub_t"` | `"domains"` |
 | `taub_override`, `taub_default` | `""`, 0 | `"domains"` |
+| `taub_domain_factor_file` | `""` | `"domains"`: the factor per domain (above), before the scale groups |
 | `taub_scale_file` | `""` | `"domains"`: the multipliers per scale group (above) |
 | `rheo_A`, `rheo_n` | 0, 3 | Glen rate factor [Pa-n yr-1] (0: no velocity), exponent |
 | `slide_law` | `"none"` | `"linear"`, `"weertman"` (`slide_beta`, `slide_m`), `"coulomb"` (`slide_C`, `slide_u0`, `slide_m`) |
@@ -203,7 +214,8 @@ shelf.
   value; hold and the stop outside the range; tau_b domains (static, override, a series in either dimension
   order, an id added by the table, the stops); the tau_b scale (groups by id, an id added by the table, linear in
   time between unordered nodes, held outside, times the series, the default unscaled, factor 1 bit for bit, the
-  stops).
+  stops); the domain factor (by id, times the series and then the scale groups, constant in time, the default unscaled, a file
+  of zeros bit for bit with and without the scale, the stop for a scaled id without tau_b).
 - `tests/test_ice_plastic.f90` (`plastic=1`): the backend on a toy grid (flat bed, two disks, tau_b const,
   `mode = "flat"`): the plastic profile at the centre, the masks, the static exports, an update (dHidt,
   mb_net, M_ice), a restart round trip stepped on bit for bit, the flotation binding.
@@ -313,6 +325,7 @@ on a node). ESL [m]:
 | I910_it0 (B1 at 910) | -10.2 | -52.6 | -82.4 | -39.2 | -63.8 | -117.8 | -122.8 | -84.5 | -29.5 | -5.1 |
 | online plastic, old margin | -12.5 | -61.4 | -94.4 | -44.7 | -72.4 | -131.7 | -137.7 | -96.2 | -34.0 | -5.2 |
 | online plastic, baseline | -10.1 | -55.7 | -88.8 | -41.4 | -67.2 | -125.4 | -131.7 | -92.3 | -32.6 | -5.0 |
+| v2 baseline (Stage 1 factors, NH + ANT plastic) | -9.3 | -53.0 | -83.6 | -39.4 | -64.2 | -119.2 | -124.8 | -86.7 | -30.5 | -4.4 |
 
 GAPSLIP 2.1 (as above):
 
@@ -323,26 +336,35 @@ GAPSLIP 2.1 (as above):
 | | I910_it0 | 30.3 | 4.36 | 0.31 | 3.2 | 0.42 | 0.30 |
 | | online, old margin | 25.5 | 4.03 | 0.32 | 1.1 | 0.41 | 0.36 |
 | | online, baseline | 25.9 | 3.95 | 0.34 | 1.8 | 0.39 | 0.33 |
+| | v2 baseline | 26.7 | 3.93 | 0.34 | 2.7 | 0.42 | 0.35 |
 | Laurentide | PaleoMIST | 9.0 | 4.13 | 0.26 | 2.9 | 0.20 | 0.28 |
 | | B1_l170 | 9.6 | 5.32 | 0.19 | 1.3 | 0.25 | 0.25 |
 | | I910_it0 | 9.4 | 5.12 | 0.20 | 1.3 | 0.25 | 0.24 |
 | | online, old margin | 9.8 | 4.73 | 0.28 | 4.3 | 0.19 | 0.31 |
 | | online, baseline | 9.4 | 4.72 | 0.28 | 3.0 | 0.21 | 0.28 |
+| | v2 baseline | 9.4 | 4.65 | 0.29 | 3.3 | 0.20 | 0.28 |
 | Greenland | PaleoMIST | 107.1 | 11.12 | 0.04 | -22.2 | 0.69 | 0.01 |
 | | B1_l170 | 110.6 | 9.28 | 0.09 | -15.1 | 0.60 | 0.02 |
 | | I910_it0 | 110.2 | 9.60 | 0.09 | -15.3 | 0.60 | 0.02 |
 | | online, old margin | 88.9 | 9.22 | 0.07 | -19.4 | 0.58 | 0.02 |
 | | online, baseline | 91.7 | 10.21 | 0.14 | -12.4 | 0.52 | 0.02 |
+| | v2 baseline | 94.5 | 14.35 | 0.06 | -26.4 | 0.67 | 0.03 |
 | Fennoscandia/Barents | PaleoMIST | 19.9 | 7.80 | 0.17 | 6.4 | 0.32 | 0.41 |
 | | B1_l170 | 16.5 | 5.82 | 0.27 | 3.8 | 0.26 | 0.44 |
 | | I910_it0 | 16.2 | 5.55 | 0.28 | 3.4 | 0.25 | 0.44 |
 | | online, old margin | 14.6 | 4.82 | 0.28 | 2.9 | 0.23 | 0.52 |
 | | online, baseline | 13.2 | 4.30 | 0.32 | 1.8 | 0.23 | 0.49 |
+| | v2 baseline | 13.5 | 4.18 | 0.31 | 2.1 | 0.21 | 0.53 |
+| Antarctica | PaleoMIST | 9.8 | 5.48 | 0.15 | 7.8 | 0.68 | 0.26 |
+| | B1_l170 | 9.8 | 3.56 | 0.19 | -0.6 | 0.71 | 0.17 |
+| | I910_it0 | 10.3 | 3.53 | 0.26 | -1.0 | 0.72 | 0.17 |
+| | v2 baseline | 16.0 | 2.55 | 0.38 | -1.9 | 0.74 | 0.11 |
 | far field | PaleoMIST | 13.6 | 2.85 | 0.41 | 1.3 | 0.46 | 0.16 |
 | | B1_l170 | 16.0 | 3.23 | 0.39 | 5.1 | 0.44 | 0.18 |
 | | I910_it0 | 16.1 | 3.20 | 0.39 | 6.0 | 0.44 | 0.20 |
 | | online, old margin | 15.3 | 3.07 | 0.38 | 1.4 | 0.47 | 0.17 |
 | | online, baseline | 15.4 | 3.14 | 0.39 | 3.1 | 0.45 | 0.17 |
+| | v2 baseline | 16.2 | 3.10 | 0.40 | 6.0 | 0.43 | 0.18 |
 
 The baseline ESL is 14 % above PaleoMIST's at 20 ka (old margin 19 %, I910_it0 6 %); it scores better than B1 on every NH
 set but RMS z of Greenland (dominated by a few points, below) and violates fewer terrestrial limiting data than the old
@@ -486,12 +508,176 @@ and a Greenland ice sheet 28 % too thin today. tau_b likely absorbs misfits it s
 profile for every region), the timing of the margin chronology, and the index points of one site counted as independent (the
 cut removed 126 of Greenland's 276). The posterior is a fit, not yet a reconstruction.
 
+## Calibration v2 (2026-11-09)
+
+v1 fitted the index points better (RMS z 26.0 -> 23.7) but thinned today's Greenland by 28 %, and its factors swung between
+neighbouring deglacial nodes: tau_b absorbed errors it should not explain. v2 separates what the present day constrains from what
+the sea-level data constrain, adds Antarctica, and gives the index points a correlated error.
+
+### Stage 1: a factor per domain from the present-day thickness
+
+`tests/plastic_taub_fit.f90` (offline, deterministic; the backend's modules and the library): the backend at 0 ka, PaleoMIST's 0 ka
+margin (`f_ice` > 0.5, `"sdist"`, `"surface"`), today's bed of the topography hub with z_sl = 0, a cold solve, Gowan's tau_b at 0 ka
+times exp(u_d) on the cells of domain d. Fit cells: the margin's ice where the observation is not floating (261 floating cells of
+Antarctica left out). Free domains: those with fit cells (NH-32KM 99, ANT-16KM 545); the others keep u = 0. Objective:
+
+chi2(u) + lambda sum over adjacent free domains of w_dd' (u_d - u_d')^2, chi2 = sum ((H(u) - H_obs) / sigma_H)^2,
+sigma_H = max(50 m, 0.1 H_obs),
+
+w the shared boundary [km] (faces between 4-neighbour cells of the two domains anywhere in the map). Levenberg-Marquardt on u (the
+Gauss-Newton matrix J'J + lambda L, damping mu diag), the Jacobian by forward differences (du = 0.01, one solve per free domain, OpenMP
+over the domains), |u| <= 2.3 (factor 0.1-10), lambda from 100 down to 0, each from the previous solution. NH: 5 s on 27 threads; ANT:
+26 min. `tools/levante/plastic_taub_fit_report.jl` picks lambda by the discrepancy principle (the largest lambda with chi2 / n <= 1)
+and, where no lambda reaches it, at the corner of the L-curve (largest Menger curvature of log chi2 against log roughness); writes
+`taub_domain_factor.nc` (the free domains of both grids, 644) and the tables and maps below (`runs/taub-fit`).
+
+| grid | chi2 / n, Gowan's tau_b | lambda | chi2 / n | rule | factors | at the bound 0.1 |
+|---|---|---|---|---|---|---|
+| NH-32KM | 12.54 | 0.03 | 1.80 (1.77 at lambda = 0) | L-curve corner (chi2 / n <= 1 not reached) | 0.10-1.47 | 1 |
+| ANT-16KM | 3.76 | 3 | 0.94 (0.66 at lambda = 0) | discrepancy (the corner, 0.003: 10 at the bounds, up to 10) | 0.14-1.49 | 0 |
+
+![L-curves](figures/plastic-backend/stage1_lcurve.png)
+
+Present day per region, over the fit cells (volume in m SLE and its ratio to H_obs; H - H_obs mean and rms [m]); H_obs: the hub's,
+by source (`src_id`) of the cells: NH-32KM TOPO-GEBCO2026 (Greenland BedMachine v6, elsewhere IceBoost v2, or GEBCO 2026 where it has
+the largest weight); ANT-16KM TOPO-BedMachine-v4. "outside": the observed ice outside PaleoMIST's 0 ka margin (not representable):
+
+| region | fit cells | source | H_obs | outside | Gowan's tau_b | H - H_obs | Stage 1 | H - H_obs |
+|---|---|---|---|---|---|---|---|---|
+| Greenland | 1639 | BedMachine v6 | 7.175 | 0.056 | 7.718 (1.08) | +132, 195 | 7.095 (0.99) | -20, 98 |
+| Canadian Arctic | 128 | IceBoost 50 %, BedMachine 34 %, GEBCO 16 % | 0.058 | 0.017 | 0.183 (3.14) | +388, 467 | 0.056 (0.97) | -6, 113 |
+| Cordillera and Alaska | 85 | IceBoost 71 %, GEBCO 29 % | 0.030 | 0.019 | 0.056 (1.88) | +123, 208 | 0.028 (0.95) | -8, 94 |
+| Svalbard | 37 | IceBoost 81 %, GEBCO 19 % | 0.013 | 0.003 | 0.038 (3.03) | +274, 311 | 0.014 (1.08) | +11, 67 |
+| Russian Arctic (Barents-Kara) | 30 | IceBoost 83 %, GEBCO 17 % | 0.015 | 0.015 | 0.020 (1.32) | +64, 105 | 0.015 (1.01) | +1, 83 |
+| Iceland | 0 | | | 0.012 | | | | |
+| NH-32KM | 1919 | | 7.291 | 0.123 | 8.015 (1.10) | +151, 226 | 7.208 (0.99) | -17, 98 |
+| West Antarctica | 8022 | BedMachine v4 | 8.090 | 0.864 | 8.524 (1.05) | +86, 139 | 7.964 (0.98) | -25, 93 |
+| East Antarctica | 37632 | BedMachine v4 | 53.935 | 0.770 | 56.098 (1.04) | +92, 161 | 53.392 (0.99) | -23, 83 |
+| Antarctic Peninsula | 1094 | BedMachine v4 | 0.389 | 0.083 | 0.424 (1.09) | +51, 138 | 0.378 (0.97) | -17, 120 |
+| ANT-16KM | 46748 | | 62.415 | 1.718 | 65.046 (1.04) | +90, 157 | 61.734 (0.99) | -23, 86 |
+
+![Stage 1, NH-32KM](figures/plastic-backend/stage1_maps_NH-32KM.png)
+![Stage 1, ANT-16KM](figures/plastic-backend/stage1_maps_ANT-16KM.png)
+
+The fit removes the broad positive misfit (Greenland +132 -> -20 m, rms 195 -> 98 m; Antarctica +90 -> -23 m). Factors (5, 25, 50,
+75, 95 %): Greenland (85 domains) 0.36, 0.56, 0.78, 1.00, 1.21; Antarctica (545) 0.53, 0.80, 0.93, 1.00, 1.06; the other NH domains (14)
+0.10, 0.12, 0.19, 0.50, 0.72. These small ice caps take factors of 0.1-0.2 (Svalbard 2097, 2103, 2104, 2094; Canadian Arctic 1095,
+1208; Alaska 1093; Barents-Kara 2143; 2097 at the bound): their hub thickness on 32 km cells (60-190 m) is the cell mean of caps and
+glaciers that fill part of the cell, against 270-720 m of plastic ice over the whole cell. Part of these factors is a representation
+error, and the factor holds at all times: these domains lie inside the LGM ice sheets (below).
+
+### Antarctica in the coupled run
+
+`par/kryos_NH-ANT_plastic_vilma2_b1.nml`: `_b1` (Gowan's 1-D Earth, B1's relaxed reference, the rest of the world PaleoMIST's
+history) plus the domain `Antarctica` as in `par/kryos_NH-ANT_vilma2.nml`: hub ANT-16KM, `ice_ant` plastic on the hub grid (PaleoMIST's
+ANT-16KM margin and Gowan's tau_b of the same products, as `ice_nor`), its geo port `geo_ant` on ANT-16KM, today's topography
+BedMachine Antarctica v4 (no correction r, as GEBCO2026 on NH-32KM). The maps folder of the runs needs `grid_ANT-16KM.txt` (copied
+from the checkout's `maps`); the first run writes the remapping weights. One `taub_domain_factor_file` and one `taub_scale_file` serve
+both instances (an id of the other hemisphere has no cells).
+
+Scale group: `Antarctica` = Gowan's region 3 (576 domains with cells on ANT-16KM). WAIS/EAIS do not split cleanly by the REGIONS map
+(`region_3`, majority of a domain's cells, as for Greenland): five domains lie less than 80 % in one sector, among them 3694 (952 cells,
+71 % West, 29 % East); with 47 index points at 6 sites one group is what the data carry.
+
+Coupled baseline (`runs/v2-baseline`: Stage 1 factors, no group multipliers; 13.4 min on 16 threads): present day per region within
+1 % of the observations in volume (NH-32KM 7.21 against 7.29 m SLE, -18 m mean, 99 m rms; ANT-16KM 61.88 against 62.42, -18 m, 88
+m), as offline. Ice volume [m SLE] and ESL [m]:
+
+| | NH 80 ka | NH 20 ka | NH 0 ka | ANT 20 ka | ANT 0 ka | ESL 60 ka | ESL 20 ka |
+|---|---|---|---|---|---|---|---|
+| PaleoMIST | 12.9 | 112.5 | 7.45 | 76.63 | 61.36 | -78.6 | -115.6 |
+| v1 prior (Gowan's tau_b, NH only) | 13.9 | 124.7 | 8.03 | | | -88.8 | -131.7 |
+| v2 baseline (Stage 1, NH + ANT) | 12.8 | 117.7 | 7.21 | 76.80 | 62.03 | -83.6 | -124.8 |
+
+The Stage 1 factors (mostly < 1) take 6 % off the NH LGM volume (124.7 -> 117.7 m SLE, 1.05 x PaleoMIST); Antarctica's plastic ice is
+within 0.3 % of PaleoMIST's at 20 ka (`M_ice` today counts the 261 floating cells as grounded ice).
+
+### ES-MDA v2 (`tools/levante/plastic_esmda_v2.toml`)
+
+- **Observation error**: R = diag(sigma_i^2) + sigma_m^2 C, C_ij = exp(-dist_ij / 150 km) exp(-|t_i - t_j| / 2 kyr) (great-circle
+  distance, indicator ages), sigma_m = 5 m; sigma_i the scorer's, at the ensemble-mean RSL of the iteration (as v1). The update
+  whitens predictions and observations with the Cholesky factor of R (R = L L', ~4400 x 4400, once per iteration) and is then v1's
+  (perturbations N(0, alpha I) in the whitened space = N(0, alpha R); the Ne x Ne Woodbury solve). chi2 / n is d' R^-1 d / n. The
+  gross-error cut uses the diagonal of R, sqrt(sigma_i^2 + sigma_m^2): the same as v1's with sigma_add. `corr_dist_km = 0` gives v1.
+  `plastic_esmda.jl selftest`: four steps on the linear-Gaussian problem with R = I (posterior mean to 0.04 sd, sd to 1.2 %) and with
+  a correlated R (diagonal plus an exponential covariance along a line: 0.06 sd, 0.7 %), and one whitened step against the update
+  written with R itself, Theta + dTheta S'(S S' + alpha R)^-1 (y + sqrt(alpha) L e - D), the same e: equal to 2e-16.
+- **Present day pinned**: `pinned_ka = [0]`: the 0 ka node is no parameter, log factor 0 in every group, so today's tau_b is Stage 1's.
+  Prior sd s(t) = 0.3 sin^2(pi t / 20 ka) below 10 ka, 0.3 above (`ramp_ka = 10`: 0 and flat at 0 ka, 0.15 at 5 ka, smooth at 10 ka);
+  C_pq = s(t_p) s(t_q) exp(-|t_p - t_q| / 20 kyr) (was 10 kyr).
+- **Groups and ties**: Laurentide 8 parameters (80 to 5 ka), Greenland 7 (80/60 tied), Eurasia 6 (80/60/40 tied), Antarctica 4 (80 to 20
+  ka tied: its 47 index points are 0.5-7.4 ka; 15, 10, 5 ka free): 25 parameters. `[scale] taub_files`, `regions_files`: the groups over
+  both grids (Greenland by the NH REGIONS map, as v1).
+- **Observations**: obs_groups adds Antarctica (47 index points, 169 / 115 limiting data). The cut at the prior mean member (Stage 1, no
+  group multipliers) keeps 4388 of 4752: Laurentide 835 of 896, Greenland 126 of 276, Fennoscandia/Barents 1063 of 1088, Antarctica 46
+  of 47, far field 2318 of 2445.
+- **Runs**: the members run `par/kryos_NH-ANT_plastic_vilma2_b1.nml` with one multiplier file for both instances (`scale_keys`), the
+  Stage 1 file frozen in the folder (`domain_factor_file`, `domain_factor_keys`); the posterior mean member also writes `ice_nor.nc`,
+  `ice_ant.nc` (`final_set`) for the present-day check. Kept from v1: Ne 40, alpha (9.333, 7, 4, 2), |theta| <= 1.5, 8 threads per
+  member, throttle 29.
+
+Smoke test (`runs/esmda-v2-smoke`, Ne = 4): init, then the analysis of iteration 1 on v1's members' outputs (any RSL fields do for the
+code path): R over 4431 points, the update, the clip and iteration 2's multiplier and par files (both instances' keys, the 0 ka node
+1) as intended.
+
+Checks (Levante): kryos rebuilt with the current library (openmp=1, LIS linked) and v1's frozen `kryos.x` give the same outputs over
+80-70 ka, every variable of every file bit for bit (73 variables, `runs/v2-check`); the new binary with the key absent, `""`, and a
+file of zeros gives the same outputs bit for bit again. `test_plastic_margin`, `test_ice_plastic` pass.
+
+### Results (`runs/esmda-v2`, report `runs/esmda-v2/report`)
+
+All 41 members of the 4 iterations ran (11-25 min each, 522 cpu-h for 165 runs); iteration 4 ran with the throttle at 16 (two
+FesmData job chains beside it). chi2 / n of the assimilated points: 1.74 (iteration 1), 1.72, 1.72, 1.71. Mean members, GAPSLIP
+2.1 over all index points (RMS z as in the tables above; RMS z_m with the model error, z_m = d / sqrt(sigma^2 + sigma_m^2)):
+
+| | RMS z all | Laurentide | Greenland | Fennoscandia/Barents | Antarctica | far field | RMS z_m all | ESL 20 ka [m] |
+|---|---|---|---|---|---|---|---|---|
+| PaleoMIST | 29.5 | 9.0 | 107.1 | 19.9 | 9.8 | 13.6 | | -115.6 |
+| v1 posterior mean | 23.7 | | | | | | | |
+| v2 prior mean (= v2 baseline) | 26.7 | 9.4 | 94.5 | 13.5 | 16.0 | 16.2 | 2.88 | -124.8 |
+| v2 posterior mean | 21.6 | 7.5 | 69.6 | 11.8 | 22.6 | 16.4 | 2.33 | -129.7 |
+
+RMS z_m per group, prior -> posterior: Laurentide 2.48 -> 1.83, Greenland 7.51 -> 5.66, Fennoscandia/Barents 1.91 -> 1.75,
+Antarctica 1.38 -> 1.49, far field 2.41 -> 2.08. (The RMS z of the far field at iteration 2, 373, is one point with a scorer sigma of
+~0: hence RMS z_m.)
+
+Posterior-mean factors:
+
+| group | 80 ka | 60 ka | 40 ka | 25 ka | 20 ka | 15 ka | 10 ka | 5 ka | 0 ka |
+|---|---|---|---|---|---|---|---|---|---|
+| Laurentide | 0.59 | 0.49 | 0.51 | 0.76 | 0.60 | 0.82 | 0.66 | 0.92 | 1 |
+| Greenland | 0.84 | 0.84 | 1.09 | 1.65 | 1.16 | 1.09 | 1.23 | 1.17 | 1 |
+| Eurasia | 0.80 | 0.80 | 0.80 | 0.80 | 0.75 | 0.89 | 1.15 | 0.94 | 1 |
+| Antarctica | 1.63 | 1.63 | 1.63 | 1.63 | 1.63 | 1.47 | 1.06 | 0.97 | 1 |
+
+![posterior tau_b factors, v2](figures/plastic-backend/esmda_v2_factors.png)
+
+Ice volume [m SLE] (ratio to PaleoMIST): NH-32KM 20 ka 117.7 (1.05) -> 95.9 (0.85), 0 ka 7.21 -> 7.23; ANT-16KM 20 ka 76.8 (1.00) ->
+100.9 (1.32), 0 ka 62.0 -> 62.7.
+
+Checks:
+
+- **Present day**: holds (v1 failed here). Posterior mean against the observations over the fit cells: NH-32KM 7.23 of 7.29 m SLE
+  (-13 m, rms 98 m; Greenland 0.99, -15 m), ANT-16KM 62.55 of 62.42 (+5 m, rms 89 m), every region within 5 % but Svalbard (1.09).
+- **Smoothness**: better than v1, not smooth. Laurentide zigzags over the deglaciation (25-5 ka: 0.76, 0.60, 0.82, 0.66, 0.92) and
+  Greenland peaks at 25 ka (1.65); Eurasia's 10 ka node (1.15) is no longer at the bound.
+- **Antarctica**: the 80-20 ka node goes to 1.63 (sd 0.04, beyond the prior's 1 sigma, 1.35): +24 m SLE at the LGM, while its own
+  46 index points (0.5-7.4 ka) fit worse (RMS z_m 1.38 -> 1.49). The NH loses 22 m SLE; ESL at 20 ka goes from -124.8 to -129.7 m.
+  The far-field points want more ice than the NH data allow, and Antarctica, with few local data, is where the update puts it.
+- **ESL at 20 ka**: -129.7 m against PaleoMIST's -115.6 m; the difference is the Antarctic sink above, not the NH (0.85 x).
+
+v2 calibrates the NH against its own data with the present day held, but its Antarctica is an ESL sink, not a reconstruction:
+the posterior is usable for the NH groups, not for Antarctica or the global ESL. Missing ice elsewhere (mountain glaciers, which
+PaleoMIST leaves out apart from the Andes, Iceland and the Cordillera) has no parameter, so the far field's demand for ice goes to
+the free group with the fewest local constraints. v3 (below, Open) adds that ice and bounds Antarctica.
+
 ## Open
 
 - The NH ice is 7-10 % too large with Gowan's tau_b and the new margin (was 15-50 %): mostly resolution (above).
-- Calibration v1 (above): oscillating deglacial factors, Eurasia 10 ka at the bound, Greenland too thin today. Options: a
-  smoother prior in time (longer correlation, or fewer deglacial nodes), Greenland's present-day volume (BedMachine) as an
-  observation or Greenland not calibrated, sites as units (correlated index points), a 3-D Earth (the science Earth).
+- Calibration v2 (above): Antarctica absorbs the far field's ESL demand (+24 m SLE at the LGM); Laurentide's deglacial factors
+  still zigzag; Greenland's index points stay far off (RMS z_m 5.7). For v3: the mountain-glacier and Patagonian ice outside the
+  plastic domains as a load with its own parameter, a third plastic instance on PAT-PAL-8KM, Antarctica's LGM volume bounded
+  (prior or an observation), fewer deglacial nodes or a longer correlation for Laurentide.
 - `drive = "smb"` does not converge on 32 km grids (library); `"full"` neither (use `"surface"`).
 - The science-Earth variant (`par/kryos_North_plastic_vilma2.nml`, 3-D Bagge, lmax 170, refcorr reference) is not
   run with `"surface"` (its flat run was cancelled in VILMA2's spin-up).

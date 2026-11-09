@@ -12,7 +12,10 @@ program test_plastic_margin
     !     default; a domain without a value stops;
     !   * tau_b scale (taub_scale_file): the groups mapped by domain id (not position, an id added by the
     !     table included), the multiplier linear in time between the nodes and held outside, times the
-    !     series, the default unscaled; a factor of 1 leaves tau_b bit for bit; bad groups and ids stop.
+    !     series, the default unscaled; a factor of 1 leaves tau_b bit for bit; bad groups and ids stop;
+    !   * tau_b domain factor (taub_domain_factor_file): exp(log_factor) by domain id, constant in time,
+    !     times the series and then the scale groups, the default unscaled, an id without tau_b allowed
+    !     with factor 1 only; a file of zeros leaves tau_b bit for bit; a scaled id without tau_b stops.
     ! Run from the repo root (files in tmp/test_plastic_margin).
 
     use precision, only: dp
@@ -20,7 +23,8 @@ program test_plastic_margin
     use kryos_plastic_margin, only: margin_t, margin_set, margin_init, margin_at, margin_footprint, &
                                     margin_signed_distance, margin_edt2, model_time_axis, MARGIN_SDIST, MARGIN_NEAREST
     use kryos_plastic_taub,   only: taub_t, taub_set_domains, taub_read_domains, taub_at, taub_set_const, &
-                                    taub_set_scale, taub_read_scale, TAUB_M_DOMAINS
+                                    taub_set_scale, taub_read_scale, taub_set_domain_factor, taub_read_domain_factor, &
+                                    TAUB_M_DOMAINS
 
     implicit none
 
@@ -43,6 +47,7 @@ program test_plastic_margin
     call test_out_of_range()
     call test_taub()
     call test_taub_scale()
+    call test_taub_domain_factor()
 
     if (nfail > 0) then
         write(*,"(a,i0,a)") "test_plastic_margin: ", nfail, " check(s) FAILED"
@@ -225,6 +230,7 @@ contains
         call expect_abort("taub_badcode", "is not a domain of the map")
         call expect_abort("scale_badid", "domain id 7 (group 1) has no tau_b")
         call expect_abort("scale_badgrp", "a group is outside 0 (unscaled) to 2")
+        call expect_abort("dfac_badid", "domain id 7 (log_factor")
     end subroutine test_out_of_range
 
     subroutine test_taub()
@@ -322,6 +328,71 @@ contains
                    all(pack(tau, dom == 5) == 1.0e5_dp))
     end subroutine test_taub_scale
 
+    subroutine test_taub_domain_factor()
+        ! The series of test_taub on ids 1, 2 (id 1 = 10, 30, 50 at 2000, 1000, 0 years ago; id 2 = 20,
+        ! 40, 60), id 5 added by the table (1e5), default 9e3; factors id 1 x2, id 2 x0.5, id 7 (not a
+        ! domain) x1, id 5 none; then the scale of test_taub_scale (group 1 = id 1, group 2 = id 2).
+        type(taub_t) :: tb, tb0
+        character(len=*), parameter :: f1 = dir//"/taub_df.nc", fd = dir//"/taub_dfac.nc", fz = dir//"/taub_dfac0.nc"
+        character(len=*), parameter :: fs = dir//"/taub_scale.nc"
+        integer  :: dom(4, 3), i
+        real(dp) :: tau(4, 3), tau0(4, 3), ser(2, 3), x(4)
+        real(dp), parameter :: ts(4) = [-2500.0_dp, -1500.0_dp, -400.0_dp, 0.0_dp]
+
+        dom = reshape([1, 1, 2, 0,  1, 2, 2, 5,  0, 5, 5, 1], [4, 3])
+        ser = reshape([10.0_dp, 20.0_dp,  30.0_dp, 40.0_dp,  50.0_dp, 60.0_dp], [2, 3])
+        x = [(real(i, dp), i = 1, 4)]
+        call write_domains(f1, .false., dom, ser, x)
+        call nc_create(fd)
+        call nc_write_dim(fd, "domain", x=[1.0_dp, 2.0_dp, 3.0_dp])
+        call nc_write(fd, "domain_id", [7, 2, 1], dim1="domain")
+        call nc_write(fd, "log_factor", [0.0_dp, log(0.5_dp), log(2.0_dp)], dim1="domain")
+        call nc_create(fz)
+        call nc_write_dim(fz, "domain", x=[1.0_dp, 2.0_dp, 3.0_dp])
+        call nc_write(fz, "domain_id", [1, 2, 5], dim1="domain")
+        call nc_write(fz, "log_factor", [0.0_dp, 0.0_dp, 0.0_dp], dim1="domain")
+
+        call taub_read_domains(tb0, f1, "taub_domain", "domain_id", "taub", "taub_t", 9.0e3_dp, .true., 4, 3, &
+                               codes=[5], values=[1.0e5_dp], table="&tbl")
+        tb = tb0
+        call taub_read_domain_factor(tb, fd)
+        call check("domain factor: by domain id", all(abs(tb%dfac - [2.0_dp, 0.5_dp, 1.0_dp]) < 1.0e-15_dp))
+        call taub_at(tb, -1500.0_dp, tau)
+        call check("domain factor: times the series, constant in time", all(abs(pack(tau, dom == 1) - 40.0_dp) &
+                   < 1.0e-12_dp) .and. all(abs(pack(tau, dom == 2) - 15.0_dp) < 1.0e-12_dp))
+        call check("domain factor: an id without an entry and the default unscaled", all(pack(tau, dom == 5) == &
+                   1.0e5_dp) .and. all(pack(tau, dom == 0) == 9.0e3_dp))
+        call taub_at(tb, 0.0_dp, tau)
+        call check("domain factor: at another time", all(abs(pack(tau, dom == 1) - 100.0_dp) < 1.0e-12_dp) .and. &
+                   all(abs(pack(tau, dom == 2) - 30.0_dp) < 1.0e-12_dp))
+
+        ! then the scale file of test_taub_scale: group 1 (id 1) x0.5, x2, x1 at 0, 1000, 2000 years ago,
+        ! group 2 (id 2) x3
+        call taub_read_scale(tb, fs)
+        call taub_at(tb, -1500.0_dp, tau)
+        call check("domain factor, then the scale groups", all(abs(pack(tau, dom == 1) - 40.0_dp*sqrt(2.0_dp)) &
+                   < 1.0e-10_dp) .and. all(abs(pack(tau, dom == 2) - 45.0_dp) < 1.0e-10_dp) .and. &
+                   all(pack(tau, dom == 5) == 1.0e5_dp))
+
+        ! a file of zeros: tau_b bit for bit, with and without the scale
+        tb = tb0
+        call taub_read_domain_factor(tb, fz)
+        do i = 1, size(ts)
+            call taub_at(tb, ts(i), tau)
+            call taub_at(tb0, ts(i), tau0)
+            if (any(tau /= tau0)) exit
+        end do
+        call check("domain factor: zeros are bit for bit", i > size(ts))
+        call taub_read_scale(tb, fs)
+        tb0%sgrp = tb%sgrp;  tb0%stime = tb%stime;  tb0%slf = tb%slf
+        do i = 1, size(ts)
+            call taub_at(tb, ts(i), tau)
+            call taub_at(tb0, ts(i), tau0)
+            if (any(tau /= tau0)) exit
+        end do
+        call check("domain factor: zeros with the scale are bit for bit", i > size(ts))
+    end subroutine test_taub_domain_factor
+
     subroutine write_domains(f, transposed, dom, ser, x)
         ! A tau_b domain file: map, ids 1 and 2, static values and the series (records at 0, 1000, 2000
         ! years ago = ser(:, 3), ser(:, 2), ser(:, 1)), (id, time) in Fortran order or transposed.
@@ -396,6 +467,10 @@ contains
             dom = reshape([1, 2, 0, 1], [2, 2])
             call taub_set_domains(tb, dom, [1, 2], [1.0e4_dp, 2.0e4_dp], 0.0_dp, "test")
             call taub_set_scale(tb, [1, 2], [1, 4], [0.0_dp], reshape([0.0_dp, 0.0_dp], [2, 1]), "scale")
+        case ("dfac_badid")
+            dom = reshape([1, 2, 0, 1], [2, 2])
+            call taub_set_domains(tb, dom, [1, 2], [1.0e4_dp, 2.0e4_dp], 0.0_dp, "test")
+            call taub_set_domain_factor(tb, [1, 7], [0.0_dp, 0.5_dp], "dfac")
         end select
     end subroutine abort_case
 

@@ -26,7 +26,8 @@ module kryos_ice_plastic
     use kryos_ice,       only: ice_t, ice_opt_t
     use kryos_plastic_margin, only: margin_t, margin_init, margin_at, margin_footprint, margin_interp_code
     use kryos_plastic_taub,   only: taub_t, taub_method_code, TAUB_M_CONST, TAUB_M_FILE, TAUB_M_DOMAINS, taub_set_const, &
-                                    taub_read_field, taub_read_domains, taub_read_scale, taub_at
+                                    taub_read_field, taub_read_domains, taub_read_scale, taub_at, &
+                                    taub_read_domain_factor
     use plastic_ice,     only: plastic_par_t, plastic_t, plastic_glen_t, plastic_sliding_t, plastic_init, &
                                plastic_solve, plastic_solve_smb, plastic_end, plastic_velocity, plastic_smb_implied, &
                                plastic_stress_residual, plastic_margin_frac_from_sdist, PLASTIC_OK, &
@@ -599,7 +600,7 @@ contains
         type(init_ctx_t),     intent(in)    :: ctx
 
         character(len=*), parameter :: proc = "kryos_ice_plastic::init"
-        character(len=PATH_LEN) :: margin_file, taub_file, taub_domain_file, taub_scale_file
+        character(len=PATH_LEN) :: margin_file, taub_file, taub_domain_file, taub_scale_file, taub_domain_factor_file
         character(len=NAME_LEN) :: margin_var, margin_interp, margin_extrapolate, mode, taub_method, taub_var
         character(len=NAME_LEN) :: taub_domain_var, taub_id_var, taub_value_var, taub_time_var, taub_override_grp
         character(len=NAME_LEN) :: slide_law, margin_position
@@ -616,6 +617,7 @@ contains
         taub_method = "const";  taub_const = 0.0_dp;  taub_file = "";  taub_var = "taub"
         taub_domain_file = "";  taub_domain_var = "taub_domain";  taub_id_var = "domain_id";  taub_value_var = "taub"
         taub_time_var = "taub_t";  taub_override_grp = "";  taub_default = 0.0_dp;  taub_scale_file = ""
+        taub_domain_factor_file = ""
         mode = "surface"
         rheo_A = 0.0_dp;  rheo_n = 3.0_dp
         slide_law = "none";  slide_beta = 0.0_dp;  slide_m = 1.0_dp;  slide_C = 0.0_dp;  slide_u0 = 0.0_dp
@@ -653,6 +655,7 @@ contains
         call rd_s("taub_time_var", taub_time_var)
         call rd_s("taub_override", taub_override_grp)
         call rd_r("taub_default", taub_default)
+        call rd_s("taub_domain_factor_file", taub_domain_factor_file)
         call rd_s("taub_scale_file", taub_scale_file)
         ! rheology and sliding (velocity diagnostics; drive = "smb")
         call rd_r("rheo_A", rheo_A)
@@ -724,6 +727,16 @@ contains
             end select
             if (len_trim(taub_override_grp) > 0 .and. taub_method_code(taub_method) /= TAUB_M_DOMAINS) &
                 call fesm_error(proc, "taub_override needs taub_method = 'domains'", who)
+            if (len_trim(taub_domain_factor_file) > 0) then
+                if (taub_method_code(taub_method) /= TAUB_M_DOMAINS) &
+                    call fesm_error(proc, "taub_domain_factor_file needs taub_method = 'domains'", who)
+                call substitute(taub_domain_factor_file, ctx)
+                call taub_read_domain_factor(self%tb, trim(taub_domain_factor_file))
+                call log_msg(LOG_INFO, "kryos_ice_plastic", "taub_domain_factor_file: "// &
+                             to_str(count(self%tb%dfac /= 1.0_dp))//" of "//to_str(size(self%tb%dfac))// &
+                             " domains scaled, factor "//to_str(minval(self%tb%dfac))//" to "// &
+                             to_str(maxval(self%tb%dfac)), who//": "//trim(taub_domain_factor_file))
+            end if
             if (len_trim(taub_scale_file) > 0) then
                 if (taub_method_code(taub_method) /= TAUB_M_DOMAINS) &
                     call fesm_error(proc, "taub_scale_file needs taub_method = 'domains'", who)

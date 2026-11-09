@@ -173,6 +173,7 @@
     taub_time_var      = "taub_t"
     taub_override      = ""
     taub_default       = 5000.0         ! [Pa] cells without a domain: Gowan's value outside every polygon
+    taub_domain_factor_file = ""        ! factors per domain (Stage 1, tests/plastic_taub_fit.f90); "" = none
     taub_scale_file    = ""             ! multipliers per scale group (tools/levante/plastic_esmda.jl); "" = none
     out_plastic        = "out_2D"       ! ice_nor_plastic.nc: mask, sdist, tau_b, convergence
 /
