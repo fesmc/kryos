@@ -78,8 +78,8 @@
     g                  = 9.81
     H_min              = 1.0
     margin_file        = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"   ! "years ago", 80 -> 0 ka
-    margin_var         = "H_ice"
-    margin_H_min       = 1.0            ! [m] PaleoMIST's H_ice is smoothed, with near-zero rims
+    margin_var         = "f_ice"        ! ice fraction of Gowan's unsmoothed 5 km grid: his margin ("H_ice", 1 m: the
+    margin_H_min       = 0.5            ! 25 km smoothed thickness, reaching beyond it)
     margin_interp      = "sdist"        ! "nearest": Gowan's slices as they are
     margin_extrapolate = "error"
     taub_method        = "domains"      ! Gowan's domains, time dependent (PaleoMIST 1.0)

@@ -81,8 +81,8 @@ ice cell by construction) of the last solve, computed when the stream is written
 
 ## Margin chronology
 
-The slices of `margin_var` (default `H_ice`) in `margin_file` (`{domain}`, `{grid_name}` replaced, as
-`recon_path`), on the instance grid, with ice where the thickness exceeds `margin_H_min` (a fill value is no
+The slices of `margin_var` (default `f_ice`) in `margin_file` (`{domain}`, `{grid_name}` replaced, as
+`recon_path`), on the instance grid, with ice where the variable exceeds `margin_H_min` (a fill value is no
 ice). The time axis is converted to model time from its units: `years ago` and `BP` count into the past, a
 leading `k` is thousands of years (the FesmData PaleoMIST product `{grid}_IceHistory-PaleoMIST.nc`: 33
 slices, 80 ka to present, `years ago`).
@@ -99,6 +99,12 @@ At time t, `margin_interp`:
   linear in t, tested), the slices come back exactly at their times, and a cell is ice only where one of the
   two slices has ice.
 - `"nearest"`: the nearest slice (a tie keeps the earlier one): Gowan's offline behaviour, for comparison.
+
+Which variable: PaleoMIST's `H_ice` is Gowan's thickness smoothed with a 25 km Gaussian filter, so `H_ice > 1 m`
+reaches beyond his margin, and the plastic ice there makes the NH volume too large (most of the 15-50 % excess
+below). The product's `f_ice` is the ice fraction of the unsmoothed 5 km reconstruction on each cell, and
+`f_ice > 0.5` is Gowan's margin at the grid's resolution: the default. `margin_var = "H_ice"`, `margin_H_min = 1` keeps
+the earlier margin (the results below until 2026-11-09 used it).
 
 Outside the slices' time range: stop (`margin_extrapolate = "error"`), or hold the first or last slice
 (`"hold"`; also for a tau_b series).
@@ -150,7 +156,7 @@ continuous one), `H_prev` and `z_srf`, lossless; the read checks the grid and th
 | `rho_i` | 910 | [kg m-3] the kryos `Earth` constant and the PaleoMIST runs (library default 917) |
 | `rho_w`, `g` | 1028, 9.81 | the kryos `Earth` constants (library defaults 1025, 9.80665) |
 | `H_min` | 1 | [m] floor of H inside the mask |
-| `margin_file`, `margin_var`, `margin_H_min` | `""`, `"H_ice"`, 1 | the margin slices |
+| `margin_file`, `margin_var`, `margin_H_min` | `""`, `"f_ice"`, 0.5 | the margin slices: ice where `margin_var` > `margin_H_min` (`"H_ice"`, 1 m: the smoothed thickness) |
 | `margin_interp`, `margin_extrapolate` | `"sdist"`, `"error"` | see above |
 | `taub_method`, `taub_const` | `"const"`, 0 | |
 | `taub_file`, `taub_var` | `""`, `"taub"` | `"file"` |
@@ -186,7 +192,7 @@ shelf.
 Build: kryos `plastic=1 yelmo=0 vilma=1` (stack S11 dependencies) against PlasticIceSheet `fortran-port`
 (`/work/ba1442/robinson/PlasticIceSheet-fortran/ifx`); runs in `/work/ba1442/robinson/kryos-ice-plastic/runs`.
 tau_b: `NH-32KM_IceHistory-PaleoMIST_taub.nc` (`/work/ba1442/robinson/fesmdata-taub`, not yet in FesmData),
-domains with the time series, `taub_default` 5000 Pa; `margin_H_min` 1 m.
+domains with the time series, `taub_default` 5000 Pa; the margin `H_ice` > 1 m (the default is now `f_ice` > 0.5).
 
 **Fixed bed** (`par/kryos_North_plastic.nml`: today's bed, z_sl = 0, 80 ka -> 0, dtt = 100 yr, 800 solves): 25 s on
 4 cores; `"surface"` 10 ms, `"flat"` 4 ms per solve; every solve converged; the ice mask is PaleoMIST's (H > 1 m) at

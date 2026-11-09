@@ -82,6 +82,8 @@ contains
         write(u,'(a)') '    backend      = "plastic"'
         write(u,'(a)') '    mode         = "flat"'
         write(u,'(a)') '    margin_file  = "'//dir//'/margin.nc"'
+        write(u,'(a)') '    margin_var   = "H_ice"'
+        write(u,'(a)') '    margin_H_min = 1.0'
         write(u,'(a)') '    taub_method  = "const"'
         write(u,'(a)') '    taub_const   = 5.0e4'
         write(u,'(a)') '/'

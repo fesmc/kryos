@@ -200,12 +200,12 @@
     rho_w              = 1028.0                ! [kg m-3] sea-water density (kryos rho_sw; library default 1025)
     g                  = 9.81                  ! [m s-2] (kryos g; library default 9.80665)
     H_min              = 1.0                   ! [m] floor of H inside the mask (keeps sqrt(w) regular)
-    ! margin chronology: slices of an ice thickness (x, y, time) on the instance grid
+    ! margin chronology: slices of an ice fraction or thickness (x, y, time) on the instance grid
     margin_file        = ""                    ! required; {domain}, {grid_name} replaced (as recon_path); its time axis
                                                ! "years ago" / "BP" / "ka ..." is converted to model time
-    margin_var         = "H_ice"               ! the thickness variable
-    margin_H_min       = 1.0                   ! [m] ice where the slice's thickness exceeds this (PaleoMIST: smoothed,
-                                               ! near-zero rims)
+    margin_var         = "f_ice"               ! the variable: "f_ice" (PaleoMIST: ice fraction of the unsmoothed 5 km
+                                               ! grid, Gowan's margin) | "H_ice" (smoothed 25 km: reaches beyond it)
+    margin_H_min       = 0.5                   ! ice where the slice's margin_var exceeds this (f_ice: 0.5; H_ice: 1 m)
     margin_interp      = "sdist"               ! "sdist": signed distance to the margin, linear between the slices |
                                                ! "nearest": the nearest slice (Gowan et al. 2021 offline)
     margin_extrapolate = "error"               ! outside the slices' (and the tau_b series') time range: "error" | "hold"

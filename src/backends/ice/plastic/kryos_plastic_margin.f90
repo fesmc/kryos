@@ -58,7 +58,7 @@ contains
     end function margin_interp_code
 
     subroutine margin_init(mg, file, var, H_min, nx, ny, dx, dy, interp, hold)
-        ! The slices of `var` (an ice thickness [m] on (xc, yc, time), the instance grid) in `file`:
+        ! The slices of `var` (an ice fraction or thickness on (xc, yc, time), the instance grid) in `file`:
         ! ice where var > H_min (a fill value counts as no ice). The time axis is the variable `time`,
         ! converted to model time from its units (model_time_axis).
         type(margin_t),   intent(out) :: mg
