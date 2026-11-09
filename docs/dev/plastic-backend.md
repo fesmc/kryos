@@ -213,7 +213,7 @@ shelf.
 
 Build: kryos `plastic=1 yelmo=0 vilma=1` (stack S11 dependencies) against PlasticIceSheet `fortran-port`
 (`/work/ba1442/robinson/PlasticIceSheet-fortran/ifx`); runs in `/work/ba1442/robinson/kryos-ice-plastic/runs`.
-tau_b: `NH-32KM_IceHistory-PaleoMIST_taub.nc` (`/work/ba1442/robinson/fesmdata-taub`, not yet in FesmData),
+tau_b: `NH-32KM_IceHistory-PaleoMIST_taub.nc` (FesmData IceHistory v2.3.0),
 domains with the time series, `taub_default` 5000 Pa; the margin `H_ice` > 1 m (the default is now `f_ice` > 0.5).
 
 **Fixed bed** (`par/kryos_North_plastic.nml`: today's bed, z_sl = 0, 80 ka -> 0, dtt = 100 yr, 800 solves): 25 s on
@@ -365,19 +365,25 @@ Greenland; 101 domains with cells on NH-32KM, 24771 cells), Greenland (109, 3830
 not calibrated (no cells on NH-32KM). Greenland: a region-1 domain whose cells on the grid lie more than half in Greenland of the
 FesmData REGIONS map (`region_2` = 103, a partition of land and shelf by territory). The rule is clear-cut except for four
 domains at the Nares Strait and Baffin Bay (fraction in Greenland: 1056 0.49, 1063 0.27, 1000 0.16, 1055 0.04: Laurentide; the
-next highest 0.86 and above: Greenland); `groups.csv` of a calibration lists them all. Prior: N(0, C), sigma 0.3 (a factor
-0.74-1.35 at one sigma), exponential correlation in time (10 kyr) within a group, groups independent.
+next highest 0.86 and above: Greenland); `groups.csv` of a calibration lists them all. Nodes without direct data share one
+parameter (`tie` of a group): Greenland 80/60 ka (no index points before 44 ka), Eurasia 80/60/40 ka (none before 25 ka in
+Fennoscandia/Barents): 24 parameters. Prior: N(0, C), sigma 0.3 (a factor 0.74-1.35 at one sigma), exponential correlation in
+time (10 kyr, between the mean ages of the parameters' nodes) within a group, groups independent; every member is clipped to
+|theta| <= 1.5 (factor 0.22-4.5) after an update (the count is logged).
 
 **Observations**: the index points of GAPSLIP 2.1 (primary, 0-80 ka) of pm_compare.jl's groups Laurentide (896),
 Greenland (276), Fennoscandia/Barents (1088) and the far field (2445): 4705. The model RSL at a point is the scorer's
 (`pm_kryos_out.jl` makes the run's VILMA2 stream a `vilma_out.nc`, `pm_compare.jl`'s `read_run` and `series_run`, RSL relative
 to 0 ka, bilinear in space, linear in time between the 2.5-kyr records): the residual d = model - rsl is the d of the scores.
 sigma is the scorer's `ip_sigma`: half the 2-sigma elevation range on the side of d, and the age uncertainty times the model
-slope, evaluated at the ensemble-mean RSL of the iteration and fixed within it (`sigma_add` adds a model error in quadrature;
-0 by default). Index points without a model value in some member are left out of that iteration. The limiting data
+slope, evaluated at the ensemble-mean RSL of the iteration and fixed within it, and `sigma_add` = 5 m in quadrature: the model
+error the indicator's sigma lacks (GIA and Earth model, resolution, RSL interpolation). A gross-error cut, fixed in iteration
+1 at the prior mean member (Gowan's tau_b): index points with |d| / sqrt(sigma^2 + sigma_add^2) > 5 there are not assimilated
+(`obs_kept.csv`); every score stays over all index points, comparable with B1. Index points without a model value in some
+member are left out of that iteration. The limiting data
 (marine 2436, terrestrial 1353 in those groups) are not assimilated; their violation fractions are reported.
 
-**Update**: Ne members (32) and N_a iterations with inflation alpha (9.333, 7, 4, 2); perturbed observations
+**Update**: Ne members (40) and N_a iterations with inflation alpha (9.333, 7, 4, 2); perturbed observations
 y + sqrt(alpha) sigma e; in units of sigma, theta_a = theta + dTheta (I + G S)^-1 G (y_pert - D) with S the scaled
 anomalies of the predictions, dTheta those of theta and G = S'/alpha (Woodbury: the Kalman gain with an Ne x Ne solve; no
 localisation). Each iteration also runs the mean member (m000: the prior mean, Gowan's tau_b, in iteration 1; the ensemble
@@ -433,12 +439,59 @@ Launch:
 bash tools/levante/plastic_esmda.sh start tools/levante/plastic_esmda.toml /work/ba1442/robinson/kryos-ice-plastic/runs/esmda-<name>
 ```
 
+## Calibration v1 (2026-11-09)
+
+`runs/esmda-v1` (`plastic_esmda.toml` at fa734aa: the baseline above, margin `f_ice` > 0.5 at `"sdist"`, Gowan's 1-D Earth;
+24 parameters, Ne = 40, alpha 9.333, 7, 4, 2, sigma_add 5 m, cut at |z| > 5, at most 29 members at once), reported by
+`tools/levante/plastic_esmda_report.jl`. The cut kept 4385 of the 4705 index points: Laurentide 836 of 896, Greenland 150 of
+276, Fennoscandia/Barents 1065 of 1088, far field 2334 of 2445. All 165 runs succeeded (11-24 min on 8 threads); 3.0 h of wall
+time, 464 cpu-h with the analyses (12 cpus billed per member). Scores of the mean member over all index points (RMS z; marine
+/ terrestrial limiting data violated), the ensemble's RMS z (median [min, max]) and ESL at 20 ka:
+
+| iteration | all | Laurentide | Greenland | Fennoscandia/Barents | far field | ML / TL viol. | ensemble RMS z, all | ESL 20 ka [m] (ensemble) | sd(theta) |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 (prior, Gowan) | 25.97 | 9.41 | 91.7 | 13.15 | 15.44 | 0.37 / 0.35 | 27.6 [14.8, 38.4] | -131.7 (-171 to -106) | 0.30 |
+| 2 | 24.90 | 9.25 | 87.6 | 11.00 | 15.53 | 0.35 / 0.33 | 25.0 [22.2, 35.8] | -127.9 (-132 to -124) | 0.16 |
+| 3 | 24.64 | 9.25 | 86.4 | 10.63 | 15.60 | 0.35 / 0.31 | 24.7 [22.3, 26.0] | -127.5 (-130 to -126) | 0.14 |
+| 4 | 24.16 | 9.22 | 84.3 | 10.30 | 15.61 | 0.35 / 0.31 | 24.2 [22.3, 25.0] | -127.1 (-129 to -126) | 0.13 |
+| posterior mean | 23.69 | 9.19 | 81.9 | 10.20 | 15.69 | 0.34 / 0.32 | | -127.4 | |
+
+(PaleoMIST: all 29.5, B1_l170 30.4; ESL PaleoMIST -115.6, I910_it0 -122.8.) chi2/n of the assimilated points (their sigma)
+fell from 2.06 to 1.67. No member failed and no update diverged; the spread shrank steadily. Clipping: none in the first two
+updates, 6 values in the third, 40 in the last: Eurasia 10 ka at the bound in every member.
+
+![posterior tau_b factors](figures/plastic-backend/esmda_v1_factors.png)
+
+Posterior-mean factors (grey: prior +-1 sigma; red band: posterior ensemble +-1 sd; thin lines: the means after updates 1-3):
+
+| group | 80 ka | 60 ka | 40 ka | 25 ka | 20 ka | 15 ka | 10 ka | 5 ka | 0 ka |
+|---|---|---|---|---|---|---|---|---|---|
+| Laurentide | 1.52 | 0.47 | 0.83 | 1.29 | 0.91 | 0.97 | 1.24 | 1.08 | 2.95 |
+| Greenland | 1.27 | 1.27 | 0.98 | 0.94 | 0.79 | 2.02 | 0.36 | 0.27 | 0.44 |
+| Eurasia | 1.41 | 1.41 | 1.41 | 1.30 | 0.84 | 0.39 | 4.48 | 2.89 | 0.91 |
+
+NH ice volume (m SLE, NH-32KM; the coupled runs' `M_ice`): PaleoMIST 112.5 at 20 ka, 7.45 today; Gowan's tau_b 124.7 (1.11),
+8.03 (1.08); the posterior mean 117.6 (1.05), 5.53 (0.74). Offline (`plastic_slices` with the posterior multipliers, PaleoMIST's
+own bed): 115.2 (1.02) at 20 ka, 5.69 (0.76) today, 16.2 (1.26) at 80 ka, 75.9 (0.92) at 60 ka.
+
+Greenland today, offline, over the Greenland region: PaleoMIST 7.24 m SLE, BedMachine v6 7.23; Gowan's tau_b 7.72 (H - BedMachine
++134 m mean, 203 m rms); the posterior mean 5.18 (-485 m mean, 576 m rms). The calibration thins today's Greenland ice sheet by
+a quarter: it fails this sanity check.
+
+Reading: the LGM and the deglaciation of the Laurentide are well constrained and barely move (0.9-1.3, sd 0.02-0.05); the
+gain is in Fennoscandia/Barents (RMS z 13.2 -> 10.2) and Greenland (91.7 -> 81.9), little in the far field. The posterior
+has features that are not physical: alternating factors between neighbouring deglacial nodes (Eurasia 0.39 at 15 ka, 4.48
+at 10 ka; Greenland 2.0 at 15 ka, 0.27-0.44 from 10 ka), a factor 2.95 on the small Laurentide (Canadian Arctic) ice today,
+and a Greenland ice sheet 28 % too thin today. tau_b likely absorbs misfits it should not explain: the 1-D Earth (one viscosity
+profile for every region), the timing of the margin chronology, and the index points of one site counted as independent (the
+cut removed 126 of Greenland's 276). The posterior is a fit, not yet a reconstruction.
+
 ## Open
 
 - The NH ice is 7-10 % too large with Gowan's tau_b and the new margin (was 15-50 %): mostly resolution (above).
-- The calibration's observation error (above): `sigma_add` and/or a gross-error check to decide before the full run;
-  index points of one site are correlated (diagonal R here); the full run's first step with alpha 9.333 and Ne = 32 is
-  untested.
+- Calibration v1 (above): oscillating deglacial factors, Eurasia 10 ka at the bound, Greenland too thin today. Options: a
+  smoother prior in time (longer correlation, or fewer deglacial nodes), Greenland's present-day volume (BedMachine) as an
+  observation or Greenland not calibrated, sites as units (correlated index points), a 3-D Earth (the science Earth).
 - `drive = "smb"` does not converge on 32 km grids (library); `"full"` neither (use `"surface"`).
 - The science-Earth variant (`par/kryos_North_plastic_vilma2.nml`, 3-D Bagge, lmax 170, refcorr reference) is not
   run with `"surface"` (its flat run was cancelled in VILMA2's spin-up).

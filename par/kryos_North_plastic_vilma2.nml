@@ -166,8 +166,7 @@
     margin_extrapolate = "error"
     taub_method        = "domains"      ! Gowan's domains, time dependent (PaleoMIST 1.0)
     taub_const         = 1.0e5          ! [Pa] taub_method = "const" only
-    taub_domain_file   = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST_taub.nc"   ! before its release
-                                        ! in FesmData: -p ice_nor.taub_domain_file=<absolute path>
+    taub_domain_file   = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST_taub.nc"   ! FesmData IceHistory v2.3.0
     taub_domain_var    = "taub_domain"
     taub_id_var        = "domain_id"
     taub_value_var     = "taub"

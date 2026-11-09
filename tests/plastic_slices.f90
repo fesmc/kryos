@@ -12,20 +12,21 @@ program plastic_slices
     !
     !     make libkryos/bin/plastic_slices.x plastic=1
     !     plastic_slices.x <history.nc> <taub.nc> <mode> [<margin_var> [<margin_min> [<margin_position>
-    !                      [<taub_default> [<out.nc>]]]]]
+    !                      [<taub_default> [<out.nc> [<taub_scale.nc>]]]]]]
+    ! <taub_scale.nc>: the multipliers of the backend's taub_scale_file (the calibration).
     ! margin_position as the backend's (default "sdist"; at the slices' own times, as here, the same as "face").
 
     use precision, only: dp
     use ncio,      only: nc_read, nc_size, nc_read_attr, nc_create, nc_write_dim, nc_write
     use kryos_plastic_margin, only: margin_t, margin_init, margin_at, model_time_axis, MARGIN_NEAREST
-    use kryos_plastic_taub,   only: taub_t, taub_read_domains, taub_at
+    use kryos_plastic_taub,   only: taub_t, taub_read_domains, taub_read_scale, taub_at
     use plastic_ice, only: plastic_par_t, plastic_t, plastic_init, plastic_solve, plastic_stress_residual, &
                            plastic_margin_frac_from_sdist
 
     implicit none
 
     real(dp), parameter :: RHO_I = 910.0_dp, RHO_SW = 1028.0_dp, G = 9.81_dp, A_OCN = 3.618e14_dp   ! kryos Earth
-    character(len=512) :: hist, tfile, arg, outf
+    character(len=512) :: hist, tfile, arg, outf, sfile
     character(len=64)  :: mvar, mpos
     character(len=16)  :: mode
     character(len=256) :: units
@@ -53,6 +54,8 @@ program plastic_slices
     end if
     outf = ""
     if (command_argument_count() >= 8) call get_command_argument(8, outf)
+    sfile = ""
+    if (command_argument_count() >= 9) call get_command_argument(9, sfile)
 
     nx = nc_size(hist, "xc");  ny = nc_size(hist, "yc");  nt = nc_size(hist, "time")
     allocate(x(nx), y(ny), t(nt), zb(nx,ny), Hp(nx,ny), tau(nx,ny), sd(nx,ny), zsl(nx,ny), d(nx,ny), mask(nx,ny))
@@ -63,6 +66,7 @@ program plastic_slices
 
     call margin_init(mg, trim(hist), trim(mvar), m_min, nx, ny, dx, dy, MARGIN_NEAREST, .false.)
     call taub_read_domains(tb, trim(tfile), "taub_domain", "domain_id", "taub", "taub_t", tdef, .false., nx, ny)
+    if (len_trim(sfile) > 0) call taub_read_scale(tb, trim(sfile))
     par%rho_i = RHO_I;  par%rho_w = RHO_SW;  par%g = G;  par%mode = trim(mode)
     if (trim(mpos) == "sdist") then
         allocate(frac(nx, ny))
@@ -81,6 +85,7 @@ program plastic_slices
 
     write(*,"(a,a,a,a,a,a,g0,a,a,f8.1,a)") "# ", trim(hist), ", mode ", trim(mode), ", margin ", trim(mvar)//" > ", m_min, &
                                           " at "//trim(mpos), ", taub_default ", tdef, " Pa"
+    if (len_trim(sfile) > 0) write(*,"(a)") "# tau_b scaled by "//trim(sfile)
     write(*,"(a)") "#  t [ka]  rms [m] bias [m]  SLE [m] SLE_pm [m]  A0     A1    A10 [1e6 km2]  stat n_outer n_bad"// &
                    "  res_med res_max"
     do k = 1, nt
