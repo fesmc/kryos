@@ -227,6 +227,9 @@
                                                ! those ids, constant in time; "" = none
     taub_default       = 0.0                   ! [Pa] "domains": cells without a domain; 0 = none (such a cell in the
                                                ! ice mask stops the run)
+    taub_domain_factor_file = ""               ! "domains": a factor per domain id, constant in time, before the scale
+                                               ! groups (domain_id, log_factor; the present-day fit,
+                                               ! tests/plastic_taub_fit.f90; {domain}, {grid_name}); "" = none
     taub_scale_file    = ""                    ! "domains": multipliers of tau_b per scale group, time dependent (the
                                                ! calibration, tools/levante/plastic_esmda.jl; {domain}, {grid_name});
                                                ! "" = none

@@ -138,6 +138,13 @@ dependent in PaleoMIST 1.0, so the series is used, linear between its records. I
 domains outside every polygon (5000 Pa); cells without a domain take `taub_default` (the par files: 5000 Pa).
 Its 2-D base field `taub_map` can be read with `taub_method = "file"`.
 
+`taub_domain_factor_file` (`"domains"` only; `""` = none): a factor per domain, constant in time (the present-day fit, Stage 1 of
+calibration v2 below). NetCDF, dimension `domain`: `domain_id(domain)`, `log_factor(domain)` (natural log of the factor). tau_b of a
+domain is its value (the series, after the override table) times exp(log_factor), then times the scale groups' multiplier below; the
+`taub_default` of the cells without a domain is not scaled; an id of the product missing from the file keeps factor 1; an id of the
+file without tau_b stops unless its log_factor is 0 (one file can hold the domains of all grids). A file of zeros gives tau_b bit for
+bit (tested).
+
 `taub_scale_file` (`"domains"` only; `""` = none): multipliers of tau_b per scale group, time dependent (the calibration
 below). NetCDF, dimensions `domain`, `scale_group`, `node`: `domain_id(domain)`, `group(domain)` (the scale group of each id,
 1 to the number of groups, 0 = unscaled), `time(node)` (any order, its units as the margin's: `years ago`, ...),
@@ -181,6 +188,7 @@ continuous one), `H_prev` and `z_srf`, lossless; the read checks the grid and th
 | `taub_file`, `taub_var` | `""`, `"taub"` | `"file"` |
 | `taub_domain_file`, `taub_domain_var`, `taub_id_var`, `taub_value_var`, `taub_time_var` | `""`, `"taub_domain"`, `"domain_id"`, `"taub"`, `"taub_t"` | `"domains"` |
 | `taub_override`, `taub_default` | `""`, 0 | `"domains"` |
+| `taub_domain_factor_file` | `""` | `"domains"`: the factor per domain (above), before the scale groups |
 | `taub_scale_file` | `""` | `"domains"`: the multipliers per scale group (above) |
 | `rheo_A`, `rheo_n` | 0, 3 | Glen rate factor [Pa-n yr-1] (0: no velocity), exponent |
 | `slide_law` | `"none"` | `"linear"`, `"weertman"` (`slide_beta`, `slide_m`), `"coulomb"` (`slide_C`, `slide_u0`, `slide_m`) |
@@ -203,7 +211,8 @@ shelf.
   value; hold and the stop outside the range; tau_b domains (static, override, a series in either dimension
   order, an id added by the table, the stops); the tau_b scale (groups by id, an id added by the table, linear in
   time between unordered nodes, held outside, times the series, the default unscaled, factor 1 bit for bit, the
-  stops).
+  stops); the domain factor (by id, times the series and then the scale groups, constant in time, the default unscaled, a file
+  of zeros bit for bit with and without the scale, the stop for a scaled id without tau_b).
 - `tests/test_ice_plastic.f90` (`plastic=1`): the backend on a toy grid (flat bed, two disks, tau_b const,
   `mode = "flat"`): the plastic profile at the centre, the masks, the static exports, an update (dHidt,
   mb_net, M_ice), a restart round trip stepped on bit for bit, the flotation binding.
