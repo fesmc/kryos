@@ -22,6 +22,8 @@
 # Folder: config.toml, kryos.x, input/, par.nml, groups.csv, obs.csv, obs_kept.csv, esmda.md (the report), next (the iteration to run, or done);
 # iter_kk/: theta.csv (all members of the iteration), members.txt (those to run), mNNN/ (taub_scale.nc, par.nml, the run, status:
 # exit code and seconds), scores.csv (per member and set), members.csv (per member: ok, chi2, ESL at 20 ka, run time).
+# Every member writes the product (PRODUCT_VARS): the 2-D ice of each instance of scale_keys (<instance>.nc on its out_2D schedule,
+# 2.5 kyr) and its 0-D series, besides the VILMA2 stream (RSL, bed, ocean, load) of the par file; [run] set and final_set come after.
 # Member 0 is the mean member: the prior mean (0, Gowan's tau_b) in iteration 1, the ensemble mean after an update.
 using LinearAlgebra, Printf, Random, Statistics, TOML, NCDatasets
 
@@ -31,6 +33,11 @@ end
 include("plastic_taub_scale.jl")
 
 const ESL_AGE = 20000.0
+# the exports every member writes per plastic instance: the 2-D ice (thickness, surface, bed and sea level as the ice saw them, ice
+# fraction) and the ice mass (out_vars filters the 0-D series too)
+const PRODUCT_VARS = ["H_ice", "z_srf", "z_bed", "z_sl", "f_ice", "M_ice"]
+product_set(keys) = [s for inst in unique(first.(split.(keys, "."))) for s in
+                     ("$(inst).out_2D=\"out_2D\"", "$(inst).out_vars=" * join(("\"$v\"" for v in PRODUCT_VARS), " "))]
 
 itdir(C, k) = joinpath(C, @sprintf("iter_%02d", k))
 mdir(C, k, m) = joinpath(itdir(C, k), @sprintf("m%03d", m))
@@ -105,7 +112,8 @@ function write_iteration(C, k, cfg, sg, P, ids, Θ, run; final = false)
         D = mdir(C, k, m); mkpath(D)
         f = write_scale(joinpath(D, "taub_scale.nc"), sg, log_factor(sg, P, Θ[:, j]))
         cp(joinpath(C, "par.nml"), joinpath(D, "par.nml"); force = true)
-        set = ["$(key)=\"$f\"" for key in get(cfg["run"], "scale_keys", ["ice_nor.taub_scale_file"])]
+        keys = get(cfg["run"], "scale_keys", ["ice_nor.taub_scale_file"])
+        set = [["$(key)=\"$f\"" for key in keys]; product_set(keys)]
         final && append!(set, String.(get(cfg["run"], "final_set", String[])))
         Base.run(`python3 $(cfg["run"]["set_nml"]) $(joinpath(D, "par.nml")) $set`)
     end
