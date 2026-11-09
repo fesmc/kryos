@@ -7,6 +7,9 @@
 # (FesmData NH-32KM TOPO-GEBCO2026, its H_ice) over the Greenland region (REGIONS region_2 = 103).
 using CairoMakie, NCDatasets, Printf, Statistics, TOML
 include(joinpath(@__DIR__, "plastic_pd_regions.jl"))
+module PM
+include(joinpath(@__DIR__, "pm_compare.jl"))
+end
 
 const RHO_I, RHO_SW, A_OCN = 910.0, 1028.0, 3.618e14
 C, out = ARGS[1], ARGS[2]; mkpath(out)
@@ -42,6 +45,30 @@ for k in iters
                 j == 1 && !isempty(e0) ? @sprintf("%.1f", e0[1]) : "", " | ",
                 j == 1 && !isempty(ee) ? @sprintf("%.1f [%.1f, %.1f]", median(ee), extrema(ee)...) : "", " | ",
                 j == 1 ? @sprintf("%.3f", sdθ) : "", " |")
+    end
+end
+
+# --- scores with the model error: z_m = d / sqrt(sigma_i^2 + sigma_m^2) (the diagonal of R), robust to an index point whose scorer sigma
+# is ~0 (a one-sided elevation range on the side of d and a flat model: z of the scores unbounded) ----------------------------------------
+σm = get(cfg["esmda"], "sigma_m", get(cfg["esmda"], "sigma_add", 0.0))
+if σm > 0
+    obs = [o for o in PM.read_indicators(cfg["score"]["fesmdata"]) if o.type == 0]
+    A = sort(NCDataset(ds -> Float64.(ds["time"][:]),
+                       joinpath(cfg["score"]["fesmdata"], "Global", "GLOBAL-0.5DEG", "GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc")))
+    gs = cfg["esmda"]["obs_groups"]
+    println(io, "\n### Mean members: RMS of z_m = d / sqrt(sigma^2 + sigma_m^2), sigma_m = $(σm) m (index points; n with scorer sigma < 0.1 m)\n")
+    println(io, "| iteration | all | ", join(gs, " | "), " | sigma < 0.1 m |\n|---|---|", repeat("---|", length(gs) + 1))
+    for k in iters
+        D = joinpath(itd(k), "m000"); isfile(joinpath(D, "vilma_out.nc")) || continue
+        r = PM.read_run(D); S = PM.series_run(r, [o.lon for o in obs], [o.lat for o in obs], A)
+        zm = fill(NaN, length(obs)); small = 0
+        for (i, o) in enumerate(obs)
+            any(isnan, S[i, :]) && continue
+            m, dmdt = PM.tval(A, S[i, :], o.t); d = m - o.rsl; s = PM.ip_sigma(o, d, dmdt)
+            zm[i] = d / sqrt(s^2 + σm^2); small += s < 0.1
+        end
+        rz(g) = (z = [zm[i] for i in eachindex(obs) if (g === nothing || obs[i].group == g) && isfinite(zm[i])]; @sprintf("%.2f", sqrt(mean(z .^ 2))))
+        println(io, "| ", k, " | ", rz(nothing), " | ", join([rz(g) for g in gs], " | "), " | ", small, " |")
     end
 end
 
