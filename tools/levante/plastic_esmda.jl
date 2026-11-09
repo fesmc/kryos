@@ -148,7 +148,7 @@ function init(cfgfile, C)
     og = cfg["esmda"]["obs_groups"]
     open(joinpath(C, "obs.csv"), "w") do io
         println(io, "group,n_index_points,n_marine_limiting,n_terrestrial_limiting")
-        for g in og; println(io, g, ",", (count(o -> o.group == g && o.type == t, obs) for t in (0, -1, 1))...); end
+        for g in og; println(io, g, ",", join((count(o -> o.group == g && o.type == t, obs) for t in (0, -1, 1)), ",")); end
     end
 
     es = cfg["esmda"]; ne = es["ne"]; P = params(cfg, sg)
