@@ -22,6 +22,7 @@
 # areas (FOCUS).
 # Writes: pm_metrics.md (tables), pm_metrics_B1_PM.csv (all records), pm_sites.csv, pm_gmsl.csv, pm_fields.nc (for pm_maps.jl),
 # pm_indicators.md (scores), pm_ind_samples.csv (per sample), pm_ind_sites.csv (per site), pm_ind_curves.csv (model RSL at the sites).
+# Included by plastic_esmda.jl (in a module) for the scoring functions: main runs only as a script.
 using NCDatasets, Printf, Statistics
 
 const MAP_AGES = [22500.0, 15000.0, 10000.0]
@@ -137,13 +138,20 @@ function trange(A, s, t0, t1)
     extrema(v)
 end
 
+# 1 sigma of an index point for the misfit d at the model slope dmdt: the elevation's (half the 2-sigma range, on the side of d) and the
+# age's (dmdt times the 1-sigma age uncertainty)
+function ip_sigma(o, d, dmdt)
+    sz = (d > 0 ? o.rmax - o.rsl : o.rsl - o.rmin) / 2
+    sqrt(sz^2 + (dmdt * o.st)^2)
+end
+
 # score of one sample: index point -> (d, z), limiting -> violated (as 1.0 / 0.0)
 function score(o, A, s)
     any(isnan, s) && return (m = NaN, d = NaN, z = NaN, viol = NaN)
     if o.type == 0
         m, dmdt = tval(A, s, o.t)
-        d = m - o.rsl; sz = (d > 0 ? o.rmax - o.rsl : o.rsl - o.rmin) / 2          # 1 sigma: half the 2-sigma range, on the side of d
-        return (m = m, d = d, z = d / sqrt(sz^2 + (dmdt * o.st)^2), viol = NaN)
+        d = m - o.rsl
+        return (m = m, d = d, z = d / ip_sigma(o, d, dmdt), viol = NaN)
     end
     lo, hi = trange(A, s, o.tmin, o.tmax)
     (m = tval(A, s, o.t)[1], d = NaN, z = NaN, viol = o.type == -1 ? Float64(hi < o.rmin) : Float64(lo > o.rmax))
@@ -477,4 +485,4 @@ function main(args)
     indicators(fesmdata, out, R, lon, lat, ages, sl)
     println("wrote ", out)
 end
-main(ARGS)
+abspath(PROGRAM_FILE) == @__FILE__() && main(ARGS)
