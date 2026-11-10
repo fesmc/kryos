@@ -417,13 +417,21 @@ contains
     subroutine diagnostics(self)
         ! mass_balance = "implied": on the current geometry, the divergence of the steady solver's face fluxes,
         ! the outflow through the margin faces (to land, to the ocean) and the surface velocity of the closure.
+        ! drive = "taub": the driving stress of the fluxes at most tau_b (the bed's yield stress; the margin faces'
+        ! step to the margin surface would otherwise drive the outflow far above it).
         class(plastic_ice_t), intent(inout) :: self
         integer :: stat
         if (.not. self%implied) return
         if (len_trim(self%fr%kind) > 0) call friction_map_set(self)
-        call plastic_smb_flux_divergence(self%ps, self%z_bed, self%z_sl, self%mask, self%rheo, self%slide, self%divq, &
-                                         margin_frac=self%mfrac, stat=stat, q_land=self%q_land, &
-                                         q_marine=self%q_marine, us_x=self%us_x, us_y=self%us_y)
+        if (trim(self%drive) == "taub") then
+            call plastic_smb_flux_divergence(self%ps, self%z_bed, self%z_sl, self%mask, self%rheo, self%slide, self%divq, &
+                                             margin_frac=self%mfrac, stat=stat, q_land=self%q_land, &
+                                             q_marine=self%q_marine, us_x=self%us_x, us_y=self%us_y, tau_cap=self%tau_b)
+        else
+            call plastic_smb_flux_divergence(self%ps, self%z_bed, self%z_sl, self%mask, self%rheo, self%slide, self%divq, &
+                                             margin_frac=self%mfrac, stat=stat, q_land=self%q_land, &
+                                             q_marine=self%q_marine, us_x=self%us_x, us_y=self%us_y)
+        end if
         call status_check(self, stat, "plastic_smb_flux_divergence")
     end subroutine diagnostics
 

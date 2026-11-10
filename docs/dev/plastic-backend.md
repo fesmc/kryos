@@ -105,7 +105,10 @@ the step [kg m-2 yr-1]:
 - so smb + cmb summed over the grid is mb_net (the mass change the margin and the bed impose); `smb_tot`,
   `cmb_tot` the sums [Gt yr-1].
 
-div q and the outflow are those of the geometry at t1. With `mb_smooth_km` > 0, div q - q_land is smoothed over the ice by a
+div q and the outflow are those of the geometry at t1. With drive = "taub" the driving stress of the face fluxes is
+capped at tau_b (the face: the mean of its cells; a margin face: its ice cell): a plastic bed carries at most its yield
+stress, and the steep step from the ice to the margin surface otherwise drives the outflow of the margin cells far above
+the stress of the ice (the marine margin cells of the first coulomb_n fit had 10 times the implied SMB of the interior). With `mb_smooth_km` > 0, div q - q_land is smoothed over the ice by a
 Gaussian of that sd, in scatter form (each cell spreads its value over the ice cells within 3 sd, weights normalised
 by their sum), which keeps its sum: the plastic surface is piecewise (steps at the tau_b domain boundaries, kinks
 along the flowlines of the eikonal solve), and its flux divergence at the grid scale is mostly that, while ice

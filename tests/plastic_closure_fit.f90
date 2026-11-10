@@ -9,7 +9,8 @@ program plastic_closure_fit
     !     taub_smooth_km, the topography file's bed, z_sl = 0;
     !   * law = "yield": each (A, uy, b) of A_list, uy_list, b_list (m fixed); law = "coulomb_n": each (A, Hc, lambda_min,
     !     m) of A_list, Hc_list, lam_list, m_list (u0, umax, p, zb0, zb1 fixed): the surface velocity, the divergence of
-    !     the flux and the outflow through the margin faces of the steady face fluxes (plastic_smb_flux_divergence);
+    !     the flux and the outflow through the margin faces of the steady face fluxes (plastic_smb_flux_divergence, the
+    !     driving stress capped at tau_b as the backend's);
     !   * the misfit: over the ice cells with an observed speed > speed_min and a model speed > 0, the RMS of
     !     log10(model / observed) and the median of the ratio; the integrals [Gt yr-1] of the implied SMB (div q, the
     !     present day steady), its positive part, the outflow to land and to the ocean; the ablation area (the fraction
@@ -121,7 +122,7 @@ program plastic_closure_fit
                     sl%m = p3(i3)
                     call friction_map(fr, sl%m, tau, ps%H, zb, zsl, mask, RHO_I, RHO_SW, GRAV, sl%fric_map)
                     call plastic_smb_flux_divergence(ps, zb, zsl, mask, rheo, sl, divq, margin_frac=frac, stat=stat, &
-                                                     q_land=ql, q_marine=qm, us_x=ux, us_y=uy)
+                                                     q_land=ql, q_marine=qm, us_x=ux, us_y=uy, tau_cap=tau)
                     if (stat /= PLASTIC_OK) error stop "plastic_closure_fit: plastic_smb_flux_divergence failed"
                     sp = hypot(ux, uy)
                     use = mask .and. mobs /= 3 .and. uobs > speed_min .and. sp > 0.0_dp
