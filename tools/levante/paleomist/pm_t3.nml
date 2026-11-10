@@ -1,8 +1,8 @@
 ! Standalone VILMA2 under the PaleoMIST ice history (Gowan et al. 2021; docs/experiment-gowan.md), a runme case of a
 ! PaleoMIST project (tools/levante/pm_project.sh). Earth "t3": SELEN's Earth of PaleoMIST (calc_sl/data.inc of the
 ! PANGAEA bundle, model ehgr: 120 km, UM 3.9811e20, LM 3.9811e22 Pa s): three homogeneous layers 0-120, 120-670 km, 670
-! km-CMB and the core, rho and mu the volume means of TABOO's 200 s PREM table (pm_prep.jl taboo); vilma.eta =
-! 1.0e40,<UM>,<LM>,0.0 for the other Earths of Gowan's Stokes coefficients (ehgG: LM 3.9811e21).
+! km-CMB and the core, rho and mu the volume means of TABOO's 200 s PREM table (pm_prep.jl taboo); vilma.eta==
+! 1.0e40,<UM>,<LM>,0.0 (runme: == sets a vector, a comma list alone would be an ensemble) for the other Earths of Gowan's Stokes coefficients (ehgG: LM 3.9811e21).
 ! Options (runme -p): ctl.file_forcing = "pm_data/pm_force_<F>.nc" (pm_prep.jl: B 80 -> 0 ka steps, A 22.5 ka held, S smoke,
 ! Bg, Bl, Bm, ...); ctl.z_bed_ref_file, ctl.h_ice_ref_file = "pm_data/pm_ref80.nc" (SELEN's initial state, with
 ! vilma.equil_time_max = 0); ctl.i_eq = 3 with ctl.rsl_restart_file (the iterated reference, pm_iterref.sh); vilma.scheme

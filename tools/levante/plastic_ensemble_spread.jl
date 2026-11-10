@@ -2,7 +2,7 @@
 # calibration (plastic_esmda.jl), all members against the members that fit the data about equally well (docs/dev/plastic-backend.md).
 #   julia --project=tools/levante tools/levante/plastic_ensemble_spread.jl <calibration folder> <iteration> <2-D folder> <out folder>
 #         [age=20000] [ngood=10]
-# <2-D folder>/mNNN: the members of the iteration rerun with ice_nor.nc, ice_ant.nc (2-D, the 2.5 kyr records); their scores are those
+# <2-D folder>/<m> (or mNNN): the members of the iteration rerun with ice_nor.nc, ice_ant.nc (2-D, the 2.5 kyr records); their scores are those
 # of the calibration (iter_kk/members.csv: chi2 / n = d' R^-1 d / n over the assimilated index points, R with the correlated model
 # error). "Good": the ngood members with the lowest chi2 / n. Surface elevation above the sea level of the age, z_srf - z_sl, on the
 # cells with ice in every member (the margin is prescribed, so these are the ice cells). Writes to <out>:
@@ -25,15 +25,16 @@ const GRIDS = [("ice_nor", "North", "NH-32KM"), ("ice_ant", "Antarctica", "ANT-1
 M = readdlm(joinpath(C, @sprintf("iter_%02d", k), "members.csv"), ',', Any; skipstart = 1)
 chi = Dict(Int(r[1]) => Float64(r[3]) for r in eachrow(M) if r[2] == 1 && Int(r[1]) != 0)
 esl = Dict(Int(r[1]) => Float64(r[4]) for r in eachrow(M) if r[2] == 1)
-mems = sort([m for m in keys(chi) if isfile(joinpath(D2, @sprintf("m%03d", m), "status")) &&
-             split(read(joinpath(D2, @sprintf("m%03d", m), "status"), String))[1] == "0"])
+# a member's folder in the 2-D folder: <m>/ (staged by runme) or mNNN/ (before 2026-11-11)
+m2d(m) = (d = joinpath(D2, string(m)); isdir(d) ? d : joinpath(D2, @sprintf("m%03d", m)))
+mems = sort([m for m in keys(chi) if isfile(joinpath(m2d(m), "status")) && split(read(joinpath(m2d(m), "status"), String))[1] == "0"])
 length(mems) >= ngood + 2 || error("only $(length(mems)) members with 2-D output")
 order = sort(mems, by = m -> chi[m]); good = order[1:ngood]
 nobs = count(==(1), readdlm(joinpath(C, "obs_kept.csv"), ',', Any; skipstart = 2)[:, end])
 
 # --- surface elevation at the age -----------------------------------------------------------------------------------------------------
 function field(m, inst)
-    NCDataset(joinpath(D2, @sprintf("m%03d", m), "$(inst).nc")) do ds
+    NCDataset(joinpath(m2d(m), "$(inst).nc")) do ds
         t = Float64.(ds["time"][:]); i = findfirst(x -> abs(x + age) < 1, t)
         g(v) = Float64.(nomissing(ds[v][:, :, i], NaN))
         H = g("H_ice"); zs = g("z_srf") .- g("z_sl"); zs[H .<= 1] .= NaN
