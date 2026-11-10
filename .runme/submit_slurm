@@ -1,0 +1,21 @@
+#!/bin/bash
+#SBATCH --qos=<QOS>
+#SBATCH --partition=<PARTITION>
+#SBATCH --time=<WALL>
+#SBATCH --job-name=<JOBNAME>
+#SBATCH --account=<ACCOUNT>
+#SBATCH --mem=<MEM>
+#SBATCH --output=./out.out
+#SBATCH --error=./out.err
+<EMAILSECTION>
+
+<OMPSECTION>
+
+ulimit -s unlimited
+ulimit -v unlimited
+
+# Run the job: one OpenMP task, so the program runs directly (srun would refuse when Slurm raised the CPUs for --mem:
+# SLURM_CPUS_PER_TASK != SLURM_TRES_PER_TASK). `status`: the exit code and the run time [s], read by the tools (tools/levante)
+t0=$(date +%s)
+<CMD>
+echo "$? $(( $(date +%s) - t0 ))" > status

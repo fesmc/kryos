@@ -14,17 +14,18 @@
 # HPC system this config targets. Must match a top-level key in queues.json.
 # See `runme queues --all` for the list, or `runme check queues` to add a new
 # cluster.
-hpc = "CHANGEME"
+hpc = "dkrz_levante"
 
 # SLURM account to charge for submitted jobs. See `runme accounts` for the
 # accounts you can use on the current cluster.
-account = "CHANGEME"
+account = "ba1442"
 
 # Job name used by sbatch (#SBATCH --job-name).
 jobname = "kryos"
 
-# OpenMP threads. 0 disables the OpenMP block in the submit script.
-omp = 0
+# OpenMP threads. 0 disables the OpenMP block in the submit script. kryos: 16 for a 1-D Earth run, 64 for the 3-D Earth
+# (pass --omp 64; docs/getting-started).
+omp = 16
 
 # Default memory per node in MB. -1 leaves #SBATCH --mem unset.
 mem = -1
