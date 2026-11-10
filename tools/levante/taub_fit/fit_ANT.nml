@@ -1,0 +1,7 @@
+&fit
+    hist      = "/work/ba1442/fesmdata/Antarctica/ANT-16KM/ANT-16KM_IceHistory-PaleoMIST.nc"
+    taub_file = "/work/ba1442/fesmdata/Antarctica/ANT-16KM/ANT-16KM_IceHistory-PaleoMIST_taub.nc"
+    topo_file = "/work/ba1442/fesmdata/Antarctica/ANT-16KM/ANT-16KM_TOPO-BedMachine-v4.nc"
+    lambda    = 100.0, 30.0, 10.0, 3.0, 1.0, 0.3, 0.1, 0.03, 0.01, 0.003, 0.001, 0.0
+    out       = "fit_ANT-16KM.nc"
+/
