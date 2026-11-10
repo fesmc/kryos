@@ -54,6 +54,8 @@ module kryos_ice_plastic
         logical           :: closure = .false.           ! rheology and sliding set (drive = "smb", mass_balance = "implied")
         logical           :: implied = .false.           ! mass_balance = "implied": smb, cmb, ux_s, uy_s from the closure
         real(dp)          :: mb_smooth = 0.0_dp          ! [m] mb_smooth_km: Gaussian sd of the conservative smoothing (0: none)
+        logical           :: yield = .false.             ! slide_law = "yield": u_b = u_y (tau/tau_b)^m, beta per cell from tau_b
+        real(dp)          :: uy_ref = 0.0_dp, uy_b = 0.0_dp   ! u_y = uy_ref (tau_b / 100 kPa)^uy_b [m yr-1]
         real(dp) :: dx = 0.0_dp, dy = 0.0_dp             ! [m]
         real(dp), allocatable :: z_bed_ref(:,:), H_ice_pd(:,:), footprint(:,:)   ! static
         real(dp), allocatable :: z_bed(:,:), z_sl(:,:)   ! [m] the bed and sea level of the last solve
@@ -418,11 +420,24 @@ contains
         class(plastic_ice_t), intent(inout) :: self
         integer :: stat
         if (.not. self%implied) return
+        if (self%yield) call yield_beta(self)
         call plastic_smb_flux_divergence(self%ps, self%z_bed, self%z_sl, self%mask, self%rheo, self%slide, self%divq, &
                                          margin_frac=self%mfrac, stat=stat, q_land=self%q_land, &
                                          q_marine=self%q_marine, us_x=self%us_x, us_y=self%us_y)
         call status_check(self, stat, "plastic_smb_flux_divergence")
     end subroutine diagnostics
+
+    subroutine yield_beta(self)
+        ! slide_law = "yield": the Weertman beta per cell such that the ice slides at u_y where the stress is at its
+        ! yield value tau_b: beta = tau_b / u_y^(1/m), u_y = uy_ref (tau_b / 100 kPa)^uy_b (uy_b < 0: the weaker the bed,
+        ! the faster); cells without a positive tau_b get no sliding (a margin face takes the beta of its ice cell).
+        class(plastic_ice_t), intent(inout) :: self
+        where (self%tau_b > 0.0_dp)
+            self%slide%beta_map = self%tau_b/(self%uy_ref*(self%tau_b/1.0e5_dp)**self%uy_b)**(1.0_dp/self%slide%m)
+        elsewhere
+            self%slide%beta_map = huge(1.0_dp)
+        end where
+    end subroutine yield_beta
 
     subroutine status_check(self, stat, what)
         ! A library call that did not return PLASTIC_OK (bad input: nothing computed) stops; a closure's
@@ -690,6 +705,7 @@ contains
         real(dp) :: mb_smooth_km
         character(len=:), allocatable :: who
         real(dp) :: margin_H_min, taub_const, taub_default, rheo_A, rheo_n, slide_beta, slide_m, slide_C, slide_u0
+        real(dp) :: slide_uy, slide_uy_b
         integer,  allocatable :: codes(:)
         real(dp), allocatable :: vals(:)
         logical  :: hold
@@ -705,6 +721,7 @@ contains
         mode = "surface"
         rheo_A = 0.0_dp;  rheo_n = 3.0_dp
         slide_law = "none";  slide_beta = 0.0_dp;  slide_m = 1.0_dp;  slide_C = 0.0_dp;  slide_u0 = 0.0_dp
+        slide_uy = 0.0_dp;  slide_uy_b = 0.0_dp
         mass_balance = "none";  mb_smooth_km = 0.0_dp
 
         call rd_s("drive", self%drive)
@@ -747,6 +764,8 @@ contains
         call rd_r("rheo_n", rheo_n)
         call rd_s("slide_law", slide_law)
         call rd_r("slide_beta", slide_beta)
+        call rd_r("slide_uy", slide_uy)
+        call rd_r("slide_uy_b", slide_uy_b)
         call rd_r("slide_m", slide_m)
         call rd_r("slide_C", slide_C)
         call rd_r("slide_u0", slide_u0)
@@ -851,7 +870,10 @@ contains
             call fesm_error(proc, "drive = 'smb' and mass_balance = 'implied' need the rheology and sliding", who// &
                             ": set rheo_A > 0 and slide_law (linear, weertman or coulomb)")
         end if
-        if (self%closure) call rheology_set(self, rheo_A, rheo_n, slide_law, slide_beta, slide_m, slide_C, slide_u0)
+        if (self%closure) call rheology_set(self, rheo_A, rheo_n, slide_law, slide_beta, slide_m, slide_C, slide_u0, &
+                                            slide_uy, slide_uy_b)
+        if (self%yield .and. trim(self%drive) == "smb") call fesm_error(proc, "slide_law = 'yield' needs drive = 'taub'", who// &
+                                                                       ": its beta follows the imposed tau_b")
 
     contains
 
@@ -875,11 +897,12 @@ contains
 
     end subroutine group_read
 
-    subroutine rheology_set(self, A, n, law, beta, m, C, u0)
+    subroutine rheology_set(self, A, n, law, beta, m, C, u0, uy, uy_b)
         ! The Glen rheology and the sliding law of the flux closure, from the keys
-        ! rheo_* and slide_*. The one place that names their components.
+        ! rheo_* and slide_*. The one place that names their components. "yield": the library's Weertman law with a
+        ! beta per cell (yield_beta, every step).
         class(plastic_ice_t), intent(inout) :: self
-        real(dp),             intent(in)    :: A, n, beta, m, C, u0
+        real(dp),             intent(in)    :: A, n, beta, m, C, u0, uy, uy_b
         character(len=*),     intent(in)    :: law
 
         character(len=*), parameter :: proc = "kryos_ice_plastic::init"
@@ -893,11 +916,24 @@ contains
         case ("coulomb")
             if (.not. (C > 0.0_dp .and. u0 > 0.0_dp)) call fesm_error(proc, "slide_law = 'coulomb' needs slide_C > 0 "// &
                                                                      "and slide_u0 > 0", "instance "//trim(self%name))
+        case ("yield")
+            if (.not. (uy > 0.0_dp .and. m > 0.0_dp)) call fesm_error(proc, "slide_law = 'yield' needs slide_uy > 0 and "// &
+                                                                     "slide_m > 0", "instance "//trim(self%name))
         case default
             call fesm_error(proc, "slide_law = '"//trim(law)//"' is not recognised", "instance "//trim(self%name)// &
-                            "; use none, linear, weertman or coulomb")
+                            "; use none, linear, weertman, coulomb or yield")
         end select
-        self%slide%law  = trim(law)
+        self%yield = trim(law) == "yield"
+        self%uy_ref = uy;  self%uy_b = uy_b
+        if (self%yield) then
+            allocate(self%slide%beta_map(self%nx, self%ny))
+            self%slide%beta_map = huge(1.0_dp)
+        end if
+        if (self%yield) then
+            self%slide%law = "weertman"
+        else
+            self%slide%law = trim(law)
+        end if
         self%slide%beta = beta
         self%slide%m    = m
         self%slide%C    = C

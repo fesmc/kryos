@@ -236,11 +236,13 @@
     ! rheology and sliding (drive = "smb"; mass_balance = "implied")
     rheo_A             = 0.0                   ! [Pa-n yr-1] Glen rate factor; 0 = no velocity
     rheo_n             = 3.0                   ! Glen exponent
-    slide_law          = "none"                ! "none" | "linear" | "weertman" | "coulomb" (regularised)
+    slide_law          = "none"                ! "none" | "linear" | "weertman" | "coulomb" (regularised) | "yield" 
     slide_beta         = 0.0                   ! linear [Pa yr m-1], weertman [Pa (yr m-1)^(1/m)]
     slide_m            = 1.0                   ! weertman, coulomb: stress exponent
     slide_C            = 0.0                   ! [Pa] coulomb: the cap
     slide_u0           = 0.0                   ! [m yr-1] coulomb: the threshold velocity
+    slide_uy           = 0.0                   ! [m yr-1] yield: u_b = u_y (tau/tau_b)^slide_m, u_y = slide_uy (tau_b/100 kPa)^slide_uy_b
+    slide_uy_b         = 0.0                   ! yield: exponent of u_y in tau_b (< 0: faster on weaker beds)
     mass_balance       = "none"                ! "none": smb = cmb = 0 | "implied": the mass balance the geometry needs
                                                ! (dHidt + div q of the steady face fluxes, margin outflow ablated to
                                                ! land, calved to the ocean), smb_tot, cmb_tot, ux_s, uy_s (rheo_A, slide_law)

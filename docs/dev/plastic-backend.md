@@ -112,7 +112,14 @@ along the flowlines of the eikonal solve), and its flux divergence at the grid s
 averages the stress over a few thicknesses. The magnitude scales with the closure (A, sliding): the
 implied mass balance is what this geometry needs with that flow law, not a climate. `ux_s`, `uy_s`: the
 surface velocity of the same closure, u_b(tau) + 2A/(n+1) tau^n H along -grad s (central slopes), for the
-comparison with observed speeds. The velocity-routing path (`plastic_velocity`, `plastic_smb_implied`) is not
+comparison with observed speeds.
+
+`slide_law = "yield"`: u_b = u_y (tau / tau_b)^m with tau_b the imposed basal shear stress (the yield stress of the plastic bed)
+and u_y = `slide_uy` (tau_b / 100 kPa)^`slide_uy_b`: the library's Weertman law with a beta per cell, beta = tau_b / u_y^(1/m),
+set from tau_b every step. Plastic ice sits at tau close to tau_b, so u_y is its sliding speed, and `slide_uy_b` < 0 makes a weak
+bed fast (ice streams on the low-tau_b shelf domains). A uniform beta does the opposite: at 10 kPa (Gowan's shelf domains, every
+Antarctic margin cell at 20 kyr) Weertman with beta = 3e4 slides at 0.04 m/yr, and the LGM Antarctic discharge of the first test
+was 200 Gt/yr against 5000 today. The velocity-routing path (`plastic_velocity`, `plastic_smb_implied`) is not
 used.
 
 ## Margin chronology
@@ -226,7 +233,7 @@ continuous one), `H_prev` and `z_srf`, lossless; the read checks the grid and th
 | `taub_domain_factor_file` | `""` | `"domains"`: the factor per domain (above), before the scale groups |
 | `taub_scale_file` | `""` | `"domains"`: the multipliers per scale group (above) |
 | `rheo_A`, `rheo_n` | 0, 3 | Glen rate factor [Pa-n yr-1] (0: no closure), exponent |
-| `slide_law` | `"none"` | `"linear"`, `"weertman"` (`slide_beta`, `slide_m`), `"coulomb"` (`slide_C`, `slide_u0`, `slide_m`) |
+| `slide_law` | `"none"` | `"linear"`, `"weertman"` (`slide_beta`, `slide_m`), `"coulomb"` (`slide_C`, `slide_u0`, `slide_m`), `"yield"` (`slide_uy`, `slide_uy_b`, `slide_m`; `drive = "taub"`) |
 | `mb_smooth_km` | 0 | `"implied"`: Gaussian sd [km] of the conservative smoothing of div q - q_land over the ice (sums unchanged; 0 = none) |
 | `mass_balance` | `"none"` | `"implied"`: smb, cmb, smb_tot, cmb_tot, ux_s, uy_s from the flux closure (needs `rheo_A`, `slide_law`) |
 | `out_plastic` | `"none"` | schedule of the stream `plastic` |
