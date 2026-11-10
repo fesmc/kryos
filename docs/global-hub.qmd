@@ -1,0 +1,353 @@
+---
+title: "Global hub and regional domains"
+---
+
+How several regional domains share one global solid Earth. The example is the science case of
+[`par/kryos_NH-ANT-PAT_plastic_vilma2.nml`](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT-PAT_plastic_vilma2.nml):
+three plastic ice sheets (North on `NH-32KM`, Antarctica on `ANT-16KM`, PatagoniaPaleo on `PAT-PAL-8KM`) on VILMA2,
+the global Earth `geo_glob` on its Gauss grid, with the rest of the world's ice from PaleoMIST's history. The general
+structure of a run (instances, wiring, lags, clock) is on [Architecture](architecture.qmd); the backends are on
+[VILMA2](backend-vilma2.md) and [PlasticIceSheet](backend-plastic.md); the runs themselves on
+[Simulating our own ice](experiment-plastic.md).
+
+The design is [`docs/dev/phase4-plan.md`](https://github.com/fesmc/kryos/blob/main/docs/dev/phase4-plan.md) (sections 2-8); the code is
+[`kryos_globe_ice.f90`](https://github.com/fesmc/kryos/blob/main/src/core/kryos_globe_ice.f90) (the global ice field),
+[`kryos_run_gia.f90`](https://github.com/fesmc/kryos/blob/main/src/core/kryos_run_gia.f90) (its place in the
+sequence) and
+[`kryos_geo_vilma2.f90`](https://github.com/fesmc/kryos/blob/main/src/backends/geo/kryos_geo_vilma2.f90) (the Earth and
+its ports).
+
+## The pieces
+
+| Instance or group | Scope | Grid | Role |
+|---|---|---|---|
+| `geo_glob` | globe | `GAUSS-L170` (built by the backend) | the Earth: VILMA2's sea-level equation and viscoelastic response, on the host's loads |
+| `[globe_ice]` | globe (a par group, not an instance) | `GLOBAL-0.5DEG` (background) | the background ice and bed X, the external ice history, the reference and the merges |
+| `ice_nor`, `ice_ant`, `ice_pat` | domain | `NH-32KM`, `ANT-16KM`, `PAT-PAL-8KM` (their hubs) | the loads: plastic ice, gathered by the core |
+| `geo_nor`, `geo_ant`, `geo_pat` | domain | the ice grid | the ports: the regional view of the global Earth, the bed and sea level back to the ice |
+
+Three nested areas matter in every global field:
+
+- the **footprint** of a domain: where its ice model holds ice (static; for the plastic backend the union of its
+  margin slices). Inside it the load is the ice model's.
+- the **host region**: the area covered by the domains' ice grids, with coverage `host_w` = `w` on the Gauss grid.
+  Inside it, but outside the footprint, the ice is the external history interpolated to the ice grid, with the ice
+  model's own flotation rule. The host region is where VILMA2 takes the host's terms.
+- the rest of the globe, `1 − w`: the external ice on the Gauss grid, with VILMA2's own flotation and coastline rule.
+
+```{mermaid}
+flowchart LR
+    subgraph G ["globe"]
+        X["[globe_ice]<br/>X at ext_tref<br/>+ history anomaly<br/>(GLOBAL-0.5DEG)"]
+        GI["globe_ice<br/>reference, gather<br/>(merges)"]
+        E["geo_glob<br/>VILMA2<br/>(GAUSS-L170)"]
+    end
+    subgraph DN ["domain North (NH-32KM)"]
+        IN["ice_nor"]
+        PN["geo_nor (port)"]
+    end
+    subgraph DA ["domain Antarctica (ANT-16KM)"]
+        IA["ice_ant"]
+        PA["geo_ant (port)"]
+    end
+    X --> GI
+    IN -->|"H_ice, f_grnd, z_bed, z_sl<br/>lag 1"| GI
+    IA --> GI
+    GI -->|"H_ice_ext, host_w, host_Ig,<br/>host_C, host_F"| E
+    E -->|"dz_bed, dz_ss (bilin),<br/>dphi, bsl; lag 0"| PN
+    E --> PA
+    PN -->|"z_bed = ref + dz_bed<br/>z_sl = dphi + dz_ss"| IN
+    PA --> IA
+```
+
+PatagoniaPaleo (`ice_pat`, `geo_pat`) is a third domain of the same form.
+
+## Grids and maps
+
+| Grid | Where it comes from | Coupler |
+|---|---|---|
+| `GAUSS-L<lmax>` | built by the `vilma2` backend at `init`: `nlat = 2 lmax + 2`, `nphi = 4 lmax` (or `nlat`, `nphi` of `[vilma]`), longitudes from 0, the cell areas VILMA2's quadrature areas; its description is written to `<map_fldr>/grid_GAUSS-L<lmax>.txt` (an existing file is checked against it) | the globe's, and every domain's (`globe_register_grid`) |
+| `GLOBAL-0.5DEG` | `[globe_ice] grid`, read from `grid_GLOBAL-0.5DEG.txt` of the map folder | the globe's |
+| each domain's ice grid | `grid_<name>.txt` of the map folder; registered in the globe's coupler with the true (ellipsoidal) cell areas as model areas | the globe's and its domain's |
+
+The globe has its own coupler (`globe%cpl`) on the map folder of `[kryos] map_fldr`. Both couplers cache their maps
+in that folder, so it needs the grid descriptions of every grid of the run (the par file notes `grid_PAT-PAL-8KM.txt`
+for Patagonia). VILMA2 stops if it does not recognise the grid as its own Gauss grid (it would build a remap).
+
+The remaps of the global ice field:
+
+| From → to | Method | What |
+|---|---|---|
+| background → Gauss | `con` | `z_bed` of X; the ice (X, then the external ice) as an amount per target area |
+| background → ice grid | `con` | the external ice inside the host region (`ext_to_ice`) |
+| ice grid → Gauss | merge (`coupler_merge_*`) | the host terms; `host_w` is the summed coverage |
+| ice grid → background | merge | the spliced reference and the merged ice of `globe_ice.nc` |
+| Gauss → port grid | `bilin` (domain's coupler) | the anomalies `dz_bed`, `dz_ss` |
+| port grid → ice grid | `auto` | identity here (the port is on the ice grid) |
+
+## The reference (`gia_reference`)
+
+Once, after every instance's `PASS_INIT` and before the cold start or a restore. The ice instances have published
+their static exports `footprint`, `H_ice_pd` and `z_bed_ref` (the domain's reference on the ice grid).
+
+1. Each domain is registered in name order (`globe_ice_add_domain`): its ice grid, its statics, and its coverage and
+   footprint fraction on the two global grids. Two domains on one ice grid, or a grid named like a global grid, stop.
+2. Background X on the background grid (the datasrc of `[globe_ice] z_bed_ref`, `H_ice_ref` at `ext_tref`), remapped to
+   the Gauss grid: `z_bed_ref`, `H_ice_ref` of `geo_glob` (VILMA2's reference for the `1 − w` part).
+3. Per domain on its ice grid, with sea level 0 and the bed `z_bed_ref` in every cell:
+   `H_tot = m·H_ice_pd + (1 − m)·X_i` (`m` the footprint, `X_i` the background ice on the ice grid),
+   `f_g,ref = flot(H_tot, z_bed_ref, 0)` (the ice instance's flotation binding), `I = H_tot·f_g,ref`,
+   `C = 1 − f_g,ref`, merged onto the Gauss grid: `host_w`, `host_Ig_ref`, `host_C_ref` (`F_ref = 0`).
+4. The spliced reference on the background grid, `(1 − Σ f_d)·X + Σ f_d·ref_d` for the bed and the ice, for the
+   hub output and the diagnostics. VILMA2 gets only the background part (item 2): the spliced ice would count a
+   domain's present day twice in partial cells.
+
+These five fields are put into `geo_glob`'s imports at `t0`; the Earth is then built at them (`PASS_GEOMETRY`:
+`solid_earth_init`, exports zero). The log gives each domain's grounded ice, its footprint, and the ocean area of the
+reference against the sea-surface area of the run's constants (a warning beyond 1 %).
+
+## The gather (`gia_gather`)
+
+At the start of a step when `geo_glob` is due, before its update, on the ice exports of the previous step (lag 1).
+
+1. **Load time.** For every domain the `T_GIA` row into `host_w` is checked (`wire_lag_status`) against the ice's last
+   update; that update is the load time `t_load`. Two domains whose ice was last updated at different times stop the
+   run: the Earth has one load time.
+2. **External ice** on the background grid: `H_ext = max(0, X + ΔH_hist(min(t_load, ext_tref)))` (`ext = "file"`;
+   `"ref"`: X), the clipped mass logged; remapped to the Gauss grid: `H_ice_ext`. With X the history's own slice at
+   `ext_tref`, `H_ext` is the history.
+3. **Per domain** on its ice grid, the ice's `H_ice`, `f_grnd`, `z_bed`, `z_sl` (the bed and sea level the ice used)
+   and `footprint`:
+
+   ```
+   H_tot = m·H + (1 − m)·ext_i
+   f_g   = m·f_grnd + (1 − m)·flot(H_tot, z_bed, z_sl)
+   I = H_tot·f_g,   C = 1 − f_g,   F = z_bed_ref·(f_g,ref − f_g)
+   ```
+
+   merged onto the Gauss grid (`I` and `F` extensive, `C` intensive), with the same procedure as the reference.
+4. **Checks.** The footprint must equal the registered one and `host_w` the reference's; `host_w` is clipped to
+   `[0, 1]` and `host_C` to `[0, host_w]` (round-off of the conservative maps; an excess above 1e-6 stops); finite
+   values, `host_Ig ≥ 0`; the merged grounded ice and the external ice are conserved to `cons_tol` (1e-9).
+5. **Log**: per domain and for the external ice, the change of grounded volume against the reference as sea-level
+   equivalent `−(ρ_i/ρ_w) ΔV / A`, the clipped external mass and the merge closure.
+6. `H_ice_ext`, `host_w`, `host_Ig`, `host_C`, `host_F` are put into `geo_glob`'s imports with validity `t_load`.
+
+The `T_GIA` rows of the wiring table exist for resolution, logging and the lag check; the exchange never runs them.
+The arithmetic is the core's, because it needs the flotation, the external ice and the merge.
+
+## The Earth (`geo_glob`)
+
+VILMA2 computes in `real64`; the adapter only hands the imports to VILMA2 and puts what it returns.
+
+| Import | Meaning |
+|---|---|
+| `H_ice_ext` | external ice, mean over the `1 − w` part |
+| `host_w` | coverage of the host region |
+| `host_Ig` | grounded-ice column `w·H·f_g` |
+| `host_C` | ocean fraction `w·(1 − f_g)` |
+| `host_F` | flooded-area fill `w·ζ⁽⁰⁾·(C − C_ref)` |
+| `z_bed_ref`, `H_ice_ref`, `host_Ig_ref`, `host_C_ref` | the reference (static) |
+
+| Export | Meaning |
+|---|---|
+| `dz_bed` | bed change |
+| `dz_ss` | sea-surface change relative to `dphi` (VILMA2's `dz_ss − dphi`) |
+| `dphi` | the uniform sea-surface shift |
+| `bsl` | barystatic sea level, the ocean mean of `C·rsl` |
+| `C_ocn` | total ocean function (diagnostic) |
+| `bsl_ive`, `bsl_ive_host` | ice-volume equivalent and its host part (diagnostics) |
+| `A_ocn` | `∫ C dA` |
+| `mass_resid` | worst sea-level-equation mass residual of the step |
+
+`update`: `solid_earth_update(se, H_ice_ext, t1 − t0, host_w, host_Ig, host_C, host_F)`. VILMA2 ramps the load
+linearly from the previous call's to this one. The densities are the run's (`phys_const`: `rho_ice`, `rho_sw`), set
+into VILMA2 at `init` and logged.
+
+## Sea level and ocean function
+
+Inside the host region VILMA2's sea-level solve uses the host's terms; on `1 − w` it applies its own flotation and
+coastline rule to `H_ice_ext` (VILMA2 README, "Host-resolved terms"). So the grounding of every load cell in a domain
+is the ice model's: its own `f_grnd` inside the footprint, its `flotation` binding with its own densities outside
+(plastic: grounded where `ρ_i H ≥ ρ_w (z_sl − z_bed)`).
+
+The sea level the ice sees is `z_sl = dphi + dz_ss`, of this step (lag 0). `bsl` reaches every port as a scalar and
+is a diagnostic there; `rsl = dz_ss + dphi − dz_bed` is a diagnostic of the output, not an export. The ocean
+function `C_ocn` and `bsl_ive` are written by `geo_glob`, and VILMA2's own file (`out_vilma`) has `rsl`, `bsl`,
+`bsl_ive`.
+
+## The ports and the scatter
+
+A port (`vilma_geo_t`, `geo_nor`, `geo_ant`, `geo_pat`) is stateless. It has no `H_ice` import (the row ice → geo
+`H_ice` is inactive) and no `dV_bsl`, so `reduce_bsl` finds no source and returns.
+
+1. Rows `geo_g → geo`, run by `bsl_to_geo` when the port is due: `dz_bed`, `dz_ss` (bilinear from the Gauss grid to
+   the port grid, in the domain's coupler; anomalies stay anomalies), `dphi`, `bsl`.
+2. The port's `update` copies these imports to its exports with their validity, and its `z_bed_ref` import (from the
+   ice, static) to its export, which `domain_check_reference` compares with the domain's reference.
+3. In block 4 of the step, `exchange_into(ice)` runs the rows geo → ice:
+   `z_bed = z_bed_ref(ice grid) + dz_bed` (`T_ADD_REF`) and `z_sl = dphi + dz_ss` (`T_ADD_SCALAR`), both `auto`, lag 0.
+
+The bed the ice sees is therefore the domain's reference topography plus the Earth's anomaly, remapped once (Gauss →
+ice grid). The hub follows through the ice (`domain_hub_update`).
+
+## The reference topography (refcorr)
+
+A glacial-cycle run that starts from equilibrium under the initial load needs a reference bed that is today's bed plus
+the rebound still to come at the end of the run, so that the run ends on today's bed instead of one too deep under the
+former ice sheets ([`docs/dev/vilma2-paleomist.md`](https://github.com/fesmc/kryos/blob/main/docs/dev/vilma2-paleomist.md), "The iterated reference", "Present-day reference correction for
+kryos"). The correction `r` enters kryos only through the reference topography, shared by every component; no source
+code is involved.
+
+| Par group | File | Content |
+|---|---|---|
+| `[topo_nor]`, `[topo_ant]`, `[topo_pat]` `path` | `kryos_data/refcorr/PaleoMIST-sci/{domain}/{grid_name}/{grid_name}_TOPO-<source>-refcorr.nc` | the domain topography with `z_bed + r`, `z_srf` moved with it, the other variables unchanged |
+| `[X_z_bed]`, `[X_H_ice]` `filename` (`mode = "static"`) | `kryos_data/refcorr/PaleoMIST-sci/{grid_name}/{grid_name}_REFCORR.nc` | the history's 0 ka bed + `r`, its 0 ka ice |
+
+`H_ice` stays present-day. The hub prepares the corrected reference; every instance grid's reference comes from it,
+and the global reference is the merge of the domains' references with X.
+
+The tool is [`tools/levante/gia_refcorr.sh`](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr.sh)
+(with `gia_refcorr.jl`, `gia_refcorr_plot.jl`): standalone VILMA2 (`vilma.x` of a stack) with the `&vilma` group of a
+kryos par file and the run's densities, under a FesmData ice history, iterated with `i_eq = 3` as
+`r_{n+1} = rsl_n(0 ka)` from `r_0 = 0` until `max |r_n − rsl_n(0 ka)| < TOL` (default 1.5 m, at most `NMAX = 8` runs).
+It writes the reference files under `/work/ba1442/kryos_data/refcorr/<CASE>/` (domains from `DOMAINS`,
+`"<domain>:<hub grid>:<topo file under fesmdata> ..."`), and is restartable per iteration:
+
+```bash
+sbatch --export=ALL,CASE=PaleoMIST-sci,PAR=<kryos par file> tools/levante/gia_refcorr.sh
+```
+
+For the science case (3-D Earth, PaleoMIST 80 → 0 ka linear in time, ρ_i 910, ρ_w 1028) it converged in 4 runs to a
+0 ka bed misfit of 0.23 m; `r` reaches 396 m over Quebec-Labrador and 126 m under the Ronne-Filchner ice, 24 m RMS
+globally ([`docs/dev/vilma2-paleomist.md`](https://github.com/fesmc/kryos/blob/main/docs/dev/vilma2-paleomist.md)). Limits: `r` is computed with the history's own 0 ka bed as VILMA2's
+reference, not with the kryos merge of the domain topographies, and with the history's ice, not the ice the coupled
+run produces; one more fixed-point step from the coupled run's own 0 ka `rsl` refreshes it (`gia_refcorr.jl next`).
+Another Earth or history needs its own case.
+
+The PatagoniaPaleo topography `[topo_pat]` names,
+`kryos_data/refcorr/PaleoMIST-sci/PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_TOPO-GEBCO2026-refcorr.nc`, exists (written
+2026-11-09) next to the NH-32KM and ANT-16KM files.
+<!-- TODO(check): how the PAT-PAL-8KM refcorr file was made; the default DOMAINS of gia_refcorr.sh lists North and Antarctica only. -->
+
+runme does not link `kryos_data` into a run folder (`.runme/info.json` links input, ice_data, fesmdata, isostasy_data
+and maps); [tools/levante/plastic_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_run.sh) does.
+
+## Cadence and time constraints
+
+- **One cadence for the Earth and its ports.** A port takes the `dt`, `phase` and `clock` of `geo_glob`
+  (`domain_create(..., port_dt, port_phase, port_clock)`); a port group that sets another `dt` stops (`gia_check`).
+  The science case sets `dt = 100` in all four groups, with `dtt = 100`.
+- **One ice cadence across the domains.** The gather stops when two domains' ice were last updated at different
+  times.
+- **Lag.** The Earth's call at step `n` takes the ice of step `n − 1` (lag 1), so VILMA2's load history is one geo
+  interval behind the ice; the ice takes the Earth's solution of this step (lag 0).
+- **Spin-up.** `gia_check` stops a run whose `[vilma]` has no spin-up (`pre_spinup_1d`, or `equil_time_max > 0`) unless
+  `geo_glob` sets `allow_no_spinup = True`: the `dt = 0` seed solves the previous load, so without a spin-up the t0 load
+  would enter with the first call.
+- **Fixed footprint and coverage.** The footprints and the grids are fixed for the run; a change stops the gather.
+- **No overlap.** The domains are registered without priorities, so their grids must not overlap on the global grids
+  (a coverage above `1 + overlap_tol` stops).
+- **The history's range.** `[X_dH_ice]` must be `mode = "transient"`, `anomaly_ref = "slice"`, `ref_time = ext_tref`,
+  `out_of_range = "error"`; the gather holds it at `ext_tref` after that time, and a run before its first record stops.
+- **Combinations.** `vilma2` on the globe and in the domains go together; every domain needs an ice instance with
+  `flotation`, `footprint` and `H_ice_pd`; FastIsostasy with VILMA2 stops (not implemented).
+- Restart times and `time_end` must lie on every cadence grid (`clock_start`).
+
+## Step by step
+
+### Cold start
+
+1. `PASS_INIT` of every instance: the ice publishes `footprint`, `H_ice_pd`, `z_bed_ref`; the static rows put the ice's
+   `z_bed_ref`, `H_ice_ref` into the ports.
+2. `gia_reference`; `geo_glob` `PASS_GEOMETRY` (VILMA2 built at the reference, exports zero).
+3. Per domain: rows into the port (zero anomalies), port `PASS_GEOMETRY`, `domain_check_reference`; rows geo → ice,
+   ice `PASS_GEOMETRY`. The boundary and the ice state (`PASS_STATE`, `PASS_SPINUP`) are made on the reference bed.
+4. `gia_seed`: the gather at `t0` (the final initial ice), `geo_glob` `PASS_STATE` (VILMA2's spin-up holding the t0
+   load: the 1-D pre-spin-up, then the full model to `equil_rate_tol` or at most `equil_time_max`; then the `dt = 0`
+   seed), the rows into the ports, port `PASS_STATE`.
+5. Per domain: rows geo → ice and ice `PASS_GEOMETRY` again (the bed and sea level of the seed), the hub, and a last
+   surface cycle when the domain has a surface.
+
+### One step `t_{n−1} → t_n`
+
+1. `gia_gather`: the ice of `t_{n−1}`, merged with the external ice at `t_{n−1}` into the host terms.
+2. `geo_glob` update: VILMA2 from `t_{n−1}` to `t_n`; exports at `t_n`.
+3. Per domain, the port: `dz_bed`, `dz_ss` remapped to the ice grid, `dphi`, `bsl`; the port's update.
+4. Per domain: the ice gets `z_bed = z_bed_ref + dz_bed` and `z_sl = dphi + dz_ss`, and solves at `t_n` (plastic:
+   the margin and `tau_b` at `t_n` on that bed and sea level); the hub follows.
+5. The ice exports of `t_n` are the load of the next gather.
+
+### Restore
+
+`gia_reference` rebuilds the reference from the files and the static exports, `geo_glob` `PASS_GEOMETRY` builds
+VILMA2 at it, and the restore reads `geo_glob_restart.nc` (`vilma_restart_read`: it checks the reference against the
+model just built and restores the memory, the rotation and the ramp's last host terms), then `geo_glob`'s imports and
+exports. The ports are stateless: their imports and exports are the bundle's, and no row runs for them. The global ice
+field is not stored; nothing is gathered or stepped. A chunked run equals the continuous run bit for bit
+(`tests/test_gia_sequence.f90`).
+
+## Configuration
+
+```fortran
+&globe
+    geo = "geo_glob"
+/
+&geo_glob
+    backend         = "vilma2"
+    grid            = ""                 ! the Gauss grid GAUSS-L<lmax>, built by the backend
+    dt              = 100.0              ! [yr] cadence of the Earth
+    clock           = "model"
+    vilma           = "vilma"            ! the &vilma group (overrides of input/vilma_defaults.nml)
+    ice_bg          = "globe_ice"        ! the global ice field group
+    allow_no_spinup = False
+    out_2D          = "out_2D"           ! dz_bed, dz_ss, C_ocn on lon, lat
+    out_1D          = "out_1D"
+    out_gia         = "none"             ! geo_glob_gia.nc: the host imports as VILMA2 got them
+    out_vilma       = "out_2D"           ! geo_glob_vilma.nc: VILMA2's own diagnostics
+/
+&globe_ice
+    grid      = "GLOBAL-0.5DEG"          ! background grid
+    z_bed_ref = "X_z_bed"                ! background bed X at ext_tref
+    H_ice_ref = "X_H_ice"                ! background ice X at ext_tref
+    ext       = "file"                   ! ice outside the footprints: X + the history's anomaly
+    ext_field = "X_dH_ice"
+    ext_tref  = 0.0                      ! [yr] model time of the history's present day
+    out_2D    = "none"                   ! schedule of globe_ice.nc
+/
+&X_dH_ice
+    filename     = "fesmdata/Global/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"
+    name         = "H_ice"
+    mode         = "transient"
+    anomaly_ref  = "slice"
+    ref_time     = 0.0                   ! = ext_tref
+    out_of_range = "error"
+/
+&geo_nor
+    backend = "vilma2"
+    grid    = "NH-32KM"                  ! the ice grid
+    dt      = 100.0                      ! the cadence of geo_glob (a different value stops)
+/
+```
+
+`[globe_ice]` also has `target` (the global grid of the host terms without VILMA2, below), `overlap_tol` (0.01) and
+`cons_tol` (1e-9). All keys: [Par files](reference-par-files.md).
+
+## Output
+
+| File | Content |
+|---|---|
+| `geo_glob.nc`, `geo_glob_ts.nc` | the Earth's exports on `lon`, `lat` (`dz_bed`, `dz_ss`, `C_ocn`), and its 0-D series (`dphi`, `bsl`, `bsl_ive`, `A_ocn`, `mass_resid`, ...) |
+| `geo_glob_vilma.nc` | VILMA2's own diagnostics (`rsl`, `bsl`, `bsl_ive`; what the GAPSLIP scores read) |
+| `geo_glob_gia.nc` | the host imports as VILMA2 got them, and `t_load` (`out_gia`) |
+| `geo_nor.nc`, `geo_nor_ts.nc`, ... | the ports' exports on the ice grids |
+| `globe_ice.nc` | the global geometry hub on the background grid: the spliced reference `z_bed_ref`, `H_ice_ref` and the coverage `cov` (static), the merged ice `H_ice` of the last gather and `t_load` |
+
+Precisions: `input/kryos-variables-geo.md`, `kryos-variables-geo-vilma2.md`, `kryos-variables-globe_ice.md`.
+
+## Without VILMA2: the observing hub
+
+`[globe_ice]` in a run without a host-resolved geo (e.g. FastIsostasy domains) builds the same reference and merged
+ice on the grid named by `[globe_ice] target` (a `grid_<name>.txt` of the map folder) and writes `globe_ice.nc`;
+nothing feeds back. The gather then runs every step (or on the global geo's cadence), the ice checks of `gia_check`
+apply, and the run is bit-identical to the same run without the group.
