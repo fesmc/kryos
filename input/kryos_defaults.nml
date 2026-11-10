@@ -347,6 +347,10 @@
     mask_file    = ""           ! target ice-mask file ("" => H_ice_ref > 0; {domain}, {grid_name} = the surface grid)
     mask_var     = ""           ! mask variable of mask_file
     mask_idx     = 1            ! index along the third dimension of mask_var
+    mask_ice     = False        ! True: the mask is the current ice (H_ice > 0 of the hub) every call (an ice
+                                ! backend whose H_ice_ref is a fixed reference, e.g. plastic); not with mask_file
+    tsl_const    = -1.0         ! [K] > 0: a constant sea-level temperature instead of the tsl_ann import (a
+                                ! domain without a climate; only T_srf uses it); <= 0: tsl_ann is imported
 
     ! Climate snow line  z_SL = a1 + a2*phi + a3*CO2 + a4*(f - fmean), phi = |latitude|
     a1           = 3750.0       ! [m]

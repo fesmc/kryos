@@ -861,7 +861,11 @@ module kryos_surface_smb_simple
     ! Imports: z_srf (hub), tsl_ann (climate; yelmox clim%now%tsl_ann) and H_ice_ref (ice;
     ! yelmox Yelmo bnd%H_ice_ref, every call: it follows recon). The mask is
     ! H_ice_ref > 0, or, with mask_file set, a slice of a file on the surface grid read
-    ! once at init (then H_ice_ref is not imported). The par group named by the instance
+    ! once at init (then H_ice_ref is not imported), or, with mask_ice, the current ice
+    ! H_ice > 0 of the hub every call (an ice backend whose H_ice_ref is a fixed reference,
+    ! as plastic's present-day ice, while its ice follows a reconstruction). With tsl_const > 0
+    ! the sea-level temperature is that constant and tsl_ann is not imported (a domain without a
+    ! climate: the SMB of the scheme does not use it, only T_srf does). The par group named by the instance
     ! key `smb_simple` ([smb_simple]) has the yelmox keys, the schema is the template
     ! &smb_simple of input/kryos_defaults.nml. smb is exported as kg m-2 yr-1 = mm w.e./yr
     ! (the number yelmox lands on Yelmo before its unit factor).
@@ -890,6 +894,8 @@ module kryos_surface_smb_simple
         character(len=PATH_LEN) :: mask_file = ""            ! "" => the mask is H_ice_ref > 0
         character(len=NAME_LEN) :: mask_var  = ""            ! its variable and
         integer                 :: mask_idx  = 1             ! the index along its third dimension
+        logical                 :: mask_ice  = .false.       ! the mask is the hub's H_ice > 0 (every call)
+        real(sp)                :: tsl_const = -1.0_sp       ! [K] > 0: the sea-level temperature (no tsl_ann import)
         real(sp), allocatable :: x(:,:), y(:,:), lat(:,:)    ! [m], [m], [deg N] of the surface grid
         logical,  allocatable :: mask(:,:)                   ! the target ice mask
         real(sp), allocatable :: z_srf_s(:,:), tsl_s(:,:), Href_s(:,:), smb(:,:), t_srf(:,:)
@@ -935,7 +941,10 @@ contains
         end if
 
         from_file = len_trim(self%mask_file) > 0
-        self%opt  = surface_opt_t(atm=.false., geom=.false., tsl_ann=.true., H_ice_ref=.not. from_file)
+        if (from_file .and. self%mask_ice) call fesm_error("kryos_surface_smb_simple::init", "["//trim(self%group)// &
+            "] mask_file and mask_ice are exclusive", "instance "//trim(self%name))
+        self%opt  = surface_opt_t(atm=.false., geom=self%mask_ice, tsl_ann=.not. self%tsl_const > 0.0_sp, &
+                                  H_ice_ref=.not. (from_file .or. self%mask_ice))
 
         allocate(self%x(self%nx, self%ny), self%y(self%nx, self%ny), self%lat(self%nx, self%ny))
         self%x   = real(ctx%grid%x * ctx%grid%cs%xy_conv, sp)
@@ -950,6 +959,9 @@ contains
         if (from_file) then
             call log_msg(LOG_INFO, "kryos_surface_smb_simple", "scheme syn: smb [mm w.e./yr] and T_srf from z_srf, tsl_ann "// &
                          "and the mask of "//trim(self%mask_file), "instance "//trim(self%name)//"; stateless")
+        else if (self%mask_ice) then
+            call log_msg(LOG_INFO, "kryos_surface_smb_simple", "scheme syn: smb [mm w.e./yr] and T_srf from z_srf, tsl_ann "// &
+                         "and the mask H_ice > 0 of the current ice", "instance "//trim(self%name)//"; stateless")
         else
             call log_msg(LOG_INFO, "kryos_surface_smb_simple", "scheme syn: smb [mm w.e./yr] and T_srf from z_srf, tsl_ann "// &
                          "and the mask H_ice_ref > 0 of the ice", "instance "//trim(self%name)//"; stateless")
@@ -1002,9 +1014,16 @@ contains
         type(step_time_t),           intent(in)    :: st
 
         call fields_get(self%imports, self%hi_z_srf,   self%z_srf_s)
-        call fields_get(self%imports, self%hi_tsl_ann, self%tsl_s)
+        if (self%tsl_const > 0.0_sp) then
+            self%tsl_s = self%tsl_const
+        else
+            call fields_get(self%imports, self%hi_tsl_ann, self%tsl_s)
+        end if
         if (self%hi_H_ice_ref > 0) then
             call fields_get(self%imports, self%hi_H_ice_ref, self%Href_s)
+            self%mask = (self%Href_s > 0.0_sp)
+        else if (self%mask_ice) then
+            call fields_get(self%imports, self%hi_H_ice, self%Href_s)
             self%mask = (self%Href_s > 0.0_sp)
         end if
         call calc_smb_simple_syn(self%smb, self%t_srf, self%z_srf_s, self%mask, self%x, self%y, self%lat, &
@@ -1032,6 +1051,8 @@ contains
         call nml_read(file, grp, "mask_file", self%mask_file, defaults_file=DEF_FILE, defaults_group="smb_simple")
         call nml_read(file, grp, "mask_var",  self%mask_var,  defaults_file=DEF_FILE, defaults_group="smb_simple")
         call nml_read(file, grp, "mask_idx",  self%mask_idx,  defaults_file=DEF_FILE, defaults_group="smb_simple")
+        call nml_read(file, grp, "mask_ice",  self%mask_ice,  defaults_file=DEF_FILE, defaults_group="smb_simple")
+        call nml_read(file, grp, "tsl_const", self%tsl_const, defaults_file=DEF_FILE, defaults_group="smb_simple")
 
         associate (p => self%par)
             call nml_read(file, grp, "a1",           p%a1,           defaults_file=DEF_FILE, defaults_group="smb_simple")
