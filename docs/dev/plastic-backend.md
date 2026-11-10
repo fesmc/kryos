@@ -755,6 +755,62 @@ the posterior is usable for the NH groups, not for Antarctica or the global ESL.
 PaleoMIST leaves out apart from the Andes, Iceland and the Cordillera) has no parameter, so the far field's demand for ice goes to
 the free group with the fewest local constraints. v3 (below, Open) adds that ice and bounds Antarctica.
 
+### Stage 1 v3: Patagonia (`runs/taub-fit-v3`, 2026-11-09)
+
+The Stage 1 fit of PAT-PAL-8KM (`tools/levante/taub_fit/fit_PAT.nml`, the same lambda list as NH-32KM and ANT-16KM) added to
+the v2 fits of NH-32KM and ANT-16KM: `runs/taub-fit-v3/report/taub_domain_factor.nc` holds the factors of the three grids
+(report `runs/taub-fit-v3/report/report.md`). It is the factor file of the NH-ANT-PAT runs and of the weighted ensemble
+(`tools/levante/plastic_ensemble_v1.toml`). The namelists and the job are in `tools/levante/taub_fit/`.
+
+## The 3-D Earth (`par/kryos_NH-ANT_plastic_vilma2.nml`, `par/kryos_NH-ANT-PAT_plastic_vilma2.nml`)
+
+The science Earth: VILMA2 with PREM in 11 layers and the 3-D viscosity of Bagge et al. (2021, structure 6), lmax 170, the
+1-D pre-spin-up and a capped full relaxation (`equil_time_max` 20 kyr), the refcorr reference topography (`kryos_data/refcorr/
+PaleoMIST-sci`, `tools/levante/gia_refcorr.sh`). The 1-D twin is `par/kryos_NH-ANT_plastic_vilma2_b1.nml` (Gowan's 12-layer
+Earth, B1's reference). Runs (Levante, `/work/ba1442/robinson/kryos-ice-plastic/runs`, `tools/levante/plastic_run.sh`):
+
+| run | par file | tau_b |
+|-----|----------|-------|
+| `sci-v2-prior` | NH-ANT, 3-D | Stage 1 v2 factors (the ES-MDA v2 prior mean) |
+| `sci-v2-post` | NH-ANT, 3-D | the ES-MDA v2 posterior mean scale file |
+| `sci-v3-base` | NH-ANT-PAT, 3-D | Stage 1 v3 factors (with Patagonia) |
+
+Cost: 3.5-4.2 h on 64 OpenMP threads. Comparison with the 1-D runs of the same tau_b (`tools/levante/plastic_earth_compare.jl`):
+
+- Globally the 3-D Earth fits the GAPSLIP index points worse at the same tau_b (RMS z_m prior 2.88 -> 3.47, posterior 2.33 ->
+  3.20): the tau_b were calibrated on the 1-D Earth.
+- Regionally it fits better where the 1-D Earth fails: Hudson Bay 3.70 -> 2.51, the North American Arctic 3.89 -> 2.49,
+  Greenland 7.51 -> 6.71, terrestrial limiting points violated 0.35 -> 0.23.
+- Fennoscandia and Europe much worse (1.8 -> 4.8, mean misfit -9 m).
+- ESL at 20 ka -4.4 m lower: the plastic NH ice responds to the 3-D bed.
+
+So the 3-D Earth is the basis for the calibration from here on (the weighted ensemble, `runs/ens-v1`).
+
+## Implied mass balance: present-day tests (`runs/closure-cn`, 2026-11-10)
+
+Offline on the present-day plastic geometry (`tests/plastic_closure_fit.f90`, tau_b smoothed 50 km, the stress capped at
+tau_b): scans of the closure against the observed speed (Mouginot 2019, Joughin 2018) and the implied SMB against RACMO2.4p1
+and MAR (Gt/yr; ablation area: the fraction of the ice cells with smb < 0 after a 100 km conservative smoothing).
+
+| Antarctica, present day | net = discharge | ablation | ablation area | RMS log10 speed |
+|-------------------------|-----------------|----------|---------------|-----------------|
+| yield (A 3e-17, u_y 3 m/yr) | 86 | -275 | 44 % | 0.615 |
+| coulomb_n (A 3e-17, Hc 50 m, lambda_min 0.3, m 2, p 0.5, u_max 1000) | 1905 | -106 | 25 % | 0.557 |
+| inversion, RACMO prior, no smoothing (`ant_L0m`) | 1239 | -17 | 35 % (unsmoothed) | 0.482 |
+| RACMO2.4p1 | 2049 | -1 | 0.4 % | |
+
+- The stress cap at tau_b removes the outflow the margin faces carried (yield: 1629 -> 86 Gt/yr): without it the margin step
+  drove the marine discharge.
+- coulomb_n holds the present-day total only by fast sliding near flotation: the flux rises within a smoothing length of the
+  Ross and Ronne grounding lines (positive bands of implied SMB there), the interior flux stays too small. Sets that fit the
+  speed best give 3.5-7.5 times RACMO's discharge; within the observed totals (Antarctica 1600-2600, NH 250-600 Gt/yr) the
+  chosen sets are those of the table (NH: A 1e-16, Hc 100 m, lambda_min 0.1, m 2, p 1).
+- The joint inversion (mass_balance = "inverted") converges with the triangular preconditioner: SMB positive nearly everywhere
+  with RACMO's coastal maximum, the speed closer to the observed than the forward closure; the total stays below the prior
+  (the slow flow-law speeds of the interior and the prior's floor of 100 kg m-2 yr-1), the SMB streaky along converging flow
+  lines. Smoothing the speed correction (32, 100 km) makes it worse (ablation -54, -157 Gt/yr); the smoothness was moved to
+  the deviation of the SMB from the prior (`inv_smooth_smb_km`, tests pending).
+
 ## Open
 
 - The NH ice is 7-10 % too large with Gowan's tau_b and the new margin (was 15-50 %): mostly resolution (above).
