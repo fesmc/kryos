@@ -105,7 +105,11 @@ the step [kg m-2 yr-1]:
 - so smb + cmb summed over the grid is mb_net (the mass change the margin and the bed impose); `smb_tot`,
   `cmb_tot` the sums [Gt yr-1].
 
-div q and the outflow are those of the geometry at t1. The magnitude scales with the closure (A, sliding): the
+div q and the outflow are those of the geometry at t1. With `mb_smooth_km` > 0, div q - q_land is smoothed over the ice by a
+Gaussian of that sd, in scatter form (each cell spreads its value over the ice cells within 3 sd, weights normalised
+by their sum), which keeps its sum: the plastic surface is piecewise (steps at the tau_b domain boundaries, kinks
+along the flowlines of the eikonal solve), and its flux divergence at the grid scale is mostly that, while ice
+averages the stress over a few thicknesses. The magnitude scales with the closure (A, sliding): the
 implied mass balance is what this geometry needs with that flow law, not a climate. `ux_s`, `uy_s`: the
 surface velocity of the same closure, u_b(tau) + 2A/(n+1) tau^n H along -grad s (central slopes), for the
 comparison with observed speeds. The velocity-routing path (`plastic_velocity`, `plastic_smb_implied`) is not
@@ -223,6 +227,7 @@ continuous one), `H_prev` and `z_srf`, lossless; the read checks the grid and th
 | `taub_scale_file` | `""` | `"domains"`: the multipliers per scale group (above) |
 | `rheo_A`, `rheo_n` | 0, 3 | Glen rate factor [Pa-n yr-1] (0: no closure), exponent |
 | `slide_law` | `"none"` | `"linear"`, `"weertman"` (`slide_beta`, `slide_m`), `"coulomb"` (`slide_C`, `slide_u0`, `slide_m`) |
+| `mb_smooth_km` | 0 | `"implied"`: Gaussian sd [km] of the conservative smoothing of div q - q_land over the ice (sums unchanged; 0 = none) |
 | `mass_balance` | `"none"` | `"implied"`: smb, cmb, smb_tot, cmb_tot, ux_s, uy_s from the flux closure (needs `rheo_A`, `slide_law`) |
 | `out_plastic` | `"none"` | schedule of the stream `plastic` |
 

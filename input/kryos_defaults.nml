@@ -244,6 +244,8 @@
     mass_balance       = "none"                ! "none": smb = cmb = 0 | "implied": the mass balance the geometry needs
                                                ! (dHidt + div q of the steady face fluxes, margin outflow ablated to
                                                ! land, calved to the ocean), smb_tot, cmb_tot, ux_s, uy_s (rheo_A, slide_law)
+    mb_smooth_km       = 0.0                   ! [km] implied: Gaussian sd of the conservative smoothing of div q - q_land
+                                               ! over the ice (sums unchanged); 0 = none
     out_plastic        = "none"                ! schedule of <instance>_plastic.nc (state, mask, sdist, tau_b, ...)
 /
 &climate_snapshots

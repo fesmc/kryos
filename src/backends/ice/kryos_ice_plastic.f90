@@ -53,6 +53,7 @@ module kryos_ice_plastic
         character(len=8)  :: drive = "taub"              ! "taub": plastic_solve | "smb": plastic_solve_smb
         logical           :: closure = .false.           ! rheology and sliding set (drive = "smb", mass_balance = "implied")
         logical           :: implied = .false.           ! mass_balance = "implied": smb, cmb, ux_s, uy_s from the closure
+        real(dp)          :: mb_smooth = 0.0_dp          ! [m] mb_smooth_km: Gaussian sd of the conservative smoothing (0: none)
         real(dp) :: dx = 0.0_dp, dy = 0.0_dp             ! [m]
         real(dp), allocatable :: z_bed_ref(:,:), H_ice_pd(:,:), footprint(:,:)   ! static
         real(dp), allocatable :: z_bed(:,:), z_sl(:,:)   ! [m] the bed and sea level of the last solve
@@ -590,18 +591,21 @@ contains
         ! the margin cell), cmb = -rho_i q_marine; on the cells the ice left over the step their loss rho_i
         ! dHidt, as cmb where the bed lies below sea level, else as smb. Over the grid smb + cmb = mb_net
         ! (the margin outflow sums to div q); smb_tot, cmb_tot [Gt yr-1] the sums. div q and the outflow are
-        ! those of the geometry at t1.
+        ! those of the geometry at t1. With mb_smooth_km > 0, div q - q_land is smoothed conservatively over the
+        ! ice first (smooth_conservative: totals, and so the closure, unchanged).
         class(plastic_ice_t), intent(inout) :: self
         type(step_time_t),    intent(in)    :: st
 
-        real(dp), allocatable :: dHdt(:,:), smb(:,:), cmb(:,:)
+        real(dp), allocatable :: dHdt(:,:), smb(:,:), cmb(:,:), x(:,:)
 
         dHdt = (self%ps%H - self%H_prev)/(st%t1 - st%t0)
         allocate(smb(self%nx, self%ny), cmb(self%nx, self%ny))
         smb = 0.0_dp;  cmb = 0.0_dp
         if (self%implied) then
+            x = self%divq - self%q_land
+            if (self%mb_smooth > 0.0_dp) call smooth_conservative(x, self%mask, self%dx, self%dy, self%mb_smooth)
             where (self%mask)
-                smb = self%par%rho_i*(dHdt + self%divq - self%q_land)
+                smb = self%par%rho_i*(dHdt + x)
                 cmb = -self%par%rho_i*self%q_marine
             elsewhere (self%z_sl > self%z_bed)
                 cmb = self%par%rho_i*dHdt
@@ -617,6 +621,55 @@ contains
         call fields_put(self%exports, self%h_cmb,    cmb,                  t1=st%t1, t0=st%t0)
         call fields_put(self%exports, self%h_mb_net, self%par%rho_i*dHdt,  t1=st%t1, t0=st%t0)
     end subroutine exports_rates
+
+    subroutine smooth_conservative(f, mask, dx, dy, sd)
+        ! Gaussian smoothing of f over the cells of mask that keeps its sum: each cell spreads its value over
+        ! the mask cells within 3 sd, weights exp(-r^2 / (2 sd^2)) normalised by their sum (scatter form), so
+        ! sum(f) over the mask is unchanged; f off the mask is left as it is.
+        real(dp), intent(inout) :: f(:,:)
+        logical,  intent(in)    :: mask(:,:)
+        real(dp), intent(in)    :: dx, dy, sd
+
+        real(dp), allocatable :: g(:,:), wsum(:,:)
+        integer  :: nx, ny, i, j, p, q, ri, rj
+        real(dp) :: w
+
+        nx = size(f, 1);  ny = size(f, 2)
+        ri = ceiling(3.0_dp*sd/dx);  rj = ceiling(3.0_dp*sd/dy)
+        allocate(g(nx, ny), wsum(nx, ny))
+        wsum = 0.0_dp
+        !$omp parallel do private(i, j, p, q, w) schedule(static)
+        do j = 1, ny
+            do i = 1, nx
+                if (.not. mask(i, j)) cycle
+                do q = max(j - rj, 1), min(j + rj, ny)
+                    do p = max(i - ri, 1), min(i + ri, nx)
+                        if (mask(p, q)) wsum(i, j) = wsum(i, j) + kern(p - i, q - j)
+                    end do
+                end do
+            end do
+        end do
+        !$omp end parallel do
+        g = 0.0_dp
+        !$omp parallel do private(i, j, p, q, w) schedule(static)
+        do q = 1, ny
+            do p = 1, nx
+                if (.not. mask(p, q)) cycle
+                do j = max(q - rj, 1), min(q + rj, ny)
+                    do i = max(p - ri, 1), min(p + ri, nx)
+                        if (mask(i, j) .and. wsum(i, j) > 0.0_dp) g(p, q) = g(p, q) + f(i, j)*kern(p - i, q - j)/wsum(i, j)
+                    end do
+                end do
+            end do
+        end do
+        !$omp end parallel do
+        where (mask) f = g
+    contains
+        pure real(dp) function kern(a, b)
+            integer, intent(in) :: a, b
+            kern = exp(-((a*dx)**2 + (b*dy)**2)/(2.0_dp*sd*sd))
+        end function kern
+    end subroutine smooth_conservative
 
     ! =========================================================================
     ! init helpers
@@ -634,6 +687,7 @@ contains
         character(len=NAME_LEN) :: margin_var, margin_interp, margin_extrapolate, mode, taub_method, taub_var
         character(len=NAME_LEN) :: taub_domain_var, taub_id_var, taub_value_var, taub_time_var, taub_override_grp
         character(len=NAME_LEN) :: slide_law, margin_position, mass_balance
+        real(dp) :: mb_smooth_km
         character(len=:), allocatable :: who
         real(dp) :: margin_H_min, taub_const, taub_default, rheo_A, rheo_n, slide_beta, slide_m, slide_C, slide_u0
         integer,  allocatable :: codes(:)
@@ -651,7 +705,7 @@ contains
         mode = "surface"
         rheo_A = 0.0_dp;  rheo_n = 3.0_dp
         slide_law = "none";  slide_beta = 0.0_dp;  slide_m = 1.0_dp;  slide_C = 0.0_dp;  slide_u0 = 0.0_dp
-        mass_balance = "none"
+        mass_balance = "none";  mb_smooth_km = 0.0_dp
 
         call rd_s("drive", self%drive)
         ! solver (plastic_par_t; densities: see constants_check)
@@ -697,6 +751,7 @@ contains
         call rd_r("slide_C", slide_C)
         call rd_r("slide_u0", slide_u0)
         call rd_s("mass_balance", mass_balance)
+        call rd_r("mb_smooth_km", mb_smooth_km)
 
         select case (trim(self%drive))
         case ("taub", "smb")
@@ -790,6 +845,8 @@ contains
         case default
             call fesm_error(proc, "mass_balance = '"//trim(mass_balance)//"' is not recognised", who//"; use none or implied")
         end select
+        if (mb_smooth_km < 0.0_dp) call fesm_error(proc, "mb_smooth_km must be >= 0", who)
+        self%mb_smooth = 1000.0_dp*mb_smooth_km
         if ((trim(self%drive) == "smb" .or. self%implied) .and. .not. self%closure) then
             call fesm_error(proc, "drive = 'smb' and mass_balance = 'implied' need the rheology and sliding", who// &
                             ": set rheo_A > 0 and slide_law (linear, weertman or coulomb)")
