@@ -18,6 +18,7 @@ const MARGIN = RGBf(0.0, 0.39, 0.0)                  # dark green: the target ma
 const ICEMAP = cgrad([RGBf(0.42, 0.42, 0.44), RGBf(1, 1, 1)])
 const RSLMAP = cgrad([RGBf(0.52, 0.65, 0.80), RGBf(0.93, 0.96, 0.98)])   # toned down: light, low saturation
 const RSL_LOW, RSL_HIGH = RGBf(0.42, 0.55, 0.71), RGBf(0.97, 0.98, 0.99)
+const RSL_LABEL = RGBf(0.05, 0.16, 0.40)   # the contour labels: dark blue, of a hue with the ocean they label
 kyr(age) = @sprintf("%g kyr", age / 1000)
 
 # --- projection ---------------------------------------------------------------------------------------------------------------------
@@ -139,7 +140,7 @@ function ice!(ax, G, regional)
     m
 end
 # contours of a global field over the ocean of the age, labelled (one label per level, between about 35 S and 35 N, apart)
-function ocean_contours!(ax, G, F, levels; labelsize = 22, color = (:black, 0.45))
+function ocean_contours!(ax, G, F, levels; labelsize = 22, color = (:black, 0.45), labelcolor = RSL_LABEL)
     labelled = []
     for lv in levels, (xs, ys) in clines(G.dl, G.lat, F, lv)
         pts = Point2f[]; seg = Point2f[]
@@ -159,7 +160,7 @@ function ocean_contours!(ax, G, F, levels; labelsize = 22, color = (:black, 0.45
         cand = sort([p for (l, ps) in labelled if l == lv for p in ps if length(p) > 60], by = p -> -length(p))
         for p in cand, pt in (p[div(length(p), 2)], p[div(length(p), 4)], p[div(3length(p), 4)])
             abs(pt[2]) < 0.55 && all(q -> hypot((q - pt)...) > 0.5, placed) || continue
-            text!(ax, pt, text = string(round(Int, lv)), fontsize = labelsize, align = (:center, :center), color = :gray10, font = :bold)
+            text!(ax, pt, text = string(round(Int, lv)), fontsize = labelsize, align = (:center, :center), color = labelcolor, font = :bold)
             push!(placed, pt); break
         end
     end
