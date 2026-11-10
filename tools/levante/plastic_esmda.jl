@@ -19,9 +19,13 @@
 # points. The update with the full R: R = L L' (Cholesky, once per iteration), predictions and observations whitened by L^-1, then
 # perturbed observations N(0, alpha I) in the whitened space (= N(0, alpha R)) and the update in the ensemble subspace (Woodbury: an
 # Ne x Ne solve). Limiting data are not assimilated: their violation fractions are diagnostics.
-# Folder: config.toml (expanded; config.source.toml as given), kryos.x, input/, par.nml, groups.csv, obs.csv, obs_kept.csv, esmda.md (the report), next (the iteration to run, or done);
-# iter_kk/: theta.csv (all members of the iteration), members.txt (those to run), mNNN/ (taub_scale.nc, par.nml, the run, status:
-# exit code and seconds), scores.csv (per member and set), members.csv (per member: ok, chi2, ESL at 20 ka, run time).
+# Folder: a frozen runme project: .runme/ (info.json, config.toml, the job templates), kryos.x, input/ (copies of the checkout's),
+# the links fesmdata, kryos_data, maps; config.toml (expanded; config.source.toml as given), par.nml, groups.csv, obs.csv,
+# obs_kept.csv, esmda.md (the report), next (the iteration to run, or done); iter_kk/: theta.csv (all members of the iteration),
+# members.txt (those to run), par.nml (the folder's, with the product and final keys), scale/mNNN.nc (the multipliers),
+# scale_files.txt (runme's -i table: the scale file of every member), the member runs <m>/ staged by runme (par.nml, the run,
+# status: exit code and seconds), array.json (runme: the job array), scores.csv (per member and set), members.csv (per member:
+# ok, chi2, ESL at 20 ka, run time). Folders of before 2026-11-11 have the members in mNNN/ (read the same).
 # Every member writes the product (PRODUCT_VARS): the 2-D ice of each instance of scale_keys (<instance>.nc on its out_2D schedule,
 # 2.5 kyr) and its 0-D series, besides the VILMA2 stream (RSL, bed, ocean, load) of the par file; [run] set and final_set come after.
 # Member 0 is the mean member: the prior mean (0, Gowan's tau_b) in iteration 1, the ensemble mean after an update.
@@ -40,12 +44,13 @@ product_set(keys) = [s for inst in unique(first.(split.(keys, "."))) for s in
                      ("$(inst).out_2D=\"out_2D\"", "$(inst).out_vars=" * join(("\"$v\"" for v in PRODUCT_VARS), " "))]
 
 itdir(C, k) = joinpath(C, @sprintf("iter_%02d", k))
-mdir(C, k, m) = joinpath(itdir(C, k), @sprintf("m%03d", m))
+# a member's run folder: <m>/ (staged by runme), or mNNN/ in a folder of before 2026-11-11
+mdir(C, k, m) = (d = joinpath(itdir(C, k), string(m)); isdir(d) ? d : (o = joinpath(itdir(C, k), @sprintf("m%03d", m)); isdir(o) ? o : d))
 config(C) = TOML.parsefile(joinpath(C, "config.toml"))
 
 # A config as written: {kryos}, {fesmdata}, {kryos_data}, {maps}, {work} in any string replaced by the environment of
-# tools/levante/env.sh (KRYOS, FESMDATA, KRYOS_DATA, KRYOS_MAPS, KRYOS_WORK), and the defaults of [run] (kryos_dir: the
-# checkout of this tool, set_nml: its set_nml.py, maps, account) and [score] (fesmdata). init writes it expanded into the
+# tools/levante/env.sh (KRYOS, FESMDATA, KRYOS_DATA, KRYOS_WORK; {maps} = the checkout's maps/), and the defaults of [run]
+# (kryos_dir: the checkout of this tool, set_nml: its set_nml.py, maps) and [score] (fesmdata). init writes it expanded into the
 # folder (config.toml; the source as config.source.toml), so a folder does not depend on the environment afterwards.
 const KRYOS_ROOT = normpath(get(ENV, "KRYOS", joinpath(@__DIR__, "..", "..")))
 envpath(var, default) = get(ENV, var, default)
@@ -56,7 +61,7 @@ function expand_paths(x)
     work = envpath("KRYOS_WORK", "/work/ba1442/$(get(ENV, "USER", "user"))/kryos-work")
     replace(x, "{kryos}" => KRYOS_ROOT, "{fesmdata}" => envpath("FESMDATA", "/work/ba1442/fesmdata"),
             "{kryos_data}" => envpath("KRYOS_DATA", "/work/ba1442/kryos_data"),
-            "{maps}" => envpath("KRYOS_MAPS", joinpath(work, "maps")), "{work}" => work)
+            "{maps}" => joinpath(KRYOS_ROOT, "maps"), "{work}" => work)
 end
 function load_config(file)
     cfg = expand_paths(TOML.parsefile(file))
@@ -64,7 +69,6 @@ function load_config(file)
     get!(rn, "kryos_dir", KRYOS_ROOT)
     get!(rn, "set_nml", joinpath(@__DIR__, "set_nml.py"))
     get!(rn, "maps", expand_paths("{maps}"))
-    get!(rn, "account", get(ENV, "ACCOUNT", "ba1442"))
     get!(get!(cfg, "score", Dict{String,Any}()), "fesmdata", expand_paths("{fesmdata}"))
     cfg
 end
@@ -129,20 +133,24 @@ obs_err(es) = (get(es, "sigma_m", get(es, "sigma_add", 0.0)), get(es, "corr_dist
 # --- members ------------------------------------------------------------------------------------------------------------------------
 # theta (P x n) of the members ids; run: the ids to run
 function write_iteration(C, k, cfg, sg, P, ids, Θ, run; final = false)
-    It = itdir(C, k); mkpath(It)
+    It = itdir(C, k); mkpath(joinpath(It, "scale"))
+    ids == collect(0:length(ids)-1) || error("members must be 0, 1, ... (runme's run ids): $(ids)")
     open(joinpath(It, "theta.csv"), "w") do io
         println(io, "member,", join(pnames(P), ","))
         for (j, m) in enumerate(ids); println(io, m, ",", join([@sprintf("%.6f", x) for x in Θ[:, j]], ",")); end
     end
+    keys = get(cfg["run"], "scale_keys", ["ice_nor.taub_scale_file"])
+    sfile(m) = joinpath(It, "scale", @sprintf("m%03d.nc", m))
     for (j, m) in enumerate(ids)
-        m in run || continue
-        D = mdir(C, k, m); mkpath(D)
-        f = write_scale(joinpath(D, "taub_scale.nc"), sg, log_factor(sg, P, Θ[:, j]))
-        cp(joinpath(C, "par.nml"), joinpath(D, "par.nml"); force = true)
-        keys = get(cfg["run"], "scale_keys", ["ice_nor.taub_scale_file"])
-        set = [["$(key)=\"$f\"" for key in keys]; product_set(keys)]
-        final && append!(set, String.(get(cfg["run"], "final_set", String[])))
-        Base.run(`python3 $(cfg["run"]["set_nml"]) $(joinpath(D, "par.nml")) $set`)
+        m in run && write_scale(sfile(m), sg, log_factor(sg, P, Θ[:, j]))
+    end
+    # the par file of the iteration (the product, the final keys) and runme's table: one row per member, its scale file per key
+    cp(joinpath(C, "par.nml"), joinpath(It, "par.nml"); force = true)
+    set = product_set(keys); final && append!(set, String.(get(cfg["run"], "final_set", String[])))
+    Base.run(`python3 $(cfg["run"]["set_nml"]) $(joinpath(It, "par.nml")) $set`)
+    open(joinpath(It, "scale_files.txt"), "w") do io
+        println(io, join(keys, " "))
+        for m in ids; println(io, join(fill(sfile(m), length(keys)), " ")); end
     end
     open(io -> foreach(m -> println(io, m), run), joinpath(It, "members.txt"), "w")
 end
@@ -164,6 +172,7 @@ function prepare(cfgfile, C, og)
     cp(joinpath(K, "libkryos", "bin", "kryos.x"), joinpath(C, "kryos.x"))
     mkpath(joinpath(C, "input"))
     for f in readdir(joinpath(K, "input")); cp(joinpath(K, "input", f), joinpath(C, "input", f); follow_symlinks = true); end
+    runme_project(C, K, rn["maps"], cfg["score"]["fesmdata"])
     cp(joinpath(K, rn["par"]), joinpath(C, "par.nml"))
     isempty(rn["set"]) || Base.run(`python3 $(rn["set_nml"]) $(joinpath(C, "par.nml")) $(rn["set"])`)
     if !isempty(get(rn, "domain_factor_file", ""))          # Stage 1: frozen in the folder, set for every instance
@@ -172,7 +181,7 @@ function prepare(cfgfile, C, og)
     end
     open(joinpath(C, "slurm.env"), "w") do io
         for (k, v) in (("THREADS", rn["threads"]), ("MEM", rn["mem"]), ("TIME", rn["time"]), ("PART", rn["partition"]),
-                       ("ACCT", rn["account"]), ("THROTTLE", rn["throttle"]), ("MAPS", rn["maps"]))
+                       ("THROTTLE", rn["throttle"]))
             println(io, k, "=", v)
         end
     end
@@ -184,6 +193,25 @@ function prepare(cfgfile, C, og)
         for g in og; println(io, g, ",", join((count(o -> o.group == g && o.type == t, obs) for t in (0, -1, 1)), ",")); end
     end
     cfg, sg, obs
+end
+
+# The folder as a frozen runme project (its members are staged and submitted by runme from there): .runme/ with the checkout's
+# job templates and config.toml (or its default), info.json for the folder's own kryos.x and input/, and the data links.
+function runme_project(C, K, maps, fesmdata)
+    R = joinpath(C, ".runme"); mkpath(R)
+    for f in ("submit_slurm", "submit_slurm_omp"); cp(joinpath(K, ".runme", f), joinpath(R, f)); end
+    cfgf = joinpath(K, ".runme", "config.toml"); isfile(cfgf) || (cfgf = joinpath(K, ".runme", "config.default.toml"))
+    cp(cfgf, joinpath(R, "config.toml"))
+    open(joinpath(R, "info.json"), "w") do io
+        print(io, """{
+    "exe_default" : "kryos", "par_path_as_argument" : true, "exe_aliases" : {"kryos" : "kryos.x"}, "grp_aliases" : {},
+    "par_paths" : {}, "files" : [], "dir-special" : {}, "par_defaults" : ["input/kryos_defaults.nml"], "par_library" : [],
+    "links" : ["input", "fesmdata", "kryos_data", "maps"]
+}
+""")
+    end
+    kd = get(ENV, "KRYOS_DATA", "/work/ba1442/kryos_data")
+    for (n, t) in (("fesmdata", fesmdata), ("kryos_data", kd), ("maps", maps)); symlink(t, joinpath(C, n)); end
 end
 
 function init(cfgfile, C)

@@ -65,7 +65,6 @@ threads    = 8                           # VILMA2 barely scales: 8 threads ~12.5
 mem        = "10G"                       # the shared partition bills max(cpus, mem / 0.9 GB): ~12 cpus
 time       = "01:00:00"
 partition  = "shared"
-account    = "ba1442"
 throttle   = 29                          # members running at once; 29 + the queued analysis = 30 jobs max (Alex, 2026-11-09)
 
 [score]
