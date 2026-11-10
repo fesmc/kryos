@@ -16,6 +16,10 @@ program plastic_closure_fit
     !     present day steady), its positive part, the outflow to land and to the ocean; the ablation area (the fraction
     !     of the ice cells with div q - q_land < 0).
     !
+    ! With prior_file (one parameter set only): the joint inversion of speed and mass balance on that set
+    ! (plastic_smb_inversion, dH/dt = 0) with prior_var [kg m-2 yr-1] of prior_file as the prior and the inv_* settings
+    ! (as the backend's keys); its speed misfit, integrals and ablation area are printed, its fields written.
+    !
     ! Output <out>: a table (text, one row per parameter set, sorted by the RMS) and, for the best set, a NetCDF file
     ! with the speeds, the implied SMB and the outflow. Needs plastic=1:
     !
@@ -27,7 +31,8 @@ program plastic_closure_fit
     use kryos_plastic_taub,   only: taub_t, taub_read_domains, taub_read_domain_factor, taub_at, taub_set_smooth
     use kryos_plastic_friction, only: friction_t, friction_law, friction_map
     use plastic_ice, only: plastic_par_t, plastic_t, plastic_glen_t, plastic_sliding_t, plastic_init, plastic_solve, &
-                           plastic_margin_frac_from_sdist, plastic_smb_flux_divergence, PLASTIC_OK
+                           plastic_margin_frac_from_sdist, plastic_smb_flux_divergence, PLASTIC_OK, &
+                           plastic_inv_ctrl_t, plastic_inv_info_t, plastic_smb_inversion
 
     implicit none
 
@@ -41,11 +46,17 @@ program plastic_closure_fit
     real(dp) :: Hc_list(NMAX) = -1.0_dp, lam_list(NMAX) = -1.0_dp, m_list(NMAX) = -1.0_dp
     real(dp) :: n_glen = 3.0_dp, m = 3.0_dp, u0 = 100.0_dp, umax = 3000.0_dp, p = 0.5_dp, zb0 = -500.0_dp, zb1 = 0.0_dp
     real(dp) :: taub_smooth_km = 50.0_dp
+    character(len=512) :: prior_file = ""
+    character(len=64)  :: prior_var = "smb"
+    real(dp) :: inv_sigma_u = 0.7_dp, inv_smooth_km = 100.0_dp, inv_sigma_smb_rel = 0.5_dp, inv_sigma_smb_min = 100.0_dp
+    real(dp) :: inv_sigma_cold = 10.0_dp
+    logical  :: inv_cold = .true., inv_verbose = .false.
     real(dp), parameter :: RHO_I = 910.0_dp, RHO_SW = 1028.0_dp, GRAV = 9.81_dp, KG_GT = 1.0e-12_dp
     integer,  parameter :: NROW = 11
     namelist /fit/ hist, margin_var, margin_min, taub_file, taub_default, factor_file, taub_smooth_km, topo_file, bed_var, &
                    mask_var, obs_file, obs_var, speed_min, mode, law, A_list, uy_list, b_list, Hc_list, lam_list, m_list, &
-                   n_glen, m, u0, umax, p, zb0, zb1, out
+                   n_glen, m, u0, umax, p, zb0, zb1, out, prior_file, prior_var, inv_sigma_u, inv_smooth_km, &
+                   inv_sigma_smb_rel, inv_sigma_smb_min, inv_cold, inv_sigma_cold, inv_verbose
 
     type(margin_t)      :: mg
     type(taub_t)        :: tb
@@ -173,12 +184,46 @@ program plastic_closure_fit
     call nc_write(trim(out)//".nc", "q_marine", best(:,:,4), dim1="xc", dim2="yc", units="m yr-1")
     call nc_write(trim(out)//".nc", "tau_b", tau, dim1="xc", dim2="yc", units="Pa")
     call nc_write(trim(out)//".nc", "mask", merge(1, 0, mask), dim1="xc", dim2="yc")
+    if (len_trim(prior_file) > 0) call invert()
     call nc_write_dim(trim(out)//".nc", "par", x=[(real(n, dp), n = 1, NROW)])
     call nc_write(trim(out)//".nc", "best", rows(:, kb), dim1="par", &
                   long_name="A, p1 (yield: uy; coulomb_n: Hc), p2 (b; lambda_min), m, RMS log10, median ratio, net, "// &
                             "accumulation, outflow to land, to the ocean, ablation area fraction")
 
 contains
+
+    subroutine invert()
+        ! the joint inversion on the (single) parameter set of the scan; sl, rheo hold it
+        type(plastic_inv_ctrl_t) :: c
+        type(plastic_inv_info_t) :: inf
+        real(dp), allocatable :: ap(:,:), dh(:,:), a(:,:), u(:,:), ul(:,:), qli(:,:), qmi(:,:)
+        if (k /= 1) error stop "plastic_closure_fit: prior_file needs exactly one parameter set"
+        allocate(ap(nx,ny), dh(nx,ny), a(nx,ny), u(nx,ny), ul(nx,ny), qli(nx,ny), qmi(nx,ny))
+        call nc_read(prior_file, prior_var, ap)
+        where (.not. (abs(ap) < 1.0e5_dp)) ap = 0.0_dp
+        ap = ap/RHO_I;  dh = 0.0_dp
+        c%sigma_u = inv_sigma_u;  c%smooth = 1000.0_dp*inv_smooth_km;  c%sigma_smb_rel = inv_sigma_smb_rel
+        c%sigma_smb_min = inv_sigma_smb_min/RHO_I;  c%cold = inv_cold;  c%sigma_cold = inv_sigma_cold/RHO_I
+        c%verbose = inv_verbose
+        call plastic_smb_inversion(ps, zb, zsl, mask, rheo, sl, ap, dh, a, u, c, margin_frac=frac, tau_cap=tau, &
+                                   q_land=qli, q_marine=qmi, u_law=ul, info=inf, stat=stat)
+        use = mask .and. mobs /= 3 .and. uobs > speed_min .and. u > 0.0_dp
+        r = log10(pack(u, use)/pack(uobs, use))
+        write(*,"(a,i0,a,i0,a,4es10.3)") "# inversion: stat ", stat, ", ", inf%iters, " steps; J law, smooth, smb, cold ", &
+            inf%J_law, inf%J_smooth, inf%J_smb, inf%J_cold
+        write(*,"(a,f6.3,a,f6.2,a,f9.1,a,f9.1,a,f9.1,a,f6.3,a,i0)") "# inversion: RMS log10 speed ", sqrt(sum(r**2)/max(size(r), 1)), &
+            ", median ratio ", 10.0_dp**median(r), ", net ", RHO_I*sum(a, mask = mask)*cell*KG_GT, ", ablation ", &
+            RHO_I*sum(min(a, 0.0_dp), mask = mask)*cell*KG_GT, ", ocean ", RHO_I*sum(qmi)*cell*KG_GT, &
+            ", ablation area ", real(count(mask .and. a < 0.0_dp), dp)/count(mask), ", no sliding ", inf%n_bound
+        write(*,"(a,f9.1,a,f6.3)") "# prior over the ice: net ", RHO_I*sum(ap, mask = mask)*cell*KG_GT, ", ablation area ", &
+            real(count(mask .and. ap < 0.0_dp), dp)/count(mask)
+        call nc_write(trim(out)//".nc", "speed_inv", u, dim1="xc", dim2="yc", units="m yr-1")
+        call nc_write(trim(out)//".nc", "speed_law", ul, dim1="xc", dim2="yc", units="m yr-1")
+        call nc_write(trim(out)//".nc", "smb_inv", a, dim1="xc", dim2="yc", units="m yr-1")
+        call nc_write(trim(out)//".nc", "smb_prior", ap, dim1="xc", dim2="yc", units="m yr-1")
+        call nc_write(trim(out)//".nc", "q_marine_inv", qmi, dim1="xc", dim2="yc", units="m yr-1")
+        call nc_write(trim(out)//".nc", "q_land_inv", qli, dim1="xc", dim2="yc", units="m yr-1")
+    end subroutine invert
 
     function median(v) result(med)
         ! the median (the lower one for an even size): quickselect on a copy
