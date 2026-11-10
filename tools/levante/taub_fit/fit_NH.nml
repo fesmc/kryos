@@ -1,7 +1,7 @@
 &fit
-    hist      = "{fesmdata}/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST.nc"
-    taub_file = "{fesmdata}/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST_taub.nc"
-    topo_file = "{fesmdata}/North/NH-32KM/NH-32KM_TOPO-GEBCO2026.nc"
+    hist      = "fesmdata/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST.nc"
+    taub_file = "fesmdata/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST_taub.nc"
+    topo_file = "fesmdata/North/NH-32KM/NH-32KM_TOPO-GEBCO2026.nc"
     lambda    = 100.0, 30.0, 10.0, 3.0, 1.0, 0.3, 0.1, 0.03, 0.01, 0.003, 0.001, 0.0
     out       = "fit_NH-32KM.nc"
 /
