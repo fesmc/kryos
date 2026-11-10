@@ -7,10 +7,14 @@ module kryos_ice_plastic
     ! (plastic_solve_smb). Built with plastic=1; otherwise kryos_ice_plastic_stub.f90 provides this module.
     ! Everything is dp, as the exchange.
     !
-    ! The ice is imposed, not integrated: smb = bmb = cmb = 0, dHidt = (H - H_prev)/dt and
-    ! mb_net = rho_i dHidt, the mass change the margin and the bed impose, so the sea-level budget
-    ! closes. The ice is grounded by construction (f_grnd = 1 on it). Optional imports: the imports
-    ! the backend does not read (T_srf, bmb_shlf, and smb with drive = "taub") may stay unwired; so may
+    ! The ice is imposed, not integrated: dHidt = (H - H_prev)/dt and mb_net = rho_i dHidt, the mass
+    ! change the margin and the bed impose, so the sea-level budget closes. smb = bmb = cmb = 0, or with
+    ! mass_balance = "implied" the mass balance the geometry needs (plastic_smb_flux_divergence: dHidt
+    ! + div q of the steady solver's face fluxes; the outflow to land ablated in the margin cells, the
+    ! outflow to the ocean calved), with the surface velocity of the same closure (ux_s, uy_s), or with
+    ! mass_balance = "inverted" the joint inversion of speed and mass balance against the closure's speed
+    ! and the imported smb as the prior (plastic_smb_inversion; docs/dev/plastic-smb-inversion-design.md). The ice
+    ! is grounded by construction (f_grnd = 1 on it). Optional imports: the imports the backend does not read (T_srf, bmb_shlf, and smb with drive = "taub") may stay unwired; so may
     ! z_bed and z_sl (a domain without geo): until they are published the backend takes the reference
     ! bed and z_sl = 0.
 
@@ -27,11 +31,13 @@ module kryos_ice_plastic
     use kryos_plastic_margin, only: margin_t, margin_init, margin_at, margin_footprint, margin_interp_code
     use kryos_plastic_taub,   only: taub_t, taub_method_code, TAUB_M_CONST, TAUB_M_FILE, TAUB_M_DOMAINS, taub_set_const, &
                                     taub_read_field, taub_read_domains, taub_read_scale, taub_at, &
-                                    taub_read_domain_factor
+                                    taub_read_domain_factor, taub_set_smooth
+    use kryos_plastic_friction, only: friction_t, friction_law, friction_map
     use plastic_ice,     only: plastic_par_t, plastic_t, plastic_glen_t, plastic_sliding_t, plastic_init, &
-                               plastic_solve, plastic_solve_smb, plastic_end, plastic_velocity, plastic_smb_implied, &
+                               plastic_solve, plastic_solve_smb, plastic_end, plastic_smb_flux_divergence, &
                                plastic_stress_residual, plastic_margin_frac_from_sdist, PLASTIC_OK, &
-                               PLASTIC_NOT_CONVERGED
+                               PLASTIC_NOT_CONVERGED, plastic_inv_ctrl_t, plastic_inv_info_t, plastic_smb_inversion, &
+                               plastic_flow_direction
 
     implicit none
 
@@ -49,7 +55,13 @@ module kryos_ice_plastic
         type(margin_t)          :: mg
         type(taub_t)            :: tb
         character(len=8)  :: drive = "taub"              ! "taub": plastic_solve | "smb": plastic_solve_smb
-        logical           :: velocity = .false.          ! rheology and sliding set: ux, uy, smb_implied
+        logical           :: closure = .false.           ! rheology and sliding set (drive = "smb", mass_balance = "implied")
+        logical           :: implied = .false.           ! mass_balance "implied" or "inverted": smb, cmb, ux_s, uy_s
+        logical           :: inverted = .false.          ! mass_balance = "inverted": by the joint inversion
+        type(plastic_inv_ctrl_t) :: inv                  ! its control (inv_* keys)
+        type(plastic_inv_info_t) :: inv_info             ! and the outcome of the last one
+        real(dp)          :: mb_smooth = 0.0_dp          ! [m] mb_smooth_km: Gaussian sd of the conservative smoothing (0: none)
+        type(friction_t)  :: fr                          ! slide_law "yield", "coulomb_n": the coefficient per cell
         real(dp) :: dx = 0.0_dp, dy = 0.0_dp             ! [m]
         real(dp), allocatable :: z_bed_ref(:,:), H_ice_pd(:,:), footprint(:,:)   ! static
         real(dp), allocatable :: z_bed(:,:), z_sl(:,:)   ! [m] the bed and sea level of the last solve
@@ -59,7 +71,12 @@ module kryos_ice_plastic
                                                          ! ice-free cell centres [fraction of the spacing]; else
                                                          ! unallocated (absent in the library calls: par%margin)
         real(dp), allocatable :: H_prev(:,:)             ! [m] the thickness at the previous update (dHidt)
-        real(dp), allocatable :: ux(:,:), uy(:,:), speed(:,:), smb_imp(:,:)   ! [m yr-1], [m ice yr-1] (velocity)
+        real(dp), allocatable :: divq(:,:), q_land(:,:), q_marine(:,:)   ! [m ice yr-1] (implied): flux divergence,
+                                                         ! the outflow through the margin faces to land and to the ocean
+        real(dp), allocatable :: us_x(:,:), us_y(:,:)    ! [m yr-1] (implied) surface velocity of the closure
+        real(dp), allocatable :: mb_inv(:,:)             ! [m ice yr-1] (inverted) the mass balance a = dHidt + div q -
+                                                         ! q_land of the inversion
+        real(dp), allocatable :: u_inv(:,:), u_law(:,:)  ! [m yr-1] (inverted) its depth-averaged speed, the closure's
         logical :: bed_ref = .false., sl_zero = .false.  ! logged once: the bed or sea level was not imported
     contains
         procedure :: init          => plastic_init_
@@ -99,12 +116,12 @@ contains
 
         call group_read(self, ctx)
         self%opt = ice_opt_t(z_bed_ref=.true., H_ice_ref=.true., footprint=.true., H_ice_pd=.true., H_grnd=.true., &
-                             uxy_s=self%velocity)
+                             uxy_s=self%implied, mb_tot=self%implied)
         call component_optional(self, "z_bed")
         call component_optional(self, "z_sl")
         call component_optional(self, "T_srf")
         call component_optional(self, "bmb_shlf")
-        if (trim(self%drive) /= "smb") call component_optional(self, "smb")
+        if (trim(self%drive) /= "smb" .and. .not. self%inverted) call component_optional(self, "smb")
 
         if (.not. (allocated(ctx%ref%z_bed) .and. allocated(ctx%ref%H_ice))) then
             call fesm_error("kryos_ice_plastic::init", "reference topography incomplete", "instance "// &
@@ -120,10 +137,14 @@ contains
         self%z_bed  = self%z_bed_ref
         self%z_sl   = 0.0_dp
         self%H_prev = 0.0_dp
-        if (self%velocity) then
-            allocate(self%ux(self%nx, self%ny), self%uy(self%nx, self%ny), self%speed(self%nx, self%ny), &
-                     self%smb_imp(self%nx, self%ny))
-            self%ux = 0.0_dp;  self%uy = 0.0_dp;  self%speed = 0.0_dp;  self%smb_imp = 0.0_dp
+        if (self%implied) then
+            allocate(self%divq(self%nx, self%ny), self%q_land(self%nx, self%ny), self%q_marine(self%nx, self%ny), &
+                     self%us_x(self%nx, self%ny), self%us_y(self%nx, self%ny))
+            self%divq = 0.0_dp;  self%q_land = 0.0_dp;  self%q_marine = 0.0_dp;  self%us_x = 0.0_dp;  self%us_y = 0.0_dp
+            if (self%inverted) then
+                allocate(self%mb_inv(self%nx, self%ny), self%u_inv(self%nx, self%ny), self%u_law(self%nx, self%ny))
+                self%mb_inv = 0.0_dp;  self%u_inv = 0.0_dp;  self%u_law = 0.0_dp
+            end if
         end if
 
         call plastic_init(self%ps, self%nx, self%ny, self%dx, self%dy, self%par, stat=stat)
@@ -170,6 +191,7 @@ contains
                 self%tau_b = driving_stress(self)
             end if
             call diagnostics(self)
+            if (self%inverted) call inversion(self, 0.0_dp*self%ps%H)
             call exports_velocity(self, st%t1)
         end select
     end subroutine plastic_init_state_
@@ -181,6 +203,7 @@ contains
 
         call boundary(self)
         call solve(self, st%t1, warm=.true.)
+        if (self%inverted) call inversion(self, (self%ps%H - self%H_prev)/(st%t1 - st%t0))
         call exports_geometry(self, st%t1)
         call exports_mass(self, st%t1)
         call exports_rates(self, st)
@@ -279,11 +302,35 @@ contains
             if (self%tb%method == TAUB_M_DOMAINS) &
                 call outfile_var2d(file, "taub_domain", real(self%tb%dom, dp), n, ncid, "1", "Basal shear stress domain", &
                                    table=TABLE)
-            if (self%velocity) then
-                call outfile_var2d(file, "ux", self%ux, n, ncid, "m yr-1", "x-velocity", table=TABLE)
-                call outfile_var2d(file, "uy", self%uy, n, ncid, "m yr-1", "y-velocity", table=TABLE)
-                call outfile_var2d(file, "smb_implied", self%smb_imp, n, ncid, "m yr-1", &
-                                   "Surface mass balance implied by the velocity (ice equivalent)", table=TABLE)
+            if (self%implied) then
+                call outfile_var2d(file, "div_q", self%divq, n, ncid, "m yr-1", &
+                                   "Divergence of the ice flux (ice equivalent)", table=TABLE)
+                call outfile_var2d(file, "q_land", self%q_land, n, ncid, "m yr-1", &
+                                   "Outflow through the margin faces to land (ice equivalent)", table=TABLE)
+                call outfile_var2d(file, "q_marine", self%q_marine, n, ncid, "m yr-1", &
+                                   "Outflow through the margin faces to the ocean (ice equivalent)", table=TABLE)
+                call nc_write(file, "abl_margin", -self%par%rho_i*sum(self%q_land)*self%dx*self%dy*KG_TO_GT, &
+                              dim1="time", start=[n], count=[1], ncid=ncid, units="Gt yr-1", &
+                              long_name="Ablation of the outflow to land at the margin (last solve)")
+                call nc_write(file, "discharge", self%par%rho_i*sum(self%q_marine)*self%dx*self%dy*KG_TO_GT, &
+                              dim1="time", start=[n], count=[1], ncid=ncid, units="Gt yr-1", &
+                              long_name="Outflow to the ocean at the margin (last solve)")
+                if (self%inverted) then
+                    call outfile_var2d(file, "u_inv", self%u_inv, n, ncid, "m yr-1", &
+                                       "Depth-averaged speed of the inversion", table=TABLE)
+                    call outfile_var2d(file, "u_law", self%u_law, n, ncid, "m yr-1", &
+                                       "Depth-averaged speed of the flow law (the inversion's prior)", table=TABLE)
+                    call nc_write(file, "inv_iters", self%inv_info%iters, dim1="time", start=[n], count=[1], ncid=ncid, &
+                                  units="1", long_name="Gauss-Newton steps of the inversion")
+                    call nc_write(file, "inv_J_law", self%inv_info%J_law, dim1="time", start=[n], count=[1], ncid=ncid, &
+                                  units="1", long_name="Inversion: misfit term of the speed to the flow law")
+                    call nc_write(file, "inv_J_smb", self%inv_info%J_smb, dim1="time", start=[n], count=[1], ncid=ncid, &
+                                  units="1", long_name="Inversion: misfit term of the mass balance to the prior")
+                    call nc_write(file, "inv_J_cold", self%inv_info%J_cold, dim1="time", start=[n], count=[1], ncid=ncid, &
+                                  units="1", long_name="Inversion: penalty of negative mass balance on cold cells")
+                    call nc_write(file, "inv_n_bound", self%inv_info%n_bound, dim1="time", start=[n], count=[1], &
+                                  ncid=ncid, units="1", long_name="Inversion: ice cells below the deformation speed by more than its sd")
+                end if
             end if
             call nc_write(file, "converged", merge(1, 0, self%ps%converged), dim1="time", start=[n], count=[1], &
                           ncid=ncid, units="1", long_name="The last solve converged")
@@ -399,16 +446,70 @@ contains
     end subroutine forcing_taub
 
     subroutine diagnostics(self)
-        ! The velocity and the smb it implies on the current geometry, when rheology and sliding are set.
+        ! mass_balance = "implied": on the current geometry, the divergence of the steady solver's face fluxes,
+        ! the outflow through the margin faces (to land, to the ocean) and the surface velocity of the closure.
+        ! drive = "taub": the driving stress of the fluxes at most tau_b (the bed's yield stress; the margin faces'
+        ! step to the margin surface would otherwise drive the outflow far above it).
         class(plastic_ice_t), intent(inout) :: self
         integer :: stat
-        if (.not. self%velocity) return
-        call plastic_velocity(self%ps, self%tau_b, self%mask, self%rheo, self%slide, self%ux, self%uy, &
-                              speed=self%speed, stat=stat)
-        call status_check(self, stat, "plastic_velocity")
-        call plastic_smb_implied(self%ps, self%ux, self%uy, self%mask, self%smb_imp, speed=self%speed, stat=stat)
-        call status_check(self, stat, "plastic_smb_implied")
+        if (.not. self%implied) return
+        if (len_trim(self%fr%kind) > 0) call friction_map_set(self)
+        if (self%inverted) return                      ! the update's inversion (it needs dHidt over the step)
+        if (trim(self%drive) == "taub") then
+            call plastic_smb_flux_divergence(self%ps, self%z_bed, self%z_sl, self%mask, self%rheo, self%slide, self%divq, &
+                                             margin_frac=self%mfrac, stat=stat, q_land=self%q_land, &
+                                             q_marine=self%q_marine, us_x=self%us_x, us_y=self%us_y, tau_cap=self%tau_b)
+        else
+            call plastic_smb_flux_divergence(self%ps, self%z_bed, self%z_sl, self%mask, self%rheo, self%slide, self%divq, &
+                                             margin_frac=self%mfrac, stat=stat, q_land=self%q_land, &
+                                             q_marine=self%q_marine, us_x=self%us_x, us_y=self%us_y)
+        end if
+        call status_check(self, stat, "plastic_smb_flux_divergence")
     end subroutine diagnostics
+
+    subroutine friction_map_set(self)
+        ! The sliding coefficient per cell of slide_law "yield" or "coulomb_n" (kryos_plastic_friction) on the current
+        ! geometry and tau_b.
+        class(plastic_ice_t), intent(inout) :: self
+        call friction_map(self%fr, self%slide%m, self%tau_b, self%ps%H, self%z_bed, self%z_sl, self%mask, &
+                          self%par%rho_i, self%par%rho_w, self%par%g, self%slide%fric_map)
+    end subroutine friction_map_set
+
+    subroutine inversion(self, dHdt)
+        ! mass_balance = "inverted": on the current geometry, the joint inversion of the speed and the mass balance
+        ! (plastic_smb_inversion), the prior the imported smb, the flow-law speed that of the closure with the stress
+        ! capped at tau_b; dHdt [m yr-1] over the step. Sets mb_inv, u_inv, u_law, q_land, q_marine, div q (= mb_inv
+        ! - dHdt + q_land) and the surface velocity u_inv + u_def/(n+1) along the plastic flow direction.
+        class(plastic_ice_t), intent(inout) :: self
+        real(dp),             intent(in)    :: dHdt(:,:)
+        real(dp), allocatable :: prior(:,:), udef(:,:), ex(:,:), ey(:,:)
+        integer :: stat
+        if (.not. published(self, self%hi_smb)) then
+            call fesm_error("kryos_ice_plastic::inversion", "mass_balance = 'inverted' needs the smb import (the prior)", &
+                            "instance "//trim(self%name)//": no smb was published (a surface instance in the domain)")
+        end if
+        allocate(prior(self%nx, self%ny), udef(self%nx, self%ny), ex(self%nx, self%ny), ey(self%nx, self%ny))
+        call fields_get(self%imports, self%hi_smb, prior)
+        prior = prior/self%par%rho_i                    ! kg m-2 yr-1 -> m ice yr-1
+        call plastic_smb_inversion(self%ps, self%z_bed, self%z_sl, self%mask, self%rheo, self%slide, prior, dHdt, &
+                                   self%mb_inv, self%u_inv, self%inv, margin_frac=self%mfrac, tau_cap=self%tau_b, &
+                                   q_land=self%q_land, q_marine=self%q_marine, u_law=self%u_law, u_def=udef, &
+                                   info=self%inv_info, stat=stat)
+        call status_check(self, stat, "plastic_smb_inversion")
+        where (self%mask)
+            self%divq = self%mb_inv - dHdt + self%q_land
+        elsewhere
+            self%divq = 0.0_dp
+        end where
+        call plastic_flow_direction(surface(self), self%dx, self%dy, ex, ey)
+        where (self%mask)
+            self%us_x = (self%u_inv + udef/(self%rheo%n + 1.0_dp))*ex
+            self%us_y = (self%u_inv + udef/(self%rheo%n + 1.0_dp))*ey
+        elsewhere
+            self%us_x = 0.0_dp
+            self%us_y = 0.0_dp
+        end where
+    end subroutine inversion
 
     subroutine status_check(self, stat, what)
         ! A library call that did not return PLASTIC_OK (bad input: nothing computed) stops; a closure's
@@ -555,12 +656,12 @@ contains
     end subroutine exports_geometry
 
     subroutine exports_velocity(self, t1)
-        ! INSTANT diagnostics (restart = .false.): the velocity of the last solve at the cell centres.
+        ! INSTANT diagnostics (restart = .false.): the surface velocity of the closure at the cell centres.
         class(plastic_ice_t), intent(inout) :: self
         real(dp),             intent(in)    :: t1
-        if (.not. self%velocity) return
-        call fields_put(self%exports, self%h_ux_s, self%ux, t1=t1)
-        call fields_put(self%exports, self%h_uy_s, self%uy, t1=t1)
+        if (.not. self%implied) return
+        call fields_put(self%exports, self%h_ux_s, self%us_x, t1=t1)
+        call fields_put(self%exports, self%h_uy_s, self%us_y, t1=t1)
     end subroutine exports_velocity
 
     subroutine exports_mass(self, t1)
@@ -571,22 +672,95 @@ contains
     end subroutine exports_mass
 
     subroutine exports_rates(self, st)
-        ! MEAN over [t0, t1]: dHidt = (H - H_prev)/(t1 - t0), mb_net = rho_i dHidt [kg m-2 yr-1]; no
-        ! surface, basal or calving flux (the ice is imposed).
+        ! MEAN over [t0, t1]: dHidt = (H - H_prev)/(t1 - t0), mb_net = rho_i dHidt [kg m-2 yr-1], bmb = 0.
+        ! smb = cmb = 0 (the ice is imposed), or with mass_balance = "implied" the mass balance the geometry
+        ! needs [kg m-2 yr-1]: on the ice smb = rho_i (dHidt + div q - q_land) (the outflow to land ablated in
+        ! the margin cell), cmb = -rho_i q_marine; on the cells the ice left over the step their loss rho_i
+        ! dHidt, as cmb where the bed lies below sea level, else as smb. Over the grid smb + cmb = mb_net
+        ! (the margin outflow sums to div q); smb_tot, cmb_tot [Gt yr-1] the sums. div q and the outflow are
+        ! those of the geometry at t1. With mb_smooth_km > 0, div q - q_land is smoothed conservatively over the
+        ! ice first (smooth_conservative: totals, and so the closure, unchanged).
         class(plastic_ice_t), intent(inout) :: self
         type(step_time_t),    intent(in)    :: st
 
-        real(dp), allocatable :: dHdt(:,:), zero(:,:)
+        real(dp), allocatable :: dHdt(:,:), smb(:,:), cmb(:,:), x(:,:)
 
         dHdt = (self%ps%H - self%H_prev)/(st%t1 - st%t0)
-        allocate(zero(self%nx, self%ny))
-        zero = 0.0_dp
+        allocate(smb(self%nx, self%ny), cmb(self%nx, self%ny))
+        smb = 0.0_dp;  cmb = 0.0_dp
+        if (self%implied) then
+            if (self%inverted) then
+                x = self%mb_inv - dHdt                  ! the inversion's a = dHidt + div q - q_land
+            else
+                x = self%divq - self%q_land
+                if (self%mb_smooth > 0.0_dp) call smooth_conservative(x, self%mask, self%dx, self%dy, self%mb_smooth)
+            end if
+            where (self%mask)
+                smb = self%par%rho_i*(dHdt + x)
+                cmb = -self%par%rho_i*self%q_marine
+            elsewhere (self%z_sl > self%z_bed)
+                cmb = self%par%rho_i*dHdt
+            elsewhere
+                smb = self%par%rho_i*dHdt
+            end where
+            call fields_put(self%exports, self%h_smb_tot, sum(smb)*self%dx*self%dy*KG_TO_GT, t1=st%t1, t0=st%t0)
+            call fields_put(self%exports, self%h_cmb_tot, sum(cmb)*self%dx*self%dy*KG_TO_GT, t1=st%t1, t0=st%t0)
+        end if
         call fields_put(self%exports, self%h_dHidt,  dHdt,                 t1=st%t1, t0=st%t0)
-        call fields_put(self%exports, self%h_smb,    zero,                 t1=st%t1, t0=st%t0)
-        call fields_put(self%exports, self%h_bmb,    zero,                 t1=st%t1, t0=st%t0)
-        call fields_put(self%exports, self%h_cmb,    zero,                 t1=st%t1, t0=st%t0)
+        call fields_put(self%exports, self%h_smb,    smb,                  t1=st%t1, t0=st%t0)
+        call fields_put(self%exports, self%h_bmb,    0.0_dp*dHdt,          t1=st%t1, t0=st%t0)
+        call fields_put(self%exports, self%h_cmb,    cmb,                  t1=st%t1, t0=st%t0)
         call fields_put(self%exports, self%h_mb_net, self%par%rho_i*dHdt,  t1=st%t1, t0=st%t0)
     end subroutine exports_rates
+
+    subroutine smooth_conservative(f, mask, dx, dy, sd)
+        ! Gaussian smoothing of f over the cells of mask that keeps its sum: each cell spreads its value over
+        ! the mask cells within 3 sd, weights exp(-r^2 / (2 sd^2)) normalised by their sum (scatter form), so
+        ! sum(f) over the mask is unchanged; f off the mask is left as it is.
+        real(dp), intent(inout) :: f(:,:)
+        logical,  intent(in)    :: mask(:,:)
+        real(dp), intent(in)    :: dx, dy, sd
+
+        real(dp), allocatable :: g(:,:), wsum(:,:)
+        integer  :: nx, ny, i, j, p, q, ri, rj
+        real(dp) :: w
+
+        nx = size(f, 1);  ny = size(f, 2)
+        ri = ceiling(3.0_dp*sd/dx);  rj = ceiling(3.0_dp*sd/dy)
+        allocate(g(nx, ny), wsum(nx, ny))
+        wsum = 0.0_dp
+        !$omp parallel do private(i, j, p, q, w) schedule(static)
+        do j = 1, ny
+            do i = 1, nx
+                if (.not. mask(i, j)) cycle
+                do q = max(j - rj, 1), min(j + rj, ny)
+                    do p = max(i - ri, 1), min(i + ri, nx)
+                        if (mask(p, q)) wsum(i, j) = wsum(i, j) + kern(p - i, q - j)
+                    end do
+                end do
+            end do
+        end do
+        !$omp end parallel do
+        g = 0.0_dp
+        !$omp parallel do private(i, j, p, q, w) schedule(static)
+        do q = 1, ny
+            do p = 1, nx
+                if (.not. mask(p, q)) cycle
+                do j = max(q - rj, 1), min(q + rj, ny)
+                    do i = max(p - ri, 1), min(p + ri, nx)
+                        if (mask(i, j) .and. wsum(i, j) > 0.0_dp) g(p, q) = g(p, q) + f(i, j)*kern(p - i, q - j)/wsum(i, j)
+                    end do
+                end do
+            end do
+        end do
+        !$omp end parallel do
+        where (mask) f = g
+    contains
+        pure real(dp) function kern(a, b)
+            integer, intent(in) :: a, b
+            kern = exp(-((a*dx)**2 + (b*dy)**2)/(2.0_dp*sd*sd))
+        end function kern
+    end subroutine smooth_conservative
 
     ! =========================================================================
     ! init helpers
@@ -603,9 +777,12 @@ contains
         character(len=PATH_LEN) :: margin_file, taub_file, taub_domain_file, taub_scale_file, taub_domain_factor_file
         character(len=NAME_LEN) :: margin_var, margin_interp, margin_extrapolate, mode, taub_method, taub_var
         character(len=NAME_LEN) :: taub_domain_var, taub_id_var, taub_value_var, taub_time_var, taub_override_grp
-        character(len=NAME_LEN) :: slide_law, margin_position
+        character(len=NAME_LEN) :: slide_law, margin_position, mass_balance
+        real(dp) :: mb_smooth_km, taub_smooth_km, inv_smooth_km, inv_smooth_smb_km, inv_sigma_smb_min, inv_sigma_cold
         character(len=:), allocatable :: who
         real(dp) :: margin_H_min, taub_const, taub_default, rheo_A, rheo_n, slide_beta, slide_m, slide_C, slide_u0
+        real(dp) :: slide_umax
+        type(friction_t) :: fr
         integer,  allocatable :: codes(:)
         real(dp), allocatable :: vals(:)
         logical  :: hold
@@ -617,10 +794,13 @@ contains
         taub_method = "const";  taub_const = 0.0_dp;  taub_file = "";  taub_var = "taub"
         taub_domain_file = "";  taub_domain_var = "taub_domain";  taub_id_var = "domain_id";  taub_value_var = "taub"
         taub_time_var = "taub_t";  taub_override_grp = "";  taub_default = 0.0_dp;  taub_scale_file = ""
-        taub_domain_factor_file = ""
+        taub_domain_factor_file = "";  taub_smooth_km = 50.0_dp
         mode = "surface"
         rheo_A = 0.0_dp;  rheo_n = 3.0_dp
         slide_law = "none";  slide_beta = 0.0_dp;  slide_m = 1.0_dp;  slide_C = 0.0_dp;  slide_u0 = 0.0_dp
+        slide_umax = 0.0_dp
+        mass_balance = "none";  mb_smooth_km = 0.0_dp
+        inv_smooth_km = 0.0_dp;  inv_smooth_smb_km = 50.0_dp;  inv_sigma_smb_min = 100.0_dp;  inv_sigma_cold = 10.0_dp
 
         call rd_s("drive", self%drive)
         ! solver (plastic_par_t; densities: see constants_check)
@@ -657,14 +837,33 @@ contains
         call rd_r("taub_default", taub_default)
         call rd_s("taub_domain_factor_file", taub_domain_factor_file)
         call rd_s("taub_scale_file", taub_scale_file)
-        ! rheology and sliding (velocity diagnostics; drive = "smb")
+        call rd_r("taub_smooth_km", taub_smooth_km)
+        ! rheology and sliding (drive = "smb"; mass_balance = "implied")
         call rd_r("rheo_A", rheo_A)
         call rd_r("rheo_n", rheo_n)
         call rd_s("slide_law", slide_law)
         call rd_r("slide_beta", slide_beta)
+        call rd_r("slide_uy", fr%uy)
+        call rd_r("slide_uy_b", fr%uy_b)
+        call rd_r("slide_umax", slide_umax)
+        call rd_r("slide_Hc", fr%Hc)
+        call rd_r("slide_lambda_min", fr%lam_min)
+        call rd_r("slide_zb0", fr%zb0)
+        call rd_r("slide_zb1", fr%zb1)
+        call rd_r("slide_p", fr%p)
         call rd_r("slide_m", slide_m)
         call rd_r("slide_C", slide_C)
         call rd_r("slide_u0", slide_u0)
+        call rd_s("mass_balance", mass_balance)
+        call rd_r("mb_smooth_km", mb_smooth_km)
+        call rd_r("inv_sigma_u", self%inv%sigma_u)
+        call rd_r("inv_smooth_km", inv_smooth_km)
+        call rd_r("inv_smooth_smb_km", inv_smooth_smb_km)
+        call rd_r("inv_sigma_smb_rel", self%inv%sigma_smb_rel)
+        call rd_r("inv_sigma_smb_min", inv_sigma_smb_min)
+        call rd_l("inv_cold", self%inv%cold)
+        call rd_r("inv_sigma_cold", inv_sigma_cold)
+        call rd_i("inv_n_iter", self%inv%n_iter)
 
         select case (trim(self%drive))
         case ("taub", "smb")
@@ -748,15 +947,43 @@ contains
                              to_str(exp(minval(self%tb%slf)))//" to "//to_str(exp(maxval(self%tb%slf))), &
                              who//": "//trim(taub_scale_file))
             end if
+            call taub_set_smooth(self%tb, 1000.0_dp*taub_smooth_km, self%dx, self%dy)
         end if
 
-        ! rheology and sliding: the velocity (and drive = "smb") need both
-        self%velocity = rheo_A > 0.0_dp .and. trim(slide_law) /= "none"
-        if (trim(self%drive) == "smb" .and. .not. self%velocity) then
-            call fesm_error(proc, "drive = 'smb' needs the rheology and sliding", who// &
-                            ": set rheo_A > 0 and slide_law (linear, weertman or coulomb)")
+        ! rheology and sliding: drive = "smb" and mass_balance = "implied" need both
+        self%closure = rheo_A > 0.0_dp .and. trim(slide_law) /= "none"
+        select case (trim(mass_balance))
+        case ("none");      self%implied = .false.
+        case ("implied");   self%implied = .true.
+        case ("inverted");  self%implied = .true.;  self%inverted = .true.
+        case default
+            call fesm_error(proc, "mass_balance = '"//trim(mass_balance)//"' is not recognised", who// &
+                            "; use none, implied or inverted")
+        end select
+        if (self%inverted) then
+            if (trim(self%drive) /= "taub") call fesm_error(proc, "mass_balance = 'inverted' needs drive = 'taub'", who)
+            if (mb_smooth_km > 0.0_dp) call fesm_error(proc, "mb_smooth_km applies to mass_balance = 'implied' only", &
+                                                       who//": set it to 0 (the inversion smooths the speed instead)")
+            if (inv_smooth_km < 0.0_dp .or. inv_smooth_smb_km < 0.0_dp .or. .not. (inv_sigma_smb_min > 0.0_dp .and. inv_sigma_cold > 0.0_dp .and. &
+                self%inv%sigma_u > 0.0_dp .and. self%inv%sigma_smb_rel >= 0.0_dp)) &
+                call fesm_error(proc, "inv_sigma_u, inv_sigma_smb_min, inv_sigma_cold > 0; inv_smooth_km, inv_smooth_smb_km, "// &
+                                "inv_sigma_smb_rel >= 0", who)
+            self%inv%smooth = 1000.0_dp*inv_smooth_km
+            self%inv%smooth_smb = 1000.0_dp*inv_smooth_smb_km
+            self%inv%sigma_smb_min = inv_sigma_smb_min/self%par%rho_i
+            self%inv%sigma_cold = inv_sigma_cold/self%par%rho_i
         end if
-        if (self%velocity) call rheology_set(self, rheo_A, rheo_n, slide_law, slide_beta, slide_m, slide_C, slide_u0)
+        if (mb_smooth_km < 0.0_dp) call fesm_error(proc, "mb_smooth_km must be >= 0", who)
+        self%mb_smooth = 1000.0_dp*mb_smooth_km
+        if ((trim(self%drive) == "smb" .or. self%implied) .and. .not. self%closure) then
+            call fesm_error(proc, "drive = 'smb' and mass_balance = 'implied' need the rheology and sliding", who// &
+                            ": set rheo_A > 0 and slide_law (linear, weertman, coulomb, yield or coulomb_n)")
+        end if
+        if (self%closure) call rheology_set(self, rheo_A, rheo_n, slide_law, slide_beta, slide_m, slide_C, slide_u0, &
+                                            slide_umax, fr)
+        if (len_trim(self%fr%kind) > 0 .and. trim(self%drive) == "smb") &
+            call fesm_error(proc, "slide_law = '"//trim(self%fr%kind)//"' needs drive = 'taub'", who// &
+                            ": its coefficient follows the imposed tau_b")
 
     contains
 
@@ -772,6 +999,12 @@ contains
             if (nml_has_param(ctx%par_file, ctx%instance, key)) call nml_read(ctx%par_file, ctx%instance, key, v)
         end subroutine rd_r
 
+        subroutine rd_l(key, v)
+            character(len=*), intent(in)    :: key
+            logical,          intent(inout) :: v
+            if (nml_has_param(ctx%par_file, ctx%instance, key)) call nml_read(ctx%par_file, ctx%instance, key, v)
+        end subroutine rd_l
+
         subroutine rd_i(key, v)
             character(len=*), intent(in)    :: key
             integer,          intent(inout) :: v
@@ -780,12 +1013,14 @@ contains
 
     end subroutine group_read
 
-    subroutine rheology_set(self, A, n, law, beta, m, C, u0)
-        ! The Glen rheology and the sliding law of the velocity closure (plastic_velocity), from the keys
-        ! rheo_* and slide_*. The one place that names their components.
+    subroutine rheology_set(self, A, n, law, beta, m, C, u0, umax, fr)
+        ! The Glen rheology and the sliding law of the flux closure, from the keys
+        ! rheo_* and slide_*. The one place that names their components. "yield", "coulomb_n": the library's
+        ! Weertman, regularised Coulomb law with a coefficient per cell (friction_map, every step).
         class(plastic_ice_t), intent(inout) :: self
-        real(dp),             intent(in)    :: A, n, beta, m, C, u0
+        real(dp),             intent(in)    :: A, n, beta, m, C, u0, umax
         character(len=*),     intent(in)    :: law
+        type(friction_t),     intent(in)    :: fr
 
         character(len=*), parameter :: proc = "kryos_ice_plastic::init"
 
@@ -798,15 +1033,38 @@ contains
         case ("coulomb")
             if (.not. (C > 0.0_dp .and. u0 > 0.0_dp)) call fesm_error(proc, "slide_law = 'coulomb' needs slide_C > 0 "// &
                                                                      "and slide_u0 > 0", "instance "//trim(self%name))
+        case ("yield")
+            if (.not. (fr%uy > 0.0_dp .and. m > 0.0_dp)) call fesm_error(proc, "slide_law = 'yield' needs slide_uy > 0 "// &
+                                                                        "and slide_m > 0", "instance "//trim(self%name))
+        case ("coulomb_n")
+            if (.not. (fr%Hc > 0.0_dp .and. u0 > 0.0_dp .and. m > 0.0_dp .and. umax > 0.0_dp)) &
+                call fesm_error(proc, "slide_law = 'coulomb_n' needs slide_Hc, slide_u0, slide_m and slide_umax > 0", &
+                                "instance "//trim(self%name))
+            if (.not. (fr%lam_min > 0.0_dp .and. fr%lam_min <= 1.0_dp)) &
+                call fesm_error(proc, "slide_lambda_min must be in (0, 1]", "instance "//trim(self%name))
+            if (fr%lam_min < 1.0_dp .and. .not. fr%zb1 > fr%zb0) &
+                call fesm_error(proc, "slide_zb1 must be above slide_zb0", "instance "//trim(self%name))
+            if (fr%p < 0.0_dp) call fesm_error(proc, "slide_p must be >= 0", "instance "//trim(self%name))
         case default
             call fesm_error(proc, "slide_law = '"//trim(law)//"' is not recognised", "instance "//trim(self%name)// &
-                            "; use none, linear, weertman or coulomb")
+                            "; use none, linear, weertman, coulomb, yield or coulomb_n")
         end select
-        self%slide%law  = trim(law)
-        self%slide%beta = beta
-        self%slide%m    = m
-        self%slide%C    = C
-        self%slide%u_0  = u0
+        if (umax < 0.0_dp) call fesm_error(proc, "slide_umax must be >= 0", "instance "//trim(self%name))
+        self%fr = fr
+        self%fr%kind = trim(law)
+        self%slide%law = friction_law(self%fr)
+        if (len_trim(self%slide%law) > 0) then
+            allocate(self%slide%fric_map(self%nx, self%ny))
+            self%slide%fric_map = huge(1.0_dp)
+        else
+            self%fr%kind = ""
+            self%slide%law = trim(law)
+        end if
+        self%slide%beta  = beta
+        self%slide%m     = m
+        self%slide%C     = C
+        self%slide%u_0   = u0
+        self%slide%u_max = umax
     end subroutine rheology_set
 
     subroutine override_read(self, ctx, grp, codes, vals)

@@ -16,6 +16,11 @@ module kryos_plastic_taub
     ! tools/levante/plastic_esmda.jl): each id belongs to a scale group (0 = unscaled) and its value is
     ! multiplied by exp(log_factor(group, t)), linear in t between the nodes of the groups and held outside
     ! them. The default of the cells without a domain is scaled by neither.
+    !
+    ! Any method may be smoothed (taub_set_smooth; the backend's taub_smooth_km): the field at t, after the
+    ! factors, is replaced on the cells with tau_b > 0 by its Gaussian mean (sd, within 3 sd) over those
+    ! cells (a normalised convolution: steps between domains become ramps over a few sd, values are kept
+    ! where the field is uniform). Cells with tau_b <= 0 stay as they are.
 
     use precision, only: dp
     use fesm_log,  only: fesm_error, to_str
@@ -44,6 +49,8 @@ module kryos_plastic_taub
         real(dp), allocatable :: stime(:)            ! [yr] model time of the scale nodes, increasing
         real(dp), allocatable :: slf(:,:)            ! (group, node): natural log of the multiplier
         real(dp), allocatable :: dfac(:)             ! the factor of each id (exp of its log factor); unallocated: none
+        real(dp) :: smooth = 0.0_dp                  ! [m] Gaussian sd of the smoothing (0: none)
+        real(dp) :: sdx = 0.0_dp, sdy = 0.0_dp       ! [m] the grid spacing of the smoothing
         character(len=512) :: dsrc = ""              ! messages: the domain factor file
         character(len=512) :: ssrc = ""              ! messages: the scale file
         character(len=512) :: src = ""               ! messages
@@ -53,6 +60,7 @@ module kryos_plastic_taub
     public :: taub_set_domains, taub_read_domains, taub_at
     public :: taub_set_scale, taub_read_scale, taub_scale_at
     public :: taub_set_domain_factor, taub_read_domain_factor
+    public :: taub_set_smooth
 
 contains
 
@@ -291,7 +299,68 @@ contains
         case default
             call fesm_error("kryos_plastic_taub::taub_at", "tau_b is not set", trim(tb%src))
         end select
+        if (tb%smooth > 0.0_dp) call smooth_positive(tau, tb%sdx, tb%sdy, tb%smooth)
     end subroutine taub_at
+
+    subroutine taub_set_smooth(tb, sd, dx, dy)
+        ! The Gaussian smoothing of taub_at: sd [m] (0: none) on a grid of spacing dx, dy [m].
+        type(taub_t), intent(inout) :: tb
+        real(dp),     intent(in)    :: sd, dx, dy
+        if (sd < 0.0_dp) call fesm_error("kryos_plastic_taub::taub_set_smooth", "the smoothing sd must be >= 0", &
+                                         "taub_smooth_km = "//to_str(sd/1000.0_dp))
+        if (sd > 0.0_dp .and. .not. (dx > 0.0_dp .and. dy > 0.0_dp)) &
+            call fesm_error("kryos_plastic_taub::taub_set_smooth", "the grid spacing must be positive", trim(tb%src))
+        tb%smooth = sd
+        tb%sdx = dx
+        tb%sdy = dy
+    end subroutine taub_set_smooth
+
+    subroutine smooth_positive(f, dx, dy, sd)
+        ! f on its cells with f > 0 replaced by sum w f / sum w over those cells, w = exp(-r^2 / (2 sd^2)) within
+        ! 3 sd: separable (rows, then columns) for the numerator and the weight sum alike.
+        real(dp), intent(inout) :: f(:,:)
+        real(dp), intent(in)    :: dx, dy, sd
+        real(dp), allocatable :: num(:,:), den(:,:)
+        logical,  allocatable :: v(:,:)
+
+        v = f > 0.0_dp
+        num = merge(f, 0.0_dp, v)
+        den = merge(1.0_dp, 0.0_dp, v)
+        call gauss_1d(num, den, 1, dx)
+        call gauss_1d(num, den, 2, dy)
+        where (v .and. den > 0.0_dp) f = num/den
+    contains
+        subroutine gauss_1d(a, b, dim, h)
+            real(dp), intent(inout) :: a(:,:), b(:,:)
+            integer,  intent(in)    :: dim
+            real(dp), intent(in)    :: h
+            real(dp), allocatable :: w(:), ta(:,:), tb2(:,:)
+            integer :: r, k, i, j, n1, n2
+            r = ceiling(3.0_dp*sd/h)
+            w = [(exp(-(k*h)**2/(2.0_dp*sd*sd)), k = -r, r)]
+            n1 = size(a, 1);  n2 = size(a, 2)
+            allocate(ta(n1, n2), tb2(n1, n2))
+            ta = 0.0_dp;  tb2 = 0.0_dp
+            !$omp parallel do private(i, j, k) schedule(static)
+            do j = 1, n2
+                do i = 1, n1
+                    do k = -r, r
+                        if (dim == 1) then
+                            if (i + k < 1 .or. i + k > n1) cycle
+                            ta(i, j) = ta(i, j) + w(k + r + 1)*a(i + k, j)
+                            tb2(i, j) = tb2(i, j) + w(k + r + 1)*b(i + k, j)
+                        else
+                            if (j + k < 1 .or. j + k > n2) cycle
+                            ta(i, j) = ta(i, j) + w(k + r + 1)*a(i, j + k)
+                            tb2(i, j) = tb2(i, j) + w(k + r + 1)*b(i, j + k)
+                        end if
+                    end do
+                end do
+            end do
+            !$omp end parallel do
+            a = ta;  b = tb2
+        end subroutine gauss_1d
+    end subroutine smooth_positive
 
     subroutine taub_set_scale(tb, ids, grp, time, log_factor, src)
         ! The multipliers of "domains" (set before): the scale group `grp` of the domain ids `ids` (0 =

@@ -9,7 +9,7 @@
 # s(t_p) s(t_q) exp(-|t_p - t_q| / L) with t_p the mean age of a parameter's nodes and s(t) = sigma sin^2(pi t / (2 ramp_ka)) below
 # ramp_ka, sigma above (0 and flat at 0 ka, smooth), groups independent; every member clipped to |theta| <= theta_max after an
 # update. Observations: the index points of pm_compare.jl's GROUPS in obs_groups, the model RSL at a point the scorer's (series_run:
-# the run's VILMA2 stream as vilma_out.nc by pm_kryos_out.jl, bilinear, linear in time), so d = model - rsl is the d of the scores.
+# the run's VILMA2 stream geo_glob_vilma.nc read by pm_compare.jl's read_run, bilinear, linear in time), so d = model - rsl is the d of the scores.
 # Their error covariance R = diag(sigma_i^2) + sigma_m^2 C, sigma_i the scorer's ip_sigma (elevation on the side of d, and the age
 # through the model slope) at the ensemble-mean RSL of the iteration, fixed within the iteration; sigma_m the model error the indicator
 # lacks (GIA and Earth model, resolution, RSL interpolation), correlated between index points: C_ij = exp(-dist_ij / L_s)
@@ -22,18 +22,22 @@
 # Folder: config.toml, kryos.x, input/, par.nml, groups.csv, obs.csv, obs_kept.csv, esmda.md (the report), next (the iteration to run, or done);
 # iter_kk/: theta.csv (all members of the iteration), members.txt (those to run), mNNN/ (taub_scale.nc, par.nml, the run, status:
 # exit code and seconds), scores.csv (per member and set), members.csv (per member: ok, chi2, ESL at 20 ka, run time).
+# Every member writes the product (PRODUCT_VARS): the 2-D ice of each instance of scale_keys (<instance>.nc on its out_2D schedule,
+# 2.5 kyr) and its 0-D series, besides the VILMA2 stream (RSL, bed, ocean, load) of the par file; [run] set and final_set come after.
 # Member 0 is the mean member: the prior mean (0, Gowan's tau_b) in iteration 1, the ensemble mean after an update.
 using LinearAlgebra, Printf, Random, Statistics, TOML, NCDatasets
 
 module PM
 include("pm_compare.jl")
 end
-module KO
-include("pm_kryos_out.jl")
-end
 include("plastic_taub_scale.jl")
 
 const ESL_AGE = 20000.0
+# the exports every member writes per plastic instance: the 2-D ice (thickness, surface, bed and sea level as the ice saw them, ice
+# fraction) and the ice mass (out_vars filters the 0-D series too)
+const PRODUCT_VARS = ["H_ice", "z_srf", "z_bed", "z_sl", "f_ice", "M_ice"]
+product_set(keys) = [s for inst in unique(first.(split.(keys, "."))) for s in
+                     ("$(inst).out_2D=\"out_2D\"", "$(inst).out_vars=" * join(("\"$v\"" for v in PRODUCT_VARS), " "))]
 
 itdir(C, k) = joinpath(C, @sprintf("iter_%02d", k))
 mdir(C, k, m) = joinpath(itdir(C, k), @sprintf("m%03d", m))
@@ -72,9 +76,10 @@ logline(C, s...) = open(io -> println(io, s...), joinpath(C, "esmda.md"), "a")
 # --- prior --------------------------------------------------------------------------------------------------------------------------
 # the prior sd at age t [ka]: sigma, ramped smoothly from 0 at 0 ka to sigma at ramp_ka (sin^2; no ramp_ka: sigma)
 prior_sd(pr, t) = (r = get(pr, "ramp_ka", 0.0); r > 0 && t < r ? pr["sigma"] * sin(π * t / (2r))^2 : float(pr["sigma"]))
-function prior_cov(P, pr)
-    L = pr["corr_time_kyr"]
-    [p.g == q.g ? prior_sd(pr, p.t) * prior_sd(pr, q.t) * exp(-abs(p.t - q.t) / L) : 0.0 for p in P, q in P]
+# groups independent; within a group exponential in time, the group's corr_time_kyr ([[scale.groups]]) or the prior's
+function prior_cov(P, pr, specs)
+    L = [Float64(get(s, "corr_time_kyr", pr["corr_time_kyr"])) for s in specs]
+    [p.g == q.g ? prior_sd(pr, p.t) * prior_sd(pr, q.t) * exp(-abs(p.t - q.t) / L[p.g]) : 0.0 for p in P, q in P]
 end
 
 # --- observation error ------------------------------------------------------------------------------------------------------------
@@ -108,7 +113,8 @@ function write_iteration(C, k, cfg, sg, P, ids, Θ, run; final = false)
         D = mdir(C, k, m); mkpath(D)
         f = write_scale(joinpath(D, "taub_scale.nc"), sg, log_factor(sg, P, Θ[:, j]))
         cp(joinpath(C, "par.nml"), joinpath(D, "par.nml"); force = true)
-        set = ["$(key)=\"$f\"" for key in get(cfg["run"], "scale_keys", ["ice_nor.taub_scale_file"])]
+        keys = get(cfg["run"], "scale_keys", ["ice_nor.taub_scale_file"])
+        set = [["$(key)=\"$f\"" for key in keys]; product_set(keys)]
         final && append!(set, String.(get(cfg["run"], "final_set", String[])))
         Base.run(`python3 $(cfg["run"]["set_nml"]) $(joinpath(D, "par.nml")) $set`)
     end
@@ -122,8 +128,9 @@ function read_theta(C, k)
 end
 
 # --- init ---------------------------------------------------------------------------------------------------------------------------
-function init(cfgfile, C)
-    C = abspath(C)
+# The folder of a calibration or an ensemble (plastic_ensemble.jl): the config, kryos.x, input/, the par file with [run] set and
+# the frozen domain factors, slurm.env, groups.csv, obs.csv of the observation groups og. Returns (cfg, sg, obs).
+function prepare(cfgfile, C, og)
     isfile(joinpath(C, "config.toml")) && error("$C is a calibration already")
     mkpath(C); cp(cfgfile, joinpath(C, "config.toml"))
     cfg = config(C); rn = cfg["run"]; K = rn["kryos_dir"]
@@ -145,14 +152,20 @@ function init(cfgfile, C)
 
     sg = scale_groups(cfg["scale"]); write_groups_csv(joinpath(C, "groups.csv"), sg)
     obs = PM.read_indicators(cfg["score"]["fesmdata"])
-    og = cfg["esmda"]["obs_groups"]
     open(joinpath(C, "obs.csv"), "w") do io
         println(io, "group,n_index_points,n_marine_limiting,n_terrestrial_limiting")
         for g in og; println(io, g, ",", join((count(o -> o.group == g && o.type == t, obs) for t in (0, -1, 1)), ",")); end
     end
+    cfg, sg, obs
+end
 
+function init(cfgfile, C)
+    C = abspath(C)
+    og = TOML.parsefile(cfgfile)["esmda"]["obs_groups"]
+    cfg, sg, obs = prepare(cfgfile, C, og)
+    rn = cfg["run"]
     es = cfg["esmda"]; ne = es["ne"]; P = params(cfg, sg)
-    Cθ = prior_cov(P, cfg["prior"])
+    Cθ = prior_cov(P, cfg["prior"], cfg["scale"]["groups"])
     Θ = clamp.(cholesky(Symmetric(Cθ)).L * randn(MersenneTwister(cfg["prior"]["seed"]), size(Cθ, 1), ne), -cfg["prior"]["theta_max"],
                cfg["prior"]["theta_max"])
     ids = collect(0:ne)
@@ -182,7 +195,6 @@ function member_series(D, obs, A)
     isfile(st) || return nothing, "no status"
     s = split(read(st, String)); s[1] == "0" || return nothing, "exit $(s[1])"
     isfile(joinpath(D, "geo_glob_vilma.nc")) || return nothing, "no geo_glob_vilma.nc"
-    KO.kryos_vilma_out(D, D)
     r = PM.read_run(D)
     all(a -> any(x -> abs(x - PM.trec(a)) < 0.01, r.t), A) || return nothing, "records missing"
     S = PM.series_run(r, [o.lon for o in obs], [o.lat for o in obs], A)

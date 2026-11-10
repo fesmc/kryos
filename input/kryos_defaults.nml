@@ -233,14 +233,44 @@
     taub_scale_file    = ""                    ! "domains": multipliers of tau_b per scale group, time dependent (the
                                                ! calibration, tools/levante/plastic_esmda.jl; {domain}, {grid_name});
                                                ! "" = none
-    ! rheology and sliding (the velocity diagnostics ux_s, uy_s and smb_implied; drive = "smb")
+    taub_smooth_km     = 50.0                  ! [km] drive = "taub": Gaussian sd of the smoothing of tau_b (after the
+                                               ! factors) over the cells with tau_b > 0, for the solve and the
+                                               ! closure alike; 0 = none
+    ! rheology and sliding (drive = "smb"; mass_balance = "implied")
     rheo_A             = 0.0                   ! [Pa-n yr-1] Glen rate factor; 0 = no velocity
     rheo_n             = 3.0                   ! Glen exponent
-    slide_law          = "none"                ! "none" | "linear" | "weertman" | "coulomb" (regularised)
+    slide_law          = "none"                ! "none" | "linear" | "weertman" | "coulomb" (regularised) | "yield" |
+                                               ! "coulomb_n" (regularised Coulomb, C from tau_b, the bed and N)
     slide_beta         = 0.0                   ! linear [Pa yr m-1], weertman [Pa (yr m-1)^(1/m)]
-    slide_m            = 1.0                   ! weertman, coulomb: stress exponent
+    slide_m            = 1.0                   ! weertman, coulomb, yield, coulomb_n: stress exponent
     slide_C            = 0.0                   ! [Pa] coulomb: the cap
-    slide_u0           = 0.0                   ! [m yr-1] coulomb: the threshold velocity
+    slide_u0           = 0.0                   ! [m yr-1] coulomb, coulomb_n: the threshold velocity
+    slide_umax         = 0.0                   ! [m yr-1] coulomb, coulomb_n: the speed cap (where tau reaches C); 0 = none
+                                               ! (coulomb_n needs one)
+    slide_Hc           = 0.0                   ! [m] coulomb_n: C = tau_b lambda N / (rho_i g slide_Hc), N the effective
+                                               ! pressure; the ice slides fast where it thins below slide_Hc / lambda
+    slide_lambda_min   = 1.0                   ! coulomb_n: lambda at a bed slide_zb0 or lower (1 = no bed dependence)
+    slide_zb0          = -500.0                ! [m] coulomb_n: bed above sea level (z_bed - z_sl) of slide_lambda_min
+    slide_zb1          = 0.0                   ! [m] coulomb_n: of lambda = 1 (linear between)
+    slide_p            = 0.5                   ! coulomb_n: N = rho_i g H (1 - H_f/H)^slide_p (Leguy et al. 2014)
+    slide_uy           = 0.0                   ! [m yr-1] yield: u_b = u_y (tau/tau_b)^slide_m, u_y = slide_uy (tau_b/100 kPa)^slide_uy_b
+    slide_uy_b         = 0.0                   ! yield: exponent of u_y in tau_b (< 0: faster on weaker beds)
+    mass_balance       = "none"                ! "none": smb = cmb = 0 | "implied": the mass balance the geometry needs
+                                               ! (dHidt + div q of the steady face fluxes, margin outflow ablated to
+                                               ! land, calved to the ocean), smb_tot, cmb_tot, ux_s, uy_s (rheo_A, slide_law)
+                                               ! | "inverted": speed and mass balance by joint inversion against the
+                                               ! closure's speed and the imported smb (the prior; drive = "taub")
+    mb_smooth_km       = 0.0                   ! [km] implied: Gaussian sd of the conservative smoothing of div q - q_land
+                                               ! over the ice (sums unchanged); 0 = none
+    inv_sigma_u        = 0.7                   ! inverted: sd of ln(speed) about the closure's (0.7: a factor 2)
+    inv_smooth_km      = 0.0                   ! [km] inverted: length of the smoothness of ln(speed / closure's); 0 = none
+    inv_smooth_smb_km  = 50.0                  ! [km] inverted: length of the smoothness of the mass balance's deviation from
+                                               ! the prior (a spatially correlated prior error); 0 = none
+    inv_sigma_smb_rel  = 0.5                   ! inverted: sd of the mass balance about the prior, relative to |prior|
+    inv_sigma_smb_min  = 100.0                 ! [kg m-2 yr-1] inverted: its floor
+    inv_cold           = .true.                ! inverted: penalise negative mass balance where the prior is >= 0 (off the margin)
+    inv_sigma_cold     = 10.0                  ! [kg m-2 yr-1] inverted: the scale of that penalty
+    inv_n_iter         = 50                    ! inverted: Gauss-Newton steps at most
     out_plastic        = "none"                ! schedule of <instance>_plastic.nc (state, mask, sdist, tau_b, ...)
 /
 &climate_snapshots
@@ -317,6 +347,10 @@
     mask_file    = ""           ! target ice-mask file ("" => H_ice_ref > 0; {domain}, {grid_name} = the surface grid)
     mask_var     = ""           ! mask variable of mask_file
     mask_idx     = 1            ! index along the third dimension of mask_var
+    mask_ice     = False        ! True: the mask is the current ice (H_ice > 0 of the hub) every call (an ice
+                                ! backend whose H_ice_ref is a fixed reference, e.g. plastic); not with mask_file
+    tsl_const    = -1.0         ! [K] > 0: a constant sea-level temperature instead of the tsl_ann import (a
+                                ! domain without a climate; only T_srf uses it); <= 0: tsl_ann is imported
 
     ! Climate snow line  z_SL = a1 + a2*phi + a3*CO2 + a4*(f - fmean), phi = |latitude|
     a1           = 3750.0       ! [m]

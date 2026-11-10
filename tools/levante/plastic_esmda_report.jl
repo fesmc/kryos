@@ -59,7 +59,7 @@ if σm > 0
     println(io, "\n### Mean members: RMS of z_m = d / sqrt(sigma^2 + sigma_m^2), sigma_m = $(σm) m (index points; n with scorer sigma < 0.1 m)\n")
     println(io, "| iteration | all | ", join(gs, " | "), " | sigma < 0.1 m |\n|---|---|", repeat("---|", length(gs) + 1))
     for k in iters
-        D = joinpath(itd(k), "m000"); isfile(joinpath(D, "vilma_out.nc")) || continue
+        D = joinpath(itd(k), "m000"); isfile(joinpath(D, "geo_glob_vilma.nc")) || continue
         r = PM.read_run(D); S = PM.series_run(r, [o.lon for o in obs], [o.lat for o in obs], A)
         zm = fill(NaN, length(obs)); small = 0
         for (i, o) in enumerate(obs)

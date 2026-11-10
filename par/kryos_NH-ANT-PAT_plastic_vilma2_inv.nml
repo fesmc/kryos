@@ -1,0 +1,465 @@
+! The implied mass balance by joint inversion (mass_balance = "inverted", docs/dev/plastic-smb-inversion-design.md) on
+! par/kryos_NH-ANT-PAT_plastic_vilma2.nml: per domain a surface instance smb_simple (the prior: its mask the current ice, no
+! climate: tsl_const), the coulomb_n closure of the present-day fits (runs/closure-cn, the stress capped at tau_b) as the
+! flow-law speed. Build: plastic=1 vilma=1.
+
+! kryos par file: Gowan et al. (2021) PaleoMIST online on the science Earth with three plastic instances (docs/dev/plastic-backend.md,
+! "The 3-D Earth"): par/kryos_NH-ANT_plastic_vilma2.nml (NH-32KM, ANT-16KM; Bagge et al. (2021) 3-D viscosity, refcorr reference)
+! plus the domain PatagoniaPaleo: hub PAT-PAL-8KM, ice_pat plastic on PaleoMIST's PAT-PAL-8KM margin (f_ice > 0.5) and Gowan's tau_b
+! domains (region 4) of the same products (FesmData IceHistory v2.4.0), today's topography GEBCO2026 (IceBoost v2 ice) + r, its geo
+! port geo_pat. The rest of the world PaleoMIST's history.
+! The tau_b of the three instances: Gowan's, times the per-domain factors of the present-day fit (taub_domain_factor_file, Stage 1,
+! tests/plastic_taub_fit.f90; "" = none) and the scale groups of the calibration (taub_scale_file; one file holds the domains of
+! all grids).
+! Densities: the run's (910, 1028). Build: plastic=1 vilma=1 (yelmo=0 is enough). The maps folder needs grid_PAT-PAL-8KM.txt.
+
+&kryos
+    domains         = "North" "Antarctica" "PatagoniaPaleo"
+    globe           = "globe"
+    clock           = "clock"
+    restart         = "None"
+    restart_out     = "out_rst"
+    out_dir         = "./"
+    map_fldr        = "maps"
+    phys_const      = "Earth"                ! rho_ice 910, rho_sw 1028, g 9.81: the plastic keys below equal them
+    phys_const_file = "input/phys_const.nml"
+    write_lossless  = False
+    log_level       = "info"
+    timing          = True
+/
+
+&clock
+    time_init      = -80e3     ! [yr] the first PaleoMIST slice (80 ka)
+    time_end       = 0.0       ! [yr] present day
+    dtt            = 100.0     ! [yr] one plastic solve and one VILMA2 step per 100 yr (PaleoMIST: 2.5 kyr slices)
+    method         = "rel"
+    time_ref       = 1950.0
+    calendar       = "365_day"
+    year           = "tropical"
+    ticks_per_year = 36000
+/
+
+&out_1D
+    method = "const"
+    dt     = 100.0
+/
+
+&out_2D
+    method = "const"
+    dt     = 2500.0            ! [yr] the PaleoMIST slice times (comparison with H_ice of the history)
+/
+
+&out_rst
+    method = "const"
+    dt     = 10e3
+/
+
+&globe
+    geo = "geo_glob"
+/
+
+&geo_glob
+    backend         = "vilma2"
+    grid            = ""                 ! the Gauss grid GAUSS-L<lmax>, built by the backend
+    dt              = 100.0              ! [yr] cadence of the Earth (science case: 10)
+    phase           = 0.0
+    clock           = "model"
+    out_2D          = "out_2D"           ! dz_bed, dz_ss, C_ocn on the Gauss grid (lon, lat)
+    out_1D          = "out_1D"           ! the series geo_glob_ts.nc
+    out_vars        = ""
+    vilma           = "vilma"            ! the &vilma group
+    ice_bg          = "globe_ice"        ! the global ice field group
+    allow_no_spinup = False              ! the run needs VILMA2's spin-up (pre_spinup_1d in [vilma])
+    out_gia         = "none"             ! schedule of geo_glob_gia.nc (what VILMA2 got): G3 runs set it
+    out_vilma       = "out_2D"           ! geo_glob_vilma.nc (VILMA2's own diagnostics: rsl, bsl, bsl_ive; the GAPSLIP scores)
+/
+
+&vilma
+    ! Overrides of input/vilma_defaults.nml, the CLIMBER-X set (geo_par.nml): PREM with 11 layers, the 1-D radial viscosity of the
+    ! reference and the Bagge et al. (2021) 3D field of FesmData (structure 6 = v_1.0_s16), at degree 170.
+    lmax              = 170
+    earth             = "PREM"
+    n_layer           = 11
+    r_bot             = 6291.0e3, 6151.0e3, 5971.0e3, 5771.0e3, 5701.0e3, 5600.0e3, 4943.0e3, 4287.0e3, 3630.0e3, 3480.0e3, 0.0
+    r_top             = 6371.0e3, 6291.0e3, 6151.0e3, 5971.0e3, 5771.0e3, 5701.0e3, 5600.0e3, 4943.0e3, 4287.0e3, 3630.0e3, 3480.0e3
+    eta               = 1.0e40, 4.0e20, 4.0e20, 4.0e20, 4.0e20, 1.0e22, 1.0e22, 1.0e22, 1.0e22, 1.0e22, 0.0
+    rheology          = 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2
+    l_visc_3d         = .true.
+    visc_3d_file      = "fesmdata/Global/GLOBAL-T170/GLOBAL-T170_SolidEarth-Bagge2021.nc"
+    visc_3d_structure = 6
+    pre_spinup_1d     = .true.    ! VILMA2's own spin-up under the t0 load (phase4-plan Q7): the 1-D pre-equilibration
+    equil_time_max    = 2.0e4     ! [yr] cap of the full-model relaxation after it (G2c, Alex: converges after about 14 kyr at the tolerance below)
+    equil_rate_tol    = 1.0e-5    ! [m/yr] mean bed rate that ends a pass (both phases; G2c, Alex: 1e-3 leaves 15 % of the equilibrium deflection)
+/
+
+&globe_ice
+    grid      = "GLOBAL-0.5DEG"         ! background grid (phase4-plan Q3)
+    z_bed_ref = "X_z_bed"               ! background bed X at ext_tref
+    H_ice_ref = "X_H_ice"               ! background ice X at ext_tref
+    ext       = "file"                  ! ice outside the footprints: X + the history's anomaly
+    ext_field = "X_dH_ice"
+    ext_tref  = 0.0                     ! [yr] model time of the history's present day (its last record, 0 ka)
+    out_2D    = "none"                  ! schedule of globe_ice.nc (the hub output)
+/
+
+&X_z_bed
+    filename = "kryos_data/refcorr/PaleoMIST-sci/{grid_name}/{grid_name}_REFCORR.nc"   ! PaleoMIST's 0 ka bed + r (gia_refcorr.sh)
+    name     = "z_bed"
+    mode     = "static"
+/
+
+&X_H_ice
+    filename = "kryos_data/refcorr/PaleoMIST-sci/{grid_name}/{grid_name}_REFCORR.nc"   ! PaleoMIST's 0 ka ice (unchanged)
+    name     = "H_ice"
+    mode     = "static"
+/
+
+&X_dH_ice
+    filename     = "fesmdata/Global/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"
+    name         = "H_ice"
+    mode         = "transient"
+    anomaly_ref  = "slice"
+    ref_time     = 0.0                  ! [yr] = ext_tref
+    out_of_range = "error"              ! the gather itself holds the history after ext_tref; a run before the first record stops
+/
+
+&geo_nor
+    backend     = "vilma2"
+    grid        = "NH-32KM"   ! the ice grid
+    dt          = 100.0       ! the cadence of geo_glob (a different value stops)
+    phase       = 0.0
+    clock       = "model"
+    out_2D      = "out_2D"
+    out_1D      = "out_1D"
+    out_vars    = ""
+/
+
+&North
+    grid_hub    = "NH-32KM"
+    topo        = "topo_nor"
+    regions     = "regions_nor"
+    basins      = "domain"
+    out_2D      = "none"
+    ice         = "ice_nor"
+    geo         = "geo_nor"
+    surface     = "surface_nor"
+/
+
+&ice_nor
+    backend            = "plastic"
+    grid               = ""             ! the hub grid, NH-32KM
+    dt                 = 0.0            ! every step
+    phase              = 0.0
+    clock              = "model"
+    out_2D             = "out_2D"
+    out_1D             = "out_1D"
+    out_vars           = ""
+    drive              = "taub"
+    mode               = "surface"      ! z_s directly, with the bed ("full" does not converge on 32 km beds)
+    relax              = 0.5
+    warm_frac_max      = 0.1
+    n_outer            = 100
+    max_sweeps         = 200
+    tol                = 1.0e-6
+    outer_tol          = 1.0e-3
+    rho_i              = 910.0          ! kryos Earth / PaleoMIST runs (library default 917)
+    rho_w              = 1028.0
+    g                  = 9.81
+    H_min              = 1.0
+    margin_file        = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"   ! "years ago", 80 -> 0 ka
+    margin_var         = "f_ice"        ! ice fraction of Gowan's unsmoothed 5 km grid: his margin ("H_ice", 1 m: the
+    margin_H_min       = 0.5            ! 25 km smoothed thickness, reaching beyond it)
+    margin_interp      = "sdist"        ! "nearest": Gowan's slices as they are
+    margin_extrapolate = "error"
+    taub_method        = "domains"      ! Gowan's domains, time dependent (PaleoMIST 1.0)
+    taub_const         = 1.0e5          ! [Pa] taub_method = "const" only
+    taub_domain_file   = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST_taub.nc"   ! FesmData IceHistory v2.3.0
+    taub_domain_var    = "taub_domain"
+    taub_id_var        = "domain_id"
+    taub_value_var     = "taub"
+    taub_time_var      = "taub_t"
+    taub_override      = ""
+    taub_default       = 5000.0         ! [Pa] cells without a domain: Gowan's value outside every polygon
+    taub_domain_factor_file = ""        ! factors per domain (Stage 1, tests/plastic_taub_fit.f90); "" = none
+    taub_scale_file    = ""             ! multipliers per scale group (tools/levante/plastic_esmda.jl); "" = none
+    taub_smooth_km     = 50.0
+    mass_balance       = "inverted"
+    mb_smooth_km       = 0.0
+    rheo_A             = 1.0e-16
+    rheo_n             = 3.0
+    slide_law          = "coulomb_n"
+    slide_Hc           = 100.0
+    slide_lambda_min   = 0.1
+    slide_zb0          = -500.0
+    slide_zb1          = 0.0
+    slide_p            = 1.0
+    slide_u0           = 100.0
+    slide_m            = 2.0
+    slide_umax         = 1000.0
+    inv_sigma_u        = 0.7
+    inv_smooth_km      = 0.0
+    inv_smooth_smb_km  = 50.0
+    inv_sigma_smb_rel  = 0.5
+    inv_sigma_smb_min  = 100.0
+    inv_cold           = .true.
+    inv_sigma_cold     = 10.0
+    inv_n_iter         = 50
+    out_plastic        = "out_2D"       ! ice_nor_plastic.nc: mask, sdist, tau_b, convergence
+/
+
+&topo_nor
+    path         = "kryos_data/refcorr/PaleoMIST-sci/{domain}/{grid_name}/{grid_name}_TOPO-GEBCO2026-refcorr.nc"   ! today's topography + r
+    vars         = "z_bed" "z_srf" "H_ice"
+    remap        = "con"
+    z_bed_f_sd   = 0.0
+    remove_lakes = True
+    H_ice_min    = 1.0
+    grad_lim_zb  = 0.5
+/
+
+&regions_nor
+    path_regions = "fesmdata/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
+/
+
+&Antarctica
+    grid_hub    = "ANT-16KM"
+    topo        = "topo_ant"
+    regions     = "regions_ant"
+    basins      = "domain"
+    out_2D      = "none"
+    ice         = "ice_ant"
+    geo         = "geo_ant"
+    surface     = "surface_ant"
+/
+
+&ice_ant
+    backend            = "plastic"
+    grid               = ""             ! the hub grid, ANT-16KM
+    dt                 = 0.0            ! every step
+    phase              = 0.0
+    clock              = "model"
+    out_2D             = "out_2D"
+    out_1D             = "out_1D"
+    out_vars           = ""
+    drive              = "taub"
+    mode               = "surface"      ! z_s directly, with the bed ("full" does not converge on 32 km beds)
+    relax              = 0.5
+    warm_frac_max      = 0.1
+    n_outer            = 100
+    max_sweeps         = 200
+    tol                = 1.0e-6
+    outer_tol          = 1.0e-3
+    rho_i              = 910.0          ! kryos Earth / PaleoMIST runs (library default 917)
+    rho_w              = 1028.0
+    g                  = 9.81
+    H_min              = 1.0
+    margin_file        = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"   ! "years ago", 80 -> 0 ka
+    margin_var         = "f_ice"        ! ice fraction of Gowan's unsmoothed 5 km grid: his margin ("H_ice", 1 m: the
+    margin_H_min       = 0.5            ! 25 km smoothed thickness, reaching beyond it)
+    margin_interp      = "sdist"        ! "nearest": Gowan's slices as they are
+    margin_extrapolate = "error"
+    taub_method        = "domains"      ! Gowan's domains, time dependent (PaleoMIST 1.0)
+    taub_const         = 1.0e5          ! [Pa] taub_method = "const" only
+    taub_domain_file   = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST_taub.nc"   ! FesmData IceHistory v2.3.0
+    taub_domain_var    = "taub_domain"
+    taub_id_var        = "domain_id"
+    taub_value_var     = "taub"
+    taub_time_var      = "taub_t"
+    taub_override      = ""
+    taub_default       = 5000.0         ! [Pa] cells without a domain: Gowan's value outside every polygon
+    taub_domain_factor_file = ""        ! factors per domain (Stage 1, tests/plastic_taub_fit.f90); "" = none
+    taub_scale_file    = ""             ! multipliers per scale group (tools/levante/plastic_esmda.jl); "" = none
+    taub_smooth_km     = 50.0
+    mass_balance       = "inverted"
+    mb_smooth_km       = 0.0
+    rheo_A             = 3.0e-17
+    rheo_n             = 3.0
+    slide_law          = "coulomb_n"
+    slide_Hc           = 50.0
+    slide_lambda_min   = 0.3
+    slide_zb0          = -500.0
+    slide_zb1          = 0.0
+    slide_p            = 0.5
+    slide_u0           = 100.0
+    slide_m            = 2.0
+    slide_umax         = 1000.0
+    inv_sigma_u        = 0.7
+    inv_smooth_km      = 0.0
+    inv_smooth_smb_km  = 50.0
+    inv_sigma_smb_rel  = 0.5
+    inv_sigma_smb_min  = 100.0
+    inv_cold           = .true.
+    inv_sigma_cold     = 10.0
+    inv_n_iter         = 50
+    out_plastic        = "out_2D"       ! ice_ant_plastic.nc: mask, sdist, tau_b, convergence
+/
+
+&geo_ant
+    backend     = "vilma2"
+    grid        = "ANT-16KM"  ! the ice grid
+    dt          = 100.0       ! the cadence of geo_glob (a different value stops)
+    phase       = 0.0
+    clock       = "model"
+    out_2D      = "out_2D"
+    out_1D      = "out_1D"
+    out_vars    = ""
+/
+
+&topo_ant
+    path         = "kryos_data/refcorr/PaleoMIST-sci/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v4-refcorr.nc"   ! today's topography + r
+    vars         = "z_bed" "z_srf" "H_ice"
+    remap        = "con"
+    z_bed_f_sd   = 0.0
+    remove_lakes = True
+    H_ice_min    = 1.0
+    grad_lim_zb  = 0.5
+/
+
+&regions_ant
+    path_regions = "fesmdata/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
+/
+
+&PatagoniaPaleo
+    grid_hub    = "PAT-PAL-8KM"
+    topo        = "topo_pat"
+    regions     = "regions_pat"
+    basins      = "domain"
+    out_2D      = "none"
+    ice         = "ice_pat"
+    geo         = "geo_pat"
+    surface     = "surface_pat"
+/
+
+
+&ice_pat
+    backend            = "plastic"
+    grid               = ""             ! the hub grid, PAT-PAL-8KM
+    dt                 = 0.0            ! every step
+    phase              = 0.0
+    clock              = "model"
+    out_2D             = "out_2D"
+    out_1D             = "out_1D"
+    out_vars           = ""
+    drive              = "taub"
+    mode               = "surface"      ! z_s directly, with the bed ("full" does not converge on 32 km beds)
+    relax              = 0.5
+    warm_frac_max      = 0.1
+    n_outer            = 100
+    max_sweeps         = 200
+    tol                = 1.0e-6
+    outer_tol          = 1.0e-3
+    rho_i              = 910.0          ! kryos Earth / PaleoMIST runs (library default 917)
+    rho_w              = 1028.0
+    g                  = 9.81
+    H_min              = 1.0
+    margin_file        = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"   ! "years ago", 80 -> 0 ka
+    margin_var         = "f_ice"        ! ice fraction of Gowan's unsmoothed 5 km grid: his margin ("H_ice", 1 m: the
+    margin_H_min       = 0.5            ! 25 km smoothed thickness, reaching beyond it)
+    margin_interp      = "sdist"        ! "nearest": Gowan's slices as they are
+    margin_extrapolate = "error"
+    taub_method        = "domains"      ! Gowan's domains, time dependent (PaleoMIST 1.0)
+    taub_const         = 1.0e5          ! [Pa] taub_method = "const" only
+    taub_domain_file   = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST_taub.nc"   ! FesmData IceHistory v2.4.0
+    taub_domain_var    = "taub_domain"
+    taub_id_var        = "domain_id"
+    taub_value_var     = "taub"
+    taub_time_var      = "taub_t"
+    taub_override      = ""
+    taub_default       = 5000.0         ! [Pa] cells without a domain: Gowan's value outside every polygon
+    taub_domain_factor_file = ""        ! factors per domain (Stage 1, tests/plastic_taub_fit.f90); "" = none
+    taub_scale_file    = ""             ! multipliers per scale group (tools/levante/plastic_esmda.jl); "" = none
+    taub_smooth_km     = 50.0
+    mass_balance       = "inverted"
+    mb_smooth_km       = 0.0
+    rheo_A             = 3.0e-17
+    rheo_n             = 3.0
+    slide_law          = "coulomb_n"
+    slide_Hc           = 50.0
+    slide_lambda_min   = 0.3
+    slide_zb0          = -500.0
+    slide_zb1          = 0.0
+    slide_p            = 0.5
+    slide_u0           = 100.0
+    slide_m            = 2.0
+    slide_umax         = 1000.0
+    inv_sigma_u        = 0.7
+    inv_smooth_km      = 0.0
+    inv_smooth_smb_km  = 50.0
+    inv_sigma_smb_rel  = 0.5
+    inv_sigma_smb_min  = 100.0
+    inv_cold           = .true.
+    inv_sigma_cold     = 10.0
+    inv_n_iter         = 50
+    out_plastic        = "out_2D"       ! ice_pat_plastic.nc: mask, sdist, tau_b, convergence
+/
+
+
+&geo_pat
+    backend     = "vilma2"
+    grid        = "PAT-PAL-8KM"  ! the ice grid
+    dt          = 100.0       ! the cadence of geo_glob (a different value stops)
+    phase       = 0.0
+    clock       = "model"
+    out_2D      = "out_2D"
+    out_1D      = "out_1D"
+    out_vars    = ""
+/
+
+
+&topo_pat
+    path         = "kryos_data/refcorr/PaleoMIST-sci/{domain}/{grid_name}/{grid_name}_TOPO-GEBCO2026-refcorr.nc"   ! today's topography + r
+    vars         = "z_bed" "z_srf" "H_ice"
+    remap        = "con"
+    z_bed_f_sd   = 0.0
+    remove_lakes = True
+    H_ice_min    = 1.0
+    grad_lim_zb  = 0.5
+/
+
+
+&regions_pat
+    path_regions = "fesmdata/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
+/
+
+
+&surface_nor
+    backend    = "smb_simple"
+    smb_simple = "smb_simple_plastic"
+    grid       = ""             ! the hub grid
+    dt         = 0.0            ! every step
+    phase      = 0.0
+    clock      = "model"
+    out_2D     = "out_2D"
+    out_1D     = "none"
+    out_vars   = ""
+/
+
+&surface_ant
+    backend    = "smb_simple"
+    smb_simple = "smb_simple_plastic"
+    grid       = ""             ! the hub grid
+    dt         = 0.0            ! every step
+    phase      = 0.0
+    clock      = "model"
+    out_2D     = "out_2D"
+    out_1D     = "none"
+    out_vars   = ""
+/
+
+&surface_pat
+    backend    = "smb_simple"
+    smb_simple = "smb_simple_plastic"
+    grid       = ""             ! the hub grid
+    dt         = 0.0            ! every step
+    phase      = 0.0
+    clock      = "model"
+    out_2D     = "out_2D"
+    out_1D     = "none"
+    out_vars   = ""
+/
+
+&smb_simple_plastic
+    ! the prior of the inversion: smb_simple's defaults (not tuned), the mask the current ice, no climate
+    mask_ice   = True
+    tsl_const  = 263.15       ! [K] only T_srf uses it (the plastic ice does not read T_srf)
+/

@@ -51,11 +51,16 @@ struct Run
     bsl::Vector{Float64}; bsl_ive::Vector{Float64}
 end
 
-function read_run(dir)
-    f = joinpath(dir, "vilma_out.nc")
+# A standalone run (pm_run.sh: vilma_out.nc) or a kryos run (geo = vilma2: the VILMA2 stream <inst>_vilma.nc of its global
+# instance, read in place). The time of a kryos record is moved by +1 yr except the first (trec: record t_k of a standalone run is
+# the state at t_k + 1 yr, its 80 ka record the spun-up start; a kryos record at t_k is the state after the step ending at t_k).
+function read_run(dir; inst = "geo_glob")
+    f = joinpath(dir, "vilma_out.nc"); kryos = !isfile(f)
+    kryos && (f = joinpath(dir, inst * "_vilma.nc"))
     isfile(f) || return nothing
     NCDataset(f) do ds
         lon = Float64.(ds["lon"][:]); lat = Float64.(ds["lat"][:]); t = Float64.(ds["time"][:])
+        kryos && (t[2:end] .+= 1.0)
         jl = sortperm(lat); il = sortperm(mod.(lon, 360))
         g(v) = Float64.(nomissing(ds[v][:, :, :], NaN))[il, jl, :]
         Run(basename(dir), mod.(lon[il], 360), lat[jl], t, g("rsl"), g("dz_bed"),
