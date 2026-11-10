@@ -140,7 +140,9 @@ program plastic_closure_fit
     call nc_write(trim(out)//".nc", "q_marine", best(:,:,4), dim1="xc", dim2="yc", units="m yr-1")
     call nc_write(trim(out)//".nc", "tau_b", tau, dim1="xc", dim2="yc", units="Pa")
     call nc_write(trim(out)//".nc", "mask", merge(1, 0, mask), dim1="xc", dim2="yc")
-    call nc_write(trim(out)//".nc", "best", rows(:, kb), dim1="par")
+    call nc_write_dim(trim(out)//".nc", "par", x=[(real(n, dp), n = 1, 9)])
+    call nc_write(trim(out)//".nc", "best", rows(:, kb), dim1="par", &
+                  long_name="A, uy, b, RMS log10, median ratio, net, accumulation, outflow to land, to the ocean")
 
 contains
 
