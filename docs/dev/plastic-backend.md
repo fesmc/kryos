@@ -122,6 +122,24 @@ Antarctic margin cell at 20 kyr) Weertman with beta = 3e4 slides at 0.04 m/yr, a
 was 200 Gt/yr against 5000 today. The velocity-routing path (`plastic_velocity`, `plastic_smb_implied`) is not
 used.
 
+Why the closure needs sliding that rises towards the margin: in a plastic sheet the driving stress is tau_b, so the
+deformation flux 2A/(n+2) tau_b^n H^2 falls from the divide outwards, and with "yield" at `slide_uy_b` = 0 the sliding
+speed is u_y everywhere; q ~ H then falls along every flowline and the implied SMB is negative almost everywhere
+but at the divides. A steady flowline needs u = q/H to rise 10-20 times from the divide to the equilibrium line.
+
+`slide_law = "coulomb_n"`: the library's regularised Coulomb law, tau = C (u_b/(u_b + u_0))^(1/m), with
+C = tau_b lambda N / (rho_i g `slide_Hc`) per cell, set every step:
+- N = rho_i g H (1 - H_f/H)^`slide_p` the effective pressure (Leguy et al. 2014), H_f = rho_w/rho_i max(0, z_sl - z_bed)
+  the flotation thickness, 0 at or below it;
+- lambda(z_bed - z_sl) linear from `slide_lambda_min` at `slide_zb0` or lower to 1 at `slide_zb1` or higher (weak
+  marine sediments, ice streams in the troughs).
+
+At tau = tau_b the sliding speed is u_0 x/(1 - x), x = (`slide_Hc` rho_i g / (lambda N))^m, at most `slide_umax` (where
+C <= tau): it depends on N and the bed alone, so the tau_b domains enter through the geometry, not the speed. On land
+(N = rho_i g H) the ice slides slowly under thick ice and fast where it thins below `slide_Hc` / lambda; near flotation
+N goes to 0 (fast marine margins). C proportional to tau_b keeps hard beds (high tau_b, thick ice, high N) slow;
+C = c_f lambda N alone would make them faster.
+
 `taub_smooth_km` (default 50; drive = "taub"): tau_b at t, after the factors, is replaced on the cells with tau_b > 0
 by its Gaussian mean over them (sd `taub_smooth_km`, within 3 sd; a normalised convolution), for the solve and the
 closure alike: the domain steps become ramps of a few sd (the ice averages the basal stress over several
@@ -239,7 +257,8 @@ continuous one), `H_prev` and `z_srf`, lossless; the read checks the grid and th
 | `taub_scale_file` | `""` | `"domains"`: the multipliers per scale group (above) |
 | `taub_smooth_km` | 50 | `drive = "taub"`: Gaussian sd [km] of the smoothing of tau_b over the cells with tau_b > 0 (above); 0 = none |
 | `rheo_A`, `rheo_n` | 0, 3 | Glen rate factor [Pa-n yr-1] (0: no closure), exponent |
-| `slide_law` | `"none"` | `"linear"`, `"weertman"` (`slide_beta`, `slide_m`), `"coulomb"` (`slide_C`, `slide_u0`, `slide_m`), `"yield"` (`slide_uy`, `slide_uy_b`, `slide_m`; `drive = "taub"`) |
+| `slide_law` | `"none"` | `"linear"`, `"weertman"` (`slide_beta`, `slide_m`), `"coulomb"` (`slide_C`, `slide_u0`, `slide_m`), `"yield"` (`slide_uy`, `slide_uy_b`, `slide_m`; `drive = "taub"`), `"coulomb_n"` (`slide_Hc`, `slide_lambda_min`, `slide_zb0`, `slide_zb1`, `slide_p`, `slide_u0`, `slide_m`, `slide_umax`; `drive = "taub"`) |
+| `slide_umax` | 0 | [m yr-1] `"coulomb"`, `"coulomb_n"`: the speed cap where tau reaches C (0 = none; `"coulomb_n"` needs one) |
 | `mb_smooth_km` | 0 | `"implied"`: Gaussian sd [km] of the conservative smoothing of div q - q_land over the ice (sums unchanged; 0 = none) |
 | `mass_balance` | `"none"` | `"implied"`: smb, cmb, smb_tot, cmb_tot, ux_s, uy_s from the flux closure (needs `rheo_A`, `slide_law`) |
 | `out_plastic` | `"none"` | schedule of the stream `plastic` |
