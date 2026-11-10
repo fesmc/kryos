@@ -1,7 +1,7 @@
 # Maps of the present-day implied mass balance of plastic_closure_fit sets (tests/plastic_closure_fit.f90, the NetCDF of one set):
 # the implied SMB rho_i (div q - q_land) on the ice, smoothed conservatively as the backend's mb_smooth_km (scatter form, sums
 # unchanged), and log10(model / observed) of the surface speed; optionally an observed SMB on the same grid as a first column.
-#   julia --project=<julia-plot> tools/levante/plastic_closure_maps.jl <out.png> <sd_km> [ref=<smb.nc>] <label>=<set.nc>[:inv] ...
+#   julia --project=tools/levante tools/levante/plastic_closure_maps.jl <out.png> <sd_km> [ref=<smb.nc>] <label>=<set.nc>[:inv] ...
 # <set.nc>:inv: the set's joint inversion (prior_file of plastic_closure_fit: smb_inv, speed_inv, q_marine_inv), unsmoothed.
 # Prints per set the integrals [Gt yr-1] (net, accumulation, ablation, outflow to the ocean) and the ablation area (the fraction of
 # the ice cells with smoothed SMB < 0), and the same for ref over the model's ice.

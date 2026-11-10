@@ -11,7 +11,7 @@ function main(args)
         x = parse(Float64, args[i+1]); v == :ri ? (ri = x) : v == :rsw ? (rsw = x) : (asea = x)
     end
     maps = realpath(joinpath(rdir, "maps"))
-    fd = "/work/ba1442/fesmdata"
+    fd = get(ENV, "FESMDATA", "/work/ba1442/fesmdata")
     doms = [("North", "NH-32KM", "ice_nor"), ("Antarctica", "ANT-32KM", "ice_ant")]
     areas = tempname() * ".nc"
     run(`$areasx $maps $areas $([d[2] for d in doms])`)

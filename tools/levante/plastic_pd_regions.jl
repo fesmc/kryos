@@ -2,7 +2,7 @@
 # v2"): the topography hubs of FesmData (NH-32KM: TOPO-GEBCO2026, Greenland from BedMachine v6, elsewhere IceBoost v2 or GEBCO;
 # ANT-16KM: TOPO-BedMachine-v4; PAT-PAL-8KM: TOPO-GEBCO2026, IceBoost v2 or GEBCO) and the regions of their REGIONS maps. Included
 # by plastic_taub_fit_report.jl and plastic_esmda_report.jl; as a script, the table of a kryos run (its ice_<instance>.nc at 0 ka):
-#   julia --project=<tools> tools/levante/plastic_pd_regions.jl <run dir> [<fesmdata>]
+#   julia --project=tools/levante tools/levante/plastic_pd_regions.jl <run dir> [<fesmdata>]
 # Compared over the cells of the model's ice (the 0 ka margin) where the observation is not floating (the fit cells of Stage 1):
 # volume [m SLE] of both, mean and rms of H - H_obs [m]; and the observed ice outside the margin (not representable).
 using NCDatasets, Printf, Statistics
@@ -80,5 +80,5 @@ function pd_run(io, dir, fes; label = basename(dir))
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    pd_run(stdout, ARGS[1], length(ARGS) >= 2 ? ARGS[2] : "/work/ba1442/fesmdata")
+    pd_run(stdout, ARGS[1], length(ARGS) >= 2 ? ARGS[2] : get(ENV, "FESMDATA", "/work/ba1442/fesmdata"))
 end

@@ -63,17 +63,18 @@ The namelist `&fit` has these keys: `hist`, `margin_var`, `margin_min`, `margin_
 `taub_default`, `topo_file`, `bed_var`, `H_var`, `mask_var`, `mode`, `lambda` (the list), `sigma_min`, `sigma_rel`,
 `du`, `u_max`, `tol`, `n_iter`, `out`. The namelists of the released fits and their job are in
 [tools/levante/taub_fit/](https://github.com/fesmc/kryos/tree/main/tools/levante/taub_fit) (`fit_NH.nml`, `fit_ANT.nml`,
-`fit_PAT.nml`; lambda = 100, 30, 10, 3, 1, 0.3, 0.1, 0.03, 0.01, 0.003, 0.001, 0):
+`fit_PAT.nml`; lambda = 100, 30, 10, 3, 1, 0.3, 0.1, 0.03, 0.01, 0.003, 0.001, 0). `fit.sh` copies each namelist
+into the fit folder (`{fesmdata}` replaced by `FESMDATA`) and submits one job per namelist there (up to 2 h on 16
+threads for ANT-16KM):
 
 ```bash
-cd <fit folder>
-K=<kryos checkout> sbatch $K/tools/levante/taub_fit/fit.sh $K/tools/levante/taub_fit/fit_NH.nml
+tools/levante/taub_fit/fit.sh <fit folder> tools/levante/taub_fit/fit_NH.nml tools/levante/taub_fit/fit_ANT.nml
 ```
 
 The report picks lambda for each grid and writes the factor file that the backend reads:
 
 ```bash
-julia --project=<julia-plot> tools/levante/plastic_taub_fit_report.jl <out folder> <fit_<grid>.nc> ... [<grid>=<lambda> ...]
+julia --project=tools/levante tools/levante/plastic_taub_fit_report.jl <out folder> <fit_<grid>.nc> ... [<grid>=<lambda> ...]
 ```
 
 The report chooses lambda by the discrepancy principle: the largest lambda with chi2/n <= 1. Where no lambda
@@ -90,9 +91,12 @@ The v2 result is recorded in plastic-backend.md, "Stage 1":
 The factors of small ice caps (Svalbard, the Canadian Arctic) go to 0.1-0.2. Part of that is a representation
 error.
 
-The ensemble config points at a later Stage 1 file that includes Patagonia,
-`runs/taub-fit-v3/report/taub_domain_factor.nc`: the v2 fits of NH-32KM and ANT-16KM plus the fit of PAT-PAL-8KM
-(`fit_PAT.nml`; section "Stage 1 v3" of [docs/dev/plastic-backend.md](https://github.com/fesmc/kryos/blob/main/docs/dev/plastic-backend.md)).
+The released factor files are in `$KRYOS_DATA/plastic` (`/work/ba1442/kryos_data/plastic`, README there):
+
+| File | Grids | From |
+|---|---|---|
+| `taub_domain_factor_v2.nc` | NH-32KM, ANT-16KM | `runs/taub-fit` (the v2 fits); calibration v2 |
+| `taub_domain_factor_v3.nc` | NH-32KM, ANT-16KM, PAT-PAL-8KM | `runs/taub-fit-v3/report`: the v2 fits plus the fit of PAT-PAL-8KM (`fit_PAT.nml`; section "Stage 1 v3" of [docs/dev/plastic-backend.md](https://github.com/fesmc/kryos/blob/main/docs/dev/plastic-backend.md)); ensemble v1 |
 
 ## Scale groups and nodes
 
@@ -100,7 +104,7 @@ The ensemble config points at a later Stage 1 file that includes Patagonia,
 It is included by `plastic_esmda.jl` and reads the `[scale]` table of a calibration or ensemble config.
 
 ```bash
-julia --project=tools tools/levante/plastic_taub_scale.jl <config.toml> <out.nc> [<log factor>]
+julia --project=tools/levante tools/levante/plastic_taub_scale.jl <config.toml> <out.nc> [<log factor>]
 ```
 
 This writes a multiplier file with that log factor for every group and node (default 0: Gowan's tau_b), and
@@ -181,9 +185,9 @@ of a nonlinear problem.
   configs.
 
 ```bash
-julia --project=<tools> plastic_esmda.jl init <config.toml> <calibration folder>   # prior ensemble = iteration 1
-julia --project=<tools> plastic_esmda.jl update <calibration folder> <k>           # score iteration k, update, write k + 1
-julia --project=<tools> plastic_esmda.jl selftest                                  # the update against a linear-Gaussian posterior
+julia --project=tools/levante tools/levante/plastic_esmda.jl init <config.toml> <calibration folder>   # prior ensemble = iteration 1
+julia --project=tools/levante tools/levante/plastic_esmda.jl update <calibration folder> <k>           # score iteration k, update, write k + 1
+julia --project=tools/levante tools/levante/plastic_esmda.jl selftest                                  # the update against a linear-Gaussian posterior
 ```
 
 What one calibration does:
@@ -208,7 +212,7 @@ What one calibration does:
 | `[esmda]` / `[prior]` | v1 (`plastic_esmda.toml`) | v2 (`plastic_esmda_v2.toml`) |
 |---|---|---|
 | Instances | NH-32KM (`par/kryos_North_plastic_vilma2_b1.nml`) | NH-32KM, ANT-16KM (`par/kryos_NH-ANT_plastic_vilma2_b1.nml`) |
-| Stage 1 factors | none | `runs/taub-fit/taub_domain_factor.nc`, frozen in the folder |
+| Stage 1 factors | none | `$KRYOS_DATA/plastic/taub_domain_factor_v2.nc`, frozen in the folder |
 | Parameters | 24 (3 groups) | 25 (4 groups, 0 ka pinned) |
 | Prior | sigma 0.3, correlation 10 kyr | sigma 0.3 ramped from 0 at 0 ka (`ramp_ka = 10`), correlation 20 kyr |
 | Ne, alpha | 40; 9.333, 7, 4, 2 | same |
@@ -226,7 +230,8 @@ global ESL".
 
 | Path | Content |
 |---|---|
-| `config.toml`, `kryos.x`, `input/`, `par.nml` | frozen copies: the config, the binary and input of `[run] kryos_dir`, and the par file with `[run] set` applied (and the Stage 1 file, `taub_domain_factor.nc`) |
+| `config.toml`, `config.source.toml` | the config with its placeholders expanded and the defaults filled in; the config as given |
+| `kryos.x`, `input/`, `par.nml` | frozen copies: the binary and input of `[run] kryos_dir`, and the par file with `[run] set` applied (and the Stage 1 file, `taub_domain_factor.nc`) |
 | `slurm.env` | `THREADS`, `MEM`, `TIME`, `PART`, `ACCT`, `THROTTLE`, `MAPS` from `[run]`; read again at every submission |
 | `groups.csv`, `obs.csv`, `obs_kept.csv` | the scale groups; the data per group; the index points kept by the cut |
 | `esmda.md` | the report: per iteration, the mean member's scores and the ensemble's, chi2, ESL at 20 ka, theta before and after |
@@ -334,17 +339,22 @@ The design note says these values are to be re-estimated on the first 3-D wave.
 
 Both job scripts:
 
-- **Tools and Julia setup:** they find the tools next to themselves (or in `ESMDA_TOOLS`) and run
-  `julia +1.13 --project=/work/ba1442/robinson/kryos-gate/p4w7/kryos/tools` with
-  `JULIA_DEPOT_PATH=/work/ba1442/robinson/kryos-gate/julia-depot`.
+- **Environment:** they source `tools/levante/env.sh`, find the tools next to themselves (or in `ESMDA_TOOLS`) and run
+  the Julia tools with `KRYOS_JULIA --project=tools/levante` (see
+  [Getting started](getting-started.md#the-levante-tools)).
+- **Config:** the strings of a config may use the placeholders `{kryos}`, `{fesmdata}`, `{kryos_data}`, `{maps}` and
+  `{work}` (`KRYOS`, `FESMDATA`, `KRYOS_DATA`, `KRYOS_MAPS`, `KRYOS_WORK` of `env.sh`). `[run] kryos_dir` (default the
+  checkout of the tools), `set_nml` (its `set_nml.py`), `maps` (`KRYOS_MAPS`), `account` (`ACCOUNT`) and
+  `[score] fesmdata` (`FESMDATA`) have defaults, so the configs in the repository set none of them. The init writes the
+  expanded config into the folder, which then does not depend on the environment.
 - **Binary:** they need a `kryos.x` built with `plastic=1 vilma=1` in `[run] kryos_dir`
-  (`libkryos/bin/kryos.x`), plus the maps folder of `[run] maps`.
+  (`libkryos/bin/kryos.x`). `start` creates the maps folder if it is missing (`kryos_maps_init`).
 - **Folder:** the target folder must not exist yet.
 
 ES-MDA calibration:
 
 ```bash
-bash tools/levante/plastic_esmda.sh start tools/levante/plastic_esmda_v2.toml /work/ba1442/robinson/kryos-ice-plastic/runs/esmda-<name>
+tools/levante/plastic_esmda.sh start tools/levante/plastic_esmda_v2.toml $KRYOS_WORK/esmda-<name>
 ```
 
 `start` submits the init as a job. The init writes the prior ensemble and submits iteration 1: the members as an
@@ -352,7 +362,7 @@ array, then the analysis (`afterany`). The analysis scores, updates and submits 
 `done`. To resubmit an iteration by hand:
 
 ```bash
-bash tools/levante/plastic_esmda.sh submit <calibration folder> <k>
+tools/levante/plastic_esmda.sh submit <calibration folder> <k>
 ```
 
 Weighted ensemble:
@@ -381,7 +391,7 @@ writes iteration k + 1), and an ensemble wave by its weights job. To recompute t
 example after a member was rerun:
 
 ```bash
-julia --project=<tools> plastic_ensemble.jl weights <ensemble folder> [<wave>]
+julia --project=tools/levante tools/levante/plastic_ensemble.jl weights <ensemble folder> [<wave>]
 ```
 
 The reports and figures of a calibration or ensemble are covered in [Analysis and figures](experiment-analysis.md):

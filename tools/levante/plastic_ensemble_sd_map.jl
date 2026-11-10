@@ -2,7 +2,7 @@
 # across the members of the relative sea level against today (VILMA2, over the ensemble-mean ocean of the age) and of the ice thickness
 # (the plastic instances, on their grids, where every member has ice: the margin is prescribed), with the GAPSLIP 2.1 sites that have
 # index points of ages within age +- window, the target margin and the coastlines of the age (the ensemble mean ocean).
-#   julia --project=<julia-plot> tools/levante/plastic_ensemble_sd_map.jl <out.png> <member folder> ... [age=20000] [window=2500]
+#   julia --project=tools/levante tools/levante/plastic_ensemble_sd_map.jl <out.png> <member folder> ... [age=20000] [window=2500]
 #         [label=<text>] [lon0=0]
 # A member folder: a run with status 0, geo_glob_vilma.nc and (for the ice) <instance>.nc with 2-D output at the age.
 include(joinpath(@__DIR__, "plastic_mapkit.jl"))

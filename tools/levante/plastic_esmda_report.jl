@@ -1,7 +1,7 @@
 # The results of a tau_b calibration (plastic_esmda.jl): per-iteration scores, the factor curves, the ice volume of the mean
 # members (NH-32KM and, when run, ANT-16KM), the present-day thickness of the last mean member per region against the observations
 # (when it wrote ice_nor.nc / ice_ant.nc: final_set of the config; plastic_pd_regions.jl), and an offline Greenland check.
-#   julia --project=<julia-plot> tools/levante/plastic_esmda_report.jl <calibration folder> <out folder> [<prior slices.nc> <posterior slices.nc>]
+#   julia --project=tools/levante tools/levante/plastic_esmda_report.jl <calibration folder> <out folder> [<prior slices.nc> <posterior slices.nc>]
 # Writes <out>/report.md and <out>/theta_factors.png. The slices files: tests/plastic_slices.f90 with <out.nc>, without and with the
 # posterior-mean multiplier file (the last iteration's m000/taub_scale.nc): Greenland at 0 ka against PaleoMIST and BedMachine v6
 # (FesmData NH-32KM TOPO-GEBCO2026, its H_ice) over the Greenland region (REGIONS region_2 = 103).

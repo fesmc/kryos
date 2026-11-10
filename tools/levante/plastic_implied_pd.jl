@@ -1,14 +1,14 @@
 # The implied mass balance of a kryos plastic run (mass_balance = "implied", docs/dev/plastic-backend.md) at the present day against
 # the observations: SMB of MAR v3.14 (Greenland, 1981-2010) and RACMO2.4p1 (Antarctica, 1981-2010), surface speed of Joughin et al.
 # (2018) and Mouginot et al. (2019) (FesmData SMB, Velocity).
-#   julia --project=<julia-plot> tools/levante/plastic_implied_pd.jl <run folder> <out folder> [age=0]
+#   julia --project=tools/levante tools/levante/plastic_implied_pd.jl <run folder> <out folder> [age=0]
 # The run: ice_nor.nc, ice_ant.nc with the 2-D exports smb, cmb, ux_s, uy_s, H_ice (out_vars all) and <instance>_plastic.nc with
 # q_land, q_marine (out_plastic). Greenland: the observations on GRL-32KM, the model (NH-32KM) at the nearest cell centre with ice
 # (within 30 km); Antarctica: both on ANT-16KM. Compared over the model's ice cells (and there where the observation is ice).
 # Writes to <out>: implied_pd.md (the integrals [Gt yr-1] and the speed statistics), implied_pd.png (maps and speed scatter).
 using CairoMakie, NCDatasets, Printf, Statistics
 
-const FES = "/work/ba1442/fesmdata"
+const FES = get(ENV, "FESMDATA", "/work/ba1442/fesmdata")   # tools/levante/env.sh
 const RHO_I = 910.0
 const KG_GT = 1e-12
 

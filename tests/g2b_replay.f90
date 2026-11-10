@@ -79,7 +79,7 @@ module g2b_mod
     ! run): the reference after PASS_INIT, the cold start (gather at t0, VILMA2's spin-up and seed, the anomalies into the ports,
     ! the ice's reconcile), then per step the gather of the previous step's ice (lag 1), VILMA2's update, the bilinear scatter
     ! into the ports and the ice with its new bed and sea level. The standalone vilma.x gets the same history from the global
-    ! 0.5 degree file (tools/levante/g2b_prep.jl), lagged by one step, and the same &vilma.
+    ! 0.5 degree file (tools/levante/archive/g2b_prep.jl), lagged by one step, and the same &vilma.
     ! Not part of `make check` (a Levante job: lmax 85 to 170, the 3D viscosity and the spin-up of the science case).
     !
     !   g2b_replay.x <lmax> <nstep> [t0]     in a run folder with input/ (kryos), fesm-utils/, fesmdata/ and maps/ (writable)

@@ -3,11 +3,11 @@ title: "Implied mass balance (in development)"
 ---
 
 ::: {.callout-warning}
-## In development
+## In development, paused
 
-This page describes code that exists, but there are no validated results for it yet. The joint inversion
-(`mass_balance = "inverted"`) is implemented following a design draft that is still open for discussion
-([docs/dev/plastic-smb-inversion-design.md](https://github.com/fesmc/kryos/blob/main/docs/dev/plastic-smb-inversion-design.md)).
+This page describes code that exists and has been tested at present day, but not in a glacial run. Work on it is paused
+(2026-11-10): the state and the possible directions are under [Status and open issues](#status-and-open-issues) and in
+[docs/dev/plastic-smb-inversion-design.md](https://github.com/fesmc/kryos/blob/main/docs/dev/plastic-smb-inversion-design.md).
 The keys, defaults and par file below may change.
 :::
 
@@ -226,8 +226,8 @@ The namelist `&fit` has these keys: `hist`, `margin_var`, `margin_min`, `taub_fi
 The figures:
 
 ```bash
-julia --project=<julia-plot> tools/levante/plastic_closure_maps.jl <out.png> <sd_km> [ref=<smb.nc>] <label>=<set.nc>[:inv] ...
-julia --project=<julia-plot> tools/levante/plastic_implied_pd.jl <run folder> <out folder> [age=0]
+julia --project=tools/levante tools/levante/plastic_closure_maps.jl <out.png> <sd_km> [ref=<smb.nc>] <label>=<set.nc>[:inv] ...
+julia --project=tools/levante tools/levante/plastic_implied_pd.jl <run folder> <out folder> [age=0]
 ```
 
 `plastic_closure_maps.jl` maps the fit's sets (`:inv` for the inversion). `plastic_implied_pd.jl` compares a coupled
@@ -236,28 +236,25 @@ See [Analysis and figures](experiment-analysis.md).
 
 ## Status and open issues
 
-As recorded in docs/dev/plastic-backend.md and the design note (2026-11-10):
+**Paused (2026-11-10).** The inversion is implemented and tested at present day; it needs more development before it is
+effective, and the priority is the ice configurations and their sea level. The full state, the present-day results and
+the possible directions are in the section "State and directions" of
+[docs/dev/plastic-smb-inversion-design.md](https://github.com/fesmc/kryos/blob/main/docs/dev/plastic-smb-inversion-design.md).
 
-- **Implemented:**
-  - `"implied"`, with `coulomb_n`, the stress cap at tau_b, `taub_smooth_km` and `mb_smooth_km`;
-  - `"inverted"` in the backend and the library;
-  - the `prior_file` inversion of `plastic_closure_fit`;
-  - the par file above.
-- **Not documented yet:** results of `"inverted"`, at present day or in a glacial run.
-- **Planned checks (design note):**
-  - present day: Antarctica against RACMO (ablation area, net, discharge per basin) and the Mouginot speed; Greenland
-    against MAR and Joughin;
-  - 20 kyr: the NH and Antarctic totals, the ablation zones (southern Laurentide, Eurasian margins), the
-    grounding-line discharge of the Antarctic shelf sectors;
-  - the sensitivity to sigma_u and sigma_a (the two limits).
-- **Open questions of the design:**
-  - the speed misfit in ln U or linear in U: the implementation uses ln U;
-  - the cold bound from the prior's sign or from a temperature: the implementation uses the prior's sign;
-  - a smoothness term on the speed correction: `inv_smooth_km`, default 0.
-- **Later (design note):**
-  - posterior sd maps of a and U, from the inverse Hessian's diagonal by random probes;
-  - a second surface backend for the prior.
-- **Other limits:**
-  - the magnitude of the implied mass balance scales with the closure (A, sliding): it is "what this geometry needs
-    with that flow law, not a climate";
-  - `drive = "smb"` (the SMB-driven solve) does not converge on 32 km grids.
+Present-day Antarctica with RACMO2.4p1 as the prior (Gt/yr; ablation area: the fraction of the ice cells with a < 0):
+
+| | net = discharge | ablation | ablation area | RMS log10 speed | wall time |
+|---|---|---|---|---|---|
+| forward closure (`coulomb_n`) | 1905 | -106 | 25 % | 0.557 | seconds |
+| inversion, no smoothing | 1239 | -17.5 | 35 % | 0.482 | 6.5 min |
+| inversion, `inv_smooth_smb_km` 100 | 1924 | -9.0 | 9.5 % | 0.511 | 84 min |
+| inversion, 50 km, floor 30 kg m-2 yr-1 | 1633 | -5.8 | 3.8 % | 0.499 | 61 min |
+| RACMO2.4p1 | 2049 | -1 | 0.4 % | | |
+
+- **What works:** positive SMB nearly everywhere with RACMO's coastal pattern, a speed closer to the observed than the
+  forward closure, and with the smoothing of the SMB deviation no streaks and a total near RACMO.
+- **What does not yet:** the cost (about an hour per solve with the smoothing, against some 800 solves in a glacial
+  run); the total below the prior where the flow law is slow; `smb_simple` is the only prior for the past; no glacial
+  run yet.
+- **Directions:** a fast solver for the correlated prior error (multigrid, a DCT solve, or a coarse basis); solving at
+  the output slices only; a spatially varying rate factor; a RACMO/MAR-based prior scaled to the past; posterior sd maps.

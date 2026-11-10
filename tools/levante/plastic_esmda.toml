@@ -3,8 +3,8 @@
 #   tools/levante/plastic_esmda.sh start tools/levante/plastic_esmda.toml <calibration folder>
 
 [scale]                                  # the parameters: plastic_taub_scale.jl
-taub_file      = "/work/ba1442/fesmdata/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST_taub.nc"
-regions_file   = "/work/ba1442/fesmdata/North/NH-32KM/NH-32KM_REGIONS.nc"
+taub_file      = "{fesmdata}/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST_taub.nc"
+regions_file   = "{fesmdata}/North/NH-32KM/NH-32KM_REGIONS.nc"
 regions_var    = "region_2"
 greenland_code = 103                     # Greenland in region_2 (FesmData Regions v2)
 nodes_ka       = [80, 60, 40, 25, 20, 15, 10, 5, 0]
@@ -42,13 +42,10 @@ z_cut       = 5.0                        # gross-error cut at the prior mean mem
 min_members = 0.5                        # stop when fewer than this fraction of the ensemble members succeed
 
 [run]                                    # each member: a kryos run of this par file with its multiplier file
-kryos_dir = "/work/ba1442/robinson/kryos-ice-plastic"   # its libkryos/bin/kryos.x and input/ are copied at init
 par       = "par/kryos_North_plastic_vilma2_b1.nml"
-set_nml   = "/work/ba1442/robinson/kryos-gate/tools/set_nml.py"
-set       = ['ice_nor.taub_domain_file="/work/ba1442/fesmdata/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST_taub.nc"',
+set       = ['ice_nor.taub_domain_file="{fesmdata}/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST_taub.nc"',
              'kryos.restart_out="none"', 'ice_nor.out_2D="none"', 'ice_nor.out_plastic="none"', 'geo_nor.out_2D="none"',
              'geo_glob.out_2D="none"']   # outputs: geo_glob_vilma.nc (2.5 kyr) and the 1-D series only
-maps      = "/work/ba1442/robinson/kryos-ice-plastic-maps"
 threads   = 8                            # VILMA2 barely scales: 8 threads ~12.5 min, 64 ~8 min (2026-11-09)
 mem       = "10G"                        # the shared partition bills max(cpus, mem / 0.9 GB): ~12 cpus
 time      = "01:00:00"
@@ -57,4 +54,3 @@ account   = "ba1442"
 throttle  = 29                           # members running at once (0: no limit); 29 + the queued analysis = 30 jobs max (Alex, 2026-11-09)
 
 [score]
-fesmdata = "/work/ba1442/fesmdata"

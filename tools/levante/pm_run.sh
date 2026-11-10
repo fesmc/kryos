@@ -1,40 +1,46 @@
 #!/bin/bash
-#SBATCH --partition=compute
-#SBATCH --account=ba1442
-#SBATCH --time=08:00:00
-#SBATCH --nodes=1
-#SBATCH --cpus-per-task=64
-#SBATCH --job-name=pm
-# PaleoMIST test of the standalone VILMA2 (vilma.x of the S11 stack, vilma2 523b660) under the PaleoMIST ice history.
-#   sbatch --export=ALL,RUN=B1_l256,LMAX=256,EARTH=1d,FORCE=B pm_run.sh   (the runs: -p shared -c 128 --mem=120G, 64 threads on 64 cores)
-#   B1_L80: RUN=B1_L80,LMAX=170,EARTH=l80,FORCE=B,TMAX=2.0e6; B1_bm: RUN=B1_bm,LMAX=170,EARTH=bm,FORCE=B,TMAX=2.0e6 (after pm_visc1d.sh)
+# The standalone VILMA2 (vilma.x of the VILMA2 checkout, env.sh) under the PaleoMIST ice history: Gowan et al. (2021)
+# reproduced (docs/experiment-gowan.md). Submits itself (compute partition, 8 h; PM_PARTITION, PM_TIME override):
+#   RUN=B1_l170 LMAX=170 EARTH=1d FORCE=B RHOI=931.0 TMAX=2.0e6 tools/levante/pm_run.sh     (the reference run B1)
+#   RUN=B1_l256 LMAX=256 EARTH=1d FORCE=B tools/levante/pm_run.sh
+#   B1_L80: RUN=B1_L80 LMAX=170 EARTH=l80 FORCE=B TMAX=2.0e6; B1_bm: RUN=B1_bm LMAX=170 EARTH=bm FORCE=B TMAX=2.0e6 (after pm_visc1d.sh)
+# The published runs (PM_REF) used vilma.x of the gate stack S11 (vilma2 523b660). The inputs (pm_force_<FORCE>.nc,
+# pm_ref.nc, ...) come from pm_prep.jl: PM_DATA, default $PM_DIR/data, else the reference inputs $PM_REF/data.
 # Env: RUN (the folder name), LMAX, EARTH (1d: Gowan's three-layer Earth on PREM | l80: Gowan's viscosities, 80 km lithosphere |
 #      bm: the science setting collapsed to 1-D | 3d: the science setting, Bagge 2021; see below),
 #      FORCE (A: 22.5 ka ice held | B: 80 -> 0 ka steps | S: smoke, 25 -> 20 ka), TMAX (spin-up cap [yr], 5e5),
 #      RATE_TOL (1e-5 m/yr), NTHR (OpenMP threads, 64).
 #      pm-diag: FORCE also Bg | Bl | Bm | Bm910 | Bgm910 | Bm80 | Bgm80_910 (pm_prep.jl), TMAX=0 (no spin-up: the Earth relaxed to the present-day reference,
 #      the 80 ka load switched on at 80 ka), EARTH=t3 (SELEN's Earth of PaleoMIST), ROT (.true.), DEG1 (cm | cf), RHOI (910, PaleoMIST's SELEN; the B1 runs used 931), RHOW (1000),
-#      REF (the reference file in $P/data, pm_ref | pm_ref80: SELEN's initial state, with TMAX=0), SUBGRID (sle_subgrid: .true. the
+#      REF (the reference file in $PM_DATA, pm_ref | pm_ref80: SELEN's initial state, with TMAX=0), SUBGRID (sle_subgrid: .true. the
 #      sloping-coast ocean load s = C rsl - z0 (C - C0) | .false. the binary C rsl, an SLE without the topography term),
 #      RSLREF (pm-ref: an rsl field on this run's Gauss grid; i_eq = 3, the reference bed is the present-day bed + RSLREF, the
 #      iterated reference of pm_iterref.sh), ROTKS (rotation_k_s: 0 = the model's own fluid Love number; 0.94349 = the value from the observed flattening that vilma.x
 #      prints, the revised rotation theory), SCHEME (the memory scheme, fe | trap), CFL (the Maxwell-number ceiling of the fe sub-steps, 1.0), ROOT (the parent folder of the
-#      run, $P). The vilma2 clone of S11 is at c17d513, whose tree is that of 523b660 ($P/provenance.txt).
-# Inputs from pm_prep.jl in $P/data; run folder $P/$RUN; the remap weights are built per run in $RUN/maps.
+#      run, $PM_DIR). Run folder $ROOT/$RUN; the remap weights are built per run in $RUN/maps.
 set -uo pipefail
-G=/work/ba1442/robinson/kryos-gate; P=$G/runs/paleomist; S=$G/stacks/S11
-VX=$S/vilma2/bin/vilma.x
+_h=$(dirname "$(readlink -f "$0")"); [ -f "$_h/env.sh" ] || _h=$KRYOS/tools/levante; . "$_h/env.sh"
+VX=$VILMA2/bin/vilma.x
+[ -x "$VX" ] || { echo "no $VX (VILMA2: the vilma2 checkout; make vilma in it)"; exit 1; }
 RUN=${RUN:?}; LMAX=${LMAX:?}; EARTH=${EARTH:?1d|l80|bm|3d|t3}; FORCE=${FORCE:?A|B|S|Bg|Bl|Bm|Bm910|Bgm910|Bm80|Bgm80_910}
+if [ -z "${PM_DATA:-}" ]; then PM_DATA=$PM_DIR/data; [ -d "$PM_DATA" ] || PM_DATA=$PM_REF/data; fi
 TMAX=${TMAX:-5.0e5}; RATE_TOL=${RATE_TOL:-1.0e-5}
-ROT=${ROT:-.true.}; DEG1=${DEG1:-cm}; RHOI=${RHOI:-910.0}; RHOW=${RHOW:-1000.0}; ROOT=${ROOT:-$P}
+ROT=${ROT:-.true.}; DEG1=${DEG1:-cm}; RHOI=${RHOI:-910.0}; RHOW=${RHOW:-1000.0}; ROOT=${ROOT:-$PM_DIR}
 SCHEME=${SCHEME:-fe}; CFL=${CFL:-1.0}; REF=${REF:-pm_ref}; SUBGRID=${SUBGRID:-.true.}; ROTKS=${ROTKS:-0.0}; RSLREF=${RSLREF:-}
-[ -f $P/data/pm_force_$FORCE.nc ] || { echo "missing $P/data/pm_force_$FORCE.nc (pm_prep.jl)"; exit 1; }
+[ -f $PM_DATA/pm_force_$FORCE.nc ] || { echo "missing $PM_DATA/pm_force_$FORCE.nc (pm_prep.jl)"; exit 1; }
+if [ "${KRYOS_JOB:-}" != 1 ]; then          # submit this script as the job
+    [ -e $ROOT/$RUN ] && { echo "exists: $ROOT/$RUN"; exit 1; }
+    mkdir -p $ROOT
+    sbatch --parsable -A $ACCOUNT -p ${PM_PARTITION:-compute} -t ${PM_TIME:-08:00:00} -N 1 -c ${NTHR:-64} -J pm-$RUN \
+        -o $ROOT/$RUN.out --export=ALL,KRYOS_JOB=1,PM_DATA=$PM_DATA "$_h/pm_run.sh"
+    exit
+fi
 # The Earths: layers (Gowan's 12 | the science setting's 11, PREM rho and mu as r^2 shell means), eta per layer, lateral structure.
 #   1d : Gowan et al. (2021): 120 km elastic lithosphere, upper mantle 4e20 Pa s to 670 km, lower mantle 4e22 Pa s; the layers split on the
 #        PREM boundaries 80, 220, 400, 600, 670 km and the lower mantle in four
 #   l80: Gowan's viscosities on the science layers (80 km elastic lithosphere): l80 - 1d = the lithosphere
 #   bm : the science setting collapsed to 1-D: the profile of its pre_spinup_1d (lateral mean of log10 eta at the FE nodes, pm_visc1d.sh)
-#        as a laterally uniform field ($P/data/pm_visc_bm.nc): bm - l80 = the radial profile, 3d - bm = the lateral structure
+#        as a laterally uniform field ($PM_DATA/pm_visc_bm.nc): bm - l80 = the radial profile, 3d - bm = the lateral structure
 #   3d : the science setting (par/kryos_NH-ANT_vilma2.nml, as the G2b standalone runs): PREM, 80 km lithosphere, Bagge 2021 structure 6
 #   t3 : SELEN's Earth of PaleoMIST (calc_sl/data.inc of the PANGAEA bundle: TABOO NV = 2, CDE = 0; model "ehgr": 120 km, UM 3.9811e20,
 #        LM 3.9811e22 Pa s): three homogeneous layers 0-120, 120-670 km, 670 km-CMB and the core, rho and mu the volume means of TABOO's
@@ -60,10 +66,10 @@ $NO3D" ;;
   l80) EARTH_NML="$LAYERS_SCI
 $ETA_GOWAN_SCI
 $NO3D" ;;
-  bm)  [ -f $P/data/pm_visc_bm.nc ] || { echo "missing $P/data/pm_visc_bm.nc (pm_visc1d.sh)"; exit 1; }
+  bm)  [ -f $PM_DATA/pm_visc_bm.nc ] || { echo "missing $PM_DATA/pm_visc_bm.nc (pm_visc1d.sh)"; exit 1; }
        EARTH_NML="$LAYERS_SCI
 $ETA_SCI
-$(visc3d $P/data/pm_visc_bm.nc 1 .false.)" ;;
+$(visc3d $PM_DATA/pm_visc_bm.nc 1 .false.)" ;;
   3d)  EARTH_NML="$LAYERS_SCI
 $ETA_SCI
 $(visc3d fesmdata/Global/GLOBAL-T170/GLOBAL-T170_SolidEarth-Bagge2021.nc 6 .true.)" ;;
@@ -81,12 +87,12 @@ esac
 OUT=$ROOT/$RUN
 [ -e $OUT ] && { echo "exists: $OUT"; exit 1; }
 mkdir -p $OUT/input $OUT/maps; cd $OUT
-for f in $S/vilma2/input/*; do ln -s $f input/; done
-ln -s /work/ba1442/fesmdata fesmdata
+for f in $VILMA2/input/*; do ln -s $f input/; done
+ln -s $FESMDATA fesmdata
 
 cat > pm.nml <<EOF
 &ctl
- file_forcing = "$P/data/pm_force_$FORCE.nc"
+ file_forcing = "$PM_DATA/pm_force_$FORCE.nc"
  name_ice = "h_ice"
  name_time = "time"
  file_ref = ""
@@ -101,8 +107,8 @@ cat > pm.nml <<EOF
  name_lon = "lon"
  name_lat = "lat"
  i_eq = $([ -n "$RSLREF" ] && echo 3 || echo 1)
- z_bed_ref_file = "$P/data/$REF.nc"
- h_ice_ref_file = "$P/data/$REF.nc"
+ z_bed_ref_file = "$PM_DATA/$REF.nc"
+ h_ice_ref_file = "$PM_DATA/$REF.nc"
  name_z_bed_ref = "z_bed"
  name_h_ice_ref = "H_ice"
  z_bed_eq_file = ""

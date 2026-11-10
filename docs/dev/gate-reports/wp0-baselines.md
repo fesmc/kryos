@@ -63,7 +63,7 @@ rGRL was not run on v24 (v24 has the rembo stub; it needs S4).
 ## 4. Baselines: NOR (step 4)
 
 `gate nor`: `-p ctrl.write_lossless=True tm_2D.dt=100 tm_2Dsm.dt=10 tm_1D.dt=10 tm_rst.dt=500`, 1 kyr, maps `maps/S4`,
-partition `shared`, 16 threads, 1 h limit (`tools/levante/submit_ref.sh`, `submit_wp0.sh`). Runs in
+partition `shared`, 16 threads, 1 h limit (`tools/levante/archive/submit_ref.sh`, `submit_wp0.sh`). Runs in
 `$G/ref/nor/yx-918d996/v24` (R0), `.../yx-918d996/S4` (R1), `.../yx-5ac89c8/S4` (R2').
 All 12 jobs COMPLETED, exit 0, empty `out.err`.
 
@@ -73,7 +73,7 @@ All 12 jobs COMPLETED, exit 0, empty `out.err`.
 | cont2 | 28528421, 10:35 | 28528426, 10:50 | 28528429, 10:39 |
 | chunk c00 / c01 | 28528423 / 28528424, 8:45 / 7:29 | 28528427 / 28528428, 9:07 / 7:30 | 28528430 / 28528431, 8:51 / 7:33 |
 
-Comparisons (`tools/levante/compare_wp0.sh base nor`, KryosTools on Julia 1.13; reports `$G/reports/WP0/nor-*.md`, `summary.txt`):
+Comparisons (`tools/levante/archive/compare_wp0.sh base nor`, KryosTools on Julia 1.13; reports `$G/reports/WP0/nor-*.md`, `summary.txt`):
 
 | comparison | result |
 |---|---|
@@ -89,7 +89,7 @@ Comparisons (`tools/levante/compare_wp0.sh base nor`, KryosTools on Julia 1.13; 
 - Gate rule "R1 == R0 bit for bit" holds for the continuous run and for c00. c01 differs because R0 (Yelmo v2.4)
   restarts inexactly with `vm-m16` calving (`eps_eig_1/2` not in the restart, gate-log) and R1 has the fix: the
   chunk run is restart-exact only on S4 (R1 and R2' chunk == cont). This is the Q9 expectation.
-- R2' vs R0 (`tools/levante/wp0_r2diff.py nor`): hub preparation log of R2': lakes removed; ice < 1 m removed in
+- R2' vs R0 (`tools/levante/archive/wp0_r2diff.py nor`): hub preparation log of R2': lakes removed; ice < 1 m removed in
   8385 cells; `grad_lim_zb = 0.5` needed 0 passes; Yelmo "prepared ... cleaning skipped" on both paths.
   At t = 0 (`yelmo.nc`): `H_ice` vs `H_ice_ref` within one run differs in 32308 cells (R0) and 31435 (R2'),
   as NOR starts from its recon/initial state; R2' vs R0: `H_ice` 21419 cells (118 by > 10 m, max 234.7 m),
@@ -115,7 +115,7 @@ Comparisons (`tools/levante/compare_wp0.sh base nor`, KryosTools on Julia 1.13; 
 ## 7. NOR: why `H_ice_ref` and initial `H_ice` differ at t = 0 (R2' vs R0)
 
 Read-only analysis of the R0/R2' `out.out` and outputs, and of the code (yelmox `topo-prep`, Yelmo `topo-prepared`
-ea90fee7). Scripts `tools/levante/wp0_nor_why.py` (run as `$G/tools/nor_why.py`; a second small script printed the
+ea90fee7). Scripts `tools/levante/archive/wp0_nor_why.py` (run as `$G/tools/nor_why.py`; a second small script printed the
 largest `H_ice_ref` differences). No job was submitted.
 
 **Ruled out** (identical in R0 and R2', from the par file and the logs):

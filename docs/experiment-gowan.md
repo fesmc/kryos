@@ -10,24 +10,27 @@ no ice model: the ice is read from the history. This is run **B1** of
 the reference against which every plastic run of [Simulating our own ice](experiment-plastic.md)
 is scored.
 
-- **Program:** standalone VILMA2, `vilma.x` of the S11 stack
-  (`$G/stacks/S11/vilma2/bin/vilma.x`, vilma2 c17d513, tree identical to 523b660), not
-  `kryos.x`. No kryos par file imposes the history everywhere: the namelist `pm.nml` is
-  written by the job script from its environment.
+- **Program:** standalone VILMA2, `$VILMA2/bin/vilma.x` (`VILMA2` of `tools/levante/env.sh`,
+  default the vilma2 checkout of kryos; `make vilma` in it), not `kryos.x`. The published runs
+  used `vilma.x` of the gate stack S11 (vilma2 c17d513, tree identical to 523b660). No kryos par
+  file imposes the history everywhere: the namelist `pm.nml` is written by the job script from its
+  environment.
 - **Scripts** (`tools/levante/`):
   [pm_prep.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_prep.jl) (inputs),
-  [pm_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_run.sh) (one run, sbatch),
+  [pm_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_run.sh) (one run, submits itself),
   [pm_compare.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_compare.jl) (metrics and GAPSLIP scores),
   [pm_maps.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_maps.jl) (figures),
   [pm_iterref.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_iterref.sh) (iterated present-day reference).
-- **Folders:** `G=/work/ba1442/robinson/kryos-gate`; inputs `$G/runs/paleomist/data`, runs
-  `$G/runs/paleomist/<RUN>`. The scripts hard-code `G` (and `P=$G/runs/paleomist`); another
-  user edits them or sets `ROOT` (the parent folder of the run, `pm_run.sh`).
+- **Folders** (`env.sh`): your runs in `PM_DIR` (default `$KRYOS_WORK/paleomist`; `ROOT` of
+  `pm_run.sh` overrides the parent folder of a run), the inputs in `PM_DATA` (default
+  `$PM_DIR/data`, else the reference inputs `$PM_REF/data`). `PM_REF` (default
+  `$KRYOS_DATA/paleomist`) holds the published runs `B1_l170`, `ref/I910_it0` and `B3_l170` (their
+  `vilma_out.nc`, `pm.nml`, `run.log`) and the inputs `data/`, read-only: the references of every score.
 
 Within kryos the same history enters every `geo = vilma2` par file as the ice outside the
 domains' footprints (`[globe_ice] ext = "file"`, see [Global hub](global-hub.qmd)); the
 coupling of a replayed PaleoMIST load through the kryos globe was tested by gate G2b
-(`tests/g2b_replay.f90`, `tools/levante/g2b.sh`), not as an experiment.
+(`tests/g2b_replay.f90`, `tools/levante/archive/g2b.sh`), not as an experiment.
 
 ## What is imposed
 
@@ -73,37 +76,42 @@ three-layer TABOO Earth of PaleoMIST).
 - Transient: the whole forcing file (`time_init = -1.0e30`, `time_end = 1.0e30` in `pm.nml`),
   80 ka to 0 ka + 1 yr; explicit memory scheme `fe`, `cfl` 1, sub-steps of 100 yr on the 1-D
   Earth.
-- Output: `vilma_out.nc` at each output step of `vilma.x` (the step at each record and the
-  relaxation over the 2.5 kyr that follows).
-  <!-- TODO(check): the output cadence of standalone vilma.x under pm_force_B.nc (one record per forcing slice?) -->
+- Output: `vilma_out.nc` has one record per forcing record (65 under `pm_force_B.nc`): -80 ka,
+  then each 2.5 kyr slice t and its 1-yr step t + 1, ending at 0 and +1 yr.
 - Cost: B1_l170 3 min, B1_l256 6 min on 64 threads (shared partition); B3 (3-D) 1 h 44.
 
 ## Running
 
-On Levante, with Julia 1.13 (`$HOME/.juliaup/bin`, `JULIA_DEPOT_PATH=$G/julia-depot`, as
-`plastic_score.sh`). Inputs, once (writes `pm_ref.nc`, `pm_force_A.nc`, `pm_force_B.nc`,
-`pm_force_S.nc`, ...):
+On Levante, with the environment of `tools/levante/env.sh` and the Julia project of
+`tools/levante` (`tools/levante/setup.sh`, see [Getting started](getting-started.md#the-levante-tools)).
+Inputs, once (writes `pm_ref.nc`, `pm_force_A.nc`, `pm_force_B.nc`, `pm_force_S.nc`, ...); without
+them the runs read the reference inputs `$PM_REF/data`:
 
 ```bash
-julia --project=tools tools/levante/pm_prep.jl /work/ba1442/fesmdata $G/runs/paleomist/data
+julia --project=tools/levante tools/levante/pm_prep.jl $FESMDATA $PM_DIR/data
 ```
 
-B1 at lmax 170 and 256 (the runs used `-p shared -c 128 --mem=120G`, 64 threads on 64 cores;
-`RHOI` defaults to 910 now, B1 used 931):
+B1 at lmax 170 and 256 (`pm_run.sh` submits itself: compute partition, one node, 64 threads, 8 h;
+`PM_PARTITION`, `PM_TIME`, `NTHR` override; `RHOI` defaults to 910 now, B1 used 931):
 
 ```bash
-sbatch -p shared -c 128 --mem=120G \
-  --export=ALL,RUN=B1_l170,LMAX=170,EARTH=1d,FORCE=B,TMAX=2.0e6,RHOI=931.0 tools/levante/pm_run.sh
-sbatch -p shared -c 128 --mem=120G \
-  --export=ALL,RUN=B1_l256,LMAX=256,EARTH=1d,FORCE=B,TMAX=2.0e6,RHOI=931.0 tools/levante/pm_run.sh
+RUN=B1_l170 LMAX=170 EARTH=1d FORCE=B TMAX=2.0e6 RHOI=931.0 tools/levante/pm_run.sh
+RUN=B1_l256 LMAX=256 EARTH=1d FORCE=B TMAX=2.0e6 RHOI=931.0 tools/levante/pm_run.sh
 ```
 
 B1 at 910 kg m-3 with the iterated present-day reference (iteration 0 = `I910_it0`, B1 at 910;
-stops when the 0 ka bed misfit is below `TOL` m):
+stops when the 0 ka bed misfit is below `TOL` m; submits itself, 3 h per run; runs in
+`$PM_DIR/ref`):
 
 ```bash
-sbatch --export=ALL,BASE=I910,TOL=1.0,NMAX=8 tools/levante/pm_iterref.sh
+BASE=I910 TOL=1.0 NMAX=8 tools/levante/pm_iterref.sh
 ```
+
+`EARTH=bm` needs the 1-D profile of a 3-D run first:
+`tools/levante/pm_visc1d.sh build` (once, in a login shell with the Intel modules), then
+`tools/levante/pm_visc1d.sh $PM_DIR/B3_l170` (writes `$PM_DIR/data/pm_visc_bm.nc`). PaleoMIST's
+own SELEN sea level at a few points, the check of `pm_prep.jl selen`:
+`CASE=72_73_74_75/ehgr tools/levante/pm_selen.sh` (output in `$PM_DIR/selen/`).
 
 ## The switches
 
@@ -120,16 +128,18 @@ Environment of `pm_run.sh`:
 | `ROT`, `DEG1` | `.true.`, `cm` | rotation, degree-1 frame |
 | `REF`, `RSLREF` | `pm_ref`, empty | reference file; an rsl field gives `i_eq = 3` (iterated reference) |
 | `NTHR` | 64 | OpenMP threads |
+| `ROOT`, `PM_DATA` | `$PM_DIR`, `$PM_DIR/data` (else `$PM_REF/data`) | the parent folder of the run; the inputs |
 
 The runs of the study: B1_l256, B1_l170 (1-D), B3_l170 (3-D), A1, A3 (equilibrium under the
-22.5 ka ice), B1_L80, B1_bm (the split of the 3-D effect), `ref/I910_it*` (iterated reference).
+22.5 ka ice), B1_L80, B1_bm (the split of the 3-D effect), `ref/I910_it*` (iterated reference). B1_l170,
+B3_l170 and ref/I910_it0 are published in `PM_REF`; run the others with `pm_run.sh` into `PM_DIR`.
 
 ## Outputs
 
-`$G/runs/paleomist/<RUN>/`: `pm.nml` (the namelist), `vilma_out.nc` (`rsl`, `dz_bed`, `bsl`,
-`bsl_ive`, ... on the Gauss grid), `run.log` (spin-up passes, warnings, memory), `input/`
-(links to the stack's `vilma2/input`), `fesmdata` (link), `maps/` (remapping weights, built per
-run).
+`$PM_DIR/<RUN>/` (the published runs: `$PM_REF/<RUN>/`): `pm.nml` (the namelist), `vilma_out.nc`
+(`rsl`, `dz_bed`, `bsl`, `bsl_ive`, ... on the Gauss grid), `run.log` (spin-up passes, warnings,
+memory), `input/` (links to `$VILMA2/input`), `fesmdata` (link), `maps/` (remapping weights, built
+per run); the job log `$PM_DIR/<RUN>.out`.
 
 VILMA2's `rsl` is relative to the relaxed reference and not zero at 0 ka (the Earth is still
 rebounding); PaleoMIST's `dz_sl` is S(t) - S(0) by construction. The comparison therefore
@@ -141,7 +151,7 @@ Metrics against PaleoMIST (RMS, max, bias of RSL relative to present over the gl
 the ocean and the globe, on the 0.5 degree PaleoMIST grid) and the GAPSLIP 2.1 scores:
 
 ```bash
-julia --project=tools tools/levante/pm_compare.jl /work/ba1442/fesmdata $G/runs/paleomist <out folder> [<key>=<folder> ...]
+julia --project=tools/levante tools/levante/pm_compare.jl $FESMDATA $PM_DIR <out folder> B1_170=$PM_REF/B1_l170 B3=$PM_REF/B3_l170 [<key>=<folder> ...]
 ```
 
 Keys: `B1` (B1_l256), `B1_170` (B1_l170), `B1_L80`, `B1_bm`, `B3` (B3_l170), `A1`, `A1_170`, `A3`;
@@ -167,12 +177,11 @@ Writes `pm_metrics.md`, `pm_metrics_B1_PM.csv`, `pm_sites.csv`, `pm_gmsl.csv`, `
 (CairoMakie) from that folder:
 
 ```bash
-julia --project=<julia-plot> tools/levante/pm_maps.jl <compare folder>
+julia --project=tools/levante tools/levante/pm_maps.jl <compare folder>
 ```
 
 `pm_B1_vs_PM.png`, `pm_effects.png`, `pm_decomp.png`, `pm_ind_sites.png`, `pm_ind_map.png`,
-`pm_A_minus_B.png`, `pm_rsl0.png`, `pm_sites.png`, `pm_gmsl.png`.
-The plotting environment: `JULIA_DEPOT_PATH=/work/ba1442/robinson/kryos-gate/julia-depot` and `--project=/work/ba1442/robinson/kryos-gate/julia-plot` ([Analysis and figures](experiment-analysis.md)).
+`pm_A_minus_B.png`, `pm_rsl0.png`, `pm_sites.png`, `pm_gmsl.png` ([Analysis and figures](experiment-analysis.md)).
 
 ### Results
 
@@ -214,10 +223,10 @@ all index points RMS z 25.9, median |z| 3.95 against 30.4 and 4.41 for B1_l170
 "Baseline"). Scoring a kryos run beside B1:
 
 ```bash
-sbatch tools/levante/plastic_score.sh <kryos run folder> <label>
+tools/levante/plastic_score.sh <kryos run folder> <label> [<score folder>]
 ```
 
-(`pm_compare.jl` with `B1=$P/B1_l170 B1_170=$P/ref/I910_it0 B3=<run>`; output
-`/work/ba1442/robinson/kryos-ice-plastic/runs/score/<label>/out`; the run appears in the tables
-under its folder name.) The variants with the Antarctic and Patagonian instances, the 3-D Earth
+(a small job it submits itself: `pm_compare.jl` with `B1=$PM_REF/B1_l170 B1_170=$PM_REF/ref/I910_it0
+B3=<run>`; output `<score folder>/out`, default `$KRYOS_WORK/score/<label>/out`; the run appears in
+the tables under its folder name.) The variants with the Antarctic and Patagonian instances, the 3-D Earth
 and the calibrated tau_b: [Simulating our own ice](experiment-plastic.md).

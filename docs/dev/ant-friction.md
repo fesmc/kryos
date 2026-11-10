@@ -5,10 +5,10 @@ Branch `ant-friction` (from main b51cb81). Decision (Alex, setup-diagnosis open 
 ## Setup
 
 - Stack S9, ANT PD case of calib-cf (30 kyr cold start from the hub reference, PD climate, 64 threads), run root `$G/runs/calib/kx-624f686/S9/Antarctica-pd-af<cf>-z<-z0>_<-z1>` (`af05` = cf_ref 0.05, `af1` = 0.1; the folders carry the ".0" of the arguments, e.g. `Antarctica-pd-af05-z1600.0_0.0`). 8 runs, 55-58 min each on an exclusive node (7.6 node-hours). Maps `$G/calib/maps/ant-pd-af*-maps.png`.
-- `tools/levante/ant_friction.sh <cf_ref> <z0> <z1> ...` -> `calib.sh` with overrides on `$G/calib/par/Antarctica-pd.nml`: `ymat_ant.enh_shear = 3`, `ytill_ant.cf_ref/z0/z1`; calving as the round-5 setup (calib-cf round 4 `-cf05-vm`: vm-m16, `tau_ice_flt` 85 kPa, `calv_grnd_method = "zero"`, `H_min_*` 0). Everything else as calib-cf (MARINE closure, cf_min 0.01, Shapiro GHF).
+- `tools/levante/archive/ant_friction.sh <cf_ref> <z0> <z1> ...` -> `calib.sh` with overrides on `$G/calib/par/Antarctica-pd.nml`: `ymat_ant.enh_shear = 3`, `ytill_ant.cf_ref/z0/z1`; calving as the round-5 setup (calib-cf round 4 `-cf05-vm`: vm-m16, `tau_ice_flt` 85 kPa, `calv_grnd_method = "zero"`, `H_min_*` 0). Everything else as calib-cf (MARINE closure, cf_min 0.01, Shapiro GHF).
 - Exp scaling (yelmo `calc_lambda_bed_exp`): cb_ref = max(cf_min, cf_ref exp((z_bed - z1) / (z1 - z0))), capped at cf_ref above z1. z1 is where the weakening starts, z1 - z0 the e-folding depth. -400/0: cb_ref = cf_ref / e at -400 m, cf_min (0.01) reached at -640 m (cf_ref 0.05) or -920 m (0.1).
 - Grid: cf_ref 0.05, 0.1 x z0/z1 -400/0 (current), -800/0, -1600/0, -1000/-200 (8 runs).
-- Metrics: `tools/levante/ant_friction_bands.sh` (regional bands, masks from BedMachine v4: grounded reference ice, land / marine bed, distance to its edge; WAIS / EAIS from region_3; velocity against Rignot 2011); `calib_metrics.sh` (V_af, area, grounding line).
+- Metrics: `tools/levante/archive/ant_friction_bands.sh` (regional bands, masks from BedMachine v4: grounded reference ice, land / marine bed, distance to its edge; WAIS / EAIS from region_3; velocity against Rignot 2011); `calib_metrics.sh` (V_af, area, grounding line).
 
 ## Results (PD, t = 30 kyr)
 

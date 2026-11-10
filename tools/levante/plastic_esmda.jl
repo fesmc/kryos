@@ -1,8 +1,8 @@
 # ES-MDA (Emerick and Reynolds 2013) calibration of tau_b of the plastic ice backend against the GAPSLIP 2.1 sea-level index points,
 # with VILMA2 in the loop (docs/dev/plastic-backend.md, "Calibration"; the jobs: plastic_esmda.sh):
-#   julia --project=<tools> plastic_esmda.jl init <config.toml> <calibration folder>   prior ensemble = iteration 1
-#   julia --project=<tools> plastic_esmda.jl update <calibration folder> <k>            score iteration k, update, write k + 1
-#   julia --project=<tools> plastic_esmda.jl selftest                                   the update against a linear-Gaussian posterior
+#   julia --project=tools/levante plastic_esmda.jl init <config.toml> <calibration folder>   prior ensemble = iteration 1
+#   julia --project=tools/levante plastic_esmda.jl update <calibration folder> <k>            score iteration k, update, write k + 1
+#   julia --project=tools/levante plastic_esmda.jl selftest                                   the update against a linear-Gaussian posterior
 # Parameters theta: the log multipliers of tau_b per scale group and node (plastic_taub_scale.jl), group-major; nodes of a group may be
 # tied to one parameter (`tie` of [[scale.groups]], lists of node ages: the nodes without direct data), and the nodes of `pinned_ka`
 # ([scale]) are no parameter: log factor 0 in every group (the present day, fitted in Stage 1); prior N(0, C), C of a group
@@ -19,7 +19,7 @@
 # points. The update with the full R: R = L L' (Cholesky, once per iteration), predictions and observations whitened by L^-1, then
 # perturbed observations N(0, alpha I) in the whitened space (= N(0, alpha R)) and the update in the ensemble subspace (Woodbury: an
 # Ne x Ne solve). Limiting data are not assimilated: their violation fractions are diagnostics.
-# Folder: config.toml, kryos.x, input/, par.nml, groups.csv, obs.csv, obs_kept.csv, esmda.md (the report), next (the iteration to run, or done);
+# Folder: config.toml (expanded; config.source.toml as given), kryos.x, input/, par.nml, groups.csv, obs.csv, obs_kept.csv, esmda.md (the report), next (the iteration to run, or done);
 # iter_kk/: theta.csv (all members of the iteration), members.txt (those to run), mNNN/ (taub_scale.nc, par.nml, the run, status:
 # exit code and seconds), scores.csv (per member and set), members.csv (per member: ok, chi2, ESL at 20 ka, run time).
 # Every member writes the product (PRODUCT_VARS): the 2-D ice of each instance of scale_keys (<instance>.nc on its out_2D schedule,
@@ -42,6 +42,32 @@ product_set(keys) = [s for inst in unique(first.(split.(keys, "."))) for s in
 itdir(C, k) = joinpath(C, @sprintf("iter_%02d", k))
 mdir(C, k, m) = joinpath(itdir(C, k), @sprintf("m%03d", m))
 config(C) = TOML.parsefile(joinpath(C, "config.toml"))
+
+# A config as written: {kryos}, {fesmdata}, {kryos_data}, {maps}, {work} in any string replaced by the environment of
+# tools/levante/env.sh (KRYOS, FESMDATA, KRYOS_DATA, KRYOS_MAPS, KRYOS_WORK), and the defaults of [run] (kryos_dir: the
+# checkout of this tool, set_nml: its set_nml.py, maps, account) and [score] (fesmdata). init writes it expanded into the
+# folder (config.toml; the source as config.source.toml), so a folder does not depend on the environment afterwards.
+const KRYOS_ROOT = normpath(get(ENV, "KRYOS", joinpath(@__DIR__, "..", "..")))
+envpath(var, default) = get(ENV, var, default)
+function expand_paths(x)
+    x isa AbstractDict && return Dict(k => expand_paths(v) for (k, v) in x)
+    x isa AbstractVector && return [expand_paths(v) for v in x]
+    x isa AbstractString || return x
+    work = envpath("KRYOS_WORK", "/work/ba1442/$(get(ENV, "USER", "user"))/kryos-work")
+    replace(x, "{kryos}" => KRYOS_ROOT, "{fesmdata}" => envpath("FESMDATA", "/work/ba1442/fesmdata"),
+            "{kryos_data}" => envpath("KRYOS_DATA", "/work/ba1442/kryos_data"),
+            "{maps}" => envpath("KRYOS_MAPS", joinpath(work, "maps")), "{work}" => work)
+end
+function load_config(file)
+    cfg = expand_paths(TOML.parsefile(file))
+    rn = get!(cfg, "run", Dict{String,Any}())
+    get!(rn, "kryos_dir", KRYOS_ROOT)
+    get!(rn, "set_nml", joinpath(@__DIR__, "set_nml.py"))
+    get!(rn, "maps", expand_paths("{maps}"))
+    get!(rn, "account", get(ENV, "ACCOUNT", "ba1442"))
+    get!(get!(cfg, "score", Dict{String,Any}()), "fesmdata", expand_paths("{fesmdata}"))
+    cfg
+end
 
 # the parameters: (group, its node indices, name, mean age [ka]), group-major, nodes in the order of nodes_ka; `tie` joins nodes
 function params(cfg, sg)
@@ -132,7 +158,8 @@ end
 # the frozen domain factors, slurm.env, groups.csv, obs.csv of the observation groups og. Returns (cfg, sg, obs).
 function prepare(cfgfile, C, og)
     isfile(joinpath(C, "config.toml")) && error("$C is a calibration already")
-    mkpath(C); cp(cfgfile, joinpath(C, "config.toml"))
+    mkpath(C); cp(cfgfile, joinpath(C, "config.source.toml"))
+    open(io -> TOML.print(io, load_config(cfgfile)), joinpath(C, "config.toml"), "w")
     cfg = config(C); rn = cfg["run"]; K = rn["kryos_dir"]
     cp(joinpath(K, "libkryos", "bin", "kryos.x"), joinpath(C, "kryos.x"))
     mkpath(joinpath(C, "input"))

@@ -2,12 +2,12 @@
 # run that starts from equilibrium must be today's bed plus the rebound still to come at its end. VILMA2 with i_eq = 3 takes
 # z_bed_eq = z_bed_ref + r (r from rsl_restart_file), its bed at 0 ka is z_bed_eq - rsl(0 ka), so the 0 ka bed misfit is r - rsl(0 ka)
 # and r is the fixed point r = rsl(0 ka) of the run with reference r. gia_refcorr.sh iterates it; this file does the rest.
-#   julia --project=tools gia_refcorr.jl prep  <ice history.nc> <linear|steps> <out folder>
+#   julia --project=tools/levante tools/levante/gia_refcorr.jl prep  <ice history.nc> <linear|steps> <out folder>
 #       force.nc (h_ice(lon, lat, time), model time = -age) and ref.nc (z_bed, H_ice of the history's 0 ka record: VILMA2's
 #       present-day reference) from a FesmData IceHistory product.
-#   julia --project=tools gia_refcorr.jl next  <vilma_out.nc> <r next.nc> [<r used.nc>]
+#   julia --project=tools/levante tools/levante/gia_refcorr.jl next  <vilma_out.nc> <r next.nc> [<r used.nc>]
 #       r_{n+1} = rsl(0 ka) of the run, on its own Gauss grid; prints the 0 ka bed misfit r_n - rsl_n(0 ka) (max, location, RMS).
-#   julia --project=tools gia_refcorr.jl write <r.nc> <out folder> <X grid>:<history on that grid> <domain>:<hub grid>:<topo file> ...
+#   julia --project=tools/levante tools/levante/gia_refcorr.jl write <r.nc> <out folder> <X grid>:<history on that grid> <domain>:<hub grid>:<topo file> ...
 #       The kryos reference files (bilinear from the Gauss grid; H_ice stays present-day):
 #       <out>/<X grid>/<X grid>_REFCORR.nc            z_bed = the history's 0 ka bed + r, H_ice its 0 ka ice, r (globe_ice X)
 #       <out>/<domain>/<hub>/<topo file name>-refcorr  the domain topography with z_bed + r and z_srf adjusted to it, r (the other

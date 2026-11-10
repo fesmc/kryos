@@ -1,6 +1,6 @@
 # The scale groups of Gowan's tau_b domains and the multiplier files of the plastic ice backend (taub_scale_file,
 # docs/dev/plastic-backend.md), from the [scale] table of a calibration config (plastic_esmda.toml):
-#   julia --project=tools tools/levante/plastic_taub_scale.jl <config.toml> <out.nc> [<log factor>]
+#   julia --project=tools/levante tools/levante/plastic_taub_scale.jl <config.toml> <out.nc> [<log factor>]
 # writes a multiplier file with that log factor for every group and node (default 0: Gowan's tau_b), and <out>.groups.csv.
 # Included by plastic_esmda.jl (scale_groups, write_scale).
 #

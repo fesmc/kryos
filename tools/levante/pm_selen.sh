@@ -1,22 +1,21 @@
 #!/bin/bash
-#SBATCH --partition=shared
-#SBATCH --account=ba1442
-#SBATCH --time=00:30:00
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
-#SBATCH --mem=4G
-#SBATCH --job-name=pm_selen
 # PaleoMIST's own SELEN sea level at points, from the Stokes coefficients of the PANGAEA bundle (Gowan et al. 2021,
 # doi:10.1594/PANGAEA.905800), with Gowan's program calc_sl/rslc.f90 (SELEN 2.9, GPL; run-standard.sh), built here unchanged. It is the
 # check of the grid synthesis of pm_prep.jl selen (the program itself needs ~40 ms per point: 3 h for the 0.5 degree grid).
-#   sbatch --export=ALL,CASE=72_73_74_75/ehgr pm_selen.sh      (the standard version: the final ice runs NA 72, EU 73, ANT 74, PAT 75)
-#   sbatch --export=ALL,CASE=72_73_74_75_h/ehgr pm_selen.sh    (the 500-yr version, ice load linearly interpolated; its own data.inc)
+#   CASE=72_73_74_75/ehgr tools/levante/pm_selen.sh      (submits itself; the standard version: the final ice runs NA 72, EU 73, ANT 74, PAT 75)
+#   CASE=72_73_74_75_h/ehgr tools/levante/pm_selen.sh    (the 500-yr version, ice load linearly interpolated; its own data.inc)
 # Points: the sites of pm_compare.jl and a few more (test_sl.txt: lon lat). Output: $W/rsl_spreadsheet.dat (age lon lat rsl, rsl = S(t) - S(0)).
 set -euo pipefail
-G=/work/ba1442/robinson/kryos-gate; P=$G/runs/paleomist
-B=/work/ba1442/fesmdata-sources/gowan2021_paleomist/ice_reconstruction
+_h=$(dirname "$(readlink -f "$0")"); [ -f "$_h/env.sh" ] || _h=$KRYOS/tools/levante; . "$_h/env.sh"
+B=$FESMDATA_SOURCES/gowan2021_paleomist/ice_reconstruction
 CASE=${CASE:?72_73_74_75/ehgr | 72_73_74_75_h/ehgr}
-W=$P/selen/${CASE//\//_}
+W=$PM_DIR/selen/${CASE//\//_}
+if [ "${KRYOS_JOB:-}" != 1 ]; then
+    mkdir -p $W
+    sbatch --parsable -A $ACCOUNT -p shared -t 00:30:00 -n 1 -c 1 --mem=4G -J pm_selen -o $W/job-%j.out \
+        --export=ALL,KRYOS_JOB=1 "$_h/pm_selen.sh"
+    exit
+fi
 mkdir -p $W; cd $W
 cp $B/calc_sl/HARMONICS.f90 $B/calc_sl/SHTOOLS.f90 $B/calc_sl/rslc.f90 .
 # data.inc: the case folder's own if it has one (the 500-yr version: NN = 160, DELTA = 0.5), else calc_sl's (NN = 32, DELTA = 2.5)

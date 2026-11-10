@@ -16,9 +16,8 @@ calibrated multipliers and the 3-D Earth it is our own ice history.
   `PlasticIceSheet`, built with the same `openmp=`; `config/common.mk`). See
   [Getting started](getting-started.md).
 - **Config:** the par files below (see also [Par files](reference-par-files.md)).
-- **Scripts:** no single-run script; the run folder and job follow the members of
-  [plastic_esmda.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_esmda.sh)
-  (Running, below). Scoring and comparison: `tools/levante/plastic_score.sh`, `pm_compare.jl`,
+- **Scripts:** [plastic_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_run.sh)
+  stages and submits one run (Running, below). Scoring and comparison: `tools/levante/plastic_score.sh`, `pm_compare.jl`,
   `plastic_earth_compare.jl`.
 - **Design notes:** [docs/dev/plastic-backend.md](https://github.com/fesmc/kryos/blob/main/docs/dev/plastic-backend.md).
 
@@ -80,8 +79,8 @@ tau_b of a domain d at time t:
 | Key (per instance) | File | Content |
 |---|---|---|
 | `taub_domain_file` | FesmData `..._IceHistory-PaleoMIST_taub.nc` | Gowan's tau_b (unscaled) |
-| `taub_domain_factor_file` | Stage 1: `/work/ba1442/robinson/kryos-ice-plastic/runs/taub-fit-v3/report/taub_domain_factor.nc` (NH-32KM, ANT-16KM, PAT-PAL-8KM); v2: `.../runs/taub-fit/taub_domain_factor.nc` (NH-32KM, ANT-16KM) | `domain_id(domain)`, `log_factor(domain)`: one factor per domain, constant in time, from the present-day thickness |
-| `taub_scale_file` | `taub_scale.nc` of a calibration member, `<calibration>/iter_kk/mNNN/taub_scale.nc` | `group(domain)`, `time(node)`, `log_factor(scale_group, node)`: one multiplier per scale group, linear in time between the nodes |
+| `taub_domain_factor_file` | Stage 1: `$KRYOS_DATA/plastic/taub_domain_factor_v3.nc` (NH-32KM, ANT-16KM, PAT-PAL-8KM); v2: `$KRYOS_DATA/plastic/taub_domain_factor_v2.nc` (NH-32KM, ANT-16KM) | `domain_id(domain)`, `log_factor(domain)`: one factor per domain, constant in time, from the present-day thickness |
+| `taub_scale_file` | `taub_scale.nc` of a calibration member, `<calibration>/iter_kk/mNNN/taub_scale.nc`; the v2 posterior mean: `$KRYOS_DATA/plastic/taub_scale_esmda_v2_posterior.nc` | `group(domain)`, `time(node)`, `log_factor(scale_group, node)`: one multiplier per scale group, linear in time between the nodes |
 
 - All par files ship with `taub_domain_factor_file = ""` and `taub_scale_file = ""`: Gowan's
   tau_b, unscaled. `""` is no file; a file of zeros gives tau_b bit for bit.
@@ -89,13 +88,13 @@ tau_b of a domain d at time t:
   (an id of another grid has no cells).
 - Stage 1 (`tests/plastic_taub_fit.f90`, report and file by
   `tools/levante/plastic_taub_fit_report.jl`) fits the factors to today's thickness of the
-  topography hub; `taub-fit-v3` is the fit with PAT-PAL-8KM, as used by
+  topography hub; `taub_domain_factor_v3.nc` (from `runs/taub-fit-v3`) is the fit with PAT-PAL-8KM, as used by
   `tools/levante/plastic_ensemble_v1.toml` ("Stage 1 with PAT"; section "Stage 1 v3" of
   [docs/dev/plastic-backend.md](https://github.com/fesmc/kryos/blob/main/docs/dev/plastic-backend.md)).
 - The scale file of a member is written by `plastic_esmda.jl` (or `plastic_ensemble.jl`) into
   its folder. The posterior mean of an ES-MDA calibration is member `m000` of the iteration
-  after the last update (e.g. `runs/esmda-v2/iter_05/m000/taub_scale.nc`).
-  <!-- TODO(check): the posterior-mean folder of runs/esmda-v2 (iter_05/m000, from plastic_esmda.jl write_iteration) -->
+  after the last update: for v2 `runs/esmda-v2/iter_05/m000/taub_scale.nc`, published as
+  `$KRYOS_DATA/plastic/taub_scale_esmda_v2_posterior.nc`.
 
 The 3-D North-only file (`kryos_North_plastic_vilma2.nml`) does not list the two keys; they take
 the default `""` of `input/kryos_defaults.nml`.
@@ -136,68 +135,38 @@ Earth or ice history needs its own case; see
 ## Running
 
 On Levante, a run folder holds the executable, the par file and four links (the layout of a
-calibration member, `plastic_esmda.sh member`). `K` is the kryos checkout the executable was
-built in:
+calibration member, `plastic_esmda.sh member`).
+[tools/levante/plastic_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_run.sh)
+stages it in one step and submits the job:
 
 ```bash
-K=/work/ba1442/robinson/kryos-ice-plastic
-R=$K/runs/<name>
-mkdir -p $R && cd $R
-cp $K/libkryos/bin/kryos.x .
-cp $K/par/kryos_NH-ANT-PAT_plastic_vilma2.nml par.nml
-ln -s $K/input input
-ln -s /work/ba1442/fesmdata fesmdata
-ln -s /work/ba1442/kryos_data kryos_data
-ln -s /work/ba1442/robinson/kryos-ice-plastic-maps maps
+tools/levante/plastic_run.sh <run folder> <par file> [<factor file> [<scale file>]] [group.key=value ...]
+tools/levante/plastic_run.sh $KRYOS_WORK/runs/sci-3d par/kryos_NH-ANT-PAT_plastic_vilma2.nml \
+    '{kryos_data}/plastic/taub_domain_factor_v3.nc'
+tools/levante/plastic_run.sh $KRYOS_WORK/runs/b1-short par/kryos_NH-ANT_plastic_vilma2_b1.nml \
+    '{kryos_data}/plastic/taub_domain_factor_v2.nc' "" 'clock.time_end=-60e3'
 ```
 
-- `fesmdata` and `kryos_data` are shared stores: read them, never write through the links.
-- `maps` holds the grid descriptions and the remapping weights (the first run writes the
-  weights). It needs `grid_ANT-16KM.txt` (copied from the checkout's `maps/`) and, with
-  Patagonia, `grid_PAT-PAL-8KM.txt`. The folder of our runs,
-  `/work/ba1442/robinson/kryos-ice-plastic-maps`, has the grid files of NH-32KM, ANT-16KM, PAT-PAL-8KM,
-  GLOBAL-0.5DEG and GAUSS-L170 and all their weights: link it (or copy it) rather than starting a new one.
-- `kryos.x` takes the par file as its only argument (no `-p`). Change keys in `par.nml` with
-  [tools/levante/set_nml.py](https://github.com/fesmc/kryos/blob/main/tools/levante/set_nml.py) (as `plastic_esmda.jl`
-  does):
+- It copies `libkryos/bin/kryos.x` of the checkout (build first: `make kryos plastic=1 vilma=1`)
+  and the par file (a relative path is taken from the checkout) into the run folder, which must
+  not exist.
+- The factor and scale files are set as `taub_domain_factor_file` and `taub_scale_file` on every
+  instance (`""` = none); `{kryos_data}`, `{fesmdata}`, `{kryos}` in them are replaced by the
+  paths of `env.sh`. Keys after them are set with
+  [tools/levante/set_nml.py](https://github.com/fesmc/kryos/blob/main/tools/levante/set_nml.py).
+- The links: `fesmdata`, `kryos_data` (the shared stores: read them, never write through the
+  links), `input` (the checkout's) and `maps` (`KRYOS_MAPS`, created and seeded with the weights
+  of our runs if missing; the first run of a new grid writes its weights there).
+- Job settings (environment): `PARTITION` (`shared`), `THREADS` (64), `MEM` (60G), `TIME`
+  (08:00:00), `SUBMIT` (1; 0 stages only). The job runs `./kryos.x par.nml` (its only
+  argument, no `-p`) with `OMP_PROC_BIND=true OMP_STACKSIZE=512M OMP_MAX_ACTIVE_LEVELS=1`
+  and `ulimit -s unlimited`, logs to `out.out`, `out.err` and writes `status` (exit code and
+  seconds) when it ends.
 
-```bash
-F=/work/ba1442/robinson/kryos-ice-plastic/runs/taub-fit-v3/report/taub_domain_factor.nc
-python3 tools/levante/set_nml.py par.nml \
-  "ice_nor.taub_domain_factor_file=\"$F\"" "ice_ant.taub_domain_factor_file=\"$F\"" \
-  "ice_pat.taub_domain_factor_file=\"$F\""
-```
-
-[tools/levante/plastic_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_run.sh) does all of this
-in one step: it stages the run folder (the driver, the links, the par file with the factor and scale files set on every
-instance, further `group.key=value` overrides) and submits the job:
-
-```bash
-tools/levante/plastic_run.sh runs/sci-3d par/kryos_NH-ANT-PAT_plastic_vilma2.nml \
-    /work/ba1442/robinson/kryos-ice-plastic/runs/taub-fit-v3/report/taub_domain_factor.nc
-tools/levante/plastic_run.sh runs/b1-short par/kryos_NH-ANT_plastic_vilma2_b1.nml "" "" 'clock.time_end=-60e3'
-```
-
-Its environment variables (`PARTITION`, `THREADS`, `MEM`, `TIME`, `MAPS`, `SUBMIT=0` to stage only) are in its header.
-
-The job `plastic_run.sh` writes (shared partition, 64 threads, 60 GB, 8 h by default), by hand:
-
-```bash
-#!/bin/bash
-#SBATCH --account=ba1442
-#SBATCH --partition=shared
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=64
-#SBATCH --mem=30G
-#SBATCH --time=08:00:00
-export OMP_PROC_BIND=true OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK OMP_STACKSIZE=512M OMP_MAX_ACTIVE_LEVELS=1
-ulimit -s unlimited
-./kryos.x par.nml > out.out 2> out.err
-```
-
-submitted from the run folder with `sbatch <job script>`.
-At most 30 Levante jobs at a time (queued and running), also for ensembles.
+The released factor files are in `$KRYOS_DATA/plastic`: `taub_domain_factor_v2.nc` (NH-32KM,
+ANT-16KM) and `taub_domain_factor_v3.nc` (with PAT-PAL-8KM); the v2 posterior multipliers are
+`taub_scale_esmda_v2_posterior.nc`. At most 30 Levante jobs at a time (queued and running),
+also for ensembles.
 
 Cost:
 
@@ -237,17 +206,18 @@ GAPSLIP 2.1 scores of one run beside B1 (`B1_l170`) and `I910_it0`, the same sco
 [Reproducing Gowan et al. (2021)](experiment-gowan.md):
 
 ```bash
-sbatch tools/levante/plastic_score.sh <kryos run folder> <label>
+tools/levante/plastic_score.sh <kryos run folder> <label> [<score folder>]
 ```
 
-Output `/work/ba1442/robinson/kryos-ice-plastic/runs/score/<label>/out` (`pm_indicators.md`, ...;
-the run under its folder name). `pm_compare.jl` reads the run's `geo_glob_vilma.nc` in place.
+A small job it submits itself. Output `<score folder>/out`, default `$KRYOS_WORK/score/<label>/out`
+(`pm_indicators.md`, ...; the run under its folder name). `pm_compare.jl` reads the run's
+`geo_glob_vilma.nc` in place.
 
 Several runs against each other (e.g. 1-D against 3-D Earth, Gowan's tau_b against the Stage 1
 factors):
 
 ```bash
-julia --project=<julia-plot> tools/levante/plastic_earth_compare.jl <out folder> <label>=<run folder> ...
+julia --project=tools/levante tools/levante/plastic_earth_compare.jl <out folder> <label>=<run folder> ...
 ```
 
 At least two runs; the first is the reference of the maps. It reads `geo_glob_vilma.nc` and
@@ -259,14 +229,14 @@ each run minus that of the first) and `curves.png` (RSL at the best-sampled site
 Maps and present-day checks of one run:
 
 ```bash
-julia --project=<julia-plot> tools/levante/plastic_lgm_map.jl <run folder> <out.png> [mode=age|margins|smb] [age=20000]
-julia --project=<tools> tools/levante/plastic_pd_regions.jl <run folder>
+julia --project=tools/levante tools/levante/plastic_lgm_map.jl <run folder> <out.png> [mode=age|margins|smb] [age=20000]
+julia --project=tools/levante tools/levante/plastic_pd_regions.jl <run folder>
 ```
 
 `plastic_lgm_map.jl` (after Gowan et al. 2021, Fig. 2): the ice surface above the sea level of
 the age, RSL against today, the coastlines and the GAPSLIP sites scored; needs the 2-D output of
 the plastic instances. `plastic_pd_regions.jl`: today's thickness per region against the
-observations of the topography hubs. The Julia environments are described in [Analysis and figures](experiment-analysis.md).
+observations of the topography hubs. The Julia environment is described in [Analysis and figures](experiment-analysis.md#environment).
 
 ### Results so far
 
@@ -280,7 +250,7 @@ From [docs/dev/plastic-backend.md](https://github.com/fesmc/kryos/blob/main/docs
 | North + Antarctica, Stage 1 factors (v2 baseline) | 117.7 (1.05) | 76.80 (1.00) | -124.8 | 26.7 |
 | v2 posterior mean (scale file of calibration v2) | 95.9 (0.85) | 100.9 (1.32) | -129.7 | 21.6 |
 
-The 3-D runs (`sci-v2-prior`, `sci-v2-post`, `sci-v3-base` under `/work/ba1442/robinson/kryos-ice-plastic/runs`) are
+The 3-D runs (`sci-v2-prior`, `sci-v2-post`, `sci-v3-base` under `/work/ba1442/robinson/kryos-ice-plastic/runs`, provenance) are
 summarised in the section "The 3-D Earth" of [docs/dev/plastic-backend.md](https://github.com/fesmc/kryos/blob/main/docs/dev/plastic-backend.md): at the same tau_b the 3-D Earth fits
 the index points worse globally (RMS z_m 2.88 -> 3.47 with the prior tau_b), better in Hudson Bay (3.70 -> 2.51), the
 North American Arctic (3.89 -> 2.49) and Greenland (7.51 -> 6.71), much worse in Fennoscandia (1.8 -> 4.8); ESL at 20 ka

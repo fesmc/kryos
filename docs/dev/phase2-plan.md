@@ -266,7 +266,7 @@ selected by `yelmo=0|1` in `config/common.mk`; all stateless
 - **Q7**: interim gate `ant-cf` (shipped ANT with `opt_tf = "none"`) after
   relax + opt_cf.
 - **Q8**: the 8385-vs-1313 hub count is an offline script only
-  (`tools/levante/wp4_hub_count.py`; hypothesis: `remove_lakes` before
+  (`tools/levante/archive/wp4_hub_count.py`; hypothesis: `remove_lakes` before
   `H_ice_min`, plus negatives counted); the result goes to the gate log.
 - **Q9**: recon only; `marine_H`, `kill_shelves` and `recon_ref` stay
   deferred and are refused.

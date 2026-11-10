@@ -6,7 +6,7 @@ rebuilt (`tools/setup_S5b.sh`; yelmox topo-prep 5ac89c8 and the other packages a
 fesm-utils 5662899..3ba56a9: optional sphere radius for `grid_init` / `grid_init_gaussian` (areas, signature; default unchanged), time
 units `years ago` / `years before present` equivalent to `years BP`, `coupler_merge_end` logs coverage only above 1 + 1e-9.
 
-## Identity, `cont`, `kryos-compare --restarts` (`tools/levante/gate_S5b.sh`, `compare_S5b.sh`)
+## Identity, `cont`, `kryos-compare --restarts` (`tools/levante/archive/gate_S5b.sh`, `compare_S5b.sh`)
 
 K = kryos 5a663a3 (`vilma=0`), built on S5b in its own checkout `stacks/S5b/kryos`; maps S5 (no map file added). R2 = yelmox topo-prep, S5b build.
 Runs: K grl 28552184, K ant 28552189, R2 grl 28552188, R2 ant 28552190; compare job 28552538.

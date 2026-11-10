@@ -1,5 +1,5 @@
 # Maps of a kryos plastic run, after Gowan et al. (2021, Fig. 2) (docs/dev/plastic-backend.md; drawing in plastic_mapkit.jl):
-#   julia --project=<julia-plot> tools/levante/plastic_lgm_map.jl <run folder> <out.png> [mode=age|margins|smb] [age=20000] [window=2500]
+#   julia --project=tools/levante tools/levante/plastic_lgm_map.jl <run folder> <out.png> [mode=age|margins|smb] [age=20000] [window=2500]
 #         [ages=25000,20000,15000,12500,10000,7500] [label=<text>] [lon0=0]
 # mode = age (default): the run at one age: the ice surface elevation above the sea level of that age (the plastic instances on their
 #   grids, needs their 2-D output; the rest of the world's ice from VILMA2's load), the relative sea level of that age against today over
