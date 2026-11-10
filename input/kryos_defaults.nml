@@ -258,8 +258,17 @@
     mass_balance       = "none"                ! "none": smb = cmb = 0 | "implied": the mass balance the geometry needs
                                                ! (dHidt + div q of the steady face fluxes, margin outflow ablated to
                                                ! land, calved to the ocean), smb_tot, cmb_tot, ux_s, uy_s (rheo_A, slide_law)
+                                               ! | "inverted": speed and mass balance by joint inversion against the
+                                               ! closure's speed and the imported smb (the prior; drive = "taub")
     mb_smooth_km       = 0.0                   ! [km] implied: Gaussian sd of the conservative smoothing of div q - q_land
                                                ! over the ice (sums unchanged); 0 = none
+    inv_sigma_u        = 0.7                   ! inverted: sd of ln(speed) about the closure's (0.7: a factor 2)
+    inv_smooth_km      = 100.0                 ! [km] inverted: length of the smoothness of ln(speed / closure's); 0 = none
+    inv_sigma_smb_rel  = 0.5                   ! inverted: sd of the mass balance about the prior, relative to |prior|
+    inv_sigma_smb_min  = 100.0                 ! [kg m-2 yr-1] inverted: its floor
+    inv_cold           = .true.                ! inverted: penalise negative mass balance where the prior is >= 0 (off the margin)
+    inv_sigma_cold     = 10.0                  ! [kg m-2 yr-1] inverted: the scale of that penalty
+    inv_n_iter         = 50                    ! inverted: Gauss-Newton steps at most
     out_plastic        = "none"                ! schedule of <instance>_plastic.nc (state, mask, sdist, tau_b, ...)
 /
 &climate_snapshots

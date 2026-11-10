@@ -143,6 +143,16 @@ C <= tau): it depends on N and the bed alone, so the tau_b domains enter through
 N goes to 0 (fast marine margins). C proportional to tau_b keeps hard beds (high tau_b, thick ice, high N) slow;
 C = c_f lambda N alone would make them faster.
 
+`mass_balance = "inverted"` (drive = "taub"; docs/dev/plastic-smb-inversion-design.md): at each update, on the geometry at
+t1, the library's joint inversion (plastic_smb_inversion) of the depth-averaged speed per ice cell (along the plastic flow
+direction) and the mass balance a = dHidt + div q - q_land (upwind face speed, the face geometry of the steady fluxes),
+minimising the misfit of ln(speed) to the closure's speed at tau capped at tau_b (`inv_sigma_u`, smoothness over
+`inv_smooth_km`) and of a to the imported smb, the prior (`inv_sigma_smb_rel`, `inv_sigma_smb_min`), with a penalty on
+a < 0 where the prior is >= 0 off the margin (`inv_cold`, `inv_sigma_cold`) and the speed at least the deformation speed
+(no negative sliding). smb = rho_i a and cmb = -rho_i q_marine on the ice, as "implied" (no `mb_smooth_km`); ux_s, uy_s
+the speed plus u_def/(n+1) along the flow direction. The prior comes from a surface instance of the domain (e.g.
+`smb_simple`): a rough first estimate, so its sd is large.
+
 `taub_smooth_km` (default 50; drive = "taub"): tau_b at t, after the factors, is replaced on the cells with tau_b > 0
 by its Gaussian mean over them (sd `taub_smooth_km`, within 3 sd; a normalised convolution), for the solve and the
 closure alike: the domain steps become ramps of a few sd (the ice averages the basal stress over several
@@ -262,8 +272,11 @@ continuous one), `H_prev` and `z_srf`, lossless; the read checks the grid and th
 | `rheo_A`, `rheo_n` | 0, 3 | Glen rate factor [Pa-n yr-1] (0: no closure), exponent |
 | `slide_law` | `"none"` | `"linear"`, `"weertman"` (`slide_beta`, `slide_m`), `"coulomb"` (`slide_C`, `slide_u0`, `slide_m`), `"yield"` (`slide_uy`, `slide_uy_b`, `slide_m`; `drive = "taub"`), `"coulomb_n"` (`slide_Hc`, `slide_lambda_min`, `slide_zb0`, `slide_zb1`, `slide_p`, `slide_u0`, `slide_m`, `slide_umax`; `drive = "taub"`) |
 | `slide_umax` | 0 | [m yr-1] `"coulomb"`, `"coulomb_n"`: the speed cap where tau reaches C (0 = none; `"coulomb_n"` needs one) |
+| `inv_sigma_u`, `inv_smooth_km` | 0.7, 100 | `"inverted"`: sd of ln(speed) about the closure's; length [km] of its smoothness |
+| `inv_sigma_smb_rel`, `inv_sigma_smb_min` | 0.5, 100 | `"inverted"`: sd of a about the prior, relative and floor [kg m-2 yr-1] |
+| `inv_cold`, `inv_sigma_cold`, `inv_n_iter` | .true., 10, 50 | `"inverted"`: the penalty on a < 0 where the prior is >= 0 [kg m-2 yr-1]; Gauss-Newton steps |
 | `mb_smooth_km` | 0 | `"implied"`: Gaussian sd [km] of the conservative smoothing of div q - q_land over the ice (sums unchanged; 0 = none) |
-| `mass_balance` | `"none"` | `"implied"`: smb, cmb, smb_tot, cmb_tot, ux_s, uy_s from the flux closure (needs `rheo_A`, `slide_law`) |
+| `mass_balance` | `"none"` | `"implied"`: smb, cmb, smb_tot, cmb_tot, ux_s, uy_s from the flux closure (needs `rheo_A`, `slide_law`); `"inverted"`: by the joint inversion (above; needs the smb import too) |
 | `out_plastic` | `"none"` | schedule of the stream `plastic` |
 
 A density other than the run's `rho_ice` / `rho_sw` is logged as a warning: the ice mass the globe gathers for
