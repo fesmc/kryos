@@ -4,7 +4,7 @@ Analysis only, no new runs. Branch `setup-diag`. Question: what controls the thi
 
 - Fields: Yelmo restarts (final state) of `$G/runs/calib/kx-624f686/S9/` North-pd-cf10 (and North-pd, cf 0.2), North-lgmrecon-cf10 (and North-lgmrecon), Antarctica-pd-cf05 (and -cf10); the standalone Greenland gate run with the yelmox_Greenland settings (`$G/runs/grl/kx-af8f1b9/S3/base`, GRL-16KM, 15 kyr).
 - Obs (FesmData): Joughin 2018 velocity, MAR v3.14 1981-2010 SMB (ice-sheet mask; GRL-32KM mapped to NH-32KM by nearest neighbour), Rignot 2011, RACMO2.3p2 1981-2010, Dawson 2022 basal state, GHF datasets.
-- Script `tools/levante/setup_diag.jl` (`sbatch tools/levante/setup_diag.sh`); full tables in `setup-diagnosis-tables.md`; maps `$G/setup-diag/out/setup_diag_*.png`.
+- Script `tools/levante/archive/setup_diag.jl` (`sbatch tools/levante/archive/setup_diag.sh`); full tables in `setup-diagnosis-tables.md`; maps `$G/setup-diag/out/setup_diag_*.png`.
 - Regularized Coulomb, q = 0.2, u0 = 100 m/yr: at fixed stress u_b ~ u0 (taud/c_bed)^5, so sliding needs c_bed of order taud. c_bed = cb_ref N_eff.
 
 ## Diagnosis

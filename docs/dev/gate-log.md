@@ -459,7 +459,7 @@ R2 chunk is not compared (yelmox restarts the window time per chunk). Relax and 
 
 ### Hub count 8385 vs 1313 (W4a, design Q8; closes the open item of the WP0 NOR notes)
 
-`tools/levante/wp4_hub_count.py` (offline, numpy, float32 in the order of `htopo_init`) on `NH-32KM_TOPO-GEBCO2026.nc`:
+`tools/levante/archive/wp4_hub_count.py` (offline, numpy, float32 in the order of `htopo_init`) on `NH-32KM_TOPO-GEBCO2026.nc`:
 
 | step | 0 < H < 1 | H < 0 | htopo count (H < 1, H /= 0) |
 |---|---:|---:|---:|
@@ -553,8 +553,8 @@ variables, 0 failing). Levante gates: below.
 ### Levante: `sci-const`, `sci` (kryos 99589d0, stack S5b)
 
 Code: branch `p3-dom` at 99589d0 (bundle `$G/bundles/p3dom.bundle`; checkout and build `$G/p3dom/kryos`, linked to S5b, gate flags, `vilma=0`), maps `$G/maps/S5`.
-Runs staged by `tools/levante/run_kryos_kk.sh` (par `par/gate/{sci,nor,ant}.nml` with the `kp` overrides of the gate files), checks by
-`tools/levante/compare_kk.sh` (`kryos-gate-kk.jl check`, `julia +1.13`), reports `$G/reports/KK/{sci,sci-const}-99589d0-S5b.md`. 1 kyr, gate `-p`
+Runs staged by `tools/levante/archive/run_kryos_kk.sh` (par `par/gate/{sci,nor,ant}.nml` with the `kp` overrides of the gate files), checks by
+`tools/levante/archive/compare_kk.sh` (`kryos-gate-kk.jl check`, `julia +1.13`), reports `$G/reports/KK/{sci,sci-const}-99589d0-S5b.md`. 1 kyr, gate `-p`
 (`write_lossless`, 2D every 100, 1D and 2Dsm every 10, bundles at 500 and 1000). Two-domain runs 13.7 min (16 threads), NOR alone 11.8, ANT alone 2.6.
 
 `sci-const` (bsl const; the single-domain references are the `nor` and `ant` gate files on the same binary, `nor` with the merged clock `time_const = 0.0`);

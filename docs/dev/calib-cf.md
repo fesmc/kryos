@@ -15,7 +15,7 @@ No optimisation: Yelmo's elevation scaling of cf_ref, one cf_ref per domain, jud
   - lgm: t 30 -> 60 kyr, restarted from pd, alpha 1, sea level -120 m, orbit -21 ka.
   - lgmrecon (North): lgm forcing, cold start from PaleoMIST (`recon_nor`, whole domain, no bed filter, smoothing or float cut, as the science par at -80 ka; `recon_time = -21e3` selects the 20 ka record), t 0 -> 20 kyr.
   - lgm-ext (North): lgm restarted from the 60 kyr bundle of lgm, t 60 -> 90 kyr.
-- Submit `tools/levante/calib.sh <Domain> <case> [set_nml ...]` (TAG, FROM, RSTT); cf_ref variants by `ytill_ant.cf_ref=...` / `ytill_nor.cf_ref=...`. Metrics `tools/levante/calib_metrics.sh` -> `calib_metrics.jl`; maps `tools/levante/calib_maps.sh` -> `tools/calib_maps.jl` (CairoMakie, plot environment `$G/julia-plot`). Everything runs on Levante (the generator too: `tools/levante/calib_gen.sh`); rounds 1-4 maps re-rendered there (the Mac copies in `$G/calib/maps/mac/`).
+- Submit `tools/levante/archive/calib.sh <Domain> <case> [set_nml ...]` (TAG, FROM, RSTT); cf_ref variants by `ytill_ant.cf_ref=...` / `ytill_nor.cf_ref=...`. Metrics `tools/levante/archive/calib_metrics.sh` -> `calib_metrics.jl`; maps `tools/levante/archive/calib_maps.sh` -> `tools/calib_maps.jl` (CairoMakie, plot environment `$G/julia-plot`). Everything runs on Levante (the generator too: `tools/levante/archive/calib_gen.sh`); rounds 1-4 maps re-rendered there (the Mac copies in `$G/calib/maps/mac/`).
 - V_af: grounded ice above flotation as m SLE (rho_i 917, rho_sw 1028, ocean 3.625e14 m2). References: PD BedMachine v4 (ANT), GEBCO 2026 (North); LGM PaleoMIST 20/22.5 ka, GLAC-1D 21 ka, ICE-6G_C 21 ka. North regions are lon/lat boxes (GRL, NA, EUR; see the metrics file).
 - Rate: Yelmo V_sle over the last 5 kyr. Wall about 52 min per 30 kyr (ANT), 60-80 min (North).
 
@@ -68,7 +68,7 @@ Series `nor-lgm-regions.png`, `vsle-series.png`; maps `nor-*-maps.png`.
 ### ANT LGM: reduced shelf melt (cf_ref 0.05)
 
 Run `Antarctica-lgm-cf05-melt01`: lgm from the cf05 pd bundle, `marine_shelf_ant.gamma_quad_nl` 14500 -> 1450 (x 0.1). Knob: in `quad-nl` the shelf melt is linear in gamma, so it scales the shelf melt by one factor and leaves the ocean temperature (`term_ocean`, dTo) and the thermal forcing untouched. The deep-ocean rate (`c_deep`) and the grounding-zone terms are separate parameters and stay, which is why the mean melt over floating ice drops by a third only (median 0 in both). The LGM ocean term is not a clean knob: dTo = 0.25 x the mean air anomaly enters the thermal forcing non-linearly and through the freezing point.
-Shelf budget of the final states (`tools/levante/calib_shelf_diag.jl`, `$G/calib/out/ant-shelf-diag.log`; means over floating ice):
+Shelf budget of the final states (`tools/levante/archive/calib_shelf_diag.jl`, `$G/calib/out/ant-shelf-diag.log`; means over floating ice):
 
 | run | ice area [M km2] | grounded | floating | bmb_shlf [m/yr] (Gt/yr) | cmb [m/yr] (Gt/yr) | tf_shlf mean [K] | dTo [K] |
 |---|---|---|---|---|---|---|---|
@@ -111,7 +111,7 @@ Knobs (yelmo 30361f96 of S9, `calc_ytopo_calving_lsf` in `yelmo_topography.f90`,
 - Marine-grounded faces (f_grnd_acx > 0, not land-land): `calv_grnd_method`; `"vm-m16"` exists (same law with `tau_ice_grnd`). Kept `"zero"` (tau_ice_grnd unused): the PD states have 41-48 marine-grounded front cells against 530-820 floating ones, and at the LGM a grounded law can only hold back the advance.
 - Unused with the level set: `calv_tau`, `calv_thin`, `Hc_ref_*`, `k2`, `kt_*`, `sd_*`, `w2` (tau_eff only). Used, kept: `H_min_flt/grnd` 0 (thin-margin removal), `H_min_tau`, `[ytopo_ant] front_subgrid = "marine"`, `front_H_eff_min` 50 m, `lsf_method = "snap"`, `dt_lsf = -1`.
 
-Planned range, `tau_ice_flt` 60 / 120 / 170 / 240 kPa (log steps of sqrt 2 around round 4's 85; overrides as round 4, `tools/levante/calib.sh` with `ycalv_ant.calv_flt_method="vm-m16"`, `calv_grnd_method="zero"`, `H_min_grnd=H_min_flt=0.0`, `tau_ice_flt=<t>e3`, `tau_ice_grnd=85.0e3`, TAG `-cf05-vm<t>`). tau_vm at the ice front of the round-4 PD states (`calib_shelf_diag.jl`, `front`, last restart; `$G/calib/out/ant-front-r4.log`), p10 / p25 / p50 / p75 / p90 [kPa]:
+Planned range, `tau_ice_flt` 60 / 120 / 170 / 240 kPa (log steps of sqrt 2 around round 4's 85; overrides as round 4, `tools/levante/archive/calib.sh` with `ycalv_ant.calv_flt_method="vm-m16"`, `calv_grnd_method="zero"`, `H_min_grnd=H_min_flt=0.0`, `tau_ice_flt=<t>e3`, `tau_ice_grnd=85.0e3`, TAG `-cf05-vm<t>`). tau_vm at the ice front of the round-4 PD states (`calib_shelf_diag.jl`, `front`, last restart; `$G/calib/out/ant-front-r4.log`), p10 / p25 / p50 / p75 / p90 [kPa]:
 
 | PD run | all front cells | Ross | Filchner-Ronne | Ross / F-R model-only, BedMachine-only [M km2] |
 |---|---|---|---|---|

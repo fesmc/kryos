@@ -1,6 +1,6 @@
 program hub_areas
     ! Model areas of grids as the global geometry hub registers them (kryos_globe_ice: grid%area * xy_conv**2, true spherical
-    ! cell areas), for the offline merge of gate G1b (4) on a real run (tools/levante/hub_offline.jl).
+    ! cell areas), for the offline merge of gate G1b (4) on a real run (tools/levante/archive/hub_offline.jl).
     !   hub_areas.x <map folder> <out.nc> <grid> [<grid> ...]
     ! Writes area_<grid>(x, y) [m2] with the dimensions x_<grid>, y_<grid>. Not part of `make check`.
     use precision,  only: dp

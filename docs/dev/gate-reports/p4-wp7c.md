@@ -74,7 +74,7 @@ G3 (all 2000 steps; (iii) at the 200 records of the lossless `gia` and `vilma` s
 
 ## G6: science case smoke (`par/kryos_NH-ANT_vilma2.nml`, both domains, from -80 ka)
 
-**Rerun on S9 with the chosen spin-up** (1e-5, 2e4 yr; `tools/levante/g6.sh`, runs `$G/runs/g6/kx-624f686/S9/`, `$G/runs/g6-smb/kx-624f686/S9/`, reports `$G/reports/WP7c/S9/`, `g6-kk.md`, `g6-smb-kk.md`).
+**Rerun on S9 with the chosen spin-up** (1e-5, 2e4 yr; `tools/levante/archive/g6.sh`, runs `$G/runs/g6/kx-624f686/S9/`, `$G/runs/g6-smb/kx-624f686/S9/`, reports `$G/reports/WP7c/S9/`, `g6-kk.md`, `g6-smb-kk.md`).
 2 kyr (`cont`, 200 steps, 69 min, 1.1 node-h, 11.9 GB: spin-up 8 passes, 107 kyr of VILMA2 clock, the last full pass v 7.6e-6 m/yr), restart at -79000 (chunks of 100 + 100 steps: c00 62 min with the spin-up, c01 17 min). No stop, no warning. Streams `gia`, `vilma` lossless every 50 yr.
 
 | check | result |
