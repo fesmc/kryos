@@ -51,12 +51,14 @@ program plastic_closure_fit
     real(dp) :: inv_sigma_u = 0.7_dp, inv_smooth_km = 100.0_dp, inv_sigma_smb_rel = 0.5_dp, inv_sigma_smb_min = 100.0_dp
     real(dp) :: inv_sigma_cold = 10.0_dp
     logical  :: inv_cold = .true., inv_verbose = .false.
+    integer  :: inv_lin_maxit = 500
+    real(dp) :: inv_sigma_def = 0.1_dp
     real(dp), parameter :: RHO_I = 910.0_dp, RHO_SW = 1028.0_dp, GRAV = 9.81_dp, KG_GT = 1.0e-12_dp
     integer,  parameter :: NROW = 11
     namelist /fit/ hist, margin_var, margin_min, taub_file, taub_default, factor_file, taub_smooth_km, topo_file, bed_var, &
                    mask_var, obs_file, obs_var, speed_min, mode, law, A_list, uy_list, b_list, Hc_list, lam_list, m_list, &
                    n_glen, m, u0, umax, p, zb0, zb1, out, prior_file, prior_var, inv_sigma_u, inv_smooth_km, &
-                   inv_sigma_smb_rel, inv_sigma_smb_min, inv_cold, inv_sigma_cold, inv_verbose
+                   inv_sigma_smb_rel, inv_sigma_smb_min, inv_cold, inv_sigma_cold, inv_verbose, inv_lin_maxit, inv_sigma_def
 
     type(margin_t)      :: mg
     type(taub_t)        :: tb
@@ -204,17 +206,17 @@ contains
         ap = ap/RHO_I;  dh = 0.0_dp
         c%sigma_u = inv_sigma_u;  c%smooth = 1000.0_dp*inv_smooth_km;  c%sigma_smb_rel = inv_sigma_smb_rel
         c%sigma_smb_min = inv_sigma_smb_min/RHO_I;  c%cold = inv_cold;  c%sigma_cold = inv_sigma_cold/RHO_I
-        c%verbose = inv_verbose
+        c%verbose = inv_verbose;  c%lin_maxit = inv_lin_maxit;  c%sigma_def = inv_sigma_def
         call plastic_smb_inversion(ps, zb, zsl, mask, rheo, sl, ap, dh, a, u, c, margin_frac=frac, tau_cap=tau, &
                                    q_land=qli, q_marine=qmi, u_law=ul, info=inf, stat=stat)
         use = mask .and. mobs /= 3 .and. uobs > speed_min .and. u > 0.0_dp
         r = log10(pack(u, use)/pack(uobs, use))
-        write(*,"(a,i0,a,i0,a,4es10.3)") "# inversion: stat ", stat, ", ", inf%iters, " steps; J law, smooth, smb, cold ", &
-            inf%J_law, inf%J_smooth, inf%J_smb, inf%J_cold
+        write(*,"(a,i0,a,i0,a,5es10.3)") "# inversion: stat ", stat, ", ", inf%iters, " steps; J law, smooth, smb, cold, def ", &
+            inf%J_law, inf%J_smooth, inf%J_smb, inf%J_cold, inf%J_def
         write(*,"(a,f6.3,a,f6.2,a,f9.1,a,f9.1,a,f9.1,a,f6.3,a,i0)") "# inversion: RMS log10 speed ", sqrt(sum(r**2)/max(size(r), 1)), &
             ", median ratio ", 10.0_dp**median(r), ", net ", RHO_I*sum(a, mask = mask)*cell*KG_GT, ", ablation ", &
             RHO_I*sum(min(a, 0.0_dp), mask = mask)*cell*KG_GT, ", ocean ", RHO_I*sum(qmi)*cell*KG_GT, &
-            ", ablation area ", real(count(mask .and. a < 0.0_dp), dp)/count(mask), ", no sliding ", inf%n_bound
+            ", ablation area ", real(count(mask .and. a < 0.0_dp), dp)/count(mask), ", below u_def ", inf%n_bound
         write(*,"(a,f9.1,a,f6.3)") "# prior over the ice: net ", RHO_I*sum(ap, mask = mask)*cell*KG_GT, ", ablation area ", &
             real(count(mask .and. ap < 0.0_dp), dp)/count(mask)
         call nc_write(trim(out)//".nc", "speed_inv", u, dim1="xc", dim2="yc", units="m yr-1")

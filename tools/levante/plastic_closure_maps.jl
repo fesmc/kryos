@@ -1,7 +1,8 @@
 # Maps of the present-day implied mass balance of plastic_closure_fit sets (tests/plastic_closure_fit.f90, the NetCDF of one set):
 # the implied SMB rho_i (div q - q_land) on the ice, smoothed conservatively as the backend's mb_smooth_km (scatter form, sums
 # unchanged), and log10(model / observed) of the surface speed; optionally an observed SMB on the same grid as a first column.
-#   julia --project=<julia-plot> tools/levante/plastic_closure_maps.jl <out.png> <sd_km> [ref=<smb.nc>] <label>=<set.nc> ...
+#   julia --project=<julia-plot> tools/levante/plastic_closure_maps.jl <out.png> <sd_km> [ref=<smb.nc>] <label>=<set.nc>[:inv] ...
+# <set.nc>:inv: the set's joint inversion (prior_file of plastic_closure_fit: smb_inv, speed_inv, q_marine_inv), unsmoothed.
 # Prints per set the integrals [Gt yr-1] (net, accumulation, ablation, outflow to the ocean) and the ablation area (the fraction of
 # the ice cells with smoothed SMB < 0), and the same for ref over the model's ice.
 using CairoMakie, NCDatasets, Printf, Statistics
@@ -36,14 +37,21 @@ function smooth_conservative(f, mask, dx, dy, sd)
     r = copy(f); r[mask] .= g[mask]; r
 end
 
-D = map(sets) do (lab, f)
+D = map(sets) do (lab, fs)
+    inv = endswith(fs, ":inv"); f = inv ? fs[1:end-4] : fs
     NCDataset(f) do ds
         x, y = Float64.(ds["xc"][:]), Float64.(ds["yc"][:])
         dx, dy = 1000 * (x[2] - x[1]), 1000 * (y[2] - y[1])
         m = Int.(ds["mask"][:, :]) .== 1
-        divq, ql, qm = g2(ds, "div_q"), g2(ds, "q_land"), g2(ds, "q_marine")
-        smb = smooth_conservative(RHO_I .* (divq .- ql), m, dx, dy, sd)
-        sp, so = g2(ds, "speed"), g2(ds, "speed_obs")
+        if inv
+            smb, qm = RHO_I .* g2(ds, "smb_inv"), g2(ds, "q_marine_inv")
+            sp = g2(ds, "speed_inv")
+        else
+            divq, ql, qm = g2(ds, "div_q"), g2(ds, "q_land"), g2(ds, "q_marine")
+            smb = smooth_conservative(RHO_I .* (divq .- ql), m, dx, dy, sd)
+            sp = g2(ds, "speed")
+        end
+        so = g2(ds, "speed_obs")
         cell = dx * dy
         tot = (net = sum(smb[m]) * cell * KG_GT, acc = sum(max.(smb[m], 0)) * cell * KG_GT,
                abl = sum(min.(smb[m], 0)) * cell * KG_GT, marine = RHO_I * sum(qm) * cell * KG_GT,

@@ -329,7 +329,7 @@ contains
                     call nc_write(file, "inv_J_cold", self%inv_info%J_cold, dim1="time", start=[n], count=[1], ncid=ncid, &
                                   units="1", long_name="Inversion: penalty of negative mass balance on cold cells")
                     call nc_write(file, "inv_n_bound", self%inv_info%n_bound, dim1="time", start=[n], count=[1], &
-                                  ncid=ncid, units="1", long_name="Inversion: ice cells without sliding (at the bound)")
+                                  ncid=ncid, units="1", long_name="Inversion: ice cells below the deformation speed by more than its sd")
                 end if
             end if
             call nc_write(file, "converged", merge(1, 0, self%ps%converged), dim1="time", start=[n], count=[1], &
