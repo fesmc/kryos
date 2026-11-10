@@ -115,9 +115,9 @@ end
 # The error model from a wave: per data group, sigma_m, L_x, L_t by maximum likelihood over a grid, from the residuals of the
 # `top` members that fit that group best under the current error model (the members the data do not rule out; the rest would
 # inflate the error by their own misfit). Writes <folder>/errmodel.toml (read by weights from then on) and errmodel.md.
-const GRID_SIGMA = [3.0, 5.0, 8.0, 12.0, 16.0, 20.0, 25.0, 30.0, 40.0, 50.0, 65.0, 80.0]   # [m]
-const GRID_LX = [25.0, 50.0, 100.0, 175.0, 250.0, 350.0, 500.0, 750.0, 1000.0]             # [km]
-const GRID_LT = [1.0, 2.0, 5.0, 10.0, 20.0]                                                # [kyr]
+const GRID_SIGMA = [3.0, 5.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 23.0, 26.0, 30.0, 35.0, 40.0, 50.0, 65.0, 80.0]   # [m]
+const GRID_LX = [10.0, 25.0, 50.0, 100.0, 175.0, 250.0, 350.0, 500.0, 750.0, 1000.0, 1500.0, 2500.0]   # [km]
+const GRID_LT = [1.0, 2.0, 5.0, 10.0, 20.0, 40.0, 80.0, 160.0]                            # [kyr]
 function errmodel(C, k; top = 6)
     C = abspath(C); cfg = ES.config(C); ids, _, res, og = wave_residuals(C, k, cfg)
     em, src = error_model(cfg, C); ok = sort(collect(keys(res)))
