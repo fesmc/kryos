@@ -263,7 +263,9 @@
     mb_smooth_km       = 0.0                   ! [km] implied: Gaussian sd of the conservative smoothing of div q - q_land
                                                ! over the ice (sums unchanged); 0 = none
     inv_sigma_u        = 0.7                   ! inverted: sd of ln(speed) about the closure's (0.7: a factor 2)
-    inv_smooth_km      = 100.0                 ! [km] inverted: length of the smoothness of ln(speed / closure's); 0 = none
+    inv_smooth_km      = 0.0                   ! [km] inverted: length of the smoothness of ln(speed / closure's); 0 = none
+    inv_smooth_smb_km  = 50.0                  ! [km] inverted: length of the smoothness of the mass balance's deviation from
+                                               ! the prior (a spatially correlated prior error); 0 = none
     inv_sigma_smb_rel  = 0.5                   ! inverted: sd of the mass balance about the prior, relative to |prior|
     inv_sigma_smb_min  = 100.0                 ! [kg m-2 yr-1] inverted: its floor
     inv_cold           = .true.                ! inverted: penalise negative mass balance where the prior is >= 0 (off the margin)

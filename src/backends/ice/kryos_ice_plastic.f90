@@ -778,7 +778,7 @@ contains
         character(len=NAME_LEN) :: margin_var, margin_interp, margin_extrapolate, mode, taub_method, taub_var
         character(len=NAME_LEN) :: taub_domain_var, taub_id_var, taub_value_var, taub_time_var, taub_override_grp
         character(len=NAME_LEN) :: slide_law, margin_position, mass_balance
-        real(dp) :: mb_smooth_km, taub_smooth_km, inv_smooth_km, inv_sigma_smb_min, inv_sigma_cold
+        real(dp) :: mb_smooth_km, taub_smooth_km, inv_smooth_km, inv_smooth_smb_km, inv_sigma_smb_min, inv_sigma_cold
         character(len=:), allocatable :: who
         real(dp) :: margin_H_min, taub_const, taub_default, rheo_A, rheo_n, slide_beta, slide_m, slide_C, slide_u0
         real(dp) :: slide_umax
@@ -800,7 +800,7 @@ contains
         slide_law = "none";  slide_beta = 0.0_dp;  slide_m = 1.0_dp;  slide_C = 0.0_dp;  slide_u0 = 0.0_dp
         slide_umax = 0.0_dp
         mass_balance = "none";  mb_smooth_km = 0.0_dp
-        inv_smooth_km = 100.0_dp;  inv_sigma_smb_min = 100.0_dp;  inv_sigma_cold = 10.0_dp
+        inv_smooth_km = 0.0_dp;  inv_smooth_smb_km = 50.0_dp;  inv_sigma_smb_min = 100.0_dp;  inv_sigma_cold = 10.0_dp
 
         call rd_s("drive", self%drive)
         ! solver (plastic_par_t; densities: see constants_check)
@@ -858,6 +858,7 @@ contains
         call rd_r("mb_smooth_km", mb_smooth_km)
         call rd_r("inv_sigma_u", self%inv%sigma_u)
         call rd_r("inv_smooth_km", inv_smooth_km)
+        call rd_r("inv_smooth_smb_km", inv_smooth_smb_km)
         call rd_r("inv_sigma_smb_rel", self%inv%sigma_smb_rel)
         call rd_r("inv_sigma_smb_min", inv_sigma_smb_min)
         call rd_l("inv_cold", self%inv%cold)
@@ -963,11 +964,12 @@ contains
             if (trim(self%drive) /= "taub") call fesm_error(proc, "mass_balance = 'inverted' needs drive = 'taub'", who)
             if (mb_smooth_km > 0.0_dp) call fesm_error(proc, "mb_smooth_km applies to mass_balance = 'implied' only", &
                                                        who//": set it to 0 (the inversion smooths the speed instead)")
-            if (inv_smooth_km < 0.0_dp .or. .not. (inv_sigma_smb_min > 0.0_dp .and. inv_sigma_cold > 0.0_dp .and. &
+            if (inv_smooth_km < 0.0_dp .or. inv_smooth_smb_km < 0.0_dp .or. .not. (inv_sigma_smb_min > 0.0_dp .and. inv_sigma_cold > 0.0_dp .and. &
                 self%inv%sigma_u > 0.0_dp .and. self%inv%sigma_smb_rel >= 0.0_dp)) &
-                call fesm_error(proc, "inv_sigma_u, inv_sigma_smb_min, inv_sigma_cold > 0; inv_smooth_km, "// &
+                call fesm_error(proc, "inv_sigma_u, inv_sigma_smb_min, inv_sigma_cold > 0; inv_smooth_km, inv_smooth_smb_km, "// &
                                 "inv_sigma_smb_rel >= 0", who)
             self%inv%smooth = 1000.0_dp*inv_smooth_km
+            self%inv%smooth_smb = 1000.0_dp*inv_smooth_smb_km
             self%inv%sigma_smb_min = inv_sigma_smb_min/self%par%rho_i
             self%inv%sigma_cold = inv_sigma_cold/self%par%rho_i
         end if
