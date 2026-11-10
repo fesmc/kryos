@@ -233,6 +233,9 @@
     taub_scale_file    = ""                    ! "domains": multipliers of tau_b per scale group, time dependent (the
                                                ! calibration, tools/levante/plastic_esmda.jl; {domain}, {grid_name});
                                                ! "" = none
+    taub_smooth_km     = 50.0                  ! [km] drive = "taub": Gaussian sd of the smoothing of tau_b (after the
+                                               ! factors) over the cells with tau_b > 0, for the solve and the
+                                               ! closure alike; 0 = none
     ! rheology and sliding (drive = "smb"; mass_balance = "implied")
     rheo_A             = 0.0                   ! [Pa-n yr-1] Glen rate factor; 0 = no velocity
     rheo_n             = 3.0                   ! Glen exponent

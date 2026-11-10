@@ -122,6 +122,11 @@ Antarctic margin cell at 20 kyr) Weertman with beta = 3e4 slides at 0.04 m/yr, a
 was 200 Gt/yr against 5000 today. The velocity-routing path (`plastic_velocity`, `plastic_smb_implied`) is not
 used.
 
+`taub_smooth_km` (default 50; drive = "taub"): tau_b at t, after the factors, is replaced on the cells with tau_b > 0
+by its Gaussian mean over them (sd `taub_smooth_km`, within 3 sd; a normalised convolution), for the solve and the
+closure alike: the domain steps become ramps of a few sd (the ice averages the basal stress over several
+thicknesses), the value of a uniform region is kept. 0 = none.
+
 ## Margin chronology
 
 The slices of `margin_var` (default `f_ice`) in `margin_file` (`{domain}`, `{grid_name}` replaced, as
@@ -232,6 +237,7 @@ continuous one), `H_prev` and `z_srf`, lossless; the read checks the grid and th
 | `taub_override`, `taub_default` | `""`, 0 | `"domains"` |
 | `taub_domain_factor_file` | `""` | `"domains"`: the factor per domain (above), before the scale groups |
 | `taub_scale_file` | `""` | `"domains"`: the multipliers per scale group (above) |
+| `taub_smooth_km` | 50 | `drive = "taub"`: Gaussian sd [km] of the smoothing of tau_b over the cells with tau_b > 0 (above); 0 = none |
 | `rheo_A`, `rheo_n` | 0, 3 | Glen rate factor [Pa-n yr-1] (0: no closure), exponent |
 | `slide_law` | `"none"` | `"linear"`, `"weertman"` (`slide_beta`, `slide_m`), `"coulomb"` (`slide_C`, `slide_u0`, `slide_m`), `"yield"` (`slide_uy`, `slide_uy_b`, `slide_m`; `drive = "taub"`) |
 | `mb_smooth_km` | 0 | `"implied"`: Gaussian sd [km] of the conservative smoothing of div q - q_land over the ice (sums unchanged; 0 = none) |
