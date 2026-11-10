@@ -15,7 +15,8 @@ coastline).
   (`libvilma.a`), and the SHTns that fesm-utils builds (`make shtns`); VILMA2 must be
   built with the same `openmp=` as kryos and fesm-utils. Without it the stub stops the
   run.
-  <!-- TODO(check): no public URL of the VILMA2 repository found in the repo; add a link if there is one. -->
+- **Code:** [fesmc/vilma2](https://github.com/fesmc/vilma2), documentation
+  <https://fesmc.github.io/vilma2/>.
 - **Select:** `[globe] geo = "<group>"` with `backend = "vilma2"` (the global part),
   and `geo = "<group>"` with `backend = "vilma2"` in each domain (the port). The keys
   are the template `[geo_vilma2]` of
@@ -37,8 +38,10 @@ builds the Gauss grid `GAUSS-L<lmax>` that VILMA2 itself uses: `nlat = 2 lmax + 
 `nphi = 4 lmax` unless `&vilma` sets `nlat`, `nphi` (> 0), longitudes from 0, a sphere
 of VILMA2's radius `r_earth`, so that integrals over the grid are VILMA2's own
 quadrature. Its grid description is written to `<map_fldr>/grid_<name>.txt` for the
-couplers (an existing file must agree). The par files leave `grid = ""`.
-<!-- TODO(check): input/vilma_defaults.nml says nlat = 0 is "SHTns default = lmax+2"; the kryos backend (vilma2_gauss_dims) uses 2 lmax + 2. Confirm which comment is right. -->
+couplers (an existing file must agree). The par files leave `grid = ""`. VILMA2 itself
+defaults `nlat = 0` to 2 lmax + 2 and `nphi = 0` to 4 lmax (`vilma_drive.f90`,
+`vilma_coupling.f90`), as kryos does; the comment "SHTns default = lmax+2" in
+`input/vilma_defaults.nml` is stale.
 
 The core turns the domains' ice into VILMA2's load (see [Global hub](global-hub.qmd)):
 each domain's ice (lag 1: the ice of the previous step) becomes the host terms
@@ -106,8 +109,11 @@ Two Earths are in use; both are `earth = "PREM"` at `lmax = 170` with rotation.
   11 layers, 80 km elastic lithosphere, the 1-D radial reference (upper mantle
   4×10²⁰, lower mantle 10²² Pa s) and the lateral viscosity of Bagge et al. (2021)
   from FesmData (`GLOBAL-T170_SolidEarth-Bagge2021.nc`, structure 6 = `v_1.0_s16`,
-  floored at 10^19.5 Pa s).
-  <!-- TODO(check): with l_visc_3d = .true., which layers does the 3-D field replace (the eta column, the elastic lithosphere)? Not stated in the par files or the defaults. -->
+  floored at 10^19.5 Pa s). With `l_visc_3d = .true.` the file's log10 η (bilinear
+  onto the Gauss grid, linear in radius onto the FE nodes, clamped to
+  `visc_log10_min`, `visc_log10_max`) replaces the radial viscosity of every Maxwell
+  layer; the elastic lithosphere (80 km) and the fluid core are kept. A layer whose
+  lateral spread is below `visc3d_tol` runs 1-D on its lateral mean.
 
 The `&vilma` groups of the two par files, `par/kryos_NH-ANT_plastic_vilma2_b1.nml`
 (1-D) and `par/kryos_NH-ANT_plastic_vilma2.nml` (3-D):
@@ -186,8 +192,10 @@ state with a dt = 0 solve under the same load. The reference stays the datum.
 
 The 1-D runs relax up to 2×10⁶ yr at 10⁻⁵ m yr-1 (B1: converged after 93 kyr of
 relaxation); the 3-D runs pre-spin in 1-D and cap the 3-D relaxation at 2×10⁴ yr
-(about 14 kyr to converge at 10⁻⁵ m yr-1, per the par file).
-<!-- TODO(check): whether the 1-D pre-spin-up itself has a cap; the par file only says equil_time_max caps the full-model relaxation after it. -->
+(about 14 kyr to converge at 10⁻⁵ m yr-1, per the par file). The 1-D pre-spin-up has
+no time cap: it relaxes to the same `equil_rate_tol`, in passes of 200 yr growing by
+1.6, up to an internal limit of 60 passes (no warning if it is reached);
+`equil_time_max` caps only the full-model relaxation that follows.
 
 ## Rotation
 

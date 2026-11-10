@@ -15,23 +15,28 @@ project `ba1442`.
 
 ## Environment
 
-The gate builds used the modules of the Levante login profile: `intel-oneapi-compilers/2023.2.1`,
-`netcdf-c/4.9.3`, `netcdf-fortran/4.6.2` (openmpi-5.0.8, intel-2021.5.0) and `python3/2023.01`
-([gate-log](https://github.com/fesmc/kryos/blob/main/docs/dev/gate-log.md)). The production compiler is Intel
-`ifx` (configme machine `dkrz_levante`, compiler `ifx`).
-
-configme configures and clones the stack; install it once:
+Load the modules in every shell that builds (e.g. in `~/.bashrc`; they are not Levante's defaults):
 
 ```bash
-pip install git+https://github.com/fesmc/configme
+export MODULEPATH=/sw/spack-workplace/spack-0.20.1/modules:$MODULEPATH
+module load intel-oneapi-compilers/2023.2.1-gcc-11.2.0 \
+    netcdf-c/4.9.3-openmpi-5.0.8-intel-2021.5.0 netcdf-fortran/4.6.2-openmpi-5.0.8-intel-2021.5.0 \
+    python3/2023.01-gcc-11.2.0 git/2.43.7-gcc-11.2.0
+```
+
+configme's machine file `dkrz_levante` hardcodes the matching netCDF prefixes (checked 2026-11-10). The
+production compiler is Intel `ifx` (configme machine `dkrz_levante`, compiler `ifx`).
+
+configme writes the Makefiles; install it once, from its `fortdeps` branch (its `main` has no kryos package):
+
+```bash
+pip install git+https://github.com/fesmc/configme@fortdeps
 export PATH="${PATH}:${HOME}/.local/bin"      # if `configme` is not found
 ```
 
-<!-- TODO(check): the module names and versions above are from the phase 0 gate log (2026-10); confirm they are still the login-profile defaults. -->
-
 ## The code
 
-kryos and its dependencies are sibling checkouts, or symlinks, at the kryos root (gitignored). The pins are in
+The dependencies are checkouts, or symlinks to checkouts, at the kryos root (the slots are gitignored). The pins are in
 [.configme/manifest.toml](https://github.com/fesmc/kryos/blob/main/.configme/manifest.toml):
 
 | Checkout | Repository | Ref | Needed for |
@@ -47,19 +52,27 @@ kryos and its dependencies are sibling checkouts, or symlinks, at the kryos root
 
 FastHydrology, elsa and tracer live inside the yelmo checkout.
 
-Clone and configure the stack with configme, then add PlasticIceSheet:
+Clone kryos and its dependencies at the refs of the table (`https://github.com/...` without a GitHub SSH key):
 
 ```bash
 cd ~/models
-configme install kryos -m dkrz_levante -c ifx --dir ~/models/kryos   # -d https without a GitHub SSH key
+git clone git@github.com:fesmc/kryos.git
+cd kryos
+git clone -b phase0-kryos git@github.com:fesmc/fesm-utils.git
+git clone git@github.com:fesmc/vilma2.git
 git clone git@github.com:fesmc/PlasticIceSheet.git
-ln -s ../PlasticIceSheet kryos/PlasticIceSheet
+git clone -b stable git@github.com:fesmc/yelmo.git
+git clone -b stable git@github.com:palma-ice/FastIsostasy.git
+git clone -b stable git@github.com:fesmc/chion.git
+git clone -b stable git@github.com:fesmc/insol.git
 ```
 
-<!-- TODO(check): that `configme install kryos` clones vilma2 (it is in the repo's manifest, but not in configme's seed default_packages for kryos) and which dependencies it builds. -->
+For checkouts that already exist, or clones next to kryos, symlink them instead (`ln -s ../fesm-utils fesm-utils`
+at the kryos root).
 
-For checkouts that already exist, symlink them instead (`ln -s ../fesm-utils fesm-utils` at the kryos root, or
-`configme install kryos --link fesm-utils=/abs/path`).
+`configme install kryos` covers only part of this: it clones the seed set insol, fesm-utils, yelmo, FastIsostasy,
+FastHydrology and chion and builds fesm-utils, insol and chion, but does not clone vilma2 or PlasticIceSheet (the
+manifest only pins refs).
 
 ## Configure
 
@@ -189,6 +202,39 @@ Build notes:
 How the generated dependencies work and how to add a backend:
 [docs/dev/build.md](https://github.com/fesmc/kryos/blob/main/docs/dev/build.md).
 
+## The Levante tools
+
+The scripts of [tools/levante/](https://github.com/fesmc/kryos/tree/main/tools/levante) share one environment,
+[env.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/env.sh), which every script sources:
+
+| Variable | Default | |
+|---|---|---|
+| `KRYOS` | the checkout the script is in | |
+| `KRYOS_WORK` | `/work/ba1442/$USER/kryos-work` | your writable work folder: runs, scores, calibrations |
+| `KRYOS_MAPS` | `$KRYOS_WORK/maps` | the maps folder of your runs (below), created and seeded by `kryos_maps_init` |
+| `FESMDATA`, `FESMDATA_SOURCES` | `/work/ba1442/fesmdata`, `/work/ba1442/fesmdata-sources` | FesmData and its original data, read-only |
+| `KRYOS_DATA` | `/work/ba1442/kryos_data` | kryos reference data, read-only: refcorr topographies, the released tau_b products (`plastic/`) |
+| `VILMA2` | `$KRYOS/vilma2` | the vilma2 checkout of the standalone runs (`bin/vilma.x`) |
+| `PM_DIR`, `PM_REF` | `$KRYOS_WORK/paleomist`, the reference runs | your standalone VILMA2 runs; the read-only reference runs the scores compare with |
+| `ACCOUNT` | `ba1442` | the Slurm account |
+| `KRYOS_JULIA` | juliaup's `julia +1.13` | the julia command (by full path: Levante's python module puts an old julia first on `PATH`) |
+
+Override any of them in the environment or in `~/.kryos.env`. The pages write the paths with these variables
+(`$KRYOS_WORK/...`); to use them in a shell, source the file (`. tools/levante/env.sh`). Then `kryos_jl <script.jl> ...`
+runs julia with the tools' project, `kryos_maps_init` creates `KRYOS_MAPS`, and `kryos_link_data <folder>` makes the
+data links of a run folder (below).
+
+Once, in a login shell (it needs your own juliaup with Julia 1.13:
+`curl -fsSL https://install.julialang.org | sh -s -- --yes && juliaup add 1.13`):
+
+```bash
+tools/levante/setup.sh
+```
+
+checks the paths and the builds and instantiates the Julia project of the tools, `tools/levante` (`Project.toml`,
+`Manifest.toml`: CairoMakie, NCDatasets, DelimitedFiles on Julia 1.13), in your own depot (a fresh instantiate took
+3.5 min). Every Julia tool runs with `julia --project=tools/levante` (or `kryos_jl`).
+
 ## Data
 
 A run reads its inputs through links in the run directory; the par files name paths relative to it
@@ -199,7 +245,7 @@ A run reads its inputs through links in the run directory; the par files name pa
 | `fesmdata` | `/work/ba1442/fesmdata` | FesmData products, `<Domain>/<GRID>/<GRID>_<PRODUCT>.nc`: topography, regions, PaleoMIST ice history and tau_b domains, the Bagge et al. (2021) viscosity |
 | `kryos_data` | `/work/ba1442/kryos_data` | kryos-made inputs, e.g. `refcorr/PaleoMIST-sci/` (the present-day reference correction r, [tools/levante/gia_refcorr.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr.sh)) |
 | `input` | the repository's `input/` | defaults, variable tables, constants, synchronised copies (below) |
-| `maps` | a writable folder of your own | grid descriptions `grid_<GRID>.txt` and the cached remapping weights (`*.nc`) |
+| `maps` | a writable folder of your own (`$KRYOS_MAPS`) | grid descriptions `grid_<GRID>.txt` and the cached remapping weights (`*.nc`) |
 | `ice_data`, `isostasy_data` | `/work/ba1442/ice_data`, `/work/ba1442/isostasy_data` | the yelmox data of the Yelmo configurations; the plastic par files do not read them |
 
 **FesmData is read-only.** Never write into `/work/ba1442/fesmdata`, nor through a link into it (a copy of a link
@@ -220,14 +266,12 @@ What the plastic par files read:
 | `kryos_data/refcorr/PaleoMIST-sci/...` | the science-Earth runs: the reference bed today's + r |
 
 The maps folder must hold `grid_<GRID>.txt` for every hub and instance grid of the run; the first run writes the
-remapping weights into it (VILMA2 also writes its `grid_GAUSS-L<lmax>.txt`). The repository's
-[maps/](https://github.com/fesmc/kryos/tree/main/maps) has `grid_ANT-16KM.txt`, `grid_ANT-32KM.txt` and
-`grid_GRL-16KM.txt`; FesmData has the description of each grid in its grid folder
-(`fesmdata/<Domain>/<GRID>/grid_<GRID>.txt`). `par/kryos_NH-ANT-PAT_plastic_vilma2.nml` needs `grid_PAT-PAL-8KM.txt`. For the plastic/VILMA2 runs link the maps folder
-of our runs, `/work/ba1442/robinson/kryos-ice-plastic-maps`: it has the grid files of NH-32KM, ANT-16KM, PAT-PAL-8KM,
-GLOBAL-0.5DEG and GAUSS-L170 and all their remapping weights.
-
-<!-- TODO(check): that FesmData's grid_<GRID>.txt can be copied into a new maps folder as it is. -->
+remapping weights into it. kryos writes only VILMA2's Gauss grid file, `grid_GAUSS-L<lmax>.txt`. The repository's
+[maps/](https://github.com/fesmc/kryos/tree/main/maps) has the grid files of ANT-16KM, ANT-32KM, GRL-16KM, NH-32KM,
+PAT-PAL-8KM and GLOBAL-0.5DEG; for any other grid copy FesmData's description as it is
+(`fesmdata/<Domain>/<GRID>/grid_<GRID>.txt`). With the Levante tools the maps folder is `KRYOS_MAPS`: `kryos_maps_init`
+(called by the scripts that stage runs) creates it from the repository's grid files and the remapping weights of our
+runs (`KRYOS_MAPS_SEED`), so the plastic/VILMA2 runs need no new weights.
 
 ### input/
 
@@ -263,26 +307,24 @@ After updating a library: `make sync-input`, then commit the copies. Yelmo reads
   input/                 the repository's input/ (a link, or a copy to freeze it)
   fesmdata   -> /work/ba1442/fesmdata
   kryos_data -> /work/ba1442/kryos_data
-  maps       -> <your maps folder>
+  maps       -> $KRYOS_MAPS (a writable folder of your own)
   job.submit
 ```
 
-This is the layout the Levante tools stage, e.g. a member of the tau_b calibration
-([tools/levante/plastic_esmda.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_esmda.sh)) and
-[tools/levante/calib.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/calib.sh). Copying `kryos.x`
-keeps the run independent of later builds. `kryos.x` takes one argument, the par file.
+This is the layout the Levante tools stage
+([tools/levante/plastic_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_run.sh), a member of the
+tau_b calibration in
+[tools/levante/plastic_esmda.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_esmda.sh)). Copying
+`kryos.x` keeps the run independent of later builds. `kryos.x` takes one argument, the par file. By hand:
 
 ```bash
-K=$HOME/models/kryos
-R=<your work folder>/runs/nor-plastic-b1
+. $HOME/models/kryos/tools/levante/env.sh
+R=$KRYOS_WORK/runs/nor-plastic-b1
 mkdir -p $R && cd $R
-cp $K/libkryos/bin/kryos.x .
-cp $K/par/kryos_North_plastic_vilma2_b1.nml par.nml
-ln -s $K/input input
-ln -s /work/ba1442/fesmdata fesmdata
-ln -s /work/ba1442/kryos_data kryos_data
-ln -s <your maps folder> maps
-git -C $K rev-parse HEAD > kryos_commit.txt
+cp $KRYOS/libkryos/bin/kryos.x .
+cp $KRYOS/par/kryos_North_plastic_vilma2_b1.nml par.nml
+kryos_link_data $R                      # fesmdata, kryos_data, input, maps
+git -C $KRYOS rev-parse HEAD > kryos_commit.txt
 ```
 
 ### Which par file first
@@ -326,6 +368,15 @@ srun ./kryos.x par.nml
 cd $R && sbatch job.submit
 ```
 
+[tools/levante/plastic_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_run.sh) does all of
+this in one step: it stages the run folder, writes the job script and submits it (`THREADS=8 MEM=10G TIME=01:00:00`
+for the settings above; its defaults are those of a 3-D Earth run, 64 threads, 60 GB, 8 h):
+
+```bash
+THREADS=8 MEM=10G TIME=01:00:00 tools/levante/plastic_run.sh $KRYOS_WORK/runs/nor-plastic-b1 \
+    par/kryos_North_plastic_vilma2_b1.nml
+```
+
 Keep at most 30 jobs queued or running at a time on Levante; throttle job arrays (`--array=...%N`).
 
 ### Changing keys
@@ -338,9 +389,9 @@ python3 tools/levante/set_nml.py par.nml clock.time_end=-70e3 'kryos.restart_out
 ```
 
 [tools/levante/set_nml.py](https://github.com/fesmc/kryos/blob/main/tools/levante/set_nml.py) sets existing keys only (a key
-the group does not have stops it). For the plastic runs
-[tools/levante/plastic_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_run.sh) stages and submits a
-run folder in one step ([Simulating our own ice](experiment-plastic.md)).
+the group does not have stops it). `plastic_run.sh` passes the keys after its file arguments to it
+(`plastic_run.sh <run folder> <par file> <factor file> <scale file> group.key=value ...`, `""` for no file;
+[Simulating our own ice](experiment-plastic.md)).
 
 ### With runme
 
@@ -421,9 +472,8 @@ restart-<time>/
 ```
 
 A run with a forcing instance also writes `forcing_imports.nc`, `forcing_exports.nc` and
-`forcing_<coef>_restart.nc` at the top level.
-
-<!-- TODO(check): that a run without a forcing instance (the plastic par files) writes no forcing_*.nc into the bundle. -->
+`forcing_<coef>_restart.nc` at the top level; a run without one (the plastic par files) writes no `forcing_*.nc`, and
+the top level holds `clock_restart.nc`, the `geo_glob_*.nc` files and `manifest.nml`.
 
 - The plastic backend's `<instance>_restart.nc` holds `H`, `w` and the mask `w` belongs to (the library's warm
   start), `H_prev` and `z_srf`, lossless; the read checks the grid and the time.

@@ -226,8 +226,8 @@ The namelist `&fit` has these keys: `hist`, `margin_var`, `margin_min`, `taub_fi
 The figures:
 
 ```bash
-julia --project=<julia-plot> tools/levante/plastic_closure_maps.jl <out.png> <sd_km> [ref=<smb.nc>] <label>=<set.nc>[:inv] ...
-julia --project=<julia-plot> tools/levante/plastic_implied_pd.jl <run folder> <out folder> [age=0]
+julia --project=tools/levante tools/levante/plastic_closure_maps.jl <out.png> <sd_km> [ref=<smb.nc>] <label>=<set.nc>[:inv] ...
+julia --project=tools/levante tools/levante/plastic_implied_pd.jl <run folder> <out folder> [age=0]
 ```
 
 `plastic_closure_maps.jl` maps the fit's sets (`:inv` for the inversion). `plastic_implied_pd.jl` compares a coupled

@@ -208,15 +208,20 @@ code is involved.
 and the global reference is the merge of the domains' references with X.
 
 The tool is [`tools/levante/gia_refcorr.sh`](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr.sh)
-(with `gia_refcorr.jl`, `gia_refcorr_plot.jl`): standalone VILMA2 (`vilma.x` of a stack) with the `&vilma` group of a
+(with `gia_refcorr.jl`, `gia_refcorr_plot.jl`): standalone VILMA2 (`$VILMA2/bin/vilma.x`; the published cases used the
+gate stack S11) with the `&vilma` group of a
 kryos par file and the run's densities, under a FesmData ice history, iterated with `i_eq = 3` as
 `r_{n+1} = rsl_n(0 ka)` from `r_0 = 0` until `max |r_n − rsl_n(0 ka)| < TOL` (default 1.5 m, at most `NMAX = 8` runs).
-It writes the reference files under `/work/ba1442/kryos_data/refcorr/<CASE>/` (domains from `DOMAINS`,
-`"<domain>:<hub grid>:<topo file under fesmdata> ..."`), and is restartable per iteration:
+It writes the reference files under `$KRYOS_WORK/kryos_data/refcorr/<CASE>/` (`KD` overrides the parent; domains from
+`DOMAINS`, `"<domain>:<hub grid>:<topo file under fesmdata> ..."`, default North and Antarctica), and is restartable per
+iteration. It submits itself (shared partition, 2 days, 128 cpus, 60 GB):
 
 ```bash
-sbatch --export=ALL,CASE=PaleoMIST-sci,PAR=<kryos par file> tools/levante/gia_refcorr.sh
+CASE=PaleoMIST-sci PAR=<kryos par file> tools/levante/gia_refcorr.sh
 ```
+
+A run reads the case through its `kryos_data` link: point `KRYOS_DATA` at `$KRYOS_WORK/kryos_data`, or copy the case
+into the shared `/work/ba1442/kryos_data`, where the published cases are.
 
 For the science case (3-D Earth, PaleoMIST 80 → 0 ka linear in time, ρ_i 910, ρ_w 1028) it converged in 4 runs to a
 0 ka bed misfit of 0.23 m; `r` reaches 396 m over Quebec-Labrador and 126 m under the Ronne-Filchner ice, 24 m RMS
@@ -226,9 +231,14 @@ run produces; one more fixed-point step from the coupled run's own 0 ka `rsl` re
 Another Earth or history needs its own case.
 
 The PatagoniaPaleo topography `[topo_pat]` names,
-`kryos_data/refcorr/PaleoMIST-sci/PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_TOPO-GEBCO2026-refcorr.nc`, exists (written
-2026-11-09) next to the NH-32KM and ANT-16KM files.
-<!-- TODO(check): how the PAT-PAL-8KM refcorr file was made; the default DOMAINS of gia_refcorr.sh lists North and Antarctica only. -->
+`kryos_data/refcorr/PaleoMIST-sci/PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_TOPO-GEBCO2026-refcorr.nc`, was made on
+2026-11-09 with `gia_refcorr.jl write` on the converged `r.nc` of PaleoMIST-sci (no new GIA run), domain spec
+`PatagoniaPaleo:PAT-PAL-8KM:<fesmdata>/PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_TOPO-GEBCO2026.nc`. Any domain can be
+added to a case this way, or with `DOMAINS` when running `gia_refcorr.sh`:
+
+```bash
+julia --project=tools/levante tools/levante/gia_refcorr.jl write <r.nc> <out folder> <X grid>:<history on that grid> <domain>:<hub grid>:<topo file> ...
+```
 
 runme does not link `kryos_data` into a run folder (`.runme/info.json` links input, ice_data, fesmdata, isostasy_data
 and maps); [tools/levante/plastic_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_run.sh) does.
