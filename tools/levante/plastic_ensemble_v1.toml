@@ -1,0 +1,116 @@
+# Weighted ensemble v1, wave 1 (proof of concept): tau_b multipliers of the plastic ice on the 3-D Earth (Bagge 2021, refcorr
+# reference), NH-32KM, ANT-16KM and PAT-PAL-8KM (docs/dev/plastic-ensemble-design.md).
+#   tools/levante/plastic_ensemble.sh start tools/levante/plastic_ensemble_v1.toml <ensemble folder>
+
+[scale]                                  # the parameters: plastic_taub_scale.jl
+taub_files    = ["/work/ba1442/fesmdata/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST_taub.nc",
+                 "/work/ba1442/fesmdata/Antarctica/ANT-16KM/ANT-16KM_IceHistory-PaleoMIST_taub.nc",
+                 "/work/ba1442/fesmdata/PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_IceHistory-PaleoMIST_taub.nc"]
+regions_files = ["/work/ba1442/fesmdata/North/NH-32KM/NH-32KM_REGIONS.nc",
+                 "/work/ba1442/fesmdata/Antarctica/ANT-16KM/ANT-16KM_REGIONS.nc",
+                 "/work/ba1442/fesmdata/PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_REGIONS.nc"]
+nodes_ka      = [80, 60, 40, 25, 20, 15, 10, 5, 0]
+pinned_ka     = [0]                      # the present day is Stage 1's fit
+
+[[scale.groups]]
+name          = "Laurentide"             # North America without Greenland
+region        = 1
+greenland     = false
+tie           = [[25, 20], [15, 10]]     # fewer deglacial nodes (the v2 zigzag)
+corr_time_kyr = 10.0                     # MIS 3-4 not tied to the deglacial nodes
+
+[[scale.groups]]
+name   = "Greenland"
+region = 1
+greenland = true
+tie    = [[80, 60]]
+
+[[scale.groups]]
+name     = "Fennoscandia"                # Eurasia less the British Isles, the Russian Arctic and Svalbard
+region   = 2
+codes    = [10201, 10202, 10203]
+codes_in = false
+tie      = [[80, 60, 40]]
+
+[[scale.groups]]
+name   = "Barents-Kara"                  # Russian Arctic and Svalbard
+region = 2
+codes  = [10201, 10203]
+tie    = [[80, 60, 40]]
+
+[[scale.groups]]
+name   = "British-Irish"
+region = 2
+codes  = [10202]
+tie    = [[80, 60, 40, 25]]
+
+[[scale.groups]]
+name   = "West Antarctica"               # with the Antarctic Peninsula
+region = 3
+codes  = [20101, 20103]
+tie    = [[80, 60, 40, 25, 20]]
+
+[[scale.groups]]
+name     = "East Antarctica"
+region   = 3
+codes    = [20101, 20103]
+codes_in = false
+tie      = [[80, 60, 40, 25, 20]]
+
+[[scale.groups]]
+name   = "Patagonia"                     # no RSL data: prior only (its load reaches the far field)
+region = 4
+tie    = [[80, 60, 40, 25, 20]]
+
+[prior]                                  # log factors: N(0, C), sd ramped from 0 at 0 ka, exponential correlation in time per group
+sigma         = 0.3
+ramp_ka       = 10.0
+corr_time_kyr = 20.0
+theta_max     = 1.5
+
+[ensemble]
+n          = 24                          # members besides the prior mean (m000); wave 1 only (proof of concept)
+seed       = 1
+obs_groups = ["Laurentide", "Greenland", "Fennoscandia/Barents", "Antarctica", "far field"]   # pm_compare.jl's GROUPS
+
+[likelihood."Laurentide"]                # model error per data group (plastic_residual_corr.jl, v2 posterior, 1-D Earth)
+sigma_m = 12.0
+corr_dist_km = 350.0
+corr_time_kyr = 10.0
+[likelihood."Greenland"]
+sigma_m = 30.0
+corr_dist_km = 500.0
+corr_time_kyr = 5.0
+[likelihood."Fennoscandia/Barents"]
+sigma_m = 10.0
+corr_dist_km = 250.0
+corr_time_kyr = 5.0
+[likelihood."Antarctica"]
+sigma_m = 8.0
+corr_dist_km = 500.0
+corr_time_kyr = 10.0
+[likelihood."far field"]
+sigma_m = 13.0
+corr_dist_km = 50.0
+corr_time_kyr = 5.0
+
+[run]                                    # each member: a kryos run of this par file with its multiplier file
+kryos_dir  = "/work/ba1442/robinson/kryos-ice-plastic"
+par        = "par/kryos_NH-ANT-PAT_plastic_vilma2.nml"
+set_nml    = "/work/ba1442/robinson/kryos-gate/tools/set_nml.py"
+set        = ['kryos.restart_out="none"', 'ice_nor.out_plastic="none"', 'ice_ant.out_plastic="none"', 'ice_pat.out_plastic="none"',
+              'geo_nor.out_2D="none"', 'geo_ant.out_2D="none"', 'geo_pat.out_2D="none"', 'geo_glob.out_2D="none"']
+                                         # the product (2-D ice, the VILMA2 stream) comes from plastic_esmda.jl's product_set
+scale_keys = ["ice_nor.taub_scale_file", "ice_ant.taub_scale_file", "ice_pat.taub_scale_file"]
+domain_factor_file = "/work/ba1442/robinson/kryos-ice-plastic/runs/taub-fit-v3/report/taub_domain_factor.nc"   # Stage 1 with PAT
+domain_factor_keys = ["ice_nor.taub_domain_factor_file", "ice_ant.taub_domain_factor_file", "ice_pat.taub_domain_factor_file"]
+maps       = "/work/ba1442/robinson/kryos-ice-plastic-maps"
+threads    = 64                          # 3-D Earth: 3.5-4.2 h on 64 (sci-v2-prior, -post, sci-v3-base, 2026-11-09)
+mem        = "30G"
+time       = "08:00:00"
+partition  = "shared"
+account    = "ba1442"
+throttle   = 25                          # 25 members + the weights job + one other run: within 30 jobs
+
+[score]
+fesmdata = "/work/ba1442/fesmdata"
