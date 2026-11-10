@@ -40,7 +40,7 @@ quadrature. Its grid description is written to `<map_fldr>/grid_<name>.txt` for 
 couplers (an existing file must agree). The par files leave `grid = ""`.
 <!-- TODO(check): input/vilma_defaults.nml says nlat = 0 is "SHTns default = lmax+2"; the kryos backend (vilma2_gauss_dims) uses 2 lmax + 2. Confirm which comment is right. -->
 
-The core turns the domains' ice into VILMA2's load (see [Global hub](global-hub.md)):
+The core turns the domains' ice into VILMA2's load (see [Global hub](global-hub.qmd)):
 each domain's ice (lag 1: the ice of the previous step) becomes the host terms
 `host_w` (coverage of the host regions), `host_Ig` (grounded ice), `host_C` (ocean
 function) and `host_F` (flotation term) on the Gauss grid, and the ice outside the

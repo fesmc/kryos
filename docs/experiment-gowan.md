@@ -25,7 +25,7 @@ is scored.
   user edits them or sets `ROOT` (the parent folder of the run, `pm_run.sh`).
 
 Within kryos the same history enters every `geo = vilma2` par file as the ice outside the
-domains' footprints (`[globe_ice] ext = "file"`, see [Global hub](global-hub.md)); the
+domains' footprints (`[globe_ice] ext = "file"`, see [Global hub](global-hub.qmd)); the
 coupling of a replayed PaleoMIST load through the kryos globe was tested by gate G2b
 (`tests/g2b_replay.f90`, `tools/levante/g2b.sh`), not as an experiment.
 

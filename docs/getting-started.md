@@ -453,7 +453,7 @@ forcing instance.
 
 ## Next
 
-- How a run is put together: [Architecture](architecture.md), [Global hub and regional domains](global-hub.md).
+- How a run is put together: [Architecture](architecture.qmd), [Global hub and regional domains](global-hub.qmd).
 - The backends: [PlasticIceSheet](backend-plastic.md), [VILMA2](backend-vilma2.md),
   [smb_simple](backend-smb-simple.md).
 - The experiments: [Reproducing Gowan et al. (2021)](experiment-gowan.md),

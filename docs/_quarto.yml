@@ -3,6 +3,7 @@ project:
   output-dir: _site
   render:
     - "*.md"
+    - "*.qmd"
     - "!README.md"
     - "!design.md"
     - "!dev/"
@@ -26,9 +27,9 @@ website:
       - text: "How kryos works"
         menu:
           - text: "Architecture"
-            href: architecture.md
+            href: architecture.qmd
           - text: "Global hub and regional domains"
-            href: global-hub.md
+            href: global-hub.qmd
       - text: "Backends"
         menu:
           - text: "PlasticIceSheet (ice)"

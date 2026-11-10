@@ -5,7 +5,7 @@ title: "Architecture"
 How a kryos run is put together: the components and their backends, the instances named in the par file, the
 domains and the globe, the fields they exchange, the clock and the coupling sequence, and the output and restart
 files. How several regional domains share one global solid Earth is the subject of
-[Global hub and regional domains](global-hub.md).
+[Global hub and regional domains](global-hub.qmd).
 
 The design notes behind this page are in the repository: [`docs/design.md`](https://github.com/fesmc/kryos/blob/main/docs/design.md), [`docs/dev/core-design.md`](https://github.com/fesmc/kryos/blob/main/docs/dev/core-design.md) and
 [`docs/dev/contracts-design.md`](https://github.com/fesmc/kryos/blob/main/docs/dev/contracts-design.md) (see [Developer notes](developer-notes.md)). Where they differ from the code, the code
@@ -247,7 +247,7 @@ Each instance has a **cadence** from its keys:
 
 An instance is called with `step_time_t` `(t0, t1, t_eval, dtt, tick)`: its own interval since its last update.
 `clock_start` stops at init if a restart time or `time_end` is off any cadence grid. A regional VILMA2 port takes the
-cadence of the global Earth (see [Global hub and regional domains](global-hub.md)).
+cadence of the global Earth (see [Global hub and regional domains](global-hub.qmd)).
 
 ## The run sequence
 

@@ -56,7 +56,7 @@ calibrated multipliers and the 3-D Earth it is our own ice history.
   `ice_bg = "globe_ice"`). The ice outside the footprints of the domains is the PaleoMIST
   history: `[globe_ice]` on GLOBAL-0.5DEG, `ext = "file"`, the background X (`[X_z_bed]`,
   `[X_H_ice]`) plus the anomaly of `[X_dH_ice]` (`fesmdata/Global/GLOBAL-0.5DEG/GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc`,
-  `H_ice`, relative to 0 ka). See [Global hub](global-hub.md).
+  `H_ice`, relative to 0 ka). See [Global hub](global-hub.qmd).
 
 ## Ice inputs
 

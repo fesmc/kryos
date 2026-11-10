@@ -238,7 +238,7 @@ the domain's hub topography. The solid Earth measures its load against it: for t
 global VILMA2 the core builds the reference load from each domain's present-day ice
 (`H_ice_pd`), bed (`z_bed_ref`) and `footprint` merged with the background ice
 outside the footprints, and the rows ice → geo pass `z_bed_ref`, `H_ice_ref` at init
-(see [Global hub](global-hub.md)). These exports are what a geo backend needs from any
+(see [Global hub](global-hub.qmd)). These exports are what a geo backend needs from any
 ice. The backend also binds the flotation rule (grounded where ρ_i H ≥ ρ_w (z_sl −
 z_bed), with its own densities).
 

@@ -6,7 +6,7 @@ How several regional domains share one global solid Earth. The example is the sc
 [`par/kryos_NH-ANT-PAT_plastic_vilma2.nml`](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT-PAT_plastic_vilma2.nml):
 three plastic ice sheets (North on `NH-32KM`, Antarctica on `ANT-16KM`, PatagoniaPaleo on `PAT-PAL-8KM`) on VILMA2,
 the global Earth `geo_glob` on its Gauss grid, with the rest of the world's ice from PaleoMIST's history. The general
-structure of a run (instances, wiring, lags, clock) is on [Architecture](architecture.md); the backends are on
+structure of a run (instances, wiring, lags, clock) is on [Architecture](architecture.qmd); the backends are on
 [VILMA2](backend-vilma2.md) and [PlasticIceSheet](backend-plastic.md); the runs themselves on
 [Simulating our own ice](experiment-plastic.md).
 
