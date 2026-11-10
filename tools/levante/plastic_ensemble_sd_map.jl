@@ -63,7 +63,7 @@ elems = [MarkerElement(marker = :utriangle, color = :white, strokecolor = :black
          MarkerElement(marker = :circle, color = :white, strokecolor = :black, strokewidth = 0.9, markersize = 18),
          LineElement(color = MARGIN, linewidth = 2.5), LineElement(color = :black, linewidth = 1.5)]
 axislegend(ax, elems, ["ice-sheet sites (± $(kyr(window)))", "far-field sites (± $(kyr(window)))", "target ice margin",
-                       "coast at $(kyr(age))"], position = :lb, labelsize = 20, framevisible = true, backgroundcolor = (:white, 0.85))
+                       "coast"], position = :lb, labelsize = 20, framevisible = true, backgroundcolor = (:white, 0.85))
 colsize!(fig.layout, 2, Auto(0.08))
 save(outpng, fig, px_per_unit = 1.3)
 println("wrote ", outpng)

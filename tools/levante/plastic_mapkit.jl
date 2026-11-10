@@ -18,6 +18,8 @@ const MARGIN = RGBf(0.0, 0.39, 0.0)                  # dark green: the target ma
 const ICEMAP = cgrad([RGBf(0.42, 0.42, 0.44), RGBf(1, 1, 1)])
 const RSLMAP = cgrad([RGBf(0.52, 0.65, 0.80), RGBf(0.93, 0.96, 0.98)])   # toned down: light, low saturation
 const RSL_LOW, RSL_HIGH = RGBf(0.42, 0.55, 0.71), RGBf(0.97, 0.98, 0.99)
+const RSL_LABEL = RGBf(0.20, 0.29, 0.42)   # the contour labels: RSL_LOW darkened, the hue of the ocean palette
+const ICE_CONTOUR = (RGBf(0.15, 0.15, 0.17), 0.40)   # the ice surface contours
 kyr(age) = @sprintf("%g kyr", age / 1000)
 
 # --- projection ---------------------------------------------------------------------------------------------------------------------
@@ -138,8 +140,41 @@ function ice!(ax, G, regional)
     end
     m
 end
+# contour lines of Z on index coordinates (1:nx, 1:ny), kept where the four cells around a vertex are all inside (keep), as polylines
+function masked_clines(Z, keep, level)
+    nx, ny = size(Z); Zf = [keep[i] && isfinite(Z[i]) ? Z[i] : -1e6 for i in CartesianIndices(Z)]; out = []
+    for (xs, ys) in clines(1.0:nx, 1.0:ny, Zf, level)
+        seg = Tuple{Float64,Float64}[]
+        for (x, y) in zip(xs, ys)
+            i0 = clamp(floor(Int, x), 1, nx - 1); j0 = clamp(floor(Int, y), 1, ny - 1)
+            if keep[i0, j0] && keep[i0+1, j0] && keep[i0, j0+1] && keep[i0+1, j0+1]
+                push!(seg, (x, y))
+            else
+                length(seg) > 1 && push!(out, seg); seg = Tuple{Float64,Float64}[]
+            end
+        end
+        length(seg) > 1 && push!(out, seg)
+    end
+    out
+end
+# the ice surface contours every step [m]: the global load outside the plastic grids, then the plastic grids
+function ice_contours!(ax, G, regional; step = 500.0, color = ICE_CONTOUR, linewidth = 0.7)
+    cov = covered(G, regional); Z = G.zb .+ G.h; keep = (G.h .> 1) .& .!cov
+    zmax(Z, keep) = maximum(Z[i] for i in eachindex(Z) if keep[i]; init = 0.0)
+    for lv in step:step:zmax(Z, keep), seg in masked_clines(Z, keep, lv)
+        lines!(ax, seamlines([eqe(interp(G.dl, x), interp(G.lat, y)) for (x, y) in seg]), color = color,
+               linewidth = linewidth)
+    end
+    for r in regional
+        keep = r.H .> 1
+        for lv in step:step:zmax(r.zs, keep), seg in masked_clines(r.zs, keep, lv)
+            lines!(ax, seamlines([proj(grid_lonlat(r, x, y)...) for (x, y) in seg]), color = color, linewidth = linewidth)
+        end
+    end
+end
+interp(v, x) = (i = clamp(floor(Int, x), 1, length(v) - 1); v[i] + (x - i) * (v[i+1] - v[i]))
 # contours of a global field over the ocean of the age, labelled (one label per level, between about 35 S and 35 N, apart)
-function ocean_contours!(ax, G, F, levels; labelsize = 22, color = (:black, 0.45))
+function ocean_contours!(ax, G, F, levels; labelsize = 22, color = (:black, 0.45), labelcolor = RSL_LABEL)
     labelled = []
     for lv in levels, (xs, ys) in clines(G.dl, G.lat, F, lv)
         pts = Point2f[]; seg = Point2f[]
@@ -159,7 +194,7 @@ function ocean_contours!(ax, G, F, levels; labelsize = 22, color = (:black, 0.45
         cand = sort([p for (l, ps) in labelled if l == lv for p in ps if length(p) > 60], by = p -> -length(p))
         for p in cand, pt in (p[div(length(p), 2)], p[div(length(p), 4)], p[div(3length(p), 4)])
             abs(pt[2]) < 0.55 && all(q -> hypot((q - pt)...) > 0.5, placed) || continue
-            text!(ax, pt, text = string(round(Int, lv)), fontsize = labelsize, align = (:center, :center), color = :gray10, font = :bold)
+            text!(ax, pt, text = string(round(Int, lv)), fontsize = labelsize, align = (:center, :center), color = labelcolor, font = :bold)
             push!(placed, pt); break
         end
     end

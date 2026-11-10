@@ -40,8 +40,7 @@ of VILMA2's radius `r_earth`, so that integrals over the grid are VILMA2's own
 quadrature. Its grid description is written to `<map_fldr>/grid_<name>.txt` for the
 couplers (an existing file must agree). The par files leave `grid = ""`. VILMA2 itself
 defaults `nlat = 0` to 2 lmax + 2 and `nphi = 0` to 4 lmax (`vilma_drive.f90`,
-`vilma_coupling.f90`), as kryos does; the comment "SHTns default = lmax+2" in
-`input/vilma_defaults.nml` is stale.
+`vilma_coupling.f90`), as kryos does.
 
 The core turns the domains' ice into VILMA2's load (see [Global hub](global-hub.qmd)):
 each domain's ice (lag 1: the ice of the previous step) becomes the host terms

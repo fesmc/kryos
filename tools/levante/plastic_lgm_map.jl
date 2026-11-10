@@ -40,16 +40,16 @@ if mode == "age"
     om = meshfield!(ax, G.P, G.rsl, G.ocn .> 0.5, colormap = RSLMAP, colorrange = (lo, hi), lowclip = RSL_LOW, highclip = RSL_HIGH)
     graticule!(ax)
     ocean_contours!(ax, G, G.rsl, lo:10:hi)
-    im = ice!(ax, G, R)
+    im = ice!(ax, G, R); ice_contours!(ax, G, R)
     coasts!(ax, G); margins!(ax, R); frame!(ax)
     sites!(ax, ss)
-    cbars!(fig, [((im,), "ice surface elevation [m]", ()), ((om,), "RSL at $(kyr(age)) against today [m]", ()),
-                 ((), "site RMS of z_m (± $(kyr(window)))",
+    cbars!(fig, [((im,), "ice surface elevation [m]", ()), ((om,), "RSL [m]", ()),
+                 ((), "site RMS of z_m",
                   (colormap = SITEMAP, limits = (0, SITE_MAX), highclip = :darkred))])
     elems = [MarkerElement(marker = :utriangle, color = :white, strokecolor = :black, strokewidth = 0.9, markersize = 18),
              MarkerElement(marker = :circle, color = :white, strokecolor = :black, strokewidth = 0.9, markersize = 18),
              LineElement(color = MARGIN, linewidth = 2.5), LineElement(color = :black, linewidth = 1.5), LineElement(color = :gray35)]
-    axislegend(ax, elems, ["ice-sheet sites", "far-field sites", "target ice margin", "coast at $(kyr(age))", "coast today"],
+    axislegend(ax, elems, ["ice-sheet sites", "far-field sites", "target ice margin", "coast", "coast today"],
                position = :lb, labelsize = 20, framevisible = true, backgroundcolor = (:white, 0.85))
 elseif mode == "margins"
     iso = parse.(Float64, split(get(opt, "ages", "25000,20000,15000,12500,10000,7500"), ","))
@@ -95,7 +95,7 @@ elseif mode == "smb"
     coasts!(ax, G); margins!(ax, R); frame!(ax)
     Colorbar(fig[1, 2][1, 1], sm, label = "implied SMB [m w.e. yr-1]", height = Relative(0.85), labelsize = 24)
     elems = [LineElement(color = MARGIN, linewidth = 2.5), LineElement(color = :black, linewidth = 1.5), LineElement(color = :gray35)]
-    axislegend(ax, elems, ["target ice margin", "coast at $(kyr(age))", "coast today"], position = :lb, labelsize = 20,
+    axislegend(ax, elems, ["target ice margin", "coast", "coast today"], position = :lb, labelsize = 20,
                framevisible = true, backgroundcolor = (:white, 0.85))
 else
     error("mode: age, margins or smb")
