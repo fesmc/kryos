@@ -76,9 +76,10 @@ logline(C, s...) = open(io -> println(io, s...), joinpath(C, "esmda.md"), "a")
 # --- prior --------------------------------------------------------------------------------------------------------------------------
 # the prior sd at age t [ka]: sigma, ramped smoothly from 0 at 0 ka to sigma at ramp_ka (sin^2; no ramp_ka: sigma)
 prior_sd(pr, t) = (r = get(pr, "ramp_ka", 0.0); r > 0 && t < r ? pr["sigma"] * sin(π * t / (2r))^2 : float(pr["sigma"]))
-function prior_cov(P, pr)
-    L = pr["corr_time_kyr"]
-    [p.g == q.g ? prior_sd(pr, p.t) * prior_sd(pr, q.t) * exp(-abs(p.t - q.t) / L) : 0.0 for p in P, q in P]
+# groups independent; within a group exponential in time, the group's corr_time_kyr ([[scale.groups]]) or the prior's
+function prior_cov(P, pr, specs)
+    L = [Float64(get(s, "corr_time_kyr", pr["corr_time_kyr"])) for s in specs]
+    [p.g == q.g ? prior_sd(pr, p.t) * prior_sd(pr, q.t) * exp(-abs(p.t - q.t) / L[p.g]) : 0.0 for p in P, q in P]
 end
 
 # --- observation error ------------------------------------------------------------------------------------------------------------
@@ -127,8 +128,9 @@ function read_theta(C, k)
 end
 
 # --- init ---------------------------------------------------------------------------------------------------------------------------
-function init(cfgfile, C)
-    C = abspath(C)
+# The folder of a calibration or an ensemble (plastic_ensemble.jl): the config, kryos.x, input/, the par file with [run] set and
+# the frozen domain factors, slurm.env, groups.csv, obs.csv of the observation groups og. Returns (cfg, sg, obs).
+function prepare(cfgfile, C, og)
     isfile(joinpath(C, "config.toml")) && error("$C is a calibration already")
     mkpath(C); cp(cfgfile, joinpath(C, "config.toml"))
     cfg = config(C); rn = cfg["run"]; K = rn["kryos_dir"]
@@ -150,14 +152,20 @@ function init(cfgfile, C)
 
     sg = scale_groups(cfg["scale"]); write_groups_csv(joinpath(C, "groups.csv"), sg)
     obs = PM.read_indicators(cfg["score"]["fesmdata"])
-    og = cfg["esmda"]["obs_groups"]
     open(joinpath(C, "obs.csv"), "w") do io
         println(io, "group,n_index_points,n_marine_limiting,n_terrestrial_limiting")
         for g in og; println(io, g, ",", join((count(o -> o.group == g && o.type == t, obs) for t in (0, -1, 1)), ",")); end
     end
+    cfg, sg, obs
+end
 
+function init(cfgfile, C)
+    C = abspath(C)
+    og = TOML.parsefile(cfgfile)["esmda"]["obs_groups"]
+    cfg, sg, obs = prepare(cfgfile, C, og)
+    rn = cfg["run"]
     es = cfg["esmda"]; ne = es["ne"]; P = params(cfg, sg)
-    Cθ = prior_cov(P, cfg["prior"])
+    Cθ = prior_cov(P, cfg["prior"], cfg["scale"]["groups"])
     Θ = clamp.(cholesky(Symmetric(Cθ)).L * randn(MersenneTwister(cfg["prior"]["seed"]), size(Cθ, 1), ne), -cfg["prior"]["theta_max"],
                cfg["prior"]["theta_max"])
     ids = collect(0:ne)
