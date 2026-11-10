@@ -1,7 +1,9 @@
 # kryos
 
-A model-agnostic framework for ice-sheet and glacier modelling on regional
-domains with optional global components. Successor to [yelmox](https://github.com/fesmc/yelmox).
+[![Docs](https://img.shields.io/badge/docs-quarto-75aadb?logo=quarto&logoColor=white)](https://fesmc.github.io/kryos/)
 
-Design settled; build system and source skeleton in place. See
-[docs/README.md](docs/README.md) and [docs/build.md](docs/build.md).
+A component-based framework for ice sheets and the solid Earth on regional domains coupled to global components.
+Successor to [yelmox](https://github.com/fesmc/yelmox).
+
+Documentation: **[fesmc.github.io/kryos](https://fesmc.github.io/kryos/)** (sources in [docs/](docs/)); developer
+notes in [docs/dev/](docs/dev/) and [docs/study/](docs/study/).

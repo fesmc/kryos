@@ -1,5 +1,5 @@
 #!/bin/sh
-# The synchronised copies of input/ (docs/running.md): the library defaults and
+# The synchronised copies of input/ (docs/getting-started.md): the library defaults and
 # tables a run reads, each a copy of a source file in a dependency checkout,
 # listed in input/sync.txt as <copy> <root variable> <source>.
 #

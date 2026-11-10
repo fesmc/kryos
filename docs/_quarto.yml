@@ -1,0 +1,69 @@
+project:
+  type: website
+  output-dir: _site
+  render:
+    - "*.md"
+    - "!README.md"
+    - "!design.md"
+    - "!dev/"
+    - "!study/"
+
+website:
+  title: "kryos"
+  description: "Documentation for kryos, the component-based ice-sheet and solid-Earth modelling framework"
+  repo-url: https://github.com/fesmc/kryos
+  repo-subdir: docs
+  repo-actions: [edit, issue]
+  page-navigation: true
+  navbar:
+    background: primary
+    search: true
+    left:
+      - text: "Home"
+        href: index.md
+      - text: "Getting started"
+        href: getting-started.md
+      - text: "How kryos works"
+        menu:
+          - text: "Architecture"
+            href: architecture.md
+          - text: "Global hub and regional domains"
+            href: global-hub.md
+      - text: "Backends"
+        menu:
+          - text: "PlasticIceSheet (ice)"
+            href: backend-plastic.md
+          - text: "VILMA2 (solid Earth)"
+            href: backend-vilma2.md
+          - text: "smb_simple (surface)"
+            href: backend-smb-simple.md
+      - text: "Experiments"
+        menu:
+          - text: "Reproducing Gowan et al. (2021)"
+            href: experiment-gowan.md
+          - text: "Simulating our own ice"
+            href: experiment-plastic.md
+          - text: "Calibration and ensembles"
+            href: experiment-calibration.md
+          - text: "Analysis and figures"
+            href: experiment-analysis.md
+          - text: "Implied mass balance (in development)"
+            href: experiment-implied-mb.md
+      - text: "Reference"
+        menu:
+          - text: "Par files"
+            href: reference-par-files.md
+          - text: "Tools"
+            href: reference-tools.md
+          - text: "Developer notes"
+            href: developer-notes.md
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    code-copy: true
+    code-overflow: wrap
+    html-math-method: katex
+    link-external-newwindow: true
