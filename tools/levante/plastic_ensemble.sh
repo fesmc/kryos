@@ -4,18 +4,19 @@
 #   plastic_ensemble.sh submit <ensemble folder> <k>            the members of wave k (job array) and the weights after them
 # The members run as those of a calibration (plastic_esmda.sh member). Internal: plastic_ensemble.sh init|weights ...
 set -u
-G=/work/ba1442/robinson/kryos-gate
-T=${ESMDA_TOOLS:-$(cd "$(dirname "$0")" && pwd)}
-export PATH=$HOME/.juliaup/bin:$PATH JULIA_DEPOT_PATH=$G/julia-depot ESMDA_TOOLS=$T
-J="julia +1.13 --project=$G/p4w7/kryos/tools"
-small="-A ba1442 -p shared -t 02:00:00 -c 4 --mem=32G"
+T=${ESMDA_TOOLS:-$(cd "$(dirname "$(readlink -f "$0")")" && pwd)}    # the jobs (copies of this script) find the tools here
+export ESMDA_TOOLS=$T
+. "$T/env.sh"
+J="$KRYOS_JULIA --project=$T"
+small="-A $ACCOUNT -p shared -t 02:00:00 -c 4 --mem=32G"
 it() { printf "%s/iter_%02d" "$1" "$2"; }
 
 case $1 in
 start)
     CFG=$(realpath "$2"); C=$(realpath -m "$3")
     [ -e "$C" ] && { echo "exists: $C"; exit 1; }
-    mkdir -p "$C"
+    [ -x "$KRYOS/libkryos/bin/kryos.x" ] || { echo "no $KRYOS/libkryos/bin/kryos.x: make kryos plastic=1 vilma=1"; exit 1; }
+    kryos_maps_init; mkdir -p "$C"
     sbatch --parsable $small -J ens-init -o "$C/init.out" "$T/plastic_ensemble.sh" init "$CFG" "$C" ;;
 init)
     $J "$T/plastic_ensemble.jl" init "$2" "$3" || exit 1

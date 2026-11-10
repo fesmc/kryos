@@ -1,7 +1,7 @@
 # The structure of the misfit of the GAPSLIP 2.1 index points, to choose the model-error part of the observation error of the
 # calibration (plastic_esmda.jl: R = diag(sigma_i^2) + sigma_m^2 C, C_ij = exp(-dist / L_x) exp(-|dt| / L_t); v2: sigma_m 5 m,
 # L_x 150 km, L_t 2 kyr) (docs/dev/plastic-backend.md).
-#   julia --project=<julia-plot> tools/levante/plastic_residual_corr.jl <out folder> <label>=<run folder> ...
+#   julia --project=tools/levante tools/levante/plastic_residual_corr.jl <out folder> <label>=<run folder> ...
 # Per run, the misfit d = model - obs of the index points (pm_compare.jl) and their 1 sigma (the scorer's). Within each group of
 # pm_compare.jl, each GAPSLIP region and each sector: the correlation of d over pairs of index points, rho = mean(d_i d_j) / sqrt(mean(d_i^2)
 # mean(d_j^2)) (not centred: a common bias is a correlated error too), against the distance (pairs with |dt| <= 1 kyr) and against
@@ -16,7 +16,7 @@ module PM
 include("pm_compare.jl")
 end
 
-const FES = "/work/ba1442/fesmdata"
+const FES = get(ENV, "FESMDATA", "/work/ba1442/fesmdata")   # tools/levante/env.sh
 const DBINS = [0.0, 10, 25, 50, 100, 200, 400, 800, 1600, 3200, 6400]
 const TBINS = [0.0, 0.5, 1, 2, 4, 8, 16]                 # kyr
 const DT_MAX, DX_MAX = 1000.0, 25.0                     # yr for the distance bins, km for the time bins

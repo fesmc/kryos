@@ -1,7 +1,7 @@
 # Stage 1 of the tau_b calibration (tests/plastic_taub_fit.f90; docs/dev/plastic-backend.md, "Calibration v2"): the L-curve and the
 # choice of lambda per grid, the backend's taub_domain_factor_file of all grids, the present-day thickness per region before
 # (Gowan's tau_b) and after, maps.
-#   julia --project=<julia-plot> tools/levante/plastic_taub_fit_report.jl <out folder> <fit_<grid>.nc> ... [<grid>=<lambda> ...]
+#   julia --project=tools/levante tools/levante/plastic_taub_fit_report.jl <out folder> <fit_<grid>.nc> ... [<grid>=<lambda> ...]
 # lambda, unless given: by the discrepancy principle, the largest lambda with chi2 / n <= 1 (sigma_H the error of the fit); when no
 # lambda reaches it, the corner of the L-curve (log chi2 against log roughness, lambda > 0: the largest Menger curvature of three
 # consecutive points). Writes <out>/taub_domain_factor.nc (domain_id, log_factor of the free domains of every grid; the others keep
@@ -9,7 +9,7 @@
 using CairoMakie, NCDatasets, Printf, Statistics
 include(joinpath(@__DIR__, "plastic_pd_regions.jl"))
 
-const FES = "/work/ba1442/fesmdata"
+const FES = get(ENV, "FESMDATA", "/work/ba1442/fesmdata")   # tools/levante/env.sh
 out = ARGS[1]; mkpath(out)
 fits = [a for a in ARGS[2:end] if endswith(a, ".nc")]
 given = Dict(split(a, "=")[1] => parse(Float64, split(a, "=")[2]) for a in ARGS[2:end] if occursin("=", a))

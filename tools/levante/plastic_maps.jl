@@ -1,5 +1,5 @@
 # Maps of the offline check of the ice backend plastic (tests/plastic_slices.f90 with an <out.nc>): H - PaleoMIST H_ice at given ages.
-#   julia --project=<julia-plot> tools/levante/plastic_maps.jl <out.png> <ages ka, comma separated> <label>=<slices.nc> ...
+#   julia --project=tools/levante tools/levante/plastic_maps.jl <out.png> <ages ka, comma separated> <label>=<slices.nc> ...
 # One row per file, one column per age; diverging colours +-1000 m; PaleoMIST's margin (H > 1 m) as a contour.
 using CairoMakie, NCDatasets
 png = ARGS[1]; ages = parse.(Float64, split(ARGS[2], ","))

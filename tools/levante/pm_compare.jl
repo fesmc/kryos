@@ -1,5 +1,5 @@
 # PaleoMIST test of the standalone VILMA2: compare the runs of pm_run.sh with PaleoMIST (Gowan et al. 2021) and with each other.
-#   julia --project=tools tools/levante/pm_compare.jl <fesmdata> <runs folder> <out folder> [<key>=<folder> ...]
+#   julia --project=tools/levante tools/levante/pm_compare.jl <fesmdata> <runs folder> <out folder> [<key>=<folder> ...]
 # The runs by key (RUNS: B1 = 1-D Gowan lmax 256, B1_170 = lmax 170, B1_L80, B1_bm, B3, A1, A1_170, A3), each the folder of RUNS unless
 # given as key=folder (smoke: B1=S_1d B3=S_3d); a missing run is skipped. Everything on the 0.5 degree PaleoMIST grid: the VILMA2 fields
 # (Gauss grid) bilinear in lon-lat.
@@ -249,7 +249,7 @@ end
 nan0(x) = isnan(x) ? 0.0 : x
 
 # --- pm-diag: one-factor variants of B1 against PaleoMIST ------------------------------------------------------------------------
-#   julia --project=tools pm_compare.jl diag <fesmdata> <out> <ref run folder> [<target>=<nc> ...] <run folder> ...
+#   julia --project=tools/levante tools/levante/pm_compare.jl diag <fesmdata> <out> <ref run folder> [<target>=<nc> ...] <run folder> ...
 # Per run, at MAP_AGES and over all records 2.5-80 ka: RSL relative to present minus the target (PM: FesmData dz_sl; SELEN: PaleoMIST's
 # own SELEN sea level from its Stokes coefficients, pm_prep.jl selen: e.g. SELEN = the final ice, SELEN_h = its 500-yr version) by region
 # (RMS, bias), the ocean

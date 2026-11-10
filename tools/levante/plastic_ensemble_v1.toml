@@ -3,12 +3,12 @@
 #   tools/levante/plastic_ensemble.sh start tools/levante/plastic_ensemble_v1.toml <ensemble folder>
 
 [scale]                                  # the parameters: plastic_taub_scale.jl
-taub_files    = ["/work/ba1442/fesmdata/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST_taub.nc",
-                 "/work/ba1442/fesmdata/Antarctica/ANT-16KM/ANT-16KM_IceHistory-PaleoMIST_taub.nc",
-                 "/work/ba1442/fesmdata/PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_IceHistory-PaleoMIST_taub.nc"]
-regions_files = ["/work/ba1442/fesmdata/North/NH-32KM/NH-32KM_REGIONS.nc",
-                 "/work/ba1442/fesmdata/Antarctica/ANT-16KM/ANT-16KM_REGIONS.nc",
-                 "/work/ba1442/fesmdata/PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_REGIONS.nc"]
+taub_files    = ["{fesmdata}/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST_taub.nc",
+                 "{fesmdata}/Antarctica/ANT-16KM/ANT-16KM_IceHistory-PaleoMIST_taub.nc",
+                 "{fesmdata}/PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_IceHistory-PaleoMIST_taub.nc"]
+regions_files = ["{fesmdata}/North/NH-32KM/NH-32KM_REGIONS.nc",
+                 "{fesmdata}/Antarctica/ANT-16KM/ANT-16KM_REGIONS.nc",
+                 "{fesmdata}/PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_REGIONS.nc"]
 nodes_ka      = [80, 60, 40, 25, 20, 15, 10, 5, 0]
 pinned_ka     = [0]                      # the present day is Stage 1's fit
 
@@ -95,16 +95,13 @@ corr_dist_km = 50.0
 corr_time_kyr = 5.0
 
 [run]                                    # each member: a kryos run of this par file with its multiplier file
-kryos_dir  = "/work/ba1442/robinson/kryos-ice-plastic"
 par        = "par/kryos_NH-ANT-PAT_plastic_vilma2.nml"
-set_nml    = "/work/ba1442/robinson/kryos-gate/tools/set_nml.py"
 set        = ['kryos.restart_out="none"', 'ice_nor.out_plastic="none"', 'ice_ant.out_plastic="none"', 'ice_pat.out_plastic="none"',
               'geo_nor.out_2D="none"', 'geo_ant.out_2D="none"', 'geo_pat.out_2D="none"', 'geo_glob.out_2D="none"']
                                          # the product (2-D ice, the VILMA2 stream) comes from plastic_esmda.jl's product_set
 scale_keys = ["ice_nor.taub_scale_file", "ice_ant.taub_scale_file", "ice_pat.taub_scale_file"]
-domain_factor_file = "/work/ba1442/robinson/kryos-ice-plastic/runs/taub-fit-v3/report/taub_domain_factor.nc"   # Stage 1 with PAT
+domain_factor_file = "{kryos_data}/plastic/taub_domain_factor_v3.nc"   # Stage 1 with PAT
 domain_factor_keys = ["ice_nor.taub_domain_factor_file", "ice_ant.taub_domain_factor_file", "ice_pat.taub_domain_factor_file"]
-maps       = "/work/ba1442/robinson/kryos-ice-plastic-maps"
 threads    = 64                          # 3-D Earth: 3.5-4.2 h on 64 (sci-v2-prior, -post, sci-v3-base, 2026-11-09)
 mem        = "30G"
 time       = "08:00:00"
@@ -113,4 +110,3 @@ account    = "ba1442"
 throttle   = 25                          # 25 members + the weights job + one other run: within 30 jobs
 
 [score]
-fesmdata = "/work/ba1442/fesmdata"

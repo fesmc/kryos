@@ -1,8 +1,8 @@
 # A weighted ensemble of plastic ice histories (docs/dev/plastic-ensemble-design.md): a space-filling sample of the prior of
 # the tau_b multipliers, each member a kryos run, and its weight from the GAPSLIP 2.1 index points with a correlated error per
 # data group; no member is discarded. The jobs: plastic_ensemble.sh.
-#   julia --project=<tools> plastic_ensemble.jl init <config.toml> <ensemble folder>    wave 1: the members (iter_01/mNNN)
-#   julia --project=<tools> plastic_ensemble.jl weights <ensemble folder> [<wave>]     score the members, the weights
+#   julia --project=tools/levante plastic_ensemble.jl init <config.toml> <ensemble folder>    wave 1: the members (iter_01/mNNN)
+#   julia --project=tools/levante plastic_ensemble.jl weights <ensemble folder> [<wave>]     score the members, the weights
 # The folder, the members and the scale groups are those of plastic_esmda.jl (prepare, write_iteration, member_series). Config:
 # [scale], [prior] (sigma, ramp_ka, corr_time_kyr, theta_max), [run], [score] as plastic_esmda_v2.toml; [ensemble]: n (members
 # besides the prior mean, m000), seed, obs_groups; [likelihood.<obs group>]: sigma_m [m], corr_dist_km, corr_time_kyr.

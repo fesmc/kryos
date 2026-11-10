@@ -1,6 +1,6 @@
 # Diagnostic figures of a tau_b calibration (plastic_esmda.jl): where the posterior moves the ice, what the sea-level data ask for,
 # and how strongly each group's parameters act on each set of data.
-#   julia --project=<julia-plot> tools/levante/plastic_esmda_diag.jl <calibration folder> <out folder> <prior run> <posterior run>
+#   julia --project=tools/levante tools/levante/plastic_esmda_diag.jl <calibration folder> <out folder> <prior run> <posterior run>
 # The runs: folders with ice_nor.nc and ice_ant.nc (2-D, the 2.5 kyr records) and geo_glob_vilma.nc (read in place by
 # pm_compare.jl's read_run); for v2 the prior is runs/v2-baseline (= m000 of iteration 1, which has no 2-D output) and the
 # posterior m000 of the last iteration. Writes to <out>:

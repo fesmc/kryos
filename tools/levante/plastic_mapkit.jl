@@ -9,7 +9,7 @@ module PM
 include("pm_compare.jl")
 end
 
-const FES = "/work/ba1442/fesmdata"
+const FES = get(ENV, "FESMDATA", "/work/ba1442/fesmdata")   # tools/levante/env.sh
 const INSTANCES = [("ice_nor", "North", "NH-32KM"), ("ice_ant", "Antarctica", "ANT-16KM"), ("ice_pat", "PatagoniaPaleo", "PAT-PAL-8KM")]
 const SIGMA_M = 5.0                                   # [m] the model error of z_m (as plastic_esmda_report.jl)
 const NEAR = ["Laurentide", "Greenland", "Fennoscandia/Barents", "Antarctica"]

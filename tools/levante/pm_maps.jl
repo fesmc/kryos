@@ -1,5 +1,5 @@
 # PaleoMIST test of the standalone VILMA2: figures from pm_compare.jl's output (CairoMakie).
-#   julia --project=<julia-plot> tools/levante/pm_maps.jl <compare folder>
+#   julia --project=tools/levante tools/levante/pm_maps.jl <compare folder>
 # pm_B1_vs_PM.png  : RSL of PaleoMIST, of B1 (lmax 256) and their difference at 22.5, 15, 10 ka
 # pm_effects.png   : lmax 170 - 256 (B1) and 3-D - 1-D (B3 - B1, lmax 170) at the same records
 # pm_decomp.png    : the 3-D effect split: lithosphere (B1_L80 - B1), radial profile (B1_bm - B1_L80), lateral (B3 - B1_bm), lmax 170
@@ -78,7 +78,7 @@ function indicator_figures(dir, lon, lat, land)
     save(joinpath(dir, "pm_ind_map.png"), fig, px_per_unit = 1)
 end
 
-# pm-diag: julia --project=<julia-plot> pm_maps.jl diag <pm_compare.jl diag folder> <ref run> <run>=<label> ...
+# pm-diag: julia --project=tools/levante pm_maps.jl diag <pm_compare.jl diag folder> <ref run> <run>=<label> ...
 # pm_diag_series.png : against PaleoMIST per record: glaciated RMS, ocean bias, and RSL relative to present at the sites
 # pm_diag_maps.png   : run - PaleoMIST at 22.5, 15, 10 ka for the reference and the runs
 function diag_figures(dir, ref, runs)
@@ -120,7 +120,7 @@ function diag_figures(dir, ref, runs)
     println("wrote figures to ", dir)
 end
 
-# pm-ref: julia --project=<julia-plot> pm_maps.jl ref <ref folder> <base>
+# pm-ref: julia --project=tools/levante pm_maps.jl ref <ref folder> <base>
 # pm_ref_correction.png : the converged reference correction r (i_eq = 3: z_bed_eq = today's bed + r) and the 0 ka bed misfit per
 #                         iteration (from <base>_iter.log)
 function ref_figures(dir, base)

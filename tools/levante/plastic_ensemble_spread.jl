@@ -1,6 +1,6 @@
 # Where the sea-level data constrain the ice and where they do not: the spread of the surface elevation across an ensemble of a tau_b
 # calibration (plastic_esmda.jl), all members against the members that fit the data about equally well (docs/dev/plastic-backend.md).
-#   julia --project=<julia-plot> tools/levante/plastic_ensemble_spread.jl <calibration folder> <iteration> <2-D folder> <out folder>
+#   julia --project=tools/levante tools/levante/plastic_ensemble_spread.jl <calibration folder> <iteration> <2-D folder> <out folder>
 #         [age=20000] [ngood=10]
 # <2-D folder>/mNNN: the members of the iteration rerun with ice_nor.nc, ice_ant.nc (2-D, the 2.5 kyr records); their scores are those
 # of the calibration (iter_kk/members.csv: chi2 / n = d' R^-1 d / n over the assimilated index points, R with the correlated model
@@ -18,7 +18,7 @@ opt = Dict(split(a, "=", limit = 2) for a in ARGS[5:end])
 age = parse(Float64, get(opt, "age", "20000")); ngood = parse(Int, get(opt, "ngood", "10"))
 mkpath(out)
 const RHO_I, RHO_SW, A_OCN = 910.0, 1028.0, 3.618e14
-const FES = "/work/ba1442/fesmdata"
+const FES = get(ENV, "FESMDATA", "/work/ba1442/fesmdata")   # tools/levante/env.sh
 const GRIDS = [("ice_nor", "North", "NH-32KM"), ("ice_ant", "Antarctica", "ANT-16KM")]
 
 # --- members and their scores ---------------------------------------------------------------------------------------------------------

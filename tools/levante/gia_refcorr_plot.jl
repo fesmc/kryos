@@ -1,4 +1,4 @@
-# The figure of a gia_refcorr.sh case (CairoMakie):  julia --project=<julia-plot> gia_refcorr_plot.jl <case folder> <out.png>
+# The figure of a gia_refcorr.sh case (CairoMakie):  julia --project=tools/levante gia_refcorr_plot.jl <case folder> <out.png>
 # Left: the converged correction r on the 0.5 degree grid (GLOBAL-0.5DEG_r.nc); right: the 0 ka bed misfit per run (iter.log).
 using NCDatasets, CairoMakie
 

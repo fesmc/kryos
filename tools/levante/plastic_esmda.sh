@@ -7,18 +7,19 @@
 # A member: its folder iter_kk/mNNN (taub_scale.nc, par.nml), links to the frozen input/ and kryos.x of the folder, the run, and
 # `status` (exit code, seconds). A failed member is dropped by the analysis.
 set -u
-G=/work/ba1442/robinson/kryos-gate
-T=${ESMDA_TOOLS:-$(cd "$(dirname "$0")" && pwd)}
-export PATH=$HOME/.juliaup/bin:$PATH JULIA_DEPOT_PATH=$G/julia-depot ESMDA_TOOLS=$T
-J="julia +1.13 --project=$G/p4w7/kryos/tools"
-small="-A ba1442 -p shared -t 01:00:00 -c 4 --mem=32G"
+T=${ESMDA_TOOLS:-$(cd "$(dirname "$(readlink -f "$0")")" && pwd)}    # the jobs (copies of this script) find the tools here
+export ESMDA_TOOLS=$T
+. "$T/env.sh"
+J="$KRYOS_JULIA --project=$T"
+small="-A $ACCOUNT -p shared -t 01:00:00 -c 4 --mem=32G"
 it() { printf "%s/iter_%02d" "$1" "$2"; }
 
 case $1 in
 start)
     CFG=$(realpath "$2"); C=$(realpath -m "$3")
     [ -e "$C" ] && { echo "exists: $C"; exit 1; }
-    mkdir -p "$C"
+    [ -x "$KRYOS/libkryos/bin/kryos.x" ] || { echo "no $KRYOS/libkryos/bin/kryos.x: make kryos plastic=1 vilma=1"; exit 1; }
+    kryos_maps_init; mkdir -p "$C"
     sbatch --parsable $small -J esmda-init -o "$C/init.out" "$T/plastic_esmda.sh" init "$CFG" "$C" ;;
 init)
     $J "$T/plastic_esmda.jl" init "$2" "$3" || exit 1
@@ -36,7 +37,7 @@ member)
     C=$2; k=$3; source "$C/slurm.env"
     D=$(it "$C" "$k")/$(printf "m%03d" "$SLURM_ARRAY_TASK_ID")
     cd "$D" || exit 1
-    ln -sfn "$C/input" input; ln -sfn /work/ba1442/fesmdata fesmdata; ln -sfn /work/ba1442/kryos_data kryos_data; ln -sfn "$MAPS" maps
+    ln -sfn "$C/input" input; ln -sfn "$FESMDATA" fesmdata; ln -sfn "$KRYOS_DATA" kryos_data; ln -sfn "$MAPS" maps
     export OMP_PROC_BIND=true OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK OMP_STACKSIZE=512M OMP_MAX_ACTIVE_LEVELS=1
     ulimit -s unlimited
     t0=$(date +%s)

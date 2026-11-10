@@ -1,7 +1,7 @@
 # The plastic ice on different Earths (docs/dev/plastic-backend.md, "The 3-D Earth"): GAPSLIP 2.1 scores of kryos runs by group, by
 # GAPSLIP region, by marine-bed area and by site, the change per site against the first run on maps, RSL curves at the best-sampled
 # sites, ice volume per instance and ESL.
-#   julia --project=<julia-plot> tools/levante/plastic_earth_compare.jl <out folder> <label>=<run folder> ...
+#   julia --project=tools/levante tools/levante/plastic_earth_compare.jl <out folder> <label>=<run folder> ...
 # The runs: kryos folders with geo_glob_vilma.nc (read in place, pm_compare.jl's read_run) and <instance>_ts.nc. Index points
 # as pm_compare.jl: d = model - obs, z = d / sigma; z_m = d / sqrt(sigma^2 + sigma_m^2) with the model error sigma_m (5 m, as
 # plastic_esmda_report.jl). Writes to <out>:
@@ -15,7 +15,7 @@ module PM
 include("pm_compare.jl")
 end
 
-const FES = "/work/ba1442/fesmdata"
+const FES = get(ENV, "FESMDATA", "/work/ba1442/fesmdata")   # tools/levante/env.sh
 const SIGMA_M = 5.0
 const RHO_SW, A_OCN = 1028.0, 3.618e14
 const INSTANCES = ["ice_nor" => "NH", "ice_ant" => "ANT", "ice_pat" => "PAT"]

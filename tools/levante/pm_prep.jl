@@ -1,5 +1,5 @@
 # PaleoMIST test of the standalone VILMA2: the inputs of vilma.x from the FesmData PaleoMIST product (minimal MIS 3 scenario).
-#   julia --project=tools tools/levante/pm_prep.jl <fesmdata> <out folder> [grid = GLOBAL-0.25DEG]
+#   julia --project=tools/levante tools/levante/pm_prep.jl <fesmdata> <out folder> [grid = GLOBAL-0.25DEG]
 # pm_ref.nc     : z_bed, H_ice of the 0 ka record (the present-day reference, i_eq = 1).
 # pm_ref80.nc   : z_bed, H_ice of the 80 ka record (pm-diag: SELEN's reference, the initial state; run with TMAX=0).
 # pm_force_B.nc : h_ice(lon, lat, time), the records as steps (SELEN's Heaviside history: the load of record t_k applies from t_k
@@ -21,20 +21,20 @@
 #                  rho_i/rho_w = RHO_I/RHO_W of the run (931/1000, or 910/1000 for the Bm910 variants). Bm80*: the same against
 #                  the 80 ka state (ocean at 80 ka, its water depth), for the runs on pm_ref80.
 # Model time t = -age (years before 1950).
-#   julia --project=tools tools/levante/pm_prep.jl budget <fesmdata> <PaleoMIST bundle> <out folder>
+#   julia --project=tools/levante tools/levante/pm_prep.jl budget <fesmdata> <PaleoMIST bundle> <out folder>
 # pm_budget.md, pm_budget.csv: ice volume change against 0 ka per region and record (FesmData 0.25 and 0.5 degree, total and above
 #                  flotation, the displaced water), against Gowan's volume_sorted.txt (the 5 km ICESHEET grids) and his
 #                  Supplementary Table 1.
-#   julia --project=tools tools/levante/pm_prep.jl margins <fesmdata> <PaleoMIST bundle>
+#   julia --project=tools/levante tools/levante/pm_prep.jl margins <fesmdata> <PaleoMIST bundle>
 #                  registration of FesmData H_ice against Gowan's margin polygons (areas, overlap, centroid offset).
-#   julia --project=tools tools/levante/pm_prep.jl rslref <vilma_out.nc> <out.nc> [<previous>]
+#   julia --project=tools/levante tools/levante/pm_prep.jl rslref <vilma_out.nc> <out.nc> [<previous>]
 #                  pm-ref: the next i_eq = 3 reference correction (rsl at 0 ka) and the 0 ka bed misfit of the run.
-#   julia --project=tools tools/levante/pm_prep.jl taboo <prem200.dat>
+#   julia --project=tools/levante tools/levante/pm_prep.jl taboo <prem200.dat>
 #                  the layer means of TABOO (NV = 2, CDE = 0) for 120 km lithosphere, as SELEN's Earth of PaleoMIST (pm_run.sh t3).
-#   julia --project=tools tools/levante/pm_prep.jl selen <shs.bin> <NN> <DELTA [kyr]> <out.nc> [<rsl_spreadsheet.dat>]
+#   julia --project=tools/levante tools/levante/pm_prep.jl selen <shs.bin> <NN> <DELTA [kyr]> <out.nc> [<rsl_spreadsheet.dat>]
 #                  PaleoMIST's SELEN sea level from its Stokes coefficients at the records on the 0.5 degree grid (checked against
 #                  Gowan's calc_sl at points, pm_selen.sh).
-#   julia --project=tools tools/levante/pm_prep.jl visc1d <profile.csv> <out.nc>
+#   julia --project=tools/levante tools/levante/pm_prep.jl visc1d <profile.csv> <out.nc>
 # pm_visc_bm.nc : the 1-D profile of pre_spinup_1d (pm_visc1d.x: per FE node, the lateral mean of the 3-D log10 eta) as a
 #                 laterally uniform field in the form of the FesmData Bagge2021 product (log10_visc(lon, lat, depth,
 #                 structure), one structure), on the node depths, so that vilma.x reads it back at its nodes unchanged.
@@ -376,7 +376,7 @@ function rslref(outnc, f, prev = "")
 end
 
 # --- pm-ref: the load geometry, FesmData 0.25 degree H_ice against Gowan's native 5 km regional grids ------------------------------
-#   bash -lc "module load gmt; julia --project=tools pm_prep.jl native <fesmdata> <PaleoMIST bundle> <out folder>"
+#   bash -lc "module load gmt; julia --project=tools/levante tools/levante/pm_prep.jl native <fesmdata> <PaleoMIST bundle> <out folder>"
 # The regional ICESHEET grids (ice_reconstruction_files/<region>/thickness/<age>.nc, gridline nodes, x and y in m) are mapped to
 # lon-lat with GMT mapproject and the projections of projection_info.sh (Lambert azimuthal equal-area, origin at the lower-left corner;
 # Antarctica polar stereographic true at 71 S, origin at the pole), and binned onto the 0.25 degree cells of FesmData as the
