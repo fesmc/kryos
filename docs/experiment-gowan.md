@@ -13,19 +13,25 @@ is scored.
 - **Program:** standalone VILMA2, `$VILMA2/bin/vilma.x` (`VILMA2` of `tools/levante/env.sh`,
   default the vilma2 checkout of kryos; `make vilma` in it), not `kryos.x`. The published runs
   used `vilma.x` of the gate stack S11 (vilma2 c17d513, tree identical to 523b660). No kryos par
-  file imposes the history everywhere: the namelist `pm.nml` is written by the job script from its
-  environment.
+  file imposes the history everywhere.
+- **Config:** the five Earths as runme cases, complete `&ctl` and `&vilma` namelists of `vilma.x`:
+  [tools/levante/paleomist/](https://github.com/fesmc/kryos/tree/main/tools/levante/paleomist)
+  `pm_1d.nml`, `pm_l80.nml`, `pm_bm.nml`, `pm_3d.nml`, `pm_t3.nml` (the options in their header
+  comments). Defaults: forcing `pm_data/pm_force_B.nc`, reference `pm_data/pm_ref.nc`, `lmax` 170,
+  `equil_time_max` 5e5, `rho_ice` 910, `rho_water` 1000, `rotation = .true.`, `deg1_frame = "cm"`,
+  `scheme = "fe"`.
 - **Scripts** (`tools/levante/`):
   [pm_prep.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_prep.jl) (inputs),
-  [pm_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_run.sh) (one run, submits itself),
+  [pm_project.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_project.sh) (a folder of runs as a runme
+  project; the runs are staged and submitted with runme),
   [pm_compare.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_compare.jl) (metrics and GAPSLIP scores),
   [pm_maps.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_maps.jl) (figures),
   [pm_iterref.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_iterref.sh) (iterated present-day reference).
-- **Folders** (`env.sh`): your runs in `PM_DIR` (default `$KRYOS_WORK/paleomist`; `ROOT` of
-  `pm_run.sh` overrides the parent folder of a run), the inputs in `PM_DATA` (default
-  `$PM_DIR/data`, else the reference inputs `$PM_REF/data`). `PM_REF` (default
-  `$KRYOS_DATA/paleomist`) holds the published runs `B1_l170`, `ref/I910_it0` and `B3_l170` (their
-  `vilma_out.nc`, `pm.nml`, `run.log`) and the inputs `data/`, read-only: the references of every score.
+- **Folders** (`env.sh`): your runs in `PM_DIR` (default `$KRYOS_WORK/paleomist`, or any folder
+  made a project by `pm_project.sh`), the inputs linked as `pm_data` (default `$PM_DIR/data`, else
+  the reference inputs `$PM_REF/data`). `PM_REF` (default `$KRYOS_DATA/paleomist`) holds the
+  published runs `B1_l170`, `ref/I910_it0` and `B3_l170` (made before runme: their `vilma_out.nc`,
+  `pm.nml`, `run.log`) and the inputs `data/`, read-only: the references of every score.
 
 Within kryos the same history enters every `geo = vilma2` par file as the ice outside the
 domains' footprints (`[globe_ice] ext = "file"`, see [Global hub](global-hub.qmd)); the
@@ -48,7 +54,7 @@ record t_k is compared with the state at t_k + 1 yr (`pm_prep.jl`, `pm_compare.j
 
 ## Earth model
 
-`pm_run.sh EARTH=1d`: Gowan's 1-D Earth on PREM (`earth = "PREM"`, `l_visc_3d = .false.`,
+`pm_1d.nml`: Gowan's 1-D Earth on PREM (`earth = "PREM"`, `l_visc_3d = .false.`,
 `pre_spinup_1d = .false.`), 12 layers:
 
 | Layers | r_top [km] | Rheology | eta [Pa s] |
@@ -59,10 +65,10 @@ record t_k is compared with the state at t_k + 1 yr (`pm_prep.jl`, `pm_compare.j
 | core | 3480 | fluid (2) | 0 |
 
 So 120 km elastic lithosphere, upper mantle 4e20 to 670 km, lower mantle 4e22 Pa s; rho and
-mu are VILMA2's PREM shell means. Spectral resolution `LMAX` 256 or 170 (170 differs by
+mu are VILMA2's PREM shell means. Spectral resolution `vilma.lmax` 256 or 170 (170 differs by
 0.4 m RMS and at most 2.4 m, at half the cost).
 
-Other Earths of the same script, for the 3-D effect and its split: `3d` (the science setting
+The other cases, for the 3-D effect and its split: `3d` (the science setting
 of `par/kryos_NH-ANT_vilma2.nml`: 11 layers, 80 km lithosphere, Bagge et al. 2021 structure 6,
 `pre_spinup_1d`), `l80` (Gowan's viscosities on the 11 science layers), `bm` (the science
 Earth collapsed to its 1-D pre-spin-up profile; needs `pm_visc1d.sh` first), `t3` (SELEN's
@@ -71,9 +77,10 @@ three-layer TABOO Earth of PaleoMIST).
 ## Timeline
 
 - Spin-up: VILMA2 relaxes to equilibrium with the 80 ka load (`solid_earth_spinup`: passes of
-  200 yr growing by 1.6, until the mean bed speed over a pass is below `RATE_TOL` = 1e-5 m/yr),
-  capped at `TMAX` (B1: 2e6 yr; script default 5e5). B1 converges after 12 passes, 93 kyr.
-- Transient: the whole forcing file (`time_init = -1.0e30`, `time_end = 1.0e30` in `pm.nml`),
+  200 yr growing by 1.6, until the mean bed speed over a pass is below `vilma.equil_rate_tol` =
+  1e-5 m/yr), capped at `vilma.equil_time_max` (B1: 2e6 yr; case default 5e5). B1 converges after
+  12 passes, 93 kyr.
+- Transient: the whole forcing file (`ctl.time_init = -1.0e30`, `ctl.time_end = 1.0e30`),
   80 ka to 0 ka + 1 yr; explicit memory scheme `fe`, `cfl` 1, sub-steps of 100 yr on the 1-D
   Earth.
 - Output: `vilma_out.nc` has one record per forcing record (65 under `pm_force_B.nc`): -80 ka,
@@ -91,55 +98,94 @@ them the runs read the reference inputs `$PM_REF/data`:
 julia --project=tools/levante tools/levante/pm_prep.jl $FESMDATA $PM_DIR/data
 ```
 
-B1 at lmax 170 and 256 (`pm_run.sh` submits itself: compute partition, one node, 64 threads, 8 h;
-`PM_PARTITION`, `PM_TIME`, `NTHR` override; `RHOI` defaults to 910 now, B1 used 931):
+The folder of the runs as a runme project, once (safe to rerun):
 
 ```bash
-RUN=B1_l170 LMAX=170 EARTH=1d FORCE=B TMAX=2.0e6 RHOI=931.0 tools/levante/pm_run.sh
-RUN=B1_l256 LMAX=256 EARTH=1d FORCE=B TMAX=2.0e6 RHOI=931.0 tools/levante/pm_run.sh
+tools/levante/pm_project.sh                  # PM_DIR; or pm_project.sh <folder> [<data folder>]
+```
+
+It writes `.runme/` (`info.json`: the executable `vilma` = `$VILMA2/bin/vilma.x`, the defaults
+`input/vilma_defaults.nml`; the job templates and `config.toml` of the kryos checkout) and the links
+runme puts into every run: `input` (VILMA2's `input/`), `fesmdata`, `pm_data` (the data folder, default
+`$PM_DIR/data` if it exists, else `$PM_REF/data`; rerun it after `pm_prep.jl` has written
+`$PM_DIR/data`). The case files name their inputs `pm_data/...`.
+
+B1 at lmax 170 and 256, staged and submitted with runme from that folder (compute partition, one node,
+64 threads, 8 h; the cases default to 910 kg m-3, B1 used 931):
+
+```bash
+cd $PM_DIR
+C=$KRYOS/tools/levante/paleomist
+runme -r -s -e vilma -n $C/pm_1d.nml -o B1_l170 -q compute -w 08:00:00 --omp 64 \
+      -p vilma.rho_ice=931.0 vilma.equil_time_max=2.0e6
+runme -r -s -e vilma -n $C/pm_1d.nml -o B1_l256 -q compute -w 08:00:00 --omp 64 \
+      -p vilma.rho_ice=931.0 vilma.equil_time_max=2.0e6 vilma.lmax=256
+```
+
+The split of the 3-D effect, with B1's densities and spin-up cap (B3: 2e5 yr after the 1-D pre-spin-up):
+
+```bash
+runme -r -s -e vilma -n $C/pm_l80.nml -o B1_L80 -q compute -w 08:00:00 --omp 64 -p vilma.rho_ice=931.0 vilma.equil_time_max=2.0e6
+runme -r -s -e vilma -n $C/pm_bm.nml -o B1_bm -q compute -w 08:00:00 --omp 64 -p vilma.rho_ice=931.0 vilma.equil_time_max=2.0e6
+runme -r -s -e vilma -n $C/pm_3d.nml -o B3_l170 -q compute -w 08:00:00 --omp 64 -p vilma.rho_ice=931.0 vilma.equil_time_max=2.0e5
 ```
 
 B1 at 910 kg m-3 with the iterated present-day reference (iteration 0 = `I910_it0`, B1 at 910;
-stops when the 0 ka bed misfit is below `TOL` m; submits itself, 3 h per run; runs in
-`$PM_DIR/ref`):
+stops when the 0 ka bed misfit is below `TOL` m; submits itself, shared partition, 3 h per run; runs in
+`ROOT`, default `$PM_DIR/ref`):
 
 ```bash
 BASE=I910 TOL=1.0 NMAX=8 tools/levante/pm_iterref.sh
 ```
 
-`EARTH=bm` needs the 1-D profile of a 3-D run first:
+Its environment: `BASE` (the runs `<BASE>_it<n>`), `EARTH` (the case `pm_<EARTH>.nml`, `1d`), `FORCE`
+(`B`), `LMAX` (170), `TMAX` (2.0e6), `RHOI` (910.0), `NTHR` (32), `TOL` (1.0), `NMAX` (8), `ROOT`, and `PM_P`
+(more `-p` settings, e.g. `PM_P="vilma.rotation_k_s=0.94349"`). It makes `ROOT` a project
+(`pm_project.sh`), stages each iteration there with runme (`ctl.i_eq = 3` and `ctl.rsl_restart_file` from
+iteration 1) and runs its `vilma.x` within its own job.
+
+`pm_bm.nml` needs the 1-D profile of a 3-D run first:
 `tools/levante/pm_visc1d.sh build` (once, in a login shell with the Intel modules), then
-`tools/levante/pm_visc1d.sh $PM_DIR/B3_l170` (writes `$PM_DIR/data/pm_visc_bm.nc`). PaleoMIST's
+`tools/levante/pm_visc1d.sh $PM_DIR/B3_l170` (a run of the case `pm_3d.nml`; writes
+`$PM_DIR/data/pm_visc_bm.nc`, which `pm_bm.nml` reads as `pm_data/pm_visc_bm.nc`). PaleoMIST's
 own SELEN sea level at a few points, the check of `pm_prep.jl selen`:
 `CASE=72_73_74_75/ehgr tools/levante/pm_selen.sh` (output in `$PM_DIR/selen/`).
 
-## The switches
+## The options
 
-Environment of `pm_run.sh`:
+A run is the case file (`-n`, the Earth) with `-p` settings; a key must exist in the case or in
+`input/vilma_defaults.nml`:
 
-| Variable | Values | |
+| Setting | Values (case default) | |
 |---|---|---|
-| `RUN` | folder name | `$ROOT/$RUN`, must not exist |
-| `LMAX` | 170, 256 | spectral degree |
-| `EARTH` | `1d`, `3d`, `l80`, `bm`, `t3` | above |
-| `FORCE` | `B` (80 -> 0 ka steps), `A` (22.5 ka ice held: equilibrium), `S` (smoke, 25 -> 20 ka); diagnosis variants `Bg`, `Bl`, `Bm`, ... | the forcing file `pm_force_<FORCE>.nc` |
-| `TMAX`, `RATE_TOL` | 5e5, 1e-5 | spin-up cap [yr], tolerance [m/yr] |
-| `RHOI`, `RHOW` | 910, 1000 | densities of the load |
-| `ROT`, `DEG1` | `.true.`, `cm` | rotation, degree-1 frame |
-| `REF`, `RSLREF` | `pm_ref`, empty | reference file; an rsl field gives `i_eq = 3` (iterated reference) |
-| `NTHR` | 64 | OpenMP threads |
-| `ROOT`, `PM_DATA` | `$PM_DIR`, `$PM_DIR/data` (else `$PM_REF/data`) | the parent folder of the run; the inputs |
+| `-o` | folder name | the run folder, in the project folder |
+| `-n` | `$C/pm_1d.nml`, `pm_3d.nml`, `pm_l80.nml`, `pm_bm.nml`, `pm_t3.nml` | the Earth (above) |
+| `vilma.lmax` | 170, 256 | spectral degree |
+| `ctl.file_forcing` | `pm_data/pm_force_<F>.nc`, F = `B` (80 -> 0 ka steps; default), `A` (22.5 ka ice held: equilibrium), `S` (smoke, 25 -> 20 ka); diagnosis variants `Bg`, `Bl`, `Bm`, `Bm910`, `Bgm910`, `Bm80`, `Bgm80_910` | the forcing file (`pm_prep.jl`) |
+| `vilma.equil_time_max`, `vilma.equil_rate_tol` | 5e5, 1e-5 | spin-up cap [yr] (0: no spin-up, the Earth relaxed to the reference), tolerance [m/yr] |
+| `vilma.rho_ice`, `vilma.rho_water` | 910, 1000 | densities of the load |
+| `vilma.rotation`, `vilma.deg1_frame` | `.true.`, `cm` | rotation, degree-1 frame (`cm`, `cf`) |
+| `vilma.rotation_k_s` | 0 | 0: the model's own fluid Love number; 0.94349: from the observed flattening |
+| `vilma.scheme`, `vilma.cfl` | `fe`, 1.0 | the memory scheme (`fe`, `trap`); the Maxwell-number ceiling of the `fe` sub-steps |
+| `vilma.sle_subgrid` | `.true.` | the sloping-coast ocean load; `.false.`: the binary C rsl |
+| `ctl.z_bed_ref_file`, `ctl.h_ice_ref_file` | `pm_data/pm_ref.nc` | the reference; `pm_data/pm_ref80.nc`: SELEN's initial state (with `vilma.equil_time_max=0`) |
+| `ctl.i_eq`, `ctl.rsl_restart_file` | 1, `""` | `ctl.i_eq=3 ctl.rsl_restart_file=<rsl file>`: the reference bed is the present-day bed + that rsl field (on the run's Gauss grid), the iterated reference of `pm_iterref.sh` |
+| `vilma.eta` (`pm_t3.nml`) | `1.0e40, 3.9811e20, 3.9811e22, 0.0` | SELEN's other Earths: `vilma.eta==1.0e40,<UM>,<LM>,0.0` (`==`: a vector, not an ensemble), e.g. ehgG with LM 3.9811e21 |
+| `--omp` | 64 above | OpenMP threads |
 
 The runs of the study: B1_l256, B1_l170 (1-D), B3_l170 (3-D), A1, A3 (equilibrium under the
 22.5 ka ice), B1_L80, B1_bm (the split of the 3-D effect), `ref/I910_it*` (iterated reference). B1_l170,
-B3_l170 and ref/I910_it0 are published in `PM_REF`; run the others with `pm_run.sh` into `PM_DIR`.
+B3_l170 and ref/I910_it0 are published in `PM_REF`; run the others with runme into `PM_DIR`.
 
 ## Outputs
 
-`$PM_DIR/<RUN>/` (the published runs: `$PM_REF/<RUN>/`): `pm.nml` (the namelist), `vilma_out.nc`
-(`rsl`, `dz_bed`, `bsl`, `bsl_ive`, ... on the Gauss grid), `run.log` (spin-up passes, warnings,
-memory), `input/` (links to `$VILMA2/input`), `fesmdata` (link), `maps/` (remapping weights, built
-per run); the job log `$PM_DIR/<RUN>.out`.
+`$PM_DIR/<run>/`: the case file with the `-p` values (e.g. `pm_1d.nml`), `vilma_out.nc` (`rsl`,
+`dz_bed`, `bsl`, `bsl_ive`, ... on the Gauss grid), `out.out` (the log of `vilma.x`: spin-up passes,
+warnings), `out.err`, `status` (exit code and seconds), the copy `vilma.x`, `job.submit`, `runme.json`,
+`params.txt`, `info.txt`, the links `input` (to `$VILMA2/input`), `fesmdata` and `pm_data`, and `maps/`
+(remapping weights, built per run). Runs made before runme (those published in `$PM_REF`) have
+`pm.nml` (the namelist) and `run.log` (the log, with memory) instead; their job log was `<run>.out`
+beside the folder.
 
 VILMA2's `rsl` is relative to the relaxed reference and not zero at 0 ka (the Earth is still
 rebounding); PaleoMIST's `dz_sl` is S(t) - S(0) by construction. The comparison therefore
@@ -208,8 +254,10 @@ is that configuration on B1's Earth, scored beside B1:
   `{grid_name}_IceHistory-PaleoMIST.nc` interpolated by the signed distance (`margin_interp =
   "sdist"`); tau_b of Gowan's domains (`taub_method = "domains"`,
   `{grid_name}_IceHistory-PaleoMIST_taub.nc`, time dependent, `taub_default` 5000 Pa), unscaled
-  (`taub_domain_factor_file = ""`, `taub_scale_file = ""`);
-- Earth: the `[vilma]` group of `pm_run.sh EARTH=1d, LMAX=170`, the 80 ka relaxation capped at
+  (`taub_domain_factor_file = ""`, `taub_scale_file = ""`; the par file now sets the released
+  Stage 1 factors, `kryos_data/plastic/taub_domain_factor_v3.nc`, so this baseline needs
+  `ice_nor.taub_domain_factor_file` set to `""`);
+- Earth: the `&vilma` group of the case `pm_1d.nml` (lmax 170), the 80 ka relaxation capped at
   2e6 yr;
 - reference: relaxed, no correction r: PaleoMIST's 0 ka bed and ice as the background X
   (`[X_z_bed]`, `[X_H_ice]`), today's topography (GEBCO2026) on NH-32KM;

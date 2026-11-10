@@ -211,42 +211,55 @@ The scripts of [tools/levante/](https://github.com/fesmc/kryos/tree/main/tools/l
 |---|---|---|
 | `KRYOS` | the checkout the script is in | |
 | `KRYOS_WORK` | `/work/ba1442/$USER/kryos-work` | your writable work folder: runs, scores, calibrations |
-| `KRYOS_MAPS` | `$KRYOS_WORK/maps` | the maps folder of your runs (below), created and seeded by `kryos_maps_init` |
-| `FESMDATA`, `FESMDATA_SOURCES` | `/work/ba1442/fesmdata`, `/work/ba1442/fesmdata-sources` | FesmData and its original data, read-only |
-| `KRYOS_DATA` | `/work/ba1442/kryos_data` | kryos reference data, read-only: refcorr topographies, the released tau_b products (`plastic/`) |
-| `VILMA2` | `$KRYOS/vilma2` | the vilma2 checkout of the standalone runs (`bin/vilma.x`) |
+| `FESMDATA`, `FESMDATA_SOURCES` | `/work/ba1442/fesmdata`, `/work/ba1442/fesmdata-sources` | FesmData and its original data, read-only; `FESMDATA` is linked as `$KRYOS/fesmdata` |
+| `KRYOS_DATA` | `/work/ba1442/kryos_data` | kryos reference data, read-only: refcorr topographies, the released tau_b products (`plastic/`), the shared remapping weights (`maps/`); linked as `$KRYOS/kryos_data` |
+| `VILMA2` | `$KRYOS/vilma2` | the vilma2 checkout of the standalone runs (`bin/vilma.x`, `input/`) |
 | `PM_DIR`, `PM_REF` | `$KRYOS_WORK/paleomist`, the reference runs | your standalone VILMA2 runs; the read-only reference runs the scores compare with |
-| `ACCOUNT` | `ba1442` | the Slurm account |
+| `ACCOUNT` | the `account` of `.runme/config.toml`, else `ba1442` | the Slurm account of the small Julia and analysis jobs of the tools (model runs take runme's) |
+| `KRYOS_RUNME` | `runme` | the runme command: the model runs are staged and submitted with runme (below) |
 | `KRYOS_JULIA` | juliaup's `julia +1.13` | the julia command (by full path: Levante's python module puts an old julia first on `PATH`) |
 
 Override any of them in the environment or in `~/.kryos.env`. The pages write the paths with these variables
 (`$KRYOS_WORK/...`); to use them in a shell, source the file (`. tools/levante/env.sh`). Then `kryos_jl <script.jl> ...`
-runs julia with the tools' project, `kryos_maps_init` creates `KRYOS_MAPS`, and `kryos_link_data <folder>` makes the
-data links of a run folder (below).
+runs julia with the tools' project.
 
 Once, in a login shell (it needs your own juliaup with Julia 1.13:
-`curl -fsSL https://install.julialang.org | sh -s -- --yes && juliaup add 1.13`):
+`curl -fsSL https://install.julialang.org | sh -s -- --yes && juliaup add 1.13`, and runme:
+`pip install --user git+https://github.com/fesmc/runme`):
 
 ```bash
 tools/levante/setup.sh
 ```
 
-checks the paths and the builds and instantiates the Julia project of the tools, `tools/levante` (`Project.toml`,
-`Manifest.toml`: CairoMakie, NCDatasets, DelimitedFiles on Julia 1.13), in your own depot (a fresh instantiate took
-3.5 min). Every Julia tool runs with `julia --project=tools/levante` (or `kryos_jl`).
+It checks the paths and the builds, and sets up the checkout:
+
+- the links `fesmdata -> $FESMDATA` and `kryos_data -> $KRYOS_DATA` at the kryos root (runme links them into every
+  run folder);
+- the grid files and remapping weights of `$KRYOS_DATA/maps` copied into the checkout's `maps/`, the maps folder of
+  every run (so the runs reuse the weights);
+- runme: installed and >= 0.5.27 (else `runme update`), and `.runme/config.toml` created from
+  `.runme/config.default.toml` (`hpc = "dkrz_levante"`, `account = "ba1442"`; edit it for another account);
+- `ice_data` and `isostasy_data`: read only by the Yelmo par files. Without them runme warns that the link is
+  missing, which is harmless for the plastic runs;
+- the Julia project of the tools, `tools/levante` (`Project.toml`, `Manifest.toml`: CairoMakie, NCDatasets,
+  DelimitedFiles on Julia 1.13), instantiated in your own depot (a fresh instantiate took 3.5 min). Every Julia tool
+  runs with `julia --project=tools/levante` (or `kryos_jl`).
+
+It is safe to rerun.
 
 ## Data
 
 A run reads its inputs through links in the run directory; the par files name paths relative to it
-(`fesmdata/{domain}/{grid_name}/...`, with `{domain}` and `{grid_name}` replaced by kryos).
+(`fesmdata/{domain}/{grid_name}/...`, with `{domain}` and `{grid_name}` replaced by kryos). runme makes the links
+from those of the checkout ([.runme/info.json](https://github.com/fesmc/kryos/blob/main/.runme/info.json) `links`):
 
 | Link | Target on Levante | What |
 |---|---|---|
 | `fesmdata` | `/work/ba1442/fesmdata` | FesmData products, `<Domain>/<GRID>/<GRID>_<PRODUCT>.nc`: topography, regions, PaleoMIST ice history and tau_b domains, the Bagge et al. (2021) viscosity |
-| `kryos_data` | `/work/ba1442/kryos_data` | kryos-made inputs, e.g. `refcorr/PaleoMIST-sci/` (the present-day reference correction r, [tools/levante/gia_refcorr.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr.sh)) |
-| `input` | the repository's `input/` | defaults, variable tables, constants, synchronised copies (below) |
-| `maps` | a writable folder of your own (`$KRYOS_MAPS`) | grid descriptions `grid_<GRID>.txt` and the cached remapping weights (`*.nc`) |
-| `ice_data`, `isostasy_data` | `/work/ba1442/ice_data`, `/work/ba1442/isostasy_data` | the yelmox data of the Yelmo configurations; the plastic par files do not read them |
+| `kryos_data` | `/work/ba1442/kryos_data` | kryos-made inputs, e.g. `refcorr/PaleoMIST-sci/` (the present-day reference correction r, [tools/levante/gia_refcorr.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr.sh)), the released tau_b products `plastic/` |
+| `input` | the checkout's `input/` | defaults, variable tables, constants, synchronised copies (below) |
+| `maps` | the checkout's `maps/` | grid descriptions `grid_<GRID>.txt` and the cached remapping weights (`*.nc`) |
+| `ice_data`, `isostasy_data` | `/work/ba1442/ice_data`, `/work/ba1442/isostasy_data` | the yelmox data of the Yelmo configurations, linked when the checkout has them; the plastic par files do not read them |
 
 **FesmData is read-only.** Never write into `/work/ba1442/fesmdata`, nor through a link into it (a copy of a link
 is a link: copy with symlinks followed). It is shared by every run of the project; fetch or update products only with
@@ -269,9 +282,9 @@ The maps folder must hold `grid_<GRID>.txt` for every hub and instance grid of t
 remapping weights into it. kryos writes only VILMA2's Gauss grid file, `grid_GAUSS-L<lmax>.txt`. The repository's
 [maps/](https://github.com/fesmc/kryos/tree/main/maps) has the grid files of ANT-16KM, ANT-32KM, GRL-16KM, NH-32KM,
 PAT-PAL-8KM and GLOBAL-0.5DEG; for any other grid copy FesmData's description as it is
-(`fesmdata/<Domain>/<GRID>/grid_<GRID>.txt`). With the Levante tools the maps folder is `KRYOS_MAPS`: `kryos_maps_init`
-(called by the scripts that stage runs) creates it from the repository's grid files and the remapping weights of our
-runs (`KRYOS_MAPS_SEED`), so the plastic/VILMA2 runs need no new weights.
+(`fesmdata/<Domain>/<GRID>/grid_<GRID>.txt`). The maps folder of every run is the checkout's `maps/` (runme's link):
+`tools/levante/setup.sh` copies the grid files and the remapping weights of our runs from `$KRYOS_DATA/maps` into it,
+so the plastic/VILMA2 runs need no new weights, and the first run of a new grid writes its weights there.
 
 ### input/
 
@@ -298,34 +311,71 @@ After updating a library: `make sync-input`, then commit the copies. Yelmo reads
 
 ## A first run
 
+### Running with runme
+
+Every model run (`kryos.x`, the standalone `vilma.x`, the offline fits) is staged and submitted with
+[runme](https://github.com/fesmc/runme), the fesmc tool that yelmox and climber-x use too. From a project folder
+(here the kryos checkout, with its [.runme/](https://github.com/fesmc/kryos/tree/main/.runme)) runme creates the run
+folder, copies the executable and the par file into it, writes the `-p` values into the copied par file, links the
+input folders, writes the job script and submits it. The checkout's project:
+
+- [.runme/info.json](https://github.com/fesmc/kryos/blob/main/.runme/info.json): the executables `kryos`
+  (`libkryos/bin/kryos.x`, the default), `taub_fit` (`libkryos/bin/plastic_taub_fit.x`) and `closure_fit`
+  (`libkryos/bin/plastic_closure_fit.x`); the defaults `input/kryos_defaults.nml`; the links `input`, `fesmdata`,
+  `kryos_data`, `maps`, `ice_data`, `isostasy_data` (Data, above).
+- `.runme/submit_slurm`, `submit_slurm_omp`: the job template (one node, one task, `--omp` cpus;
+  `OMP_PROC_BIND=true`, `OMP_STACKSIZE=512M`, `OMP_MAX_ACTIVE_LEVELS=1`, `ulimit -s unlimited`). The job runs
+  `./kryos.x <par file>` directly (one OpenMP task, no `srun`) in the run folder and then writes `status`, `<exit code> <seconds>`, which the
+  calibration and ensemble tools read.
+- `.runme/config.toml` (from `config.default.toml`, by `tools/levante/setup.sh`): `hpc = "dkrz_levante"`,
+  `account = "ba1442"`, `omp = 16`.
+
+Run runme from the checkout. A run of the science Earth (NH-ANT-PAT, 3-D) and a short 1-D (`_b1`) run:
+
+```bash
+. $HOME/models/kryos/tools/levante/env.sh       # KRYOS, KRYOS_WORK
+cd $KRYOS
+runme -r -s -q shared -w 08:00:00 --omp 64 -m 60G -o $KRYOS_WORK/runs/sci-3d -n par/kryos_NH-ANT-PAT_plastic_vilma2.nml
+runme -r -s -q shared -w 01:00:00 --omp 16 -m 30G -o $KRYOS_WORK/runs/b1-short -n par/kryos_NH-ANT_plastic_vilma2_b1.nml \
+    -p clock.time_end=-60e3
+```
+
+| Option | |
+|---|---|
+| `-o <folder>` | the run folder (an ensemble: the folder of the member folders `0`, `1`, ...) |
+| `-n <par file>` | the par file, copied into the run folder under its own name and passed to the executable |
+| `-e <exe>` | the executable alias of `info.json` (default `kryos`) |
+| `-p group.key=value ...` | keys written into the copied par file; the key must exist in the par file or in `input/kryos_defaults.nml` (a key only in the defaults is added to its group); a comma list makes an ensemble, `key==a,b,c` or `'key=[a,b,c]'` a vector |
+| `-s` | write the job script `job.submit` (with `-r`: submit it) |
+| `-r` | run: with `-s` submit the job, without it run in the background on the login node |
+| `-q`, `-w`, `--omp`, `-m` | the queue alias of `dkrz_levante` (`shared`, `compute`), the wall time, the OpenMP threads, the memory |
+| `-i <table>`, `-j <ids>`, `--array [N]` | an ensemble from a parameter table, a subset of its members, and (with `-s`) its submission as one Slurm job array with at most N tasks at once (runme >= 0.5.27; writes `array.submit`, `array.dirs` and `array.json`, the job id, into `-o`) |
+
+Without `-r` runme only stages the folder (and, with `-s`, writes `job.submit`: `sbatch job.submit` in the folder
+submits it later). A folder that exists is reused: runme removes its `*.nc` and par files first.
+
+Keep at most 30 jobs queued or running at a time on Levante; throttle job arrays (runme `--array N`).
+
 ### The run directory
 
 ```
 <run>/
   kryos.x                a copy of libkryos/bin/kryos.x
-  par.nml                a copy of the par file (with any overrides)
-  input/                 the repository's input/ (a link, or a copy to freeze it)
+  <par file>.nml         the copy of the par file, with the -p values
+  input      -> $KRYOS/input
   fesmdata   -> /work/ba1442/fesmdata
   kryos_data -> /work/ba1442/kryos_data
-  maps       -> $KRYOS_MAPS (a writable folder of your own)
-  job.submit
+  maps       -> $KRYOS/maps
+  job.submit             the Slurm job (-s)
+  runme.json             runme's record: the command, the -p values, the git revision of the checkout, the state
+  params.txt, info.txt   the -p values as a table
+  out.out, out.err       the log of the job
+  status                 "<exit code> <seconds>", written when kryos.x ends
 ```
 
-This is the layout the Levante tools stage
-([tools/levante/plastic_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_run.sh), a member of the
-tau_b calibration in
-[tools/levante/plastic_esmda.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_esmda.sh)). Copying
-`kryos.x` keeps the run independent of later builds. `kryos.x` takes one argument, the par file. By hand:
-
-```bash
-. $HOME/models/kryos/tools/levante/env.sh
-R=$KRYOS_WORK/runs/nor-plastic-b1
-mkdir -p $R && cd $R
-cp $KRYOS/libkryos/bin/kryos.x .
-cp $KRYOS/par/kryos_North_plastic_vilma2_b1.nml par.nml
-kryos_link_data $R                      # fesmdata, kryos_data, input, maps
-git -C $KRYOS rev-parse HEAD > kryos_commit.txt
-```
+Copying `kryos.x` keeps the run independent of later builds. `kryos.x` takes one argument, the par file. The members
+of a calibration or ensemble have the same layout, staged by runme from the calibration folder
+([Calibration and ensembles](experiment-calibration.md)).
 
 ### Which par file first
 
@@ -340,75 +390,24 @@ All run 80 ka to present (`[clock] time_init = -80e3`, `time_end = 0`, `dtt = 10
 [docs/dev/plastic-backend.md](https://github.com/fesmc/kryos/blob/main/docs/dev/plastic-backend.md). VILMA2
 dominates and barely scales: 8 threads per run is the cheapest per run on the shared partition.
 
-### The job
-
-A job script after those of the calibration (8 threads, 10 GB, shared partition):
-
-```bash
-#!/bin/bash
-#SBATCH --partition=shared
-#SBATCH --account=ba1442
-#SBATCH --time=01:00:00
-#SBATCH --job-name=kryos-plastic
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=10G
-#SBATCH --output=./out.out
-#SBATCH --error=./out.err
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-export OMP_PROC_BIND=true
-export OMP_STACKSIZE=512M
-export OMP_MAX_ACTIVE_LEVELS=1
-ulimit -s unlimited
-srun ./kryos.x par.nml
-```
-
-```bash
-cd $R && sbatch job.submit
-```
-
-[tools/levante/plastic_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_run.sh) does all of
-this in one step: it stages the run folder, writes the job script and submits it (`THREADS=8 MEM=10G TIME=01:00:00`
-for the settings above; its defaults are those of a 3-D Earth run, 64 threads, 60 GB, 8 h):
-
-```bash
-THREADS=8 MEM=10G TIME=01:00:00 tools/levante/plastic_run.sh $KRYOS_WORK/runs/nor-plastic-b1 \
-    par/kryos_North_plastic_vilma2_b1.nml
-```
-
-Keep at most 30 jobs queued or running at a time on Levante; throttle job arrays (`--array=...%N`).
-
 ### Changing keys
 
-Edit `par.nml` in the run directory, or set keys with `set_nml.py` as the Levante tools do (a string value keeps
-its quotes):
-
-```bash
-python3 tools/levante/set_nml.py par.nml clock.time_end=-70e3 'kryos.restart_out="none"' 'ice_nor.out_plastic="none"'
-```
-
-[tools/levante/set_nml.py](https://github.com/fesmc/kryos/blob/main/tools/levante/set_nml.py) sets existing keys only (a key
-the group does not have stops it). `plastic_run.sh` passes the keys after its file arguments to it
-(`plastic_run.sh <run folder> <par file> <factor file> <scale file> group.key=value ...`, `""` for no file;
-[Simulating our own ice](experiment-plastic.md)).
-
-### With runme
-
-runme stages and submits from the repository root
-([.runme/info.json](https://github.com/fesmc/kryos/blob/main/.runme/info.json): executable `kryos` =
-`libkryos/bin/kryos.x`, defaults `input/kryos_defaults.nml`). Once per checkout: `runme config init`, then set `hpc`
-and `account` in `.runme/config.toml`.
+Set keys with `-p group.key=value` when the run is staged (above). runme types the value by the key's current value
+(a string is quoted for you) and stops on a key that neither the par file nor `input/kryos_defaults.nml` has. `bsl`
+is an alias of `barysealevel`. The Yelmo configurations work the same way:
 
 ```bash
 runme -rs -q compute -w 24:00:00 -e kryos -n par/kryos_Antarctica.nml -o output/ant --omp 16
 runme -r -e kryos -n par/kryos_Greenland.nml -o output/grl-test --omp 4 -p clock.time_end=1000
 ```
 
-`-p group.key=value` overrides a key (`bsl` is an alias of `barysealevel`); a comma list makes an ensemble
-(`-p ydyn.beta_q=0.2,0.5,1.0`). runme links `input`, `ice_data`, `fesmdata`, `isostasy_data` and `maps` from the
-repository root into the run directory, but not `kryos_data`: the par files that read `kryos_data/` (the
-science-Earth runs) need that link added by hand.
+To change the par file of a staged folder in place, edit it, or use
+[tools/levante/set_nml.py](https://github.com/fesmc/kryos/blob/main/tools/levante/set_nml.py), which sets existing
+keys only (a key the group does not have stops it; quote strings yourself):
+
+```bash
+python3 tools/levante/set_nml.py <run>/<par file>.nml clock.time_end=-70e3 'kryos.restart_out="none"'
+```
 
 ## Output
 
@@ -485,10 +484,11 @@ Restart with `[kryos] restart` (a folder relative to the run directory, or absol
 a second chunk:
 
 ```bash
-python3 set_nml.py par.nml clock.time_init=-40e3 'kryos.restart="../chunk1/restart--40000"'
+runme -r -s -q shared -w 08:00:00 --omp 64 -m 60G -o $KRYOS_WORK/runs/chunk2 -n par/kryos_NH-ANT-PAT_plastic_vilma2.nml \
+    -p clock.time_init=-40e3 kryos.restart=../chunk1/restart--40000
 ```
 
-With runme: `-p clock.time_init=15000 clock.time_end=30000 kryos.restart=../grl/restart-15000`.
+(the Yelmo Greenland run likewise: `-p clock.time_init=15000 clock.time_end=30000 kryos.restart=../grl/restart-15000`).
 
 - The restore stops, naming the instance, if the run's instances differ from the manifest's (scope, domain,
   component, backend, grid) or a listed file is missing; a changed `dt` is allowed.

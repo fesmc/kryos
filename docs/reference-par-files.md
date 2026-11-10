@@ -25,9 +25,12 @@ where geo is `vilma2` (`yelmo=0` is enough). See [Simulating our own ice](experi
 | [kryos_NH-ANT-PAT_plastic_vilma2.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT-PAT_plastic_vilma2.nml) | North, Antarctica, PatagoniaPaleo (PAT-PAL-8KM) | plastic x 3 | vilma2 | As the previous with a third plastic instance on PAT-PAL-8KM (Gowan's region 4 domains, IceHistory v2.4.0, GEBCO2026 + r); the maps folder needs `grid_PAT-PAL-8KM.txt` |
 | [kryos_NH-ANT-PAT_plastic_vilma2_inv.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT-PAT_plastic_vilma2_inv.nml) | North, Antarctica, PatagoniaPaleo | plastic x 3 | vilma2 | The implied mass balance by joint inversion (`mass_balance = "inverted"`, `slide_law = "coulomb_n"`) with a surface instance `smb_simple` per domain as the prior (no climate: `tsl_const`); see [Implied mass balance](experiment-implied-mb.md) |
 
-In each, `taub_domain_factor_file` (the present-day factors per domain, Stage 1) and `taub_scale_file` (the
-multipliers per scale group of the calibration) are `""`: Gowan's tau_b as it is. The calibration tools set them
-per run ([Calibration and ensembles](experiment-calibration.md)).
+In the `_b1` files and the NH-ANT(-PAT) files, `taub_domain_factor_file` (the present-day factors per domain,
+Stage 1) is `"kryos_data/plastic/taub_domain_factor_v3.nc"` on every instance (the released factors; v3 is v2 plus
+Patagonia, identical on all NH and ANT domains), and `taub_scale_file` (the multipliers per scale group of the
+calibration) is `""`. `kryos_North_plastic.nml` and `kryos_North_plastic_vilma2.nml` list neither key (the default
+`""`: Gowan's tau_b as it is). The calibration tools set them per run
+([Calibration and ensembles](experiment-calibration.md)); for one run, `-p ice_nor.taub_scale_file=<file> ...`.
 
 ## The Yelmo configurations
 
@@ -135,8 +138,9 @@ input files they were made against, so they stay valid when a default changes.
 ### Overrides
 
 - **runme**: `-p group.key=value` overrides a key of the par file for one run (`bsl` is an alias of
-  `barysealevel`); a comma list makes an ensemble: `-p ydyn.beta_q=0.2,0.5,1.0`. The clock group is the one
-  `[kryos] clock` names.
+  `barysealevel`); a comma list makes an ensemble: `-p ydyn.beta_q=0.2,0.5,1.0`. The key must exist in the par file
+  or in `input/kryos_defaults.nml`. The clock group is the one `[kryos] clock` names
+  ([Getting started](getting-started.md)).
 - **[tools/levante/set_nml.py](https://github.com/fesmc/kryos/blob/main/tools/levante/set_nml.py)**: sets existing keys of a
   fully expanded par file in place (`group.key=value`, case-insensitive names; quote strings yourself; a trailing comment
   is kept; a key the group does not have stops it: it never adds keys).

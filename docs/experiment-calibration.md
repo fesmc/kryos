@@ -61,20 +61,25 @@ plastic_taub_fit.x <fit.nml>
 
 The namelist `&fit` has these keys: `hist`, `margin_var`, `margin_min`, `margin_position`, `taub_file`,
 `taub_default`, `topo_file`, `bed_var`, `H_var`, `mask_var`, `mode`, `lambda` (the list), `sigma_min`, `sigma_rel`,
-`du`, `u_max`, `tol`, `n_iter`, `out`. The namelists of the released fits and their job are in
+`du`, `u_max`, `tol`, `n_iter`, `out`. The namelists of the released fits are in
 [tools/levante/taub_fit/](https://github.com/fesmc/kryos/tree/main/tools/levante/taub_fit) (`fit_NH.nml`, `fit_ANT.nml`,
-`fit_PAT.nml`; lambda = 100, 30, 10, 3, 1, 0.3, 0.1, 0.03, 0.01, 0.003, 0.001, 0). `fit.sh` copies each namelist
-into the fit folder (`{fesmdata}` replaced by `FESMDATA`) and submits one job per namelist there (up to 2 h on 16
-threads for ANT-16KM):
+`fit_PAT.nml`; lambda = 100, 30, 10, 3, 1, 0.3, 0.1, 0.03, 0.01, 0.003, 0.001, 0). They name their inputs
+`fesmdata/...`, relative to the run folder. Each is one runme run of the executable `taub_fit`
+(`libkryos/bin/plastic_taub_fit.x`), from the checkout (up to 2 h on 16 threads for ANT-16KM):
 
 ```bash
-tools/levante/taub_fit/fit.sh <fit folder> tools/levante/taub_fit/fit_NH.nml tools/levante/taub_fit/fit_ANT.nml
+cd $KRYOS
+runme -r -s -e taub_fit -n tools/levante/taub_fit/fit_NH.nml -o $KRYOS_WORK/taub-fit/NH -q shared -w 02:00:00 --omp 16 -m 24G
+runme -r -s -e taub_fit -n tools/levante/taub_fit/fit_ANT.nml -o $KRYOS_WORK/taub-fit/ANT -q shared -w 02:00:00 --omp 16 -m 24G
+runme -r -s -e taub_fit -n tools/levante/taub_fit/fit_PAT.nml -o $KRYOS_WORK/taub-fit/PAT -q shared -w 02:00:00 --omp 16 -m 24G
 ```
 
-The report picks lambda for each grid and writes the factor file that the backend reads:
+Each writes its `out` file into its run folder (`fit_NH-32KM.nc`, `fit_ANT-16KM.nc`, `fit_PAT-PAL-8KM.nc`). The report
+picks lambda for each grid and writes the factor file that the backend reads:
 
 ```bash
-julia --project=tools/levante tools/levante/plastic_taub_fit_report.jl <out folder> <fit_<grid>.nc> ... [<grid>=<lambda> ...]
+julia --project=tools/levante tools/levante/plastic_taub_fit_report.jl <out folder> $KRYOS_WORK/taub-fit/NH/fit_NH-32KM.nc \
+      $KRYOS_WORK/taub-fit/ANT/fit_ANT-16KM.nc $KRYOS_WORK/taub-fit/PAT/fit_PAT-PAL-8KM.nc [<grid>=<lambda> ...]
 ```
 
 The report chooses lambda by the discrepancy principle: the largest lambda with chi2/n <= 1. Where no lambda
@@ -232,13 +237,17 @@ global ESL".
 |---|---|
 | `config.toml`, `config.source.toml` | the config with its placeholders expanded and the defaults filled in; the config as given |
 | `kryos.x`, `input/`, `par.nml` | frozen copies: the binary and input of `[run] kryos_dir`, and the par file with `[run] set` applied (and the Stage 1 file, `taub_domain_factor.nc`) |
-| `slurm.env` | `THREADS`, `MEM`, `TIME`, `PART`, `ACCT`, `THROTTLE`, `MAPS` from `[run]`; read again at every submission |
+| `.runme/`, `fesmdata`, `kryos_data`, `maps` | the folder is a frozen runme project: `info.json` for its own `kryos.x` and `input/`, the job templates and `config.toml` of the checkout; the links runme puts into every member (`maps` -> the checkout's `maps/`) |
+| `slurm.env` | `THREADS`, `MEM`, `TIME`, `PART`, `THROTTLE` from `[run]`; read again at every submission |
 | `groups.csv`, `obs.csv`, `obs_kept.csv` | the scale groups; the data per group; the index points kept by the cut |
 | `esmda.md` | the report: per iteration, the mean member's scores and the ensemble's, chi2, ESL at 20 ka, theta before and after |
 | `next` | the iteration to run, or `done` |
 | `jobs.txt` | one line per submission: job ids of the members and the analysis |
-| `iter_kk/` | `theta.csv`, `members.txt`, `scores.csv` (per member and set), `members.csv` (ok, chi2, ESL at 20 ka, run time), `slurm-<m>.out`, `update.out` |
-| `iter_kk/mNNN/` | `taub_scale.nc`, `par.nml`, the run, `status` (exit code and seconds) |
+| `iter_kk/` | `theta.csv`, `members.txt` (the members to run), `par.nml` (the iteration's par file: the folder's with the product and final keys), `scale/mNNN.nc` (the multipliers of each member), `scale_files.txt` (runme's `-i` table: the scale file of every member per key of `scale_keys`), `array.json` (runme: the job array and its id), `runme.out`, `scores.csv` (per member and set), `members.csv` (ok, chi2, ESL at 20 ka, run time), `update.out` |
+| `iter_kk/<m>/` | member m (0, 1, ...), staged by runme: `par.nml` with its scale file, `kryos.x`, the links, the run, `out.out`, `out.err`, `status` (exit code and seconds) |
+
+Folders made before 2026-11-11 have the members in `iter_kk/mNNN/` (with their `taub_scale.nc`; the job logs in
+`iter_kk/slurm-<m>.out`); the tools still read them.
 
 Every member writes the product: the 2-D ice (`H_ice`, `z_srf`, `z_bed`, `z_sl`, `f_ice`, `M_ice`) of each scaled
 instance on its `out_2D` schedule (2.5 kyr), its 0-D series, and the VILMA2 stream of the par file.
@@ -320,7 +329,7 @@ The design note says these values are to be re-estimated on the first 3-D wave.
 
 ## Levante job limits and cost
 
-- **At most 30 jobs** may be queued or running at a time. The member arrays are throttled (`--array=<ids>%THROTTLE`):
+- **At most 30 jobs** may be queued or running at a time. The member arrays are throttled (runme `--array THROTTLE`):
   - ES-MDA uses `throttle = 29`: 29 members plus the queued analysis.
   - Ensemble v1 uses `throttle = 25`: 25 members plus the weights job plus one other run.
   - `THROTTLE` is read from the folder's `slurm.env` at every submission. Lowering it there before the next iteration
@@ -343,12 +352,13 @@ Both job scripts:
   the Julia tools with `KRYOS_JULIA --project=tools/levante` (see
   [Getting started](getting-started.md#the-levante-tools)).
 - **Config:** the strings of a config may use the placeholders `{kryos}`, `{fesmdata}`, `{kryos_data}`, `{maps}` and
-  `{work}` (`KRYOS`, `FESMDATA`, `KRYOS_DATA`, `KRYOS_MAPS`, `KRYOS_WORK` of `env.sh`). `[run] kryos_dir` (default the
-  checkout of the tools), `set_nml` (its `set_nml.py`), `maps` (`KRYOS_MAPS`), `account` (`ACCOUNT`) and
-  `[score] fesmdata` (`FESMDATA`) have defaults, so the configs in the repository set none of them. The init writes the
-  expanded config into the folder, which then does not depend on the environment.
+  `{work}` (`KRYOS`, `FESMDATA`, `KRYOS_DATA`, `KRYOS_WORK` of `env.sh`; `{maps}` is the checkout's `maps/`).
+  `[run] kryos_dir` (default the checkout of the tools), `set_nml` (its `set_nml.py`), `maps` (the checkout's
+  `maps/`) and `[score] fesmdata` (`FESMDATA`) have defaults, so the configs in the repository set none of them.
+  `[run] partition` is a runme queue alias (`shared`, `compute`); the account is that of `.runme/config.toml`. The
+  init writes the expanded config into the folder, which then does not depend on the environment.
 - **Binary:** they need a `kryos.x` built with `plastic=1 vilma=1` in `[run] kryos_dir`
-  (`libkryos/bin/kryos.x`). `start` creates the maps folder if it is missing (`kryos_maps_init`).
+  (`libkryos/bin/kryos.x`), and runme >= 0.5.27 (`tools/levante/setup.sh`).
 - **Folder:** the target folder must not exist yet.
 
 ES-MDA calibration:
@@ -357,9 +367,19 @@ ES-MDA calibration:
 tools/levante/plastic_esmda.sh start tools/levante/plastic_esmda_v2.toml $KRYOS_WORK/esmda-<name>
 ```
 
-`start` submits the init as a job. The init writes the prior ensemble and submits iteration 1: the members as an
-array, then the analysis (`afterany`). The analysis scores, updates and submits the next iteration until `next` says
-`done`. To resubmit an iteration by hand:
+`start` submits the init as a job. The init writes the prior ensemble and submits iteration 1: the members as one
+job array, then the analysis (`afterany` on the array's job id, from `iter_kk/array.json`). The members are staged
+and submitted by runme from the calibration folder
+([tools/levante/members.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/members.sh)):
+
+```bash
+cd <calibration folder>
+runme -r -s -e kryos -n iter_kk/par.nml -o iter_kk -i iter_kk/scale_files.txt -j <members> --array $THROTTLE \
+      -q $PART -w $TIME --omp $THREADS -m $MEM
+```
+
+(the settings from `slurm.env`, `<members>` from `iter_kk/members.txt`). The analysis scores, updates and submits
+the next iteration until `next` says `done`. To resubmit an iteration by hand:
 
 ```bash
 tools/levante/plastic_esmda.sh submit <calibration folder> <k>
@@ -372,15 +392,15 @@ tools/levante/plastic_ensemble.sh start tools/levante/plastic_ensemble_v1.toml <
 tools/levante/plastic_ensemble.sh submit <ensemble folder> <k>     # the members of wave k and the weights after them
 ```
 
-The members run as calibration members (`plastic_esmda.sh member`). The weights job runs after the members
-(`afterany`).
+The members of a wave run as those of a calibration (one runme job array, `members.sh`). The weights job runs after
+the array (`afterany`).
 
 To monitor:
 
 - `jobs.txt` holds the job ids of each submission.
 - `init.out` is the init log.
-- `iter_kk/slurm-<m>.out` is a member's job log. `iter_kk/mNNN/status` holds its exit code and run time, and
-  `out.out` and `out.err` hold kryos's output.
+- `iter_kk/runme.out` is runme's log of the staging and submission. `iter_kk/<m>/status` holds a member's exit code
+  and run time, and `iter_kk/<m>/out.out` and `out.err` hold its job and kryos output.
 - `iter_kk/update.out` (ES-MDA) and `iter_kk/weights.out` (ensemble) are the analysis logs.
 - `next` and `esmda.md` give the state of a calibration, and `iter_kk/weights.md` that of an ensemble wave.
 

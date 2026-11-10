@@ -16,9 +16,9 @@ calibrated multipliers and the 3-D Earth it is our own ice history.
   `PlasticIceSheet`, built with the same `openmp=`; `config/common.mk`). See
   [Getting started](getting-started.md).
 - **Config:** the par files below (see also [Par files](reference-par-files.md)).
-- **Scripts:** [plastic_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_run.sh)
-  stages and submits one run (Running, below). Scoring and comparison: `tools/levante/plastic_score.sh`, `pm_compare.jl`,
-  `plastic_earth_compare.jl`.
+- **Running:** one run is staged and submitted with [runme](https://github.com/fesmc/runme) from the checkout
+  (Running, below; [Getting started](getting-started.md)). Scoring and comparison: `tools/levante/plastic_score.sh`,
+  `pm_compare.jl`, `plastic_earth_compare.jl`.
 - **Design notes:** [docs/dev/plastic-backend.md](https://github.com/fesmc/kryos/blob/main/docs/dev/plastic-backend.md).
 
 | Par file | Domains | Earth | Reference |
@@ -80,10 +80,14 @@ tau_b of a domain d at time t:
 |---|---|---|
 | `taub_domain_file` | FesmData `..._IceHistory-PaleoMIST_taub.nc` | Gowan's tau_b (unscaled) |
 | `taub_domain_factor_file` | Stage 1: `$KRYOS_DATA/plastic/taub_domain_factor_v3.nc` (NH-32KM, ANT-16KM, PAT-PAL-8KM); v2: `$KRYOS_DATA/plastic/taub_domain_factor_v2.nc` (NH-32KM, ANT-16KM) | `domain_id(domain)`, `log_factor(domain)`: one factor per domain, constant in time, from the present-day thickness |
-| `taub_scale_file` | `taub_scale.nc` of a calibration member, `<calibration>/iter_kk/mNNN/taub_scale.nc`; the v2 posterior mean: `$KRYOS_DATA/plastic/taub_scale_esmda_v2_posterior.nc` | `group(domain)`, `time(node)`, `log_factor(scale_group, node)`: one multiplier per scale group, linear in time between the nodes |
+| `taub_scale_file` | the multiplier file of a calibration member, `<calibration>/iter_kk/scale/mNNN.nc` (folders made before 2026-11-11: `iter_kk/mNNN/taub_scale.nc`); the v2 posterior mean: `$KRYOS_DATA/plastic/taub_scale_esmda_v2_posterior.nc` | `group(domain)`, `time(node)`, `log_factor(scale_group, node)`: one multiplier per scale group, linear in time between the nodes |
 
-- All par files ship with `taub_domain_factor_file = ""` and `taub_scale_file = ""`: Gowan's
-  tau_b, unscaled. `""` is no file; a file of zeros gives tau_b bit for bit.
+- The `_b1` par files and the NH-ANT(-PAT) par files ship with `taub_domain_factor_file =
+  "kryos_data/plastic/taub_domain_factor_v3.nc"` on every instance (the released Stage 1 factors;
+  v3 is v2 plus Patagonia, identical on all NH and ANT domains) and `taub_scale_file = ""`.
+  `""` is no file: with both keys `""` the tau_b is Gowan's, unscaled; a file of zeros gives
+  tau_b bit for bit. With runme an empty value is `-p ice_nor.taub_domain_factor_file=` (nothing after
+  `=`; quotes would be kept as characters), one per instance.
 - One file of each kind holds the domains of all grids: set the same path on every instance
   (an id of another grid has no cells).
 - Stage 1 (`tests/plastic_taub_fit.f90`, report and file by
@@ -92,12 +96,14 @@ tau_b of a domain d at time t:
   `tools/levante/plastic_ensemble_v1.toml` ("Stage 1 with PAT"; section "Stage 1 v3" of
   [docs/dev/plastic-backend.md](https://github.com/fesmc/kryos/blob/main/docs/dev/plastic-backend.md)).
 - The scale file of a member is written by `plastic_esmda.jl` (or `plastic_ensemble.jl`) into
-  its folder. The posterior mean of an ES-MDA calibration is member `m000` of the iteration
-  after the last update: for v2 `runs/esmda-v2/iter_05/m000/taub_scale.nc`, published as
+  `iter_kk/scale/`. The posterior mean of an ES-MDA calibration is member 0 of the iteration
+  after the last update (`iter_kk/scale/m000.nc`): for v2 (a folder of the old layout)
+  `runs/esmda-v2/iter_05/m000/taub_scale.nc`, published as
   `$KRYOS_DATA/plastic/taub_scale_esmda_v2_posterior.nc`.
 
-The 3-D North-only file (`kryos_North_plastic_vilma2.nml`) does not list the two keys; they take
-the default `""` of `input/kryos_defaults.nml`.
+The fixed-bed smoke file (`kryos_North_plastic.nml`) and the 3-D North-only file
+(`kryos_North_plastic_vilma2.nml`) do not list the two keys; they take the default `""` of
+`input/kryos_defaults.nml`.
 
 ## 1-D or 3-D Earth
 
@@ -134,39 +140,37 @@ Earth or ice history needs its own case; see
 
 ## Running
 
-On Levante, a run folder holds the executable, the par file and four links (the layout of a
-calibration member, `plastic_esmda.sh member`).
-[tools/levante/plastic_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_run.sh)
-stages it in one step and submits the job:
+On Levante, a run folder holds the executable, the par file and the links `input`, `fesmdata`,
+`kryos_data`, `maps`, staged and submitted with runme from the checkout (the layout and the options:
+[Getting started](getting-started.md)):
 
 ```bash
-tools/levante/plastic_run.sh <run folder> <par file> [<factor file> [<scale file>]] [group.key=value ...]
-tools/levante/plastic_run.sh $KRYOS_WORK/runs/sci-3d par/kryos_NH-ANT-PAT_plastic_vilma2.nml \
-    '{kryos_data}/plastic/taub_domain_factor_v3.nc'
-tools/levante/plastic_run.sh $KRYOS_WORK/runs/b1-short par/kryos_NH-ANT_plastic_vilma2_b1.nml \
-    '{kryos_data}/plastic/taub_domain_factor_v2.nc' "" 'clock.time_end=-60e3'
+cd $KRYOS
+runme -r -s -q shared -w 08:00:00 --omp 64 -m 60G -o $KRYOS_WORK/runs/sci-3d -n par/kryos_NH-ANT-PAT_plastic_vilma2.nml
+runme -r -s -q shared -w 01:00:00 --omp 16 -m 30G -o $KRYOS_WORK/runs/b1-short -n par/kryos_NH-ANT_plastic_vilma2_b1.nml \
+    -p clock.time_end=-60e3
 ```
 
-- It copies `libkryos/bin/kryos.x` of the checkout (build first: `make kryos plastic=1 vilma=1`)
-  and the par file (a relative path is taken from the checkout) into the run folder, which must
-  not exist.
-- The factor and scale files are set as `taub_domain_factor_file` and `taub_scale_file` on every
-  instance (`""` = none); `{kryos_data}`, `{fesmdata}`, `{kryos}` in them are replaced by the
-  paths of `env.sh`. Keys after them are set with
-  [tools/levante/set_nml.py](https://github.com/fesmc/kryos/blob/main/tools/levante/set_nml.py).
+- runme copies `libkryos/bin/kryos.x` of the checkout (build first: `make kryos plastic=1 vilma=1`)
+  and the par file into the run folder, and writes the `-p` keys into the copy (a key must exist in
+  the par file or in `input/kryos_defaults.nml`).
+- The Stage 1 factors are those of the par file (`kryos_data/plastic/taub_domain_factor_v3.nc`),
+  so no factor argument is needed. A scale file on every instance:
+  `-p ice_nor.taub_scale_file=<file> ice_ant.taub_scale_file=<file> ice_pat.taub_scale_file=<file>`
+  (`ice_pat` only with the NH-ANT-PAT file).
 - The links: `fesmdata`, `kryos_data` (the shared stores: read them, never write through the
-  links), `input` (the checkout's) and `maps` (`KRYOS_MAPS`, created and seeded with the weights
-  of our runs if missing; the first run of a new grid writes its weights there).
-- Job settings (environment): `PARTITION` (`shared`), `THREADS` (64), `MEM` (60G), `TIME`
-  (08:00:00), `SUBMIT` (1; 0 stages only). The job runs `./kryos.x par.nml` (its only
-  argument, no `-p`) with `OMP_PROC_BIND=true OMP_STACKSIZE=512M OMP_MAX_ACTIVE_LEVELS=1`
-  and `ulimit -s unlimited`, logs to `out.out`, `out.err` and writes `status` (exit code and
-  seconds) when it ends.
+  links), `input` and `maps` (the checkout's; `maps/` holds the weights of our runs,
+  `tools/levante/setup.sh`, and the first run of a new grid writes its weights there).
+- The job (`.runme/submit_slurm`) runs `./kryos.x <par file>` (directly, one OpenMP task) with
+  `OMP_PROC_BIND=true OMP_STACKSIZE=512M OMP_MAX_ACTIVE_LEVELS=1` and `ulimit -s unlimited`, logs
+  to `out.out`, `out.err` and writes `status` (exit code and seconds) when it ends. The folder also
+  holds `job.submit`, `runme.json` (runme's record of the run), `params.txt` and `info.txt`.
+- Without `-r` runme only stages the folder (with `-s` it also writes `job.submit`).
 
 The released factor files are in `$KRYOS_DATA/plastic`: `taub_domain_factor_v2.nc` (NH-32KM,
 ANT-16KM) and `taub_domain_factor_v3.nc` (with PAT-PAL-8KM); the v2 posterior multipliers are
 `taub_scale_esmda_v2_posterior.nc`. At most 30 Levante jobs at a time (queued and running),
-also for ensembles.
+also for ensembles (runme `--array N`).
 
 Cost:
 
