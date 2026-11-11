@@ -74,10 +74,24 @@ through time; scenario members picked from the high-weight set (low, mid, high L
 trade-offs, e.g. Laurentide against Antarctica); posterior parameter correlations (which groups trade off through the
 far field); a held-out check (10 % of the sites by region, scored by the weighted ensemble).
 
-## Earth as a dimension (later)
+## Earth as a dimension
 
-Scalings of the Bagge field (upper mantle, lower mantle, lithosphere thickness), sampled jointly with tau_b in a later
-wave, so that ice and Earth share the non-uniqueness.
+Wave 1 (ens-v1) showed that the misfit in Fennoscandia/Barents is the Earth's: with PaleoMIST's ice, the 1-D Earth (B1)
+is 20-40 m high around the Gulf of Bothnia in the early Holocene, the 3-D Earth (B3) 20-85 m low, and every member follows
+B3 (plastic_ensemble_misfit.jl). PaleoMIST itself misfits west Greenland. So the Earth is sampled with tau_b (v2,
+`plastic_ensemble_v2.toml`), and all data groups judge plausibility:
+
+- Parameters (prior N(0, 0.5^2) dex each, independent, |shift| <= 1.5): shifts of log10(eta) of the Bagge field, a global
+  one above 670 km (the upper mantle with the lithosphere) and one below (the lower mantle), and one per region above 670
+  km: Laurentide, Greenland, Fennoscandia/Barents, West and East Antarctica. Above the lid threshold (log10 eta > 22) the
+  field is elastic, so an upper-mantle shift also moves the lithosphere's base.
+- Regions: masks from the tau_b domains of their scale groups (300 km buffer, 500 km cos^2 taper, shared where they
+  overlap), `kryos_data/plastic/earth_regions_v2.nc` (`plastic_ensemble.jl earth-regions`). Iceland's domains belong to
+  the Laurentide tau_b group and Iceland lies within Greenland's buffer, so no regional shift applies there (`exclude_codes`,
+  REGIONS region_2 105, tapered over 200 km).
+- Each member: a shift file `iter_kk/earth/mNNN.nc` (VILMA2 `visc_shift_file`, `plastic_earth_shift.jl`).
+- The present-day reference correction r (refcorr) stays that of the unperturbed Earth; its error is measured on
+  PaleoMIST-sci with all shifts at +0.5 and -0.5 dex against a rerun without shift (`gia_refcorr.sh`, 2026-11-11).
 
 ## Cost
 
