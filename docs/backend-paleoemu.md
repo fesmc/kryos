@@ -111,12 +111,24 @@ reference climate on the grid (key `reference`), with the same formulas as
 **Reference climate.** It is a file on the instance grid holding `tas_ref` [K] and
 `pr_ref` [mm d-1] by month, `z_srf_ref` [m] and the global attribute `grid_name`.
 PaleoEmulator writes it from ERA5 1981-2010 minus the HadCRUT 5.1 warming since
-1850-1900:
+1850-1900, corrected over the ice sheets by regional climate models of the same
+period (MAR v3.14 for Greenland, RACMO2.3p2 for Antarctica), remapped by FesmData
+onto the same grid. ERA5 alone is 1-2 K too cold in summer over Greenland's ablation
+zone (600-1600 m) and too snowy at its margins. Each RCM replaces ERA5 over its domain
+(its temperature taken to `z_srf_ref` by Γ), and its correction decays to 0 over 200 km
+beyond it (`taper_km`):
 
 ```bash
 scripts/prep_era5_clim.sh <dir> <kryos>/maps/grid_GLOBAL-0.5DEG.txt GLOBAL-0.5DEG
-julia --project=scripts scripts/prep_kryos_reference.jl <dir> GLOBAL-0.5DEG <out.nc>
+julia fesmdata.jl remap $FESMDATA_PREPARED/Fettweis2017_mar314/MARv3.14_ERA5_1981-2010.nc GLOBAL-0.5DEG --vars=t2m,pr,z_srf --name=SMB-MARv3.14-1981-2010
+julia fesmdata.jl remap $FESMDATA_PREPARED/vanWessem2023_racmo23/RACMO2.3p2_1981-2010.nc GLOBAL-0.5DEG --vars=t2m,pr,z_srf --name=SMB-RACMO2.3p2-1981-2010
+julia --project=scripts scripts/prep_kryos_reference.jl <dir> GLOBAL-0.5DEG <out.nc> \
+    GLOBAL-0.5DEG_SMB-MARv3.14-1981-2010.nc GLOBAL-0.5DEG_SMB-RACMO2.3p2-1981-2010.nc
 ```
+
+The par files use `kryos_data/paleoemu/paleoemu_reference_rcm_GLOBAL-0.5DEG.nc` (the
+remapped RCMs in `kryos_data/paleoemu/rcm/`); `paleoemu_reference_GLOBAL-0.5DEG.nc`
+is ERA5 alone.
 
 **Restart.** The file `<name>_restart.nc` holds the emulator's memory: the filter
 states and the time of the last update. On restore, the reference is set again from
