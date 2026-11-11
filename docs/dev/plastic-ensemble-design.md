@@ -86,8 +86,9 @@ B3 (plastic_ensemble_misfit.jl). PaleoMIST itself misfits west Greenland. So the
   km: Laurentide, Greenland, Fennoscandia/Barents, West and East Antarctica. Above the lid threshold (log10 eta > 22) the
   field is elastic, so an upper-mantle shift also moves the lithosphere's base.
 - Regions: masks from the tau_b domains of their scale groups (300 km buffer, 500 km cos^2 taper, shared where they
-  overlap), `kryos_data/plastic/earth_regions_v1.nc` (`plastic_ensemble.jl earth-regions`). Iceland's domains belong to
-  the Laurentide group, so Iceland is in that mask.
+  overlap), `kryos_data/plastic/earth_regions_v2.nc` (`plastic_ensemble.jl earth-regions`). Iceland's domains belong to
+  the Laurentide tau_b group and Iceland lies within Greenland's buffer, so no regional shift applies there (`exclude_codes`,
+  REGIONS region_2 105, tapered over 200 km).
 - Each member: a shift file `iter_kk/earth/mNNN.nc` (VILMA2 `visc_shift_file`, `plastic_earth_shift.jl`).
 - The present-day reference correction r (refcorr) stays that of the unperturbed Earth; its error is measured on
   PaleoMIST-sci with all shifts at +0.5 and -0.5 dex against a rerun without shift (`gia_refcorr.sh`, 2026-11-11).

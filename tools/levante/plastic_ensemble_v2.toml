@@ -98,9 +98,11 @@ corr_time_kyr = 20.0
 sigma        = 0.5                       # prior sd [dex] of every shift, independent
 theta_max    = 1.5                       # [dex]
 boundary_km  = 670.0                     # the upper mantle (with the lithosphere) above, the lower mantle below
-regions_file = "{kryos_data}/plastic/earth_regions_v1.nc"   # plastic_ensemble.jl earth-regions of these [[earth.regions]]
+regions_file = "{kryos_data}/plastic/earth_regions_v2.nc"   # plastic_ensemble.jl earth-regions of these [[earth.regions]]
 buffer_km    = 300.0                     # the masks: 1 within buffer_km of the region's tau_b domains, cos^2 to 0 over taper_km
 taper_km     = 500.0
+exclude_codes = [105]                    # Iceland (REGIONS region_2): no regional shift there (its domains are in the
+                                         # Laurentide tau_b group, and it lies within Greenland's buffer)
 [[earth.regions]]
 name   = "Laurentide"
 groups = ["Laurentide"]

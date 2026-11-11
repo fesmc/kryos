@@ -11,7 +11,8 @@
 # besides the prior mean, m000), seed, obs_groups; [likelihood.<obs group>]: sigma_m [m], corr_dist_km, corr_time_kyr.
 # [earth] (optional): the Earth as parameters, sampled with tau_b: shifts of log10(eta) of VILMA2's 3-D field, global in the upper
 # and lower mantle and per region in the upper mantle (plastic_earth_shift.jl): sigma (prior sd [dex]), theta_max, boundary_km,
-# regions_file (the masks, earth-regions), [[earth.regions]] (name, groups: scale groups), key (vilma.visc_shift_file).
+# regions_file (the masks, earth-regions), [[earth.regions]] (name, groups: scale groups), exclude_codes (REGIONS areas without a regional shift),
+# key (vilma.visc_shift_file).
 # Sample: a Latin hypercube in the standard normal space of the parameters (n strata per parameter, one point in each, random
 # order), correlated by the Cholesky factor of the prior covariance, clipped to |theta| <= theta_max; m000 = the prior mean.
 # Likelihood: per data group g the index points of the group (pm_compare.jl GROUPS), d = model - obs, R_g = diag(sigma_i^2) +

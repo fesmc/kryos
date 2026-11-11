@@ -7,7 +7,9 @@
 # Region masks (`regions`): [[earth.regions]] (name, groups: scale groups of [scale], plastic_taub_scale.jl), the core of a region
 # the cells of the tau_b domains of its groups on the grids of [scale] taub_files (the ice of PaleoMIST), gathered on a global
 # 1-degree grid; t_k(d) = 1 within buffer_km of the core, cos^2 to 0 over taper_km beyond (d the great-circle distance to the core);
-# the masks w_k = t_k / max(1, sum_j t_j) (continuous, at most 1 in all; overlapping regions share). File: mask(lon, lat, region),
+# the masks w_k = t_k / max(1, sum_j t_j) (continuous, at most 1 in all; overlapping regions share). [earth] exclude_codes (REGIONS
+# codes of exclude_codes_var, default region_2, of [scale] regions_files; Iceland: 105): no regional shift there, all masks times
+# 1 - x(d), x = 1 in those areas and cos^2 to 0 over exclude_taper_km (200) around them. File: mask(lon, lat, region),
 # attribute region_names (";"-separated). Shift files (VILMA2's generic form): dlog10_visc(lon, lat, r) [dex], r the radius [m]
 # at the depths 0, boundary_km - 1, boundary_km + 1 and 2891 km (linear in r between them, so the step at the boundary is sharp).
 # Included by plastic_esmda.jl (after plastic_taub_scale.jl).
@@ -69,31 +71,47 @@ function region_masks(cfg, out)
     gpos = Dict(n => g for (g, n) in enumerate(sg.names))
     for (k, r) in enumerate(regs), g in r["groups"]; haskey(gpos, g) || error("region $(r["name"]): no scale group $g"); end
     dgrp = Dict(d => sg.group[i] for (i, d) in enumerate(sg.domain_id))
-    for tf in (haskey(sc, "taub_files") ? sc["taub_files"] : [sc["taub_file"]])
+    tfiles = haskey(sc, "taub_files") ? sc["taub_files"] : [sc["taub_file"]]
+    rfiles = haskey(sc, "regions_files") ? sc["regions_files"] : [sc["regions_file"]]
+    xvar = String(get(e, "exclude_codes_var", "region_2")); xcodes = Int.(get(e, "exclude_codes", Int[]))
+    xtap = Float64(get(e, "exclude_taper_km", 200.0))
+    excl = falses(length(lon), length(lat))           # the areas of exclude_codes (all REGIONS cells there, not only ice)
+    for (tf, rf) in zip(tfiles, rfiles)
         grid = basename(dirname(tf)); gf = joinpath(dirname(tf), "$(grid)_grid.nc")
         dom = NCDataset(ds -> Int.(nomissing(ds["taub_domain"][:, :], -9999)), tf)
         lo, la = NCDataset(ds -> (Float64.(ds["lon2D"][:, :]), Float64.(ds["lat2D"][:, :])), gf)
         size(lo) == size(dom) || error("$gf is not the grid of $tf")
+        codes = isempty(xcodes) ? nothing : NCDataset(ds -> Int.(nomissing(ds[xvar][:, :], -9999)), rf)
         for c in eachindex(dom)
+            if codes !== nothing && codes[c] in xcodes
+                excl[gi(lo[c]), gj(la[c])] = true; continue
+            end
             g = get(dgrp, dom[c], 0); g == 0 && continue
             for (k, r) in enumerate(regs)
                 sg.names[g] in r["groups"] && (core[gi(lo[c]), gj(la[c]), k] = true)
             end
         end
     end
+    taper(d, b, t) = d <= b ? 1.0 : d >= b + t ? 0.0 : cos(π / 2 * (d - b) / t)^2
+    function near(mask, f)                            # f(distance to the cells of mask) on the 1-degree grid
+        cc = [(lon[I[1]], lat[I[2]]) for I in findall(mask)]
+        A = zeros(length(lon), length(lat))
+        Threads.@threads for j in eachindex(lat)
+            for i in eachindex(lon); A[i, j] = f(minimum(hav(lon[i], lat[j], a, b) for (a, b) in cc)); end
+        end
+        A, length(cc)
+    end
     T = zeros(length(lon), length(lat), length(regs))
     for k in eachindex(regs)
-        cc = [(lon[I[1]], lat[I[2]]) for I in findall(core[:, :, k])]
-        isempty(cc) && error("region $(regs[k]["name"]): no cells")
-        Threads.@threads for j in eachindex(lat)
-            for i in eachindex(lon)
-                d = minimum(hav(lon[i], lat[j], a, b) for (a, b) in cc)
-                T[i, j, k] = d <= buf ? 1.0 : d >= buf + tap ? 0.0 : cos(π / 2 * (d - buf) / tap)^2
-            end
-        end
-        println(regs[k]["name"], ": ", length(cc), " core cells (1 deg)")
+        any(core[:, :, k]) || error("region $(regs[k]["name"]): no cells")
+        T[:, :, k], n = near(core[:, :, k], d -> taper(d, buf, tap))
+        println(regs[k]["name"], ": ", n, " core cells (1 deg)")
     end
     W = T ./ max.(1.0, sum(T; dims = 3))
+    if any(excl)                                      # no regional shift in the excluded areas, tapered off around them
+        X, n = near(excl, d -> taper(d, 0.0, xtap)); W .*= 1 .- X
+        println("excluded ($xvar codes $(xcodes)): ", n, " cells (1 deg), taper ", xtap, " km")
+    end
     isfile(out) && rm(out)
     NCDataset(out, "c") do ds
         defVar(ds, "lon", lon, ("lon",); attrib = ["units" => "degrees_east"])
@@ -103,6 +121,7 @@ function region_masks(cfg, out)
         ds.attrib["region_names"] = join([String(r["name"]) for r in regs], ";")
         ds.attrib["region_groups"] = join([String(r["name"]) * ": " * join(r["groups"], ", ") for r in regs], "; ")
         ds.attrib["buffer_km"] = buf; ds.attrib["taper_km"] = tap
+        isempty(xcodes) || (ds.attrib["excluded"] = "$xvar codes $(join(xcodes, ",")), taper $xtap km")
         ds.attrib["source"] = "plastic_earth_shift.jl regions: the tau_b domains of the scale groups on " *
                               join(basename.(haskey(sc, "taub_files") ? sc["taub_files"] : [sc["taub_file"]]), ", ")
     end
