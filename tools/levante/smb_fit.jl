@@ -6,16 +6,18 @@
 # The parameters of a domain are the columns of params.txt: a group ending in _ant is Antarctica's, its counterpart
 # without _ant North's (with Greenland's PD anchor), any other group (e.g. clim_glob) both domains'. The domains are fitted
 # independently. The cost of a domain:
-#   J = (rms_land/sB)² + (rms_marine/sB)² + wPD (rmse_PD/sPD)²
+#   J = (rms_land/sB)² + (rms_marine/sB)² + wPD (rmse_PD/sPD)² + wI ((∫smb_PD - ∫smb_RCM)/sI)² + wA ((A_abl - A_abl,RCM)/sA)²
 #   rms_land   = sqrt(Σ A (B/A)² / Σ A) over the land-terminating basins of the LGM slices (B = ∫(smb - ρ_i ∂H/∂t): ≈ 0)
 #   rms_marine = the same of min(B, 0) over the marine basins (B ≥ 0)
 #   rmse_PD    = the rms difference of smb from the regional climate model on the ice of the PD run [kg m-2 yr-1]:
 #                Greenland MAR v3.14 1961-1990 (the emulator's climate is pre-industrial), Antarctica RACMO2.3p2 1981-2010
+#   ∫smb_PD    = the integrated smb of the PD run on the ice of both [Gt/yr]; A_abl its ablation area (smb < 0) as a share
+#                of that ice: the gridpoint rmse alone can prefer a too narrow ablation zone (wI, wA default 0)
 # Basins in the regions of `exclude` (smb_basin_budget.jl's region names, e.g. Cordillera_and_Alaska,British_Isles: small
 # maritime ice sheets whose precipitation the emulator's 3.75 deg grid does not resolve) are left out of the LGM terms.
 #
 #   julia --project=tools/levante tools/levante/smb_fit.jl <ens dir> <out dir> [lgm=-23:-19] [sB=200] [sPD=200]
-#         [wPD=1] [exclude=Region,Region]
+#         [wPD=1] [wI=0] [sI=100] [wA=0] [sA=0.05] [exclude=Region,Region]
 # Writes <out>/fit.csv (per member and domain: its parameters, the terms and J), <out>/fit.png (J and its terms against
 # each parameter), and prints the best member per domain and the minimum of a quadratic fit of J over the domain's
 # parameters (scaled to [0, 1]) when it lies inside the box.
@@ -89,12 +91,14 @@ function quad_min(X, J)
 end
 
 function main(args)
-    length(args) >= 2 || (println("usage: smb_fit.jl <ens dir> <out dir> [lgm=-23:-19] [sB=200] [sPD=200] [wPD=1] [exclude=R,R]"); exit(1))
+    length(args) >= 2 || (println("usage: smb_fit.jl <ens dir> <out dir> [lgm=-23:-19] [sB=200] [sPD=200] [wPD=1] [wI=0] [sI=100] [wA=0] [sA=0.05] [exclude=R,R]"); exit(1))
     ens, out = args[1], args[2]; mkpath(out)
     kw = Dict(String(k) => String(v) for (k, v) in (split(a, "="; limit=2) for a in args[3:end]))
-    issubset(keys(kw), ("lgm", "sB", "sPD", "wPD", "exclude")) || error("unknown option(s): ", setdiff(keys(kw), ("lgm", "sB", "sPD", "wPD", "exclude")))
+    known = ("lgm", "sB", "sPD", "wPD", "wI", "sI", "wA", "sA", "exclude")
+    issubset(keys(kw), known) || error("unknown option(s): ", setdiff(keys(kw), known))
     lgm = Tuple(parse.(Float64, split(get(kw, "lgm", "-23:-19"), ":")))
-    sB, sPD, wPD = (parse(Float64, get(kw, k, d)) for (k, d) in (("sB", "200"), ("sPD", "200"), ("wPD", "1")))
+    sB, sPD, wPD, wI, sI, wA, sA = (parse(Float64, get(kw, k, d)) for (k, d) in
+        (("sB", "200"), ("sPD", "200"), ("wPD", "1"), ("wI", "0"), ("sI", "100"), ("wA", "0"), ("sA", "0.05")))
     exclude = filter(!isempty, split(get(kw, "exclude", ""), ","))
     P = readdlm(joinpath(ens, "params.txt"); header=true); pv, ph = Float64.(P[1]), String.(vec(P[2]))
     io = open(joinpath(out, "fit.csv"), "w")
@@ -108,7 +112,8 @@ function main(args)
             mb = joinpath(ens, "pm", string(i - 1), "budget", "basins.csv")
             isfile(mb) || error("$mb missing: run smb_basin_budget.jl on member $(i - 1) first (smb_ensemble.sh post)")
             l = lgm_terms(mb, dom.pm, lgm, exclude); p = pd_terms(joinpath(ens, "pd", string(i - 1)), dom)
-            J = (l.rms_land / sB)^2 + (l.rms_marine / sB)^2 + wPD * (p.rmse_pd / sPD)^2
+            J = (l.rms_land / sB)^2 + (l.rms_marine / sB)^2 + wPD * (p.rmse_pd / sPD)^2 +
+                wI * ((p.smb_pd - p.smb_rcm) / sI)^2 + wA * ((p.abl_pd - p.abl_rcm) / sA)^2
             push!(res, merge((member=i - 1,), l, p, (J=J,)))
             q = res[end]
             @printf(io, "%d,%s,%s,%.1f,%.1f,%.0f,%.0f,%.1f,%.0f,%.0f,%.3f,%.3f,%.4f\n", q.member, dom.pm,
