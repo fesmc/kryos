@@ -324,13 +324,15 @@ contains
         class(paleoemu_climate_t), intent(inout) :: self
         real(dp),                  intent(in)    :: t1
 
-        real(dp), allocatable :: lapse(:,:,:), bp(:,:)     ! (heap: 25 MB on GLOBAL-0.5DEG)
+        real(dp), allocatable :: pr(:,:,:), lapse(:,:,:), bp(:,:)   ! on the heap, not as expression temporaries
+                                                                    ! (25 MB on GLOBAL-0.5DEG: ifx puts those on the stack)
 
-        allocate(lapse(self%nx, self%ny, NMON), bp(self%nx, self%ny))
+        allocate(pr(self%nx, self%ny, NMON), lapse(self%nx, self%ny, NMON), bp(self%nx, self%ny))
+        pr = self%tgt%pr*self%day_year
         lapse = self%tgt%lapse
         bp = self%beta_p
         call fields_put(self%exports, self%h_tas,        self%tgt%tas,                t1=t1)
-        call fields_put(self%exports, self%h_pr,         self%tgt%pr*self%day_year,   t1=t1)
+        call fields_put(self%exports, self%h_pr,         pr,                          t1=t1)
         call fields_put(self%exports, self%h_z_srf_clim, self%tgt%z_srf_ref,          t1=t1)
         call fields_put(self%exports, self%h_lapse,      lapse,                       t1=t1)
         call fields_put(self%exports, self%h_beta_p,     bp,                          t1=t1)
