@@ -8,7 +8,7 @@ T=${ESMDA_TOOLS:-$(cd "$(dirname "$(readlink -f "$0")")" && pwd)}    # the jobs 
 export ESMDA_TOOLS=$T
 . "$T/env.sh"
 J="$KRYOS_JULIA --project=$T"
-small="-A $ACCOUNT -p shared -t 02:00:00 -c 4 --mem=32G"
+small="-A $ACCOUNT $KRYOS_PART -t 02:00:00 -c 4 --mem=32G"
 it() { printf "%s/iter_%02d" "$1" "$2"; }
 . "$T/members.sh"
 
