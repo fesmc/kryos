@@ -215,7 +215,11 @@ the sea-level equation: `rotation_k_s` (≤ 0: the model's own fluid limit) and
 - **`out_vilma`:** `<instance>_vilma.nc` (`geo_glob_vilma.nc`), VILMA2's own
   diagnostics file, rounded by its table
   [`input/vilma-variables.md`](https://github.com/fesmc/kryos/blob/main/input/vilma-variables.md):
-  `h_ice`, `rsl` (relative sea-level change, full field), `z_bed` (= z_bed_eq − rsl),
+  `h_ice` (the grounded-ice load of the solve: with the host terms of ice instances
+  I_g + (1 − w) h_ice_ext, the instances' ice inside their weight w and the external ice
+  outside), `h_ice_ext` (the external ice of the 1 − w part, e.g. PaleoMIST outside the
+  plastic grids; = `h_ice` without host terms; runs of before 2026-11-11 have only it, as
+  `h_ice`), `rsl` (relative sea-level change, full field), `z_bed` (= z_bed_eq − rsl),
   `C_ocean`, `dz_bed`, `dz_ss` (rsl = dz_ss − dz_bed), and the series `bsl`, `dphi`,
   `bsl_ive`, `bsl_ive_host`, `fill_int`, `fill_int_own`. Not the viscoelastic memory.
 - **Restart:** VILMA2's restart file, labelled with its own clock, always lossless.

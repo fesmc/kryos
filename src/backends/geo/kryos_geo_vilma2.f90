@@ -395,14 +395,15 @@ contains
         ! Streams 2D and 1D: the default writer (the exports on lon, lat; rounded by the table `geo`). `gia`: the global
         ! ice field VILMA2 got (the host imports, table `geo-vilma2`). `vilma`: VILMA2's own diagnostics file
         ! (vilma_write_step, rounded by its own table; the ice, sea level, bed, ocean function and the
-        ! scalar series: not the viscoelastic memory).
+        ! scalar series: not the viscoelastic memory). h_ice is the load of the solve (with the host terms of
+        ! the plastic or Yelmo instances: I_g + (1 - w) h_ice_ext), h_ice_ext the external ice of the 1 - w part.
         class(vilma_earth_t), intent(inout) :: self
         character(len=*),     intent(in)    :: file, stream
         real(dp),             intent(in)    :: t
         logical,              intent(in)    :: init
 
         character(len=*), parameter :: DIMS_LL(3) = [character(len=32) :: "lon", "lat", "time"]
-        character(len=*), parameter :: VARS_VILMA(12) = [character(len=12) :: "h_ice", "rsl", "z_bed", "C_ocean", &
+        character(len=*), parameter :: VARS_VILMA(13) = [character(len=12) :: "h_ice", "h_ice_ext", "rsl", "z_bed", "C_ocean", &
             "dz_bed", "dz_ss", "bsl", "dphi", "bsl_ive", "bsl_ive_host", "fill_int", "fill_int_own"]
         type(var_io_type) :: row
         real(dp), allocatable :: a(:,:)
