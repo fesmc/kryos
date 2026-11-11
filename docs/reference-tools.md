@@ -83,6 +83,7 @@ run as Slurm jobs submit themselves: run them directly, not with `sbatch`. Every
 | [plastic_maps.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_maps.jl) | Maps of the offline check (`plastic_slices`): H - PaleoMIST H_ice at given ages |
 | [pm_maps.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_maps.jl) | Figures of the standalone VILMA2 PaleoMIST test from `pm_compare.jl` output |
 | [gia_refcorr_plot.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr_plot.jl) | The figure of a `gia_refcorr.sh` case: the converged r and the 0 ka bed misfit per iteration |
+| [smb_basin_budget.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/smb_basin_budget.jl) | The mass budget per drainage basin of a run on imposed ice (ice backend `data`): ∫(smb − ρ_i ∂H/∂t) per basin (≈ 0 land-terminating, ≥ 0 marine), AAR, balance flux and speed; the misfit terms of the SMB tuning |
 
 ## Tests of the backend
 
