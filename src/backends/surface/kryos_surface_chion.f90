@@ -53,7 +53,8 @@ module kryos_chion_host
     use nml,        only : nml_read
     use ncio,       only : nc_open, nc_close, nc_write, nc_read, nc_exists_var
     use phys_constants, only : phys_const_class, sec_day
-    use insolation, only : insol_class, insol_init, calc_insol_days, insol_wp => wp
+    use insolation, only : insol_class, insol_init, calc_insol_days, insol_wp => wp, &
+                           insol_stencil_class, insol_stencil_init, insol_stencil_point
     use insolation, only : orbit_pars_class
     use chion,      only : wp, dp, wp_acc, MV, chion_class, chion_init, chion_init_state, &
                            chion_update, chion_set_active_mask, &
@@ -105,15 +106,14 @@ module kryos_chion_host
     type surface_chion_insol_class
         ! Daily TOA insolation on a regular latitude table, rebuilt only when
         ! the orbital elements change, and the fixed linear-interpolation
-        ! stencil of every column into it. The state has no orbital tables:
-        ! the host passes the elements.
+        ! stencil of every column into it (insol's latitude stencil). The state
+        ! has no orbital tables: the host passes the elements.
         type(insol_class)      :: is                   ! insol state on the table latitudes (no tables)
         type(orbit_pars_class) :: orbit                ! the elements of the table
         logical               :: set = .false.         ! the table holds the insolation of orbit
         real(dp), allocatable :: lat(:)                ! (nlat) [deg N]
         real(wp), allocatable :: S(:,:)                ! (nlat,nday) [W m-2]
-        integer,  allocatable :: j0(:)                 ! (ncol) table row below the column
-        real(wp), allocatable :: w1(:)                 ! (ncol) weight of row j0+1
+        type(insol_stencil_class) :: st                ! the table latitudes onto the columns
     end type surface_chion_insol_class
 
     type surface_chion_class
@@ -232,7 +232,7 @@ contains
         real(wp_acc), allocatable :: melt1(:), runoff1(:), refrz1(:), subl1(:)
         real(wp), allocatable :: melt_a(:), runoff_a(:), refrz_a(:), subl_a(:)
         integer,  allocatable :: idx(:)
-        integer  :: na, i, icol, m, day, nday, j0
+        integer  :: na, i, icol, m, day, nday
         real(wp) :: dt, spd, T0, t_d, p_d, sf_d, S_d
 
         nday = sc%md%nday_year
@@ -311,7 +311,7 @@ contains
             sc%chn%forc%day_of_year         = real(day, wp)
             sc%chn%forc%solar_longitude_deg = solar_longitude_deg(day, nday)
 
-            !$omp parallel do default(shared) private(i,icol,j0,t_d,p_d,sf_d,S_d)
+            !$omp parallel do default(shared) private(i,icol,t_d,p_d,sf_d,S_d)
             do i = 1, na
                 icol = idx(i)
                 call interp_monthly_to_day(sc%md, t_ctl(:,i), day, t_d)
@@ -321,8 +321,7 @@ contains
                 sf_d = p_d*calc_snowfrac(t_d, sc%par%sf_a, sc%par%sf_b)
                 S_d  = 0.0_wp
                 if (sc%insol) then
-                    j0  = sc%ins%j0(icol)
-                    S_d = (1.0_wp - sc%ins%w1(icol))*sc%ins%S(j0,day) + sc%ins%w1(icol)*sc%ins%S(j0+1,day)
+                    S_d = insol_stencil_point(sc%ins%st, icol, sc%ins%S(:,day))
                 end if
 
                 sc%chn%forc%air_temperature(icol) = t_d
@@ -580,8 +579,7 @@ contains
         real(wp),                        intent(in)    :: lats(:)     ! (ncol) [deg N]
         integer,                         intent(in)    :: nday
 
-        integer :: nlat, j, icol
-        real(dp) :: x
+        integer :: nlat, j
 
         nlat = nint(180.0_dp/insol_dlat) + 1
         allocate(ins%lat(nlat), ins%S(nlat,nday))
@@ -593,12 +591,7 @@ contains
 
         call insol_init(ins%is, ins%lat, day_year=nday, tables=.false.)
 
-        allocate(ins%j0(size(lats)), ins%w1(size(lats)))
-        do icol = 1, size(lats)
-            x = (real(lats(icol), dp) + 90.0_dp)/insol_dlat
-            ins%j0(icol) = min(max(int(x) + 1, 1), nlat - 1)
-            ins%w1(icol) = real(x - real(ins%j0(icol) - 1, dp), wp)
-        end do
+        call insol_stencil_init(ins%st, ins%lat, real(lats, dp))
     end subroutine insol_table_init
 
     subroutine insol_table_update(ins, orbit, dt_days)
