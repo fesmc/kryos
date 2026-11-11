@@ -50,7 +50,7 @@ module kryos_chion_host
     ! cloudiness 1 - SWdn/(TOA*tau_clear) is elevation-only here, SWdn/TOA =
     ! trans_sw). PDD takes the air temperature and the snowfall/rainfall only.
 
-    use nml,        only : nml_read
+    use nml,        only : nml_read, nml_has_param
     use ncio,       only : nc_open, nc_close, nc_write, nc_read, nc_exists_var
     use phys_constants, only : phys_const_class, sec_day
     use insolation, only : insol_class, insol_init, calc_insol_days, insol_wp => wp, &
@@ -84,6 +84,7 @@ module kryos_chion_host
         real(wp)           :: trans_sw      ! [1] TOA -> surface shortwave transmissivity (BESSI)
         real(wp)           :: wind_speed    ! [m s-1] constant wind speed
         real(wp)           :: rel_hum       ! [1] constant relative humidity
+        real(wp)           :: swe_init_ice = 0.0_wp   ! [kg m-2] cold start: the snowpack of ice columns (0: chion's own)
     end type surface_chion_param_class
 
     type surface_chion_ann_class
@@ -199,13 +200,24 @@ contains
 
     subroutine surface_chion_spinup(sc, t2m, pr, z_srf, z_bed, H_ice, z_sl, orbit)
         ! Cold-start snowpack: time_equil annual cycles under the initial climate
-        ! and geometry (smbpal's 100-yr ITM equilibration).
+        ! and geometry (smbpal's 100-yr ITM equilibration). With swe_init_ice > 0
+        ! the cold start is rebuilt first, now that the climate and the ice are
+        ! known: ice columns (H_ice > 0) start with that much snow and firn, land
+        ! columns bare, everything (snow, surface, BESSI's ice substrate) at the
+        ! column's annual-mean air temperature (chion_init_state swe, t_init).
+        ! An ice sheet is never snow-free; started bare, a very dry column can
+        ! settle into a thin, sublimating state (chion D46).
         type(surface_chion_class), intent(inout) :: sc
         real(wp), intent(in) :: t2m(:,:,:), pr(:,:,:)       ! [K], [mm w.e./d] monthly
         real(wp), intent(in) :: z_srf(:,:), z_bed(:,:), H_ice(:,:), z_sl(:,:)
         type(orbit_pars_class), intent(in), optional :: orbit   ! the orbital elements (required with insolation)
 
         integer :: n
+
+        if (sc%par%swe_init_ice > 0.0_wp) then
+            call chion_init_state(sc%chn, swe=reshape(merge(sc%par%swe_init_ice, 0.0_wp, H_ice > 0.0_wp), [sc%ncol]), &
+                                  t_init=reshape(sum(t2m, dim=3)/real(size(t2m, 3), wp), [sc%ncol]))
+        end if
 
         do n = 1, nint(sc%par%time_equil)
             call surface_chion_update(sc, t2m, pr, z_srf, z_bed, H_ice, z_sl, orbit)
@@ -509,6 +521,7 @@ contains
         call nml_read(filename, group, "trans_sw",    par%trans_sw)
         call nml_read(filename, group, "wind_speed",  par%wind_speed)
         call nml_read(filename, group, "rel_hum",     par%rel_hum)
+        if (nml_has_param(filename, group, "swe_init_ice")) call nml_read(filename, group, "swe_init_ice", par%swe_init_ice)
     end subroutine surface_chion_par_load
 
     subroutine ann_alloc(ann, nx, ny)

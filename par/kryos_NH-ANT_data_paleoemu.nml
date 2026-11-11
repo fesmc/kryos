@@ -253,6 +253,7 @@
     sf_b       = 273.6   ! Snow fraction function (parameter b)
     sigma_pdd  = 5.0     ! [K] Temperature standard deviation for the annual PDDs (itm)
     time_equil = 100.0   ! [yr] Cold-start snowpack spin-up (annual cycles)
+    swe_init_ice = 500.0 ! [kg m-2] Cold start: snow and firn on ice columns, at the annual-mean air temperature
     dt_days    = 1       ! [d] chion step (divides the 360-day year)
     trans_sw   = 0.6     ! [1] TOA -> surface shortwave transmissivity (bessi)
     wind_speed = 5.0     ! [m s-1] Constant wind speed (bessi)
@@ -277,6 +278,7 @@
     mass_min         = 100.0                ! [kg m-2] Surface-layer mass that triggers a merge
     density_init     = 300.0                ! [kg m-3] Density assigned to an inactive layer slot
     temperature_init = 273.0                ! [K] Temperature assigned to an inactive layer slot
+    density_init_firn = 350.0               ! [kg m-3] Density of an initial snowpack (chion_init_state swe)
 
     ice_substrate_layers        = 5         ! [1] Thermal ice layers below the snow/firn column (0 = none)
     ice_substrate_top_thickness = 0.05      ! [m] Top substrate layer; each layer below is twice as thick
