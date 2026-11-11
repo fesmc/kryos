@@ -587,7 +587,7 @@ contains
         call coupler_init(cpl2, "maps")
 
         ! the wiring: ice -> hub and hub -> shelf rows (the toys have no other producers)
-        rows = [rows_between("ice", "hub"), rows_between("hub", "surface")]
+        call append_rows(rows, "ice", "hub"); call append_rows(rows, "hub", "surface")
         call domain_wire(d, clk, table=rows, check=.false., stat=stat)
         call check("domain_wire: rows resolved and primed", stat == 0 .and. size(d%wires) == size(rows))
         call check("rows into the hub: anomaly set active, mirror set inactive", count(d%wires%active .and. d%wires%dst_kind == "hub") == 3)
@@ -775,7 +775,7 @@ contains
         write(*,"(a)") "domain_refresh_boundary"
         call setup(d, "Greenland", ice=.true., surface=.true.)
         nx = d%hub%nx;  ny = d%hub%ny
-        rows = [rows_between("ice", "hub"), rows_between("hub", "surface"), rows_between("surface", "ice")]
+        call append_rows(rows, "ice", "hub"); call append_rows(rows, "hub", "surface"); call append_rows(rows, "surface", "ice")
         call domain_wire(d, clk, table=rows, check=.false., stat=stat)
         call check("domain_wire: ice -> hub, hub -> surface, surface -> ice rows", stat == 0)
 
@@ -901,15 +901,24 @@ contains
         character(len=*), intent(in) :: src, dst
         type(wire_t), allocatable :: r(:)
         type(wire_t), allocatable :: t(:)
-        logical, allocatable :: m(:)
         integer :: i
         t = wiring_table()
-        allocate(m(size(t)))                ! a loop, not pack with an implied-do mask: ifx 2024.1 aborts on that
-        do i = 1, size(t)
-            m(i) = trim(t(i)%src_kind) == trim(src) .and. trim(t(i)%dst_kind) == trim(dst)
-        end do
-        r = pack(t, m)
+        r = pack(t, [(trim(t(i)%src_kind) == trim(src) .and. trim(t(i)%dst_kind) == trim(dst), i = 1, size(t))])
     end function rows_between
+
+    ! rows_between(src, dst) appended to rows: an array constructor of variables, since ifx 2024.1 (albedo) aborts on
+    ! one of function results of a type with allocatable components ([rows_between(..), rows_between(..)])
+    subroutine append_rows(rows, src, dst)
+        type(wire_t), allocatable, intent(inout) :: rows(:)
+        character(len=*), intent(in) :: src, dst
+        type(wire_t), allocatable :: add(:)
+        add = rows_between(src, dst)
+        if (allocated(rows)) then
+            rows = [rows, add]
+        else
+            call move_alloc(add, rows)
+        end if
+    end subroutine append_rows
 
     ! -------------------------------------------------------------------------
     ! Par file
