@@ -1,4 +1,4 @@
-! kryos par file: the SMB tuning run. PaleoMIST's ice imposed in North (NH-32KM) and Antarctica (ANT-16KM) with the ice
+! kryos par file: the SMB tuning run. PaleoMIST's ice imposed in North (NH-32KM) and Antarctica (ANT-32KM) with the ice
 ! backend data (H_ice and z_bed of the IceHistory files; z_bed is relative to the sea level of the time, so z_sl = 0), no
 ! solid Earth, 80 ka to 0, with the CESM-3Ma emulator (climate paleoemu: the global part on the merged ice of the globe,
 ! a port per domain) driving the chion snowpack (itm, insolation on the forcing's orbit). The climate and chion's smb
@@ -161,7 +161,7 @@
 /
 
 &Antarctica
-    grid_hub    = "ANT-16KM"
+    grid_hub    = "ANT-32KM"
     topo        = "topo_ant"
     regions     = "regions_ant"
     basins      = "domain"
@@ -173,7 +173,7 @@
 
 &ice_ant
     backend  = "data"
-    grid     = ""                 ! the hub grid, ANT-16KM
+    grid     = ""                 ! the hub grid, ANT-32KM (the grid of chion)
     dt       = 0.0                ! every step
     phase    = 0.0
     clock    = "model"
