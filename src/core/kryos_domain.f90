@@ -41,7 +41,7 @@ module kryos_domain
                                fields_has, fields_handle, fields_describe, FIELD_INSTANT, FIELD_INTENSIVE, &
                                FIELD_EXTENSIVE
     use fesm_clock,      only: clock_t, clock_dtt, clock_time, clock_time_rel, cadence_t_last, cadence_due, &
-                               cadence_dt_years, cadence_mark
+                               cadence_dt_years, cadence_mark, clock_to_years
     use coords,          only: grid_class, grid_cdo_read_desc
     use regions,         only: regions_class, regions_init_nml
     use nml,             only: nml_has_group
@@ -452,6 +452,7 @@ contains
         ctx%cnst     = cnst
         ctx%time     = clock_time(clk)
         ctx%time_rel = clock_time_rel(clk)
+        ctx%time_ref = clock_to_years(clk, clk%n_ref)
         ctx%dtt      = clock_dtt(clk)
         ctx%sec_year = clk%sec_year
         ctx%axes     = axes

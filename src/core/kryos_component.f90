@@ -91,6 +91,7 @@ module kryos_component
         type(grid_ref_t)        :: ref          ! reference topography on this grid
         type(phys_const_class)  :: cnst
         real(dp)                :: time = 0.0_dp, time_rel = 0.0_dp, dtt = 0.0_dp   ! t0
+        real(dp)                :: time_ref = 0.0_dp   ! calendar year of model time zero (a datasrc's time_ref)
         real(dp)                :: sec_year = 0.0_dp   ! [s] year of the run calendar (fesm_clock year)
         type(axis_t), allocatable :: axes(:)    ! axes declared by the producers initialised so far
     end type init_ctx_t

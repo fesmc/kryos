@@ -258,6 +258,7 @@ contains
         ctx%cnst      = cnst
         ctx%time      = clock_time(clk)
         ctx%time_rel  = clock_time_rel(clk)
+        ctx%time_ref  = clock_to_years(clk, clk%n_ref)
         ctx%dtt       = clock_dtt(clk)
         ctx%sec_year  = clk%sec_year
     end subroutine globe_ctx
