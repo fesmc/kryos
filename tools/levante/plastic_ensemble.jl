@@ -1,7 +1,7 @@
 # A weighted ensemble of plastic ice histories (docs/dev/plastic-ensemble-design.md): a space-filling sample of the prior of
 # the tau_b multipliers, each member a kryos run, and its weight from the GAPSLIP 2.1 index points with a correlated error per
 # data group; members the data rule out (implausibility) get no weight. The jobs: plastic_ensemble.sh.
-#   julia --project=tools/levante plastic_ensemble.jl init <config.toml> <ensemble folder>    wave 1: the members (iter_01/mNNN)
+#   julia --project=tools/levante plastic_ensemble.jl init <config.toml> <ensemble folder>    wave 1: the members (iter_01/<m>)
 #   julia --project=tools/levante plastic_ensemble.jl weights <ensemble folder> [<wave>]     score the members, the weights
 #   julia --project=tools/levante plastic_ensemble.jl errmodel <ensemble folder> [<wave>] [<top>]   the error model from a wave
 # The folder, the members and the scale groups are those of plastic_esmda.jl (prepare, write_iteration, member_series). Config:
@@ -16,7 +16,8 @@
 # sample size ESS = 1 / sum w^2. The error model: [likelihood] of the config, or <folder>/errmodel.toml once errmodel has
 # estimated it from a wave (maximum likelihood from the residuals of the members that fit each group best). Plausibility
 # (history matching): the implausibility of a group I_g = (chi2_g - n_g) / sqrt(2 n_g), chi2_g = d' R_g^-1 d; a member is
-# plausible when max_g I_g <= [ensemble] implausibility (3); the weights are over the plausible members only. Writes
+# plausible when max_g I_g <= [ensemble] implausibility (3) over [ensemble] use_groups (default all); the weights (of those
+# groups) are over the plausible members only. Writes
 # iter_kk/weights.csv (per member and group log L, chi2/n, I_g; plausible, ESL at 20 ka, weight), weights.md and plausible.txt.
 using LinearAlgebra, Printf, Random, Statistics, TOML, NCDatasets
 
@@ -170,12 +171,14 @@ end
 function weights(C, k)
     C = abspath(C); cfg = ES.config(C); ids, Θ, res, og = wave_residuals(C, k, cfg)
     em, src = error_model(cfg, C); cut = get(cfg["ensemble"], "implausibility", 3.0)
+    ug = String.(get(cfg["ensemble"], "use_groups", og))     # the groups that judge: the cut and the weights; the rest reported
+    all(in(og), ug) || error("use_groups $(ug) not all in obs_groups $(og)")
     sg = ES.scale_groups(cfg["scale"]); P = ES.params(cfg, sg)
     ll = Dict(m => Dict(g => loglik_group(res[m].rg[g], em[g]...) for g in og) for m in keys(res))
     I = Dict(m => Dict(g => implausibility(ll[m][g][2], ll[m][g][3]) for g in og) for m in keys(res))
     ok = sort(collect(keys(res)))
-    plaus = [m for m in ok if maximum(values(I[m])) <= cut]
-    LL = Dict(m => sum(ll[m][g][1] for g in og) for m in ok)
+    plaus = [m for m in ok if maximum(I[m][g] for g in ug) <= cut]
+    LL = Dict(m => sum(ll[m][g][1] for g in ug) for m in ok)
     w = Dict(m => 0.0 for m in ok)
     if !isempty(plaus)
         mx = maximum(LL[m] for m in plaus); for m in plaus; w[m] = exp(LL[m] - mx); end
@@ -200,8 +203,10 @@ function weights(C, k)
     μ = th * wv; sd = sqrt.(max.(((th .- μ) .^ 2) * wv, 0))
     eslp = [res[m].esl for m in plaus]
     open(joinpath(It, "weights.md"), "w") do io
-        println(io, "Wave $k: $(length(ok)) of $(length(ids)) members ran; error model: $src; implausibility cut $cut.\n")
-        println(io, "Plausible (max_g I_g <= $cut): $(length(plaus)) members", isempty(plaus) ? "" :
+        println(io, "Wave $k: $(length(ok)) of $(length(ids)) members ran; error model: $src; implausibility cut $cut; ",
+                "groups that judge (the cut and the weights): ", join(ug, ", "), length(ug) < length(og) ?
+                "; reported only: " * join(setdiff(og, ug), ", ") : "", ".\n")
+        println(io, "Plausible (max I_g <= $cut over the groups that judge): $(length(plaus)) members", isempty(plaus) ? "" :
                 @sprintf(", ESL at 20 ka %.1f to %.1f m; effective sample size of their weights %.2f", minimum(eslp), maximum(eslp), ess), ".\n")
         println(io, "Ruled out by group (I_g > $cut): ", join([@sprintf("%s %d", g, count(m -> I[m][g] > cut, ok)) for g in og], ", "), "\n")
         println(io, "| member | plausible | weight | log L | ", join(["I $g" for g in og], " | "), " | ESL 20 ka [m] |\n|---|---|---|---|",
