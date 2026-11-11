@@ -270,6 +270,30 @@
     restart         = "None"                         ! Restart file, or "None" for a cold start (WP14)
 /
 
+&bessi
+    Ntot             = 15                   ! [1] Layer capacity per column
+    mass_max         = 500.0                ! [kg m-2] Surface-layer mass that triggers a split
+    mass_split       = 300.0                ! [kg m-2] Mass left in the layer below after a split
+    mass_min         = 100.0                ! [kg m-2] Surface-layer mass that triggers a merge
+    density_init     = 300.0                ! [kg m-3] Density assigned to an inactive layer slot
+    temperature_init = 273.0                ! [K] Temperature assigned to an inactive layer slot
+
+    ice_substrate_layers        = 5         ! [1] Thermal ice layers below the snow/firn column (0 = none)
+    ice_substrate_top_thickness = 0.05      ! [m] Top substrate layer; each layer below is twice as thick
+
+    near_surface_layer_max_thicknesses = 0.02, 0.05, 0.10, 0.30   ! [m] Maximum thickness of layers 1-4 (0 = no limit)
+
+    diurnal_shortwave_substeps            = True    ! [1] Resolve the diurnal cycle by substepping
+    diurnal_shortwave_threshold           = 0.0     ! [W m-2] Peak-minus-mean excess required to substep
+    diurnal_shortwave_max_substeps        = 8       ! [1] Substeps per day when enabled; 1..24
+    diurnal_shortwave_min_air_temperature = 265.15  ! [K] Below this, do not substep (Julia: -8 C)
+    diurnal_temperature_cycle             = True    ! [1] Impose a diurnal air-temperature cycle
+    diurnal_temperature_amplitude         = 1.0     ! [K] Half-amplitude of that cycle at reference height
+    diurnal_temperature_amplitude_gradient         = 0.0     ! [K km-1] Amplitude increase above reference height
+    diurnal_temperature_amplitude_reference_height = 0.0     ! [m] Reference height of that gradient
+    diurnal_temperature_amplitude_max              = 1.0     ! [K] Upper bound on the amplitude
+/
+
 &chion_const
     rho_s                              = 315.0           ! [kg m-3] Fresh snow density (constant scheme)
     rho_s_a                            = 109.0           ! [kg m-3] Intercept
