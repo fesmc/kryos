@@ -3,12 +3,13 @@ title: "data (ice)"
 ---
 
 The ice backend `data` reads the ice geometry instead of solving it. The thickness,
-and optionally the bed and the sea surface, come from field groups
+the bed and the sea surface come from field groups
 ([`input/datasrc_defaults.nml`](https://github.com/fesmc/kryos/blob/main/input/datasrc_defaults.nml)),
-static or transient: an ice history such as PaleoMIST, or the domain's reference
-topography. Every component downstream sees them as an ice model's exports: the
-domain's hub, the climate and the surface, and `globe_ice`, which merges every
-domain's ice into the background of the globe.
+static or transient, e.g. an ice history such as PaleoMIST. A key left empty takes
+the domain's reference topography (the sea surface: 0), so an instance without keys
+is the present day. Every component downstream sees the fields as an ice model's
+exports: the domain's hub, the climate and the surface, and `globe_ice`, which merges
+every domain's ice into the background of the globe.
 
 Use it to drive a climate and a surface on an imposed ice sheet, e.g. to tune the
 surface mass balance on PaleoMIST without solving the ice.
@@ -24,7 +25,7 @@ surface mass balance on PaleoMIST without solving the ice.
 
 | Key | | Default |
 |---|---|---|
-| `H_ice` | field group of the ice thickness [m] | required |
+| `H_ice` | field group of the ice thickness [m] | `""`: the domain's reference topography |
 | `z_bed` | field group of the bed [m] | `""`: the domain's reference topography |
 | `z_sl` | field group of the sea surface [m] | `""`: 0 |
 

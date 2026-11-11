@@ -5,7 +5,8 @@ program test_ice_data
     !   * z_srf (grounded z_bed + H, floating z_sl + (1 - rho_i/rho_w) H, the bed or the sea elsewhere) and
     !     f_grnd by the flotation rule with the run's densities;
     !   * dHidt and mb_net over the step; smb = cmb = 0; the static z_bed_ref, H_ice_pd, footprint;
-    !   * without z_bed and z_sl: the reference bed and z_sl = 0.
+    !   * without z_bed and z_sl: the reference bed and z_sl = 0;
+    !   * without any key: the reference topography (a present-day run).
 
     use precision,       only: dp
     use ncio,            only: nc_create, nc_write_dim, nc_write, nc_write_attr
@@ -22,8 +23,8 @@ program test_ice_data
     real(dp), parameter :: DXKM = 16.0_dp
     integer :: nfail = 0
     type(init_ctx_t) :: ctx
-    type(census_t)   :: census, census2
-    type(ice_slot_t) :: a, b
+    type(census_t)   :: census, census2, census3
+    type(ice_slot_t) :: a, b, c
     real(dp), allocatable :: H0(:,:), H1(:,:), zb0(:,:), zb1(:,:), x(:,:), zs(:,:), fg(:,:)
     real(dp) :: rho_i, rho_w, m
     integer  :: i, j
@@ -102,6 +103,15 @@ program test_ice_data
                all(get(b, "z_sl") == 0.0_dp), "only H_ice bound: the reference bed and z_sl = 0")
     call ice_end(b)
 
+    ! ---- without any key: the reference topography --------------------------------------------------
+    ctx%instance = "ice_z"
+    call ice_create(c, ctx, census3)
+    call ice_init(c, ctx)
+    call ice_init_state(c, st(0.0_dp, 0.0_dp), PASS_INIT)
+    call check(all(get(c, "H_ice") == 7.0_dp) .and. all(get(c, "z_bed") == 50.0_dp) .and. &
+               all(get(c, "z_srf") == 57.0_dp), "no key: the reference topography")
+    call ice_end(c)
+
     if (nfail > 0) then
         write(*,"(a,i0,a)") "test_ice_data: ", nfail, " check(s) FAILED"
         error stop 1
@@ -132,6 +142,7 @@ contains
         open(newunit=u, file=PAR, status="replace", action="write")
         write(u,'(a)') "&ice_x", ' backend = "data"', ' H_ice = "x_H"', ' z_bed = "x_zb"', ' z_sl = "x_sl"', "/", &
                        "&ice_y", ' backend = "data"', ' H_ice = "x_H"', "/", &
+                       "&ice_z", ' backend = "data"', "/", &
                        "&x_H",  ' filename = "'//F//'"', ' name = "H_ice"', ' mode = "transient"', "/", &
                        "&x_zb", ' filename = "'//F//'"', ' name = "z_bed"', ' mode = "transient"', "/", &
                        "&x_sl", ' filename = "'//F//'"', ' name = "dz_sl"', ' mode = "transient"', "/"

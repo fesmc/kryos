@@ -185,7 +185,7 @@
 
 &ice_data
     ! The ice geometry read, not solved: field groups (input/datasrc_defaults.nml) on the instance grid.
-    H_ice = ""                                 ! required: the ice thickness [m]
+    H_ice = ""                                 ! the ice thickness [m]; "" = the domain's reference topography
     z_bed = ""                                 ! the bed [m]; "" = the domain's reference topography
     z_sl  = ""                                 ! the sea surface [m]; "" = 0
 /
