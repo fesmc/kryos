@@ -901,9 +901,14 @@ contains
         character(len=*), intent(in) :: src, dst
         type(wire_t), allocatable :: r(:)
         type(wire_t), allocatable :: t(:)
+        logical, allocatable :: m(:)
         integer :: i
         t = wiring_table()
-        r = pack(t, [(trim(t(i)%src_kind) == trim(src) .and. trim(t(i)%dst_kind) == trim(dst), i = 1, size(t))])
+        allocate(m(size(t)))                ! a loop, not pack with an implied-do mask: ifx 2024.1 aborts on that
+        do i = 1, size(t)
+            m(i) = trim(t(i)%src_kind) == trim(src) .and. trim(t(i)%dst_kind) == trim(dst)
+        end do
+        r = pack(t, m)
     end function rows_between
 
     ! -------------------------------------------------------------------------
