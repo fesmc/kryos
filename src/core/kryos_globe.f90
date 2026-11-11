@@ -433,6 +433,7 @@ contains
 
         if (.not. climate_present(globe%climate)) return
         nodes = globe_nodes(globe, clk)
+        nodes%check = .false.                             ! a host geo's imports come from the domains' rows
         nodes(size(nodes))%check = .true.                 ! the climate's node is the last one
         call wire_resolve(globe%wires, nodes, globe%cpl)
         call wiring_describe(globe%wires)
