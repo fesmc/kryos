@@ -245,7 +245,7 @@
     out_2D        = "out_2D"       ! surface_ant.nc: smb, T_srf, melt, runoff, refreezing, S, PDDs, ...
     out_1D        = "out_1D"
     surface_chion = "surface_chion"
-    chion         = "chion_ant"     ! the ITM mirrored to the south (itm_chion_ant)
+    chion         = "chion_ant"     ! Antarctica's own ITM group (itm_chion_ant): the per-domain tuning
 /
 
 &surface_chion
@@ -401,15 +401,14 @@
 /
 
 &itm_chion_ant
-    ! The ITM of itm_chion mirrored to the south: itm_c + itm_b (lat - itm_lat0) with lat0 = -65, b = +2, so the
-    ! offset falls towards the pole as in the north (Greenland's b = -2 at lat0 = 65 gives +235 W m-2 at 75S)
+    ! Antarctica's ITM, a group of its own for the per-domain tuning (smb_itm_fit.jl); itm_c + itm_b (|lat| - |itm_lat0|)
     trans_a            = 0.46     ! [1] Atmospheric transmissivity, intercept
     trans_b            = 6e-5     ! [m-1] Transmissivity elevation slope
     trans_c            = 0.01     ! [1] Unused by the active transmissivity form
     itm_c              = -45.0    ! [W m-2] ITM offset
     itm_t              = 10.0     ! [W m-2 K-1] ITM temperature coefficient
-    itm_b              = 2.0     ! [W m-2 deg-1] Latitude slope of itm_c
-    itm_lat0           = -65.0     ! [deg N] Reference latitude; |lat0| >= 90 disables
+    itm_b              = -2.0     ! [W m-2 deg-1] Slope of itm_c in |latitude|
+    itm_lat0           = 65.0     ! [deg] Reference |latitude|; |lat0| >= 90 disables
     H_snow_max         = 5.0e3    ! Maximum allowed snowpack thickness [mm w.e.]
     Pmaxfrac           = 0.6      ! Refreezing factor
     H_snow_crit_desert = 10.0     ! [mm w.e.] Critical snow depth, PDDs <= 100

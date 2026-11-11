@@ -339,7 +339,7 @@
     out_2D        = "out_2D"       ! surface_ant.nc: smb, T_srf, melt, runoff, refreezing, S, PDDs, ...
     out_1D        = "out_1D"
     surface_chion = "surface_chion"
-    chion         = "chion_ant"     ! the ITM mirrored to the south (itm_chion_ant)
+    chion         = "chion"
 /
 
 &surface_chion
@@ -445,41 +445,6 @@
     itm_t              = 10.0     ! [W m-2 K-1] ITM temperature coefficient
     itm_b              = -2.0     ! [W m-2 deg-1] Latitude slope of itm_c
     itm_lat0           = 65.0     ! [deg N] Reference latitude; |lat0| >= 90 disables
-    H_snow_max         = 5.0e3    ! Maximum allowed snowpack thickness [mm w.e.]
-    Pmaxfrac           = 0.6      ! Refreezing factor
-    H_snow_crit_desert = 10.0     ! [mm w.e.] Critical snow depth, PDDs <= 100
-    H_snow_crit_forest = 100.0    ! [mm w.e.] Critical snow depth, PDDs >= 1000
-    melt_crit          = 0.5      ! Critical melt rate to reduce snow albedo [mm/day]
-    alb_ocean          = 0.1      ! [1] Albedo of open ocean
-    alb_land           = 0.2      ! [1] Albedo of ice-free land
-    alb_forest         = 0.1      ! [1] Albedo of forest
-    alb_ice            = 0.31     ! [1] Albedo of bare ice
-    alb_snow_dry       = 0.8      ! [1] Albedo of dry snow
-    alb_snow_wet       = 0.65     ! [1] Albedo of wet snow
-    firn_fac           = 0.0266   ! [K (mm w.e. yr-1)-1] Firn warming per annual net refreezing
-/
-
-&chion_ant
-    model           = "itm"                          ! Snowpack model: "itm", "bessi" or "pdd"
-    nml_bessi       = "bessi"                        ! Namelist group holding the BESSI parameters
-    nml_pdd         = "pdd_chion"                    ! PDD parameters (chion's own group)
-    nml_itm         = "itm_chion_ant"                          ! Namelist group holding the ITM parameters
-    nml_const       = "chion_const"                  ! Namelist group holding chion's own constants
-    phys_const_file = "input/chion_phys_const.nml"   ! Shared constants, standalone only
-    phys_const      = "Earth"                        ! Group within phys_const_file
-    restart         = "None"                         ! Restart file, or "None" for a cold start (WP14)
-/
-
-&itm_chion_ant
-    ! The ITM of itm_chion mirrored to the south: itm_c + itm_b (lat - itm_lat0) with lat0 = -65, b = +2, so the
-    ! offset falls towards the pole as in the north (Greenland's b = -2 at lat0 = 65 gives +235 W m-2 at 75S)
-    trans_a            = 0.46     ! [1] Atmospheric transmissivity, intercept
-    trans_b            = 6e-5     ! [m-1] Transmissivity elevation slope
-    trans_c            = 0.01     ! [1] Unused by the active transmissivity form
-    itm_c              = -45.0    ! [W m-2] ITM offset
-    itm_t              = 10.0     ! [W m-2 K-1] ITM temperature coefficient
-    itm_b              = 2.0     ! [W m-2 deg-1] Latitude slope of itm_c
-    itm_lat0           = -65.0     ! [deg N] Reference latitude; |lat0| >= 90 disables
     H_snow_max         = 5.0e3    ! Maximum allowed snowpack thickness [mm w.e.]
     Pmaxfrac           = 0.6      ! Refreezing factor
     H_snow_crit_desert = 10.0     ! [mm w.e.] Critical snow depth, PDDs <= 100
