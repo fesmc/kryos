@@ -245,25 +245,28 @@ contains
     subroutine put_geometry(g, H, zb, zs, ref, t1)
         ! Ice-grid fields as piecewise constant fields on the instance grid (each cell the value of the
         ! ice-grid cell holding its centre; 0 outside the ice grid).
+        ! (Local arrays, not a function result as the actual argument: ifx 2023.2 -O2 stops with an internal
+        ! compiler error on that.)
         type(climate_slot_t), intent(inout) :: g
         real(dp),             intent(in)    :: H(:,:), zb(:,:), zs(:,:), t1
         logical,              intent(in)    :: ref
-        associate (c => g%c)
-            if (ref) then
-                call fields_put(c%imports, c%hi_H_ice_ref, spread_(H),  t1=t1)
-                call fields_put(c%imports, c%hi_z_bed_ref, spread_(zb), t1=t1)
-                call fields_put(c%imports, c%hi_z_srf_ref, spread_(zs), t1=t1)
-            else
-                call fields_put(c%imports, c%hi_H_ice, spread_(H),  t1=t1)
-                call fields_put(c%imports, c%hi_z_bed, spread_(zb), t1=t1)
-                call fields_put(c%imports, c%hi_z_srf, spread_(zs), t1=t1)
-            end if
-        end associate
+        real(dp) :: aH(size(bin, 1), size(bin, 2)), ab(size(bin, 1), size(bin, 2)), as(size(bin, 1), size(bin, 2))
+        call spread_(H, aH);  call spread_(zb, ab);  call spread_(zs, as)
+        if (ref) then
+            call fields_put(g%c%imports, g%c%hi_H_ice_ref, aH, t1=t1)
+            call fields_put(g%c%imports, g%c%hi_z_bed_ref, ab, t1=t1)
+            call fields_put(g%c%imports, g%c%hi_z_srf_ref, as, t1=t1)
+        else
+            call fields_put(g%c%imports, g%c%hi_H_ice, aH, t1=t1)
+            call fields_put(g%c%imports, g%c%hi_z_bed, ab, t1=t1)
+            call fields_put(g%c%imports, g%c%hi_z_srf, as, t1=t1)
+        end if
     end subroutine put_geometry
 
-    function spread_(X) result(Y)
-        real(dp), intent(in) :: X(:,:)
-        real(dp) :: Y(size(bin, 1), size(bin, 2)), Xf(size(X))
+    subroutine spread_(X, Y)
+        real(dp), intent(in)  :: X(:,:)
+        real(dp), intent(out) :: Y(:,:)
+        real(dp) :: Xf(size(X))
         integer  :: i, j
         Xf = reshape(X, [size(X)])
         Y = 0.0_dp
@@ -272,7 +275,7 @@ contains
                 if (bin(i, j) > 0) Y(i, j) = Xf(bin(i, j))
             end do
         end do
-    end function spread_
+    end subroutine spread_
 
     subroutine compare(g, what)
         type(climate_slot_t), intent(inout) :: g
