@@ -743,6 +743,7 @@ contains
         call surface_chion_init(self%sc, trim(ctx%par_file), real(ctx%grid%lat, cwp), &
                                 group=trim(self%host_group), chion_group=trim(self%chion_group), &
                                 orbit_group=trim(self%orbit_group), cnst=ctx%cnst)
+        if (self%sc%insol) self%orbit = self%orbit_group    ! the insolation's orbit (kryos_run: one per run)
 
         select case (trim(self%sc%chn%par%restart))
         case ("none", "None", "")
