@@ -216,6 +216,7 @@ below as Levante's / albedo's:
 | `FESMDATA`, `FESMDATA_SOURCES` | `/work/ba1442/fesmdata` / `/albedo/work/projects/p_forclima/fesmdata`, and `$FESMDATA-sources` | FesmData and its original data, read-only; `FESMDATA` is linked as `$KRYOS/fesmdata` |
 | `KRYOS_DATA` | `/work/ba1442/kryos_data` / `/albedo/work/projects/p_forclima/kryos_data` | kryos reference data, read-only: refcorr topographies, the released tau_b products (`plastic/`), the inputs of the climate backend paleoemu (`paleoemu/`), the shared remapping weights (`maps/`); linked as `$KRYOS/kryos_data`. albedo's is a copy of Levante's |
 | `KRYOS_PART`, `KRYOS_PART_LONG` | `-p shared` / `-p smp --qos=12h` and `--qos=48h` | the sbatch partition of the tools' small jobs (up to 12 h), and of their jobs of days |
+| `KRYOS_QUEUE` | `shared` / `12h` | the runme queue of the model runs of the ensembles and calibrations (`[run] partition` of a config overrides it) |
 | `VILMA2` | `$KRYOS/vilma2` | the vilma2 checkout of the standalone runs (`bin/vilma.x`, `input/`) |
 | `PM_DIR`, `PM_REF` | `$KRYOS_WORK/paleomist`, the reference runs | your standalone VILMA2 runs; the read-only reference runs the scores compare with |
 | `ACCOUNT` | the `account` of `.runme/config.toml`, else `ba1442` / `envi.p_forclima` | the Slurm account of the small Julia and analysis jobs of the tools (model runs take runme's) |

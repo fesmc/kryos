@@ -53,7 +53,7 @@ config(C) = TOML.parsefile(joinpath(C, "config.toml"))
 
 # A config as written: {kryos}, {fesmdata}, {kryos_data}, {maps}, {work} in any string replaced by the environment of
 # tools/levante/env.sh (KRYOS, FESMDATA, KRYOS_DATA, KRYOS_WORK; {maps} = the checkout's maps/), and the defaults of [run]
-# (kryos_dir: the checkout of this tool, set_nml: its set_nml.py, maps) and [score] (fesmdata). init writes it expanded into the
+# (kryos_dir: the checkout of this tool, set_nml: its set_nml.py, maps, partition: the runme queue KRYOS_QUEUE of env.sh) and [score] (fesmdata). init writes it expanded into the
 # folder (config.toml; the source as config.source.toml), so a folder does not depend on the environment afterwards.
 const KRYOS_ROOT = normpath(get(ENV, "KRYOS", joinpath(@__DIR__, "..", "..")))
 envpath(var, default) = get(ENV, var, default)
@@ -72,6 +72,7 @@ function load_config(file)
     get!(rn, "kryos_dir", KRYOS_ROOT)
     get!(rn, "set_nml", joinpath(@__DIR__, "set_nml.py"))
     get!(rn, "maps", expand_paths("{maps}"))
+    get!(rn, "partition", get(ENV, "KRYOS_QUEUE", "shared"))
     get!(get!(cfg, "score", Dict{String,Any}()), "fesmdata", expand_paths("{fesmdata}"))
     cfg
 end

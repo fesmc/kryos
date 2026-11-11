@@ -130,7 +130,6 @@ domain_factor_keys = ["ice_nor.taub_domain_factor_file", "ice_ant.taub_domain_fa
 threads    = 64                          # 3-D Earth: 3.5-4.2 h on 64 (sci-v2-prior, -post, sci-v3-base, 2026-11-09)
 mem        = "30G"
 time       = "08:00:00"
-partition  = "shared"
 throttle   = 25                          # 25 members + the weights job + one other run: within 30 jobs
 
 [score]

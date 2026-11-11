@@ -22,6 +22,8 @@
 #                  ba1442 / envi.p_forclima)
 #   KRYOS_PART     the sbatch partition (and QOS) of the small jobs, up to 12 h ("-p shared" / "-p smp --qos=12h");
 #                  KRYOS_PART_LONG for the jobs of days ("-p shared" / "-p smp --qos=48h")
+#   KRYOS_QUEUE    the runme queue of the model runs of the ensembles and calibrations ([run] partition of their configs
+#                  overrides it) (shared / 12h)
 #   KRYOS_RUNME    the runme command (runme): model runs are staged and submitted with runme (fesmc/runme)
 #   KRYOS_JULIA    the julia command (julia; with juliaup "julia +1.13" if that channel is installed)
 #
@@ -47,11 +49,11 @@ export KRYOS_MACHINE
 case $KRYOS_MACHINE in
     albedo)
         _store=/albedo/work/projects/p_forclima; _work=/albedo/work/user/$USER/kryos-work; _account=envi.p_forclima
-        _part="-p smp --qos=12h"; _part_long="-p smp --qos=48h"
+        _part="-p smp --qos=12h"; _part_long="-p smp --qos=48h"; _queue=12h
         command -v git > /dev/null 2>&1 || module load git > /dev/null 2>&1 ;;
     levante)
         _store=/work/ba1442; _work=/work/ba1442/$USER/kryos-work; _account=ba1442
-        _part="-p shared"; _part_long="-p shared" ;;
+        _part="-p shared"; _part_long="-p shared"; _queue=shared ;;
     *) echo "env.sh: unknown KRYOS_MACHINE '$KRYOS_MACHINE' (levante, albedo)" >&2; return 1 2> /dev/null || exit 1 ;;
 esac
 export KRYOS_WORK=${KRYOS_WORK:-$_work}
@@ -60,6 +62,7 @@ export FESMDATA_SOURCES=${FESMDATA_SOURCES:-$FESMDATA-sources}
 export KRYOS_DATA=${KRYOS_DATA:-$_store/kryos_data}
 export KRYOS_PART=${KRYOS_PART:-$_part}
 export KRYOS_PART_LONG=${KRYOS_PART_LONG:-$_part_long}
+export KRYOS_QUEUE=${KRYOS_QUEUE:-$_queue}
 export VILMA2=${VILMA2:-$KRYOS/vilma2}
 export PM_DIR=${PM_DIR:-$KRYOS_WORK/paleomist}
 export PM_REF=${PM_REF:-$KRYOS_DATA/paleomist}
@@ -68,7 +71,7 @@ if [ -z "${ACCOUNT:-}" ]; then
     [ -n "$ACCOUNT" ] && [ "$ACCOUNT" != CHANGEME ] || ACCOUNT=$_account
 fi
 export ACCOUNT
-unset _store _work _account _part _part_long
+unset _store _work _account _part _part_long _queue
 export KRYOS_RUNME=${KRYOS_RUNME:-runme}
 if [ -z "${KRYOS_JULIA:-}" ]; then
     # juliaup's launcher by its full path: Levante's python module (mambaforge) puts an old julia first on PATH
