@@ -111,6 +111,7 @@ program test_geo_vilma2
     call check(abs(scalar(glob, "bsl")) > 0.0_dp, "bsl moved")
     call check(abs(dse%time - 3.0_dp*DTT) < 1.0e-9_dp, "VILMA2's clock advanced by the steps")
     call test_series(glob, t)
+    call test_stream(glob, dse, t)
 
     ! ---- restart round trip -----------------------------------------------------------------
     call execute_command_line("rm -rf "//RST//" && mkdir -p "//RST)
@@ -446,6 +447,26 @@ contains
         call nc_read(DIR//"ts.nc", "dphi", v, start=[1], count=[1])
         call check(abs(real(v(1), dp) - scalar(g, "dphi")) <= 1.0e-3_dp, "stream 1D: dphi written")
     end subroutine test_series
+
+    subroutine test_stream(g, d, t1)
+        ! The vilma stream (VILMA2's own file): h_ice is the load of the last solve, the host terms' grounded column
+        ! plus the external ice on 1 - w (I_g + (1 - w) h_ice_ext, Gauss grid), h_ice_ext the external ice; both as
+        ! VILMA2 driven directly holds them (rounded to the table's 1e-2 m).
+        type(geo_slot_t),  intent(inout) :: g
+        type(solid_earth), intent(in)    :: d
+        real(dp),          intent(in)    :: t1
+        real(dp), allocatable :: hl(:,:), he(:,:), load(:,:)
+        integer :: np, nl
+        np = d%sht%nphi;  nl = d%sht%nlat
+        allocate(hl(np,nl), he(np,nl))
+        call geo_write_output(g, DIR//"vilma.nc", t1, "vilma", .true.)
+        call nc_read(DIR//"vilma.nc", "h_ice", hl, start=[1,1,1], count=[np,nl,1])
+        call nc_read(DIR//"vilma.nc", "h_ice_ext", he, start=[1,1,1], count=[np,nl,1])
+        load = d%gg%host%last%I_g + (1.0_dp - d%gg%host%last%w)*d%gg%h_ice
+        call check(maxval(abs(he - d%gg%h_ice)) <= 0.5e-2_dp + 1.0e-9_dp, "stream vilma: h_ice_ext is the external ice")
+        call check(maxval(abs(hl - load)) <= 0.5e-2_dp + 1.0e-9_dp .and. maxval(abs(hl - he)) > 1.0_dp, &
+                   "stream vilma: h_ice is the load, I_g + (1 - w) h_ice_ext, not the external ice")
+    end subroutine test_stream
 
     function exp2(g, h) result(a)
         type(geo_slot_t), intent(in) :: g
