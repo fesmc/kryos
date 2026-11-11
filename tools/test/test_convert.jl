@@ -45,7 +45,7 @@ kvg(G, g) = Dict(k.name => NL.parse_value(k.raw) for k in G[g].keys)
         @test d["ice"] == "ice_tes" && d["sediments"] == "sed_tes" && d["grid_hub"] == "TST-16KM"
         @test d["out_2D"] == "out_2D" && d["basins"] == "Zwally2012"
         @test d["experiments"] == ""                       # sim.relax = sim.opt = False: no experiment
-        @test kv(G, "globe") == Dict("forcing" => "forcing", "geo" => "geo_glob")
+        @test kv(G, "globe") == Dict("forcing" => "forcing", "geo" => "geo_glob", "climate" => "")   # no global climate
     end
 
     @testset "instances" begin
@@ -61,7 +61,8 @@ kvg(G, g) = Dict(k.name => NL.parse_value(k.raw) for k in G[g].keys)
         cl = kv(G, "climate_tes")
         @test cl["backend"] == "snapshots" && cl["dt"] === 10.0 && cl["terms"] == "dT" && cl["reference"] == "pd"
         @test kv(G, "forcing")["coefs"] == ["alpha", "dT"]
-        @test kv(G, "surface_tes")["backend"] == "chion" && kv(G, "surface_tes")["orbit"] == "orbit"
+        @test kv(G, "surface_tes")["backend"] == "chion" && !haskey(kv(G, "surface_tes"), "orbit")
+        @test kv(G, "forcing")["orbit"] == "orbit"      # the run's orbit, exported to the insolation
         @test kv(G, "shelf_tes")["marine_shelf"] == "marine_shelf"
     end
 

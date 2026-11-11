@@ -4,7 +4,7 @@ Sources (domain, instance suffix):
 - `par/kryos_North.nml`: North (`nor`)
 - `par/kryos_Antarctica.nml`: Antarctica (`ant`)
 
-Run-wide groups (taken once, the files agree except where resolved): `&kryos`, `&clock`, `&out_1D`, `&out_2D`, `&out_2Dsm`, `&out_rst`, `&globe`, `&forcing`, `&geo_glob`, `&barysealevel`, `&coef_alpha`, `&coef_dTo`.
+Run-wide groups (taken once, the files agree except where resolved): `&kryos`, `&clock`, `&out_1D`, `&out_2D`, `&out_2Dsm`, `&out_rst`, `&globe`, `&forcing`, `&geo_glob`, `&barysealevel`, `&orbit`, `&coef_alpha`, `&coef_dTo`.
 
 ## Resolved keys
 
@@ -14,12 +14,12 @@ Run-wide groups (taken once, the files agree except where resolved): `&kryos`, `
 | `clock.time_const` | `-21e3`, `0.0` | `0.0` |
 | `barysealevel.sl_path` | `"input/sl_deglaciation.dat"`, `"none"` | `"none"` |
 
-## Renamed groups (46)
+## Renamed groups (44)
 
-- North: `&topo` -> `&topo_nor`, `&regions` -> `&regions_nor`, `&isos` -> `&isos_nor`, `&snapshots` -> `&snapshots_nor`, `&orbit` -> `&orbit_nor`, `&surface_chion` -> `&surface_chion_nor`, `&chion` -> `&chion_nor`, `&chion_const` -> `&chion_const_nor`, `&pdd_chion` -> `&pdd_chion_nor`, `&marine_shelf` -> `&marine_shelf_nor`, `&yelmo` -> `&yelmo_nor`, `&ytopo` -> `&ytopo_nor`, `&ycalv` -> `&ycalv_nor`, `&ydyn` -> `&ydyn_nor`, `&ytill` -> `&ytill_nor`, `&yhyd` -> `&yhyd_nor`, `&ymat` -> `&ymat_nor`, `&ytherm` -> `&ytherm_nor`, `&yelmo_masks` -> `&yelmo_masks_nor`, `&yelmo_init_topo` -> `&yelmo_init_topo_nor`, `&yelmo_data` -> `&yelmo_data_nor`, `&ytrc` -> `&ytrc_nor`, `&snapshot_pd` -> `&snapshot_pd_nor`
-- Antarctica: `&topo` -> `&topo_ant`, `&regions` -> `&regions_ant`, `&isos` -> `&isos_ant`, `&snapshots` -> `&snapshots_ant`, `&orbit` -> `&orbit_ant`, `&surface_chion` -> `&surface_chion_ant`, `&chion` -> `&chion_ant`, `&chion_const` -> `&chion_const_ant`, `&pdd_chion` -> `&pdd_chion_ant`, `&marine_shelf` -> `&marine_shelf_ant`, `&yelmo` -> `&yelmo_ant`, `&ytopo` -> `&ytopo_ant`, `&ycalv` -> `&ycalv_ant`, `&ydyn` -> `&ydyn_ant`, `&ytill` -> `&ytill_ant`, `&yhyd` -> `&yhyd_ant`, `&ymat` -> `&ymat_ant`, `&ytherm` -> `&ytherm_ant`, `&yelmo_masks` -> `&yelmo_masks_ant`, `&yelmo_init_topo` -> `&yelmo_init_topo_ant`, `&yelmo_data` -> `&yelmo_data_ant`, `&ytrc` -> `&ytrc_ant`, `&snapshot_pd` -> `&snapshot_pd_ant`
+- North: `&topo` -> `&topo_nor`, `&regions` -> `&regions_nor`, `&isos` -> `&isos_nor`, `&snapshots` -> `&snapshots_nor`, `&surface_chion` -> `&surface_chion_nor`, `&chion` -> `&chion_nor`, `&chion_const` -> `&chion_const_nor`, `&pdd_chion` -> `&pdd_chion_nor`, `&marine_shelf` -> `&marine_shelf_nor`, `&yelmo` -> `&yelmo_nor`, `&ytopo` -> `&ytopo_nor`, `&ycalv` -> `&ycalv_nor`, `&ydyn` -> `&ydyn_nor`, `&ytill` -> `&ytill_nor`, `&yhyd` -> `&yhyd_nor`, `&ymat` -> `&ymat_nor`, `&ytherm` -> `&ytherm_nor`, `&yelmo_masks` -> `&yelmo_masks_nor`, `&yelmo_init_topo` -> `&yelmo_init_topo_nor`, `&yelmo_data` -> `&yelmo_data_nor`, `&ytrc` -> `&ytrc_nor`, `&snapshot_pd` -> `&snapshot_pd_nor`
+- Antarctica: `&topo` -> `&topo_ant`, `&regions` -> `&regions_ant`, `&isos` -> `&isos_ant`, `&snapshots` -> `&snapshots_ant`, `&surface_chion` -> `&surface_chion_ant`, `&chion` -> `&chion_ant`, `&chion_const` -> `&chion_const_ant`, `&pdd_chion` -> `&pdd_chion_ant`, `&marine_shelf` -> `&marine_shelf_ant`, `&yelmo` -> `&yelmo_ant`, `&ytopo` -> `&ytopo_ant`, `&ycalv` -> `&ycalv_ant`, `&ydyn` -> `&ydyn_ant`, `&ytill` -> `&ytill_ant`, `&yhyd` -> `&yhyd_ant`, `&ymat` -> `&ymat_ant`, `&ytherm` -> `&ytherm_ant`, `&yelmo_masks` -> `&yelmo_masks_ant`, `&yelmo_init_topo` -> `&yelmo_init_topo_ant`, `&yelmo_data` -> `&yelmo_data_ant`, `&ytrc` -> `&ytrc_ant`, `&snapshot_pd` -> `&snapshot_pd_ant`
 
-## Repointed keys (46)
+## Repointed keys (44)
 
 | group | key | was | now |
 |---|---|---|---|
@@ -31,7 +31,6 @@ Run-wide groups (taken once, the files agree except where resolved): `&kryos`, `
 | `&climate_nor` | `reference` | `pd` | `pd_nor` |
 | `&surface_nor` | `surface_chion` | `surface_chion` | `surface_chion_nor` |
 | `&surface_nor` | `chion` | `chion` | `chion_nor` |
-| `&surface_nor` | `orbit` | `orbit` | `orbit_nor` |
 | `&shelf_nor` | `marine_shelf` | `marine_shelf` | `marine_shelf_nor` |
 | `&chion_nor` | `nml_pdd` | `pdd_chion` | `pdd_chion_nor` |
 | `&chion_nor` | `nml_const` | `chion_const` | `chion_const_nor` |
@@ -54,7 +53,6 @@ Run-wide groups (taken once, the files agree except where resolved): `&kryos`, `
 | `&climate_ant` | `reference` | `pd` | `pd_ant` |
 | `&surface_ant` | `surface_chion` | `surface_chion` | `surface_chion_ant` |
 | `&surface_ant` | `chion` | `chion` | `chion_ant` |
-| `&surface_ant` | `orbit` | `orbit` | `orbit_ant` |
 | `&shelf_ant` | `marine_shelf` | `marine_shelf` | `marine_shelf_ant` |
 | `&chion_ant` | `nml_pdd` | `pdd_chion` | `pdd_chion_ant` |
 | `&chion_ant` | `nml_const` | `chion_const` | `chion_const_ant` |

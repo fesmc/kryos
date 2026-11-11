@@ -71,6 +71,7 @@
     out_1D   = "out_1D"        ! yelmox output.write_yelmo
     out_vars = ""
     coefs    = "alpha" "dTo"   ! the union of the coefficients of the files
+    orbit    = "orbit"         ! the run's orbit ([orbit]): exported to the surface's insolation
 /
 
 &geo_glob
@@ -246,7 +247,6 @@
     out_vars      = ""
     surface_chion = "surface_chion_nor"
     chion         = "chion_nor"
-    orbit         = "orbit_nor"
 /
 
 &shelf_nor
@@ -396,12 +396,12 @@
     f_p         = 0.05                        ! [K-1] precipitation-temperature scaling (beta_p)
 /
 
-&orbit_nor
+&orbit
     method = "fixed_time"   ! forcing_time: at the forcing time; fixed_time: at time; fixed_orbit: ecc, obl, per
     time   = 0.0            ! [yr] model time of the orbit (fixed_time; relative to 1950, past < 0)
-    ecc    = 0.016702       ! [1]   eccentricity (fixed_orbit; these: the tables at 1950)
-    obl    = 23.4393        ! [deg] obliquity (fixed_orbit)
-    per    = 102.918        ! [deg] longitude of perihelion (fixed_orbit)
+    ecc    = 0.016725       ! [1]   eccentricity (fixed_orbit; these: the tables at 1950)
+    obl    = 23.4458        ! [deg] obliquity (fixed_orbit)
+    per    = 102.063        ! [deg] longitude of perihelion (fixed_orbit; Berger 1978)
     fldr   = "input"        ! folder of the orbital tables (LA2004.INSOLN.5Ma.txt, LA2004.INSOLP.1Ma.txt)
 /
 
@@ -1122,7 +1122,6 @@
     out_vars      = ""
     surface_chion = "surface_chion_ant"
     chion         = "chion_ant"
-    orbit         = "orbit_ant"
 /
 
 &shelf_ant
@@ -1273,15 +1272,6 @@
     fields      = "tas" "pr" "to" "so" "zs"   ! the fields a snapshot may bind
     lapse       = 0.0080 0.0065               ! [K m-1] lapse rates: annual, summer
     f_p         = 0.05                        ! [K-1] precipitation-temperature scaling (beta_p)
-/
-
-&orbit_ant
-    method = "fixed_time"   ! forcing_time: at the forcing time; fixed_time: at time; fixed_orbit: ecc, obl, per
-    time   = 0.0            ! [yr] model time of the orbit (fixed_time; relative to 1950, past < 0)
-    ecc    = 0.016702       ! [1]   eccentricity (fixed_orbit; these: the tables at 1950)
-    obl    = 23.4393        ! [deg] obliquity (fixed_orbit)
-    per    = 102.918        ! [deg] longitude of perihelion (fixed_orbit)
-    fldr   = "input"        ! folder of the orbital tables (LA2004.INSOLN.5Ma.txt, LA2004.INSOLP.1Ma.txt)
 /
 
 &surface_chion_ant

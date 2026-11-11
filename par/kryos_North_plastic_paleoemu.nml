@@ -1,7 +1,7 @@
 ! kryos par file: the CESM-3Ma emulator (climate = paleoemu, PaleoEmulator) driving the chion snowpack on the plastic
 ! PaleoMIST ice of domain North (NH-32KM), from 21 ka to 20 ka. The global part of the climate (`clim_glob`, globe)
 ! steps the emulator on the ice of [globe_ice] (PaleoMIST's history outside the domain, the plastic ice inside it),
-! CO2 of the forcing (coef_co2) and the orbit of [orbit]; the domain's climate `climate_nor` is its regional port, and
+! CO2 and the orbit of the forcing (coef_co2; [orbit], also the surface's insolation); the domain's climate `climate_nor` is its regional port, and
 ! the surface takes tas and pr through the lapse rows. No geo: the bed is today's (+ r), z_sl = 0. The plastic ice is
 ! driven by the PaleoMIST margins (drive = "taub"); the surface's smb and T_srf are diagnostics here.
 ! Build: plastic=1 paleoemu=1 (yelmo=0 is enough; make paleoemu-static first). Inputs: the emulator file
@@ -61,6 +61,8 @@
     clock    = "forcing"
     out_1D   = "out_1D"
     coefs    = "co2"
+    orbit    = "orbit"           ! the run's orbit: exported to the climate and the surface's insolation
+    out_insol = "out_2D"         ! forcing_insol.nc: the orbit and the monthly TOA insolation on 1° latitudes
 /
 
 &coef_co2
@@ -79,7 +81,6 @@
     out_emu   = "out_2D"         ! clim_glob_emu.nc: the emulator on the CESM grid (inputs, anomalies, sd)
     file      = "/work/ba1442/robinson/models/PaleoEmulator/output/06_emulator/emulator_cesm3ma.nc"
     reference = "/work/ba1442/data/ERA5-clim/paleoemu_reference_GLOBAL-0.5DEG.nc"
-    orbit     = "orbit"
 /
 
 &globe_ice
@@ -170,15 +171,14 @@
     backend       = "chion"
     grid          = "NH-32KM"
     dt            = 0.0
-    clock         = "forcing"     ! the orbit's time: as the climate's (kryos_run checks it)
+    clock         = "forcing"
     out_2D        = "out_2D"
     surface_chion = "surface_chion"
     chion         = "chion"
-    orbit         = "orbit"
 /
 
 &orbit
-    method = "forcing_time"   ! the orbit of the emulator and of the insolation at the forcing time
+    method = "forcing_time"   ! the run's orbit at the forcing time (the forcing exports it)
     fldr   = "input"
 /
 

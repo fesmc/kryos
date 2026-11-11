@@ -1576,7 +1576,7 @@ is_runwide(name::AbstractString, wide::AbstractVector{<:AbstractString}) =
 # backend groups, the `nml_*` keys of the physics groups and the field groups of a snapshot.
 const MERGE_REF_KEYS = [
     "" => ["topo", "regions", "ice", "geo", "climate", "surface", "shelf", "geothermal", "sediments", "experiments",
-           "yelmo", "isos", "snapshots", "taper", "bias", "surface_chion", "chion", "orbit", "marine_shelf", "corr",
+           "yelmo", "isos", "snapshots", "taper", "bias", "surface_chion", "chion", "marine_shelf", "corr",
            "Q_geo", "H_sed"],
     "term_" => ["terms"],
     "snapshot_" => ["reference", "snap0", "snap1"],
@@ -1629,7 +1629,7 @@ kv_of(g::NL.Group) = Dict(k.name => k for k in g.keys)
 Merge converted single-domain par files into one file for a run with all their domains
 (`[kryos] domains` in the order of `files`).
 
-- The run-wide groups (`[kryos]`, `[clock]`, `[globe]`, `[forcing]`, `[geo_glob]`, `[barysealevel]`,
+- The run-wide groups (`[kryos]`, `[clock]`, `[globe]`, `[forcing]`, `[orbit]` (the run's orbit), `[geo_glob]`, `[barysealevel]`,
   `[out_*]`, `[coef_*]`) are taken once and must agree: a key with different values in two files
   stops the merge, naming both, unless `resolve` gives its value (`"group.key" => raw text`, recorded in the
   header). `[kryos] domains` lists the domains and `[forcing] coefs` the union of the coefficients.
@@ -1639,7 +1639,7 @@ Merge converted single-domain par files into one file for a run with all their d
 - Every file must be a single-domain file with the groups of its domain (the instance groups, the groups they name).
 """
 function merge_par(files::AbstractVector{<:AbstractString}; resolve::AbstractDict=Dict{String,String}(),
-                   wide::AbstractVector{<:AbstractString}=["kryos", "clock", "globe", "forcing", "geo_glob", "barysealevel"])
+                   wide::AbstractVector{<:AbstractString}=["kryos", "clock", "globe", "forcing", "orbit", "geo_glob", "barysealevel"])
     length(files) >= 2 || fail("merge_par: need at least two files")
     res = Dict{String,String}(String(k) => String(v) for (k, v) in resolve)
     used_res = Set{String}()
