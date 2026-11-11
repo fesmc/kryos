@@ -9,7 +9,7 @@ program test_climate_paleoemu
     !     elements of the imports (the forcing's: insol's tables at the evaluation time), to the round-off
     !     of the binning;
     !   * without the orbit imports, the emulator's own orbit table;
-    !   * keys scale_dtas, bias, bias_scale, beta_p: as paleoemu_downscale with scale, bias_scale, beta and the
+    !   * keys scale_dtas, bias, bias_scale, beta_adj: as paleoemu_downscale with scale, bias_scale, beta and the
     !     bias of paleoemu_bias_init (a constant 2 K, dV_ref 50 m SLE: the grown ice gives a weight > 0);
     !   * restart round trip: write, a new instance at the reference, read, PASS_RESTART, continue: bitwise;
     !   * the port copies its imports exactly, with their validity.
@@ -135,7 +135,7 @@ program test_climate_paleoemu
     call compare(glob3, "no orbit imports")
     call climate_end(glob3)
 
-    ! ---- the temperature adjustments: scale_dtas, bias, beta_p ----------------------------------------
+    ! ---- the temperature adjustments: scale_dtas, bias, beta_adj --------------------------------------
     call bias_write()
     ctx%instance = "clim_scl"
     call climate_create(glob4, ctx, census4)
@@ -146,7 +146,7 @@ program test_climate_paleoemu
     call paleoemu_bias_init(emu, BIAS)
     call drive(glob4, 2, -21000.0_dp, PASS_BOUNDARY, adjust=.true.)
     call check(paleoemu_bias_weight(emu) > 0.0_dp, "the bias weight of the grown ice is positive")
-    call compare(glob4, "scale_dtas 1.5, bias x 0.5, beta_p 0.05", beta=0.05_dp)
+    call compare(glob4, "scale_dtas 1.5, bias x 0.5, beta_adj 0.05")
     call climate_end(glob4)
 
     ! ---- the port --------------------------------------------------------------------------------
@@ -178,10 +178,10 @@ contains
         integer :: u
         open(newunit=u, file=PAR, status="replace", action="write")
         write(u,'(a)') "&clim_glob", ' backend = "paleoemu"', ' grid = "'//GRID//'"', ' file = "'//trim(efile)//'"', &
-                       ' reference = "'//REF//'"', ' beta_p = 0.0', "/", &
+                       ' reference = "'//REF//'"', ' beta_adj = 0.0', "/", &
                        "&clim_scl", ' backend = "paleoemu"', ' grid = "'//GRID//'"', ' file = "'//trim(efile)//'"', &
                        ' reference = "'//REF//'"', ' scale_dtas = 1.5', ' bias = "'//BIAS//'"', ' bias_scale = 0.5', &
-                       ' beta_p = 0.05', "/"
+                       ' beta_adj = 0.05', "/"
         close(u)
     end subroutine par_write
 

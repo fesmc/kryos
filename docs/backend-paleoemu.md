@@ -91,7 +91,7 @@ and the floating surface `z_sl + (1 − ρ_i/ρ_sw) H` elsewhere.
   temperature at the reference surface (the lapse effect of its ice sheets removed)
   minus the emulator's 21 ka state, in `kryos_data/paleoemu/bias/`
   (`bias_pmip4_<model>.nc`, and `bias_pmip4_mean.nc` with the spread).
-- `beta_p` carries both into the precipitation, exp(beta_p ΔT).
+- `beta_adj` (default 0.05, 5 %/K) carries both into the precipitation, exp(beta_adj ΔT).
 
 The emulator's filters of CO2 and ice volume start in equilibrium at the first update
 and advance over the elapsed time. Its anomalies are applied to the pre-industrial
@@ -106,7 +106,7 @@ reference climate on the grid (key `reference`), with the same formulas as
 | `pr` | kg m-2 yr-1 | the emulator's mm d-1 × the days of the run's year |
 | `z_srf_clim` | m | the surface of the reference climate (ERA5) |
 | `lapse` | K m-1 | Γ = 6.5e-3, the emulator's lapse rate |
-| `beta_p` | K-1 | key `beta_p`, default 0.05: precipitation changes by exp(β ΔT) with the temperature changes imposed on the emulator's climate, the lapse rows' elevation and the adjustments below (5 %/K; 0 as in the emulator's own downscaling) |
+| `beta_p` | K-1 | key `beta_p`, default 0: precipitation does not change with the lapse rows' elevation, as in the emulator's own downscaling. Its `dlogpr` already holds CESM's response to the ice sheets; only `dtas` is at the reference surface |
 
 **Reference climate.** It is a file on the instance grid holding `tas_ref` [K] and
 `pr_ref` [mm d-1] by month, `z_srf_ref` [m] and the global attribute `grid_name`.

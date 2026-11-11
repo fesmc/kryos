@@ -87,7 +87,8 @@
     out_emu   = "out_2D"          ! clim_glob_emu.nc: the emulator on the CESM grid (inputs, dV, dz, anomalies, sd)
     file      = "kryos_data/paleoemu/emulator_cesm3ma.nc"
     reference = "kryos_data/paleoemu/paleoemu_reference_GLOBAL-0.5DEG.nc"
-    beta_p       = 0.05           ! [K-1] precipitation per K of the imposed temperature changes (elevation, scale, bias)
+    beta_p       = 0.0            ! [K-1] lapse rows: 0, the emulator's dlogpr already holds the ice sheets' response
+    beta_adj     = 0.05           ! [K-1] precipitation per K of the adjustments (scale_dtas, bias)
     scale_dtas   = 1.0            ! the emulator's temperature anomaly times this (a colder/warmer climate, its pattern)
     bias         = ""             ! the bias correction, e.g. "kryos_data/paleoemu/bias/bias_pmip4_mean.nc" (NH ice-volume weighted)
     bias_scale   = 1.0            ! the bias correction times this

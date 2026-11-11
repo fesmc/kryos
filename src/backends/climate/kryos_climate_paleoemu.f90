@@ -20,9 +20,12 @@ module kryos_climate_paleoemu
     !                       anomaly (a colder or warmer climate with its pattern),
     !                       the bias correction of the file `bias` (e.g. PMIP4's
     !                       LGM minus the emulator's) times bias_scale and the NH
-    !                       ice-volume weight; beta_p carries them into the
-    !                       precipitation, exp(beta_p dT), as the lapse rows do
-    !                       for the elevation.
+    !                       ice-volume weight; beta_adj carries them into the
+    !                       precipitation, exp(beta_adj dT). beta_p, the lapse
+    !                       rows' precipitation per K of elevation cooling, stays 0
+    !                       by default: the emulator's dlogpr already holds the
+    !                       response to the ice sheets (only dtas is at the
+    !                       reference surface).
     !   paleoemu_port_t     the regional port (stateless): the global part's
     !                       atmosphere remapped onto the domain's grid by the rows
     !                       climate_g -> climate, passed on; the lapse rows
@@ -56,7 +59,8 @@ module kryos_climate_paleoemu
     type, extends(climate_t) :: paleoemu_climate_t
         character(len=PATH_LEN) :: file      = ""          ! the emulator file
         character(len=PATH_LEN) :: reference = ""          ! the reference climate on the instance grid
-        real(dp) :: beta_p   = 0.05_dp                     ! [K-1] precipitation per K of lapse cooling and of the adjustments
+        real(dp) :: beta_p   = 0.0_dp                      ! [K-1] lapse rows: precipitation per K of elevation cooling
+        real(dp) :: beta_adj = 0.05_dp                     ! [K-1] precipitation per K of the adjustments (scale_dtas, bias)
         real(dp) :: scale_dtas = 1.0_dp                    ! the emulator's temperature anomaly times this
         character(len=PATH_LEN) :: bias = ""               ! the bias correction file ("" none)
         real(dp) :: bias_scale = 1.0_dp                    ! the bias correction times this (and the ice-volume weight)
@@ -120,6 +124,8 @@ contains
         call nml_read(ctx%par_file, ctx%instance, "reference", self%reference)
         if (nml_has_param(ctx%par_file, ctx%instance, "beta_p")) &
             call nml_read(ctx%par_file, ctx%instance, "beta_p", self%beta_p)
+        if (nml_has_param(ctx%par_file, ctx%instance, "beta_adj")) &
+            call nml_read(ctx%par_file, ctx%instance, "beta_adj", self%beta_adj)
         if (nml_has_param(ctx%par_file, ctx%instance, "scale_dtas")) &
             call nml_read(ctx%par_file, ctx%instance, "scale_dtas", self%scale_dtas)
         if (nml_has_param(ctx%par_file, ctx%instance, "bias")) call nml_read(ctx%par_file, ctx%instance, "bias", self%bias)
@@ -156,7 +162,7 @@ contains
         if (len_trim(self%bias) > 0) bias_txt = trim(self%bias)//" x "//to_str(self%bias_scale)
         call log_msg(LOG_INFO, "kryos_climate_paleoemu", "emulator "//trim(self%file)//" ("//trim(self%emu%temperature)// &
                      "), grid "//trim(grid_name)//" "//to_str(self%nx)//" x "//to_str(self%ny)//", beta_p "// &
-                     to_str(self%beta_p)//", scale_dtas "//to_str(self%scale_dtas)//", bias "//trim(bias_txt), &
+                     to_str(self%beta_p)//", beta_adj "//to_str(self%beta_adj)//", scale_dtas "//to_str(self%scale_dtas)//", bias "//trim(bias_txt), &
                      "instance "//trim(self%name))
     end subroutine global_init_
 
@@ -315,7 +321,7 @@ contains
             call paleoemu_update(self%emu, st%t_eval, co2, H, zb, zs)
         end if
         call paleoemu_downscale(self%tgt, self%emu, scale=[self%scale_dtas, 1.0_dp], bias_scale=self%bias_scale, &
-                                beta=self%beta_p)
+                                beta=self%beta_adj)
         call exports_put(self, st%t1)
     end subroutine step
 
