@@ -1,99 +1,3 @@
-module kryos_chion_orbit
-    ! The orbit of the insolation ([orbit<sfx>], one per domain): the orbital
-    ! elements that apply at a time of the forcing time. Shared by the surface
-    ! models that take insolation (chion's host for itm/bessi, smbpal's itm);
-    ! each owns its insol_class (fesmc/insol), initialised once with its
-    ! latitudes and the tables in fldr, and recomputes its insolation only when
-    ! the elements change. This module only resolves the elements:
-    !
-    !   method = "forcing_time": the elements at the forcing time time_rel (Laskar et al. 2004 tables)
-    !            "fixed_time":   the elements at a fixed time [yr, model time: relative to 1950, past < 0]
-    !            "fixed_orbit":  the given elements ecc, obl [deg], per [deg] (longitude of perihelion)
-    !
-    ! Read with input/kryos_defaults.nml (template group orbit): a par file lists only what differs.
-
-    use nml,        only : nml_read, nml_validate
-    use insolation, only : dp, insol_class, orbit_pars_class, orbit_pars_at, orbit_pars_fixed
-
-    implicit none
-
-    private
-
-    ! Defaults (schema) of [orbit]: template group orbit of the kryos defaults file
-    ! (yelmox: input/yelmox_defaults.nml)
-    character(len=*), parameter :: def_file = "input/kryos_defaults.nml"
-
-    type orbit_ctl_class
-        character(len=16)  :: method    ! forcing_time | fixed_time | fixed_orbit
-        real(dp)           :: time      ! [yr] model time of the orbit (fixed_time)
-        real(dp)           :: ecc       ! [1]   eccentricity (fixed_orbit)
-        real(dp)           :: obl       ! [deg] obliquity (fixed_orbit)
-        real(dp)           :: per       ! [deg] longitude of perihelion (fixed_orbit)
-        character(len=512) :: fldr      ! folder of the orbital tables
-    end type orbit_ctl_class
-
-    public :: orbit_ctl_class
-    public :: orbit_pars_class
-    public :: orbit_ctl_load
-    public :: orbit_pars_now
-    public :: orbit_pars_equal
-
-contains
-
-    subroutine orbit_ctl_load(ctl, filename, group)
-        ! Read [orbit<sfx>] (optional group; the defaults without it).
-        type(orbit_ctl_class), intent(out) :: ctl
-        character(len=*),      intent(in)  :: filename, group
-
-        type(orbit_pars_class) :: orbit
-
-        call nml_validate(filename, def_file, group, defaults_group="orbit")
-        call nml_read(filename, group, "method", ctl%method, defaults_file=def_file, defaults_group="orbit")
-        call nml_read(filename, group, "time",   ctl%time,   defaults_file=def_file, defaults_group="orbit")
-        call nml_read(filename, group, "ecc",    ctl%ecc,    defaults_file=def_file, defaults_group="orbit")
-        call nml_read(filename, group, "obl",    ctl%obl,    defaults_file=def_file, defaults_group="orbit")
-        call nml_read(filename, group, "per",    ctl%per,    defaults_file=def_file, defaults_group="orbit")
-        call nml_read(filename, group, "fldr",   ctl%fldr,   defaults_file=def_file, defaults_group="orbit")
-
-        select case(trim(ctl%method))
-            case("forcing_time", "fixed_time")
-                ! The tables are read by each host's insol_init.
-            case("fixed_orbit")
-                orbit = orbit_pars_fixed(ctl%ecc, ctl%obl, ctl%per)   ! stops on invalid elements
-            case default
-                write(*,*) "orbit_ctl_load:: error: ["//trim(group)//"] method must be &
-                           &forcing_time, fixed_time or fixed_orbit; got '"//trim(ctl%method)//"'."
-                error stop 1
-        end select
-    end subroutine orbit_ctl_load
-
-    function orbit_pars_now(ctl, is, time_rel) result(orbit)
-        ! The orbital elements at the forcing time time_rel [yr], from the
-        ! tables of the host's insol_class (forcing_time, fixed_time).
-        type(orbit_ctl_class), intent(in) :: ctl
-        type(insol_class),     intent(in) :: is
-        real(dp),              intent(in) :: time_rel
-        type(orbit_pars_class) :: orbit
-
-        select case(trim(ctl%method))
-            case("forcing_time")
-                orbit = orbit_pars_at(is, time_rel)
-            case("fixed_time")
-                orbit = orbit_pars_at(is, ctl%time)
-            case default   ! fixed_orbit
-                orbit = orbit_pars_fixed(ctl%ecc, ctl%obl, ctl%per)
-        end select
-    end function orbit_pars_now
-
-    elemental function orbit_pars_equal(a, b) result(same)
-        ! The same elements (the insolation need not be recomputed).
-        type(orbit_pars_class), intent(in) :: a, b
-        logical :: same
-
-        same = (a%ecc == b%ecc .and. a%obl == b%obl .and. a%per == b%per)
-    end function orbit_pars_equal
-
-end module kryos_chion_orbit
 module kryos_chion_host
     ! chion as the yelmox surface model (surface_method = "chion").
     !
@@ -150,7 +54,7 @@ module kryos_chion_host
     use ncio,       only : nc_open, nc_close, nc_write, nc_read, nc_exists_var
     use phys_constants, only : phys_const_class, sec_day
     use insolation, only : insol_class, insol_init, calc_insol_days, insol_wp => wp
-    use kryos_chion_orbit, only : orbit_ctl_class, orbit_pars_class, orbit_ctl_load, &
+    use kryos_orbit, only : orbit_ctl_class, orbit_pars_class, orbit_ctl_load, &
                               orbit_pars_now, orbit_pars_equal
     use chion,      only : wp, dp, wp_acc, MV, chion_class, chion_init, chion_init_state, &
                            chion_update, chion_set_active_mask, &
@@ -756,12 +660,12 @@ module kryos_surface_chion
     ! (and insol=1: the host's insolation table); otherwise
     ! kryos_surface_chion_stub.f90 provides this module.
     !
-    ! The adapter absorbs the yelmox chion host: the two modules above are
-    ! libs/surface_chion.f90 and libs/orbit_forcing.f90 of yelmox 74f3a2b
-    ! (branch topo-prep), unchanged except the module names (kryos_chion_host,
-    ! kryos_chion_orbit) and the defaults file of [orbit] (def_file). Compiling
-    ! them here, in the file of the backend, takes them out of the build when
-    ! chion=0.
+    ! The adapter absorbs the yelmox chion host: the module above is
+    ! libs/surface_chion.f90 of yelmox 74f3a2b (branch topo-prep), unchanged
+    ! except its module name (kryos_chion_host); compiling it here, in the file
+    ! of the backend, takes it out of the build when chion=0. The orbit of its
+    ! insolation is kryos_orbit (libs/orbit_forcing.f90 of yelmox, shared with
+    ! the climate paleoemu).
     !
     ! chion computes in wp (sp), accumulators in dp; the exchange is dp: imports
     ! are narrowed once, exports widened from chion's values (P1, P5). One

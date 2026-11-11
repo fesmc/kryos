@@ -199,12 +199,15 @@ else
 endif
 
 ifeq ($(insol), 1)
+    kryos_orbit_obj = $(objdir)/kryos_orbit.o
     INC_BACKENDS   += $(INC_INSOL)
     LIB_BACKENDS   += $(LIB_INSOL)
     dep_archives   += $(INSOL_ARCHIVE)
     backend_roots  += $(INSOLROOT)
     build_info_libs += insol:$(INSOLROOT)
     backend_static += insol-static
+else
+    kryos_orbit_obj = $(objdir)/kryos_orbit_stub.o
 endif
 
 ifeq ($(vilma), 1)
