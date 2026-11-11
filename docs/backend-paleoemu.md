@@ -22,7 +22,7 @@ The surface (chion) takes `tas` and `pr` from the port through the lapse rows, a
 computes its insolation on the same orbit. The surface's `smb` and `T_srf` then
 drive the ice.
 
-- **Build:** `paleoemu=1` (with `insol=1`).
+- **Build:** `paleoemu=1`.
   - `config/common.mk` expects `PaleoEmulator/fortran/build` (`libpaleoemu.a`,
     `paleoemu.mod`), a sibling checkout or symlink `PaleoEmulator`.
   - Build it with the compiler and the fesm-utils of kryos: `make paleoemu-static`
@@ -41,7 +41,7 @@ drive the ice.
   - The ice geometry is in `globe_ice_geometry` and `globe_ice_external`
     (`src/core/kryos_globe_ice.f90`).
   - The globe side is in `globe_climate_ice`, `globe_climate_reference` and
-    `globe_coefs_to_climate` (`src/core/kryos_globe.f90`).
+    `globe_forcing_to_climate` (`src/core/kryos_globe.f90`).
 - **Par file:** `par/kryos_North_plastic_paleoemu.nml`: the PaleoMIST plastic ice of
   North with chion, from 21 to 20 ka.
 
@@ -61,6 +61,7 @@ takes the area-weighted mean of the instance cells whose centres it holds.
 | `H_ice`, `z_bed`, `z_srf` | `globe_ice_geometry`: the ice of the last gather of the domains (lag 1), merged into the background history (owner weights; the ice extensive, the bed and the surface intensive) | every update |
 | `H_ice_ref`, `z_bed_ref`, `z_srf_ref` | the spliced present day of `globe_ice`: the domains' reference in the background X | once, after the reference |
 | `coef_co2` | the forcing (`[forcing] coefs = "co2"`), through the globe's own rows `forcing -> climate_g` (lag 0) | every update |
+| `orbit_ecc`, `orbit_obl`, `orbit_per` (optional) | the forcing (`[forcing] orbit = "orbit"`), the same rows | every update |
 
 The surface where `globe_ice` has no surface of its own is `z_bed + H` where grounded,
 and the floating surface `z_sl + (1 − ρ_i/ρ_sw) H` elsewhere.
@@ -70,7 +71,9 @@ and the floating surface `z_sl + (1 − ρ_i/ρ_sw) H` elsewhere.
 - **time:** the instance's evaluation time, which is the forcing time with
   `clock = "forcing"`;
 - **CO2:** the coefficient `coef_co2`;
-- **orbit:** the elements of `[orbit]` at that time (`kryos_orbit`, the insol tables);
+- **orbit:** the forcing's elements, which are also the surface's; without them, the
+  emulator's own table (Laskar et al. 2004) at that time, as when PaleoEmulator runs
+  standalone;
 - **ice:** the geometry on the emulator's ice grid, against the reference.
 
 The emulator's filters of CO2 and ice volume start in equilibrium at the first update
@@ -136,18 +139,19 @@ on it.
 
 ## One orbit
 
-Every instance that takes an orbit sets `component_t%orbit`. At present these are the
-global climate and chion's insolation (itm, bessi). `run_check_orbit` stops the run at
-init unless all of them name the same `[orbit]` group and have the same `clock`. The
-climate and the insolation of the surface therefore see one orbit, also with
-`fixed_time` or `fixed_orbit`.
+The forcing resolves the run's orbit once, from the group named by `[forcing] orbit`
+(`kryos_orbit`, insol's tables), at the forcing time or fixed. It exports the elements
+`orbit_ecc`, `orbit_obl` and `orbit_per`, and every component that takes the orbit reads
+them through the rows `forcing -> climate_g / climate / surface`:
 
-The emulator's own perihelion convention is Berger's plus 180°: the elements are
-converted in `paleoemu_update`.
+- the global climate passes them to `paleoemu_update`;
+- chion's insolation (itm, bessi) computes its daily S from them on its own latitudes,
+  with an insol state without tables.
 
-The insol tables carry the J2000 elements under the label 1950 (per = 102.92°). The
-emulator was trained with the 1950 orbit (102.04°). The difference is 50 years of
-precession, which is negligible.
+The climate and the insolation therefore always see one orbit. The emulator's own
+perihelion convention is Berger's plus 180°: `paleoemu_update` converts the elements.
+The forcing's stream `insol` (`out_insol`, `<instance>_insol.nc`) writes the elements and
+the monthly mean top-of-atmosphere insolation on 1° latitudes, as a diagnostic.
 
 ## Limits
 

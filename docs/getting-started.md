@@ -48,7 +48,7 @@ The dependencies are checkouts, or symlinks to checkouts, at the kryos root (the
 | `yelmo` | [fesmc/yelmo](https://github.com/fesmc/yelmo) | `stable` | `yelmo=1`; and `make check` (the Yelmo copies in `input/`) |
 | `FastIsostasy` | [palma-ice/FastIsostasy](https://github.com/palma-ice/FastIsostasy) | `stable` | `fastisostasy=1` (default on) |
 | `chion` | [fesmc/chion](https://github.com/fesmc/chion) | `stable` | `chion=1` (default on) |
-| `insol` | [fesmc/insol](https://github.com/fesmc/insol) | `stable` | `insol=1` (default on; chion needs it) |
+| `insol` | [fesmc/insol](https://github.com/fesmc/insol) | `stable` | always (the forcing's orbit, chion's insolation) |
 
 FastHydrology, elsa and tracer live inside the yelmo checkout.
 
@@ -113,7 +113,7 @@ make deps-static vilma=1 yelmo=0
 ```
 
 `deps-static` runs `fesmutils-static` and the `<backend>-static` target of every backend switched on:
-here FastIsostasy, chion, insol (on by default) and VILMA2 (`make -C vilma2 vilma-static openmp=1`). With
+here FastIsostasy, chion, insol (always) and VILMA2 (`make -C vilma2 vilma-static openmp=1`). With
 `plastic=1` it would also run `plastic-static`, but that passes only `config=` to PlasticIceSheet (not `openmp=`
 or `lis=`), so build PlasticIceSheet by hand:
 
@@ -184,7 +184,7 @@ Switches:
 | `vilma` | 0 | geo backend `vilma2` (the global Earth and its regional ports): `vilma2/libvilma/include/libvilma.a`, SHTns of fesm-utils; off: stub, `test_geo_vilma2` and `test_gia_sequence` not built |
 | `yelmo` | 1 | ice backend `yelmo` (+ FastHydrology, elsa, tracer, LIS, FFTW); off: stub, the Yelmo experiments are stubs too |
 | `fastisostasy` | 1 | geo backend `fastisostasy`; off: stub |
-| `chion`, `insol` | 1 | surface backend `chion` (needs `insol=1`); off: stub |
+| `chion` | 1 | surface backend `chion`; off: stub (insol is always linked: the forcing's orbit) |
 | `cism`, `pism`, `rembo` | 0 | stop: the adapters do not exist yet |
 
 Build notes:

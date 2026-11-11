@@ -123,7 +123,7 @@ A par file is a set of namelist groups. The run group `[kryos]` names the rest:
 - Backend library groups (`[yelmo]`, `[ytopo]`, ..., `[chion]`) take their defaults from the library's defaults file
   in `input/` (`yelmo_defaults.nml`, `chion_defaults.nml`). `[vilma]` takes its defaults from
   `input/vilma_defaults.nml`: the group sets overrides only, and its name is fixed (VILMA2 looks the defaults up under
-  it). The groups of code kryos hosts (`[smb_simple]`, the chion host's `[orbit]`, `[globe_ice]`) have their schema at
+  it). The groups of code kryos hosts (`[smb_simple]`, the run's `[orbit]` (`[forcing] orbit`), `[globe_ice]`) have their schema at
   the end of `kryos_defaults.nml`.
 - Data field groups (`[X_z_bed]`, ...) follow `input/datasrc_defaults.nml`; snapshot, term and coefficient groups
   `snapshots_defaults.nml` and `forcing_defaults.nml`.
