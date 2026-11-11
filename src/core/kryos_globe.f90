@@ -210,7 +210,6 @@ contains
             call config_validate(cfg, trim(group), "globe_ice")
             tgt_name = ""
             call config_read(cfg, trim(group), "target", tgt_name, "globe_ice")
-            if (len_trim(tgt_name) == 0 .and. climate_present(globe%climate)) tgt_name = globe%climate%c%grid
             if (len_trim(tgt_name) == 0) then
                 call fesm_error("kryos_globe::globe_init", "[globe_ice] without a host-resolved geo needs `target`", &
                                 "the global grid the host terms are merged onto, a grid_<name>.txt of the map folder "// &
