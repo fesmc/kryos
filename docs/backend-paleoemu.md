@@ -44,6 +44,8 @@ drive the ice.
     `globe_forcing_to_climate` (`src/core/kryos_globe.f90`).
 - **Par file:** `par/kryos_North_plastic_paleoemu.nml`: the PaleoMIST plastic ice of
   North with chion, from 21 to 20 ka.
+- **Inputs:** `kryos_data/paleoemu/` (its README): the emulator file, the reference
+  climate on GLOBAL-0.5DEG and the CO2 table, in `$KRYOS_DATA` on Levante and albedo.
 
 ## The global part
 

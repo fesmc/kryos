@@ -79,8 +79,8 @@
     clock     = "forcing"
     out_2D    = "out_2D"         ! tas, pr, z_srf_clim, lapse, beta_p on lon, lat
     out_emu   = "out_2D"         ! clim_glob_emu.nc: the emulator on the CESM grid (inputs, anomalies, sd)
-    file      = "/work/ba1442/robinson/models/PaleoEmulator/output/06_emulator/emulator_cesm3ma.nc"
-    reference = "/work/ba1442/data/ERA5-clim/paleoemu_reference_GLOBAL-0.5DEG.nc"
+    file      = "kryos_data/paleoemu/emulator_cesm3ma.nc"
+    reference = "kryos_data/paleoemu/paleoemu_reference_GLOBAL-0.5DEG.nc"
 /
 
 &globe_ice

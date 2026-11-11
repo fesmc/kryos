@@ -4,8 +4,8 @@
 ! orbit). The ice is the PaleoMIST margins with Gowan's tau_b (drive = "taub", as the _b1 file): the plastic ice takes
 ! no smb, so the climate and chion's smb and T_srf are diagnostics of the reconstructed geometry. CO2: the CESM-3Ma
 ! series (PaleoEmulator scripts/prep_kryos_co2.jl). Output: 2D every 5 kyr, 1D every 100 yr.
-! Build: plastic=1 vilma=1 paleoemu=1 (yelmo=0). Inputs on Levante (paths below): the emulator file, its reference
-! climate on GLOBAL-0.5DEG, the CO2 table.
+! Build: plastic=1 vilma=1 paleoemu=1 (yelmo=0). Inputs in kryos_data/paleoemu/ (its README): the emulator file, its
+! reference climate on GLOBAL-0.5DEG, the CO2 table.
 !   runme -r -s -q shared -w 02:00:00 --omp 16 -m 60G -o <run> -n par/kryos_NH-ANT_plastic_vilma2_b1_paleoemu.nml
 ! (about 40 min: VILMA2 and the output most of it)
 
@@ -68,7 +68,7 @@
 
 &coef_co2
     method      = "series"
-    series_file = "/work/ba1442/data/PaleoEmulator/co2_cesm3ma.dat"   ! CESM-3Ma (time [yr], co2 [ppm])
+    series_file = "kryos_data/paleoemu/co2_cesm3ma.dat"            ! CESM-3Ma (time [yr], co2 [ppm])
     units       = "ppm"
 /
 
@@ -85,8 +85,8 @@
     out_2D    = "out_2D"          ! clim_glob.nc: tas, pr, z_srf_clim, lapse on lon, lat
     out_1D    = "none"
     out_emu   = "out_2D"          ! clim_glob_emu.nc: the emulator on the CESM grid (inputs, dV, dz, anomalies, sd)
-    file      = "/work/ba1442/robinson/models/PaleoEmulator/output/06_emulator/emulator_cesm3ma.nc"
-    reference = "/work/ba1442/data/ERA5-clim/paleoemu_reference_GLOBAL-0.5DEG.nc"
+    file      = "kryos_data/paleoemu/emulator_cesm3ma.nc"
+    reference = "kryos_data/paleoemu/paleoemu_reference_GLOBAL-0.5DEG.nc"
 /
 
 &geo_glob

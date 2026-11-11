@@ -66,7 +66,7 @@
 
 &coef_co2
     method      = "series"
-    series_file = "/work/ba1442/data/PaleoEmulator/co2_cesm3ma.dat"   ! CESM-3Ma (time [yr], co2 [ppm])
+    series_file = "kryos_data/paleoemu/co2_cesm3ma.dat"            ! CESM-3Ma (time [yr], co2 [ppm])
     units       = "ppm"
 /
 
@@ -83,8 +83,8 @@
     out_2D    = "out_2D"          ! clim_glob.nc: tas, pr, z_srf_clim, lapse on lon, lat
     out_1D    = "none"
     out_emu   = "out_2D"          ! clim_glob_emu.nc: the emulator on the CESM grid (inputs, dV, dz, anomalies, sd)
-    file      = "/work/ba1442/robinson/models/PaleoEmulator/output/06_emulator/emulator_cesm3ma.nc"
-    reference = "/work/ba1442/data/ERA5-clim/paleoemu_reference_GLOBAL-0.5DEG.nc"
+    file      = "kryos_data/paleoemu/emulator_cesm3ma.nc"
+    reference = "kryos_data/paleoemu/paleoemu_reference_GLOBAL-0.5DEG.nc"
 /
 
 &globe_ice
