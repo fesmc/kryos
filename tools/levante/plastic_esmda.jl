@@ -205,7 +205,7 @@ function runme_project(C, K, maps, fesmdata)
     open(joinpath(R, "info.json"), "w") do io
         print(io, """{
     "exe_default" : "kryos", "par_path_as_argument" : true, "exe_aliases" : {"kryos" : "kryos.x"}, "grp_aliases" : {},
-    "par_paths" : {}, "files" : [], "dir-special" : {}, "par_defaults" : ["input/kryos_defaults.nml"], "par_library" : [],
+    "par_paths" : {}, "files" : [], "dir-special" : {}, "par_defaults" : ["input/kryos_defaults.nml", "input/vilma_defaults.nml"], "par_library" : [],
     "links" : ["input", "fesmdata", "kryos_data", "maps"]
 }
 """)

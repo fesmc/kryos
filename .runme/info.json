@@ -19,7 +19,7 @@
 
     "files" : [],
 
-    "par_defaults" : ["input/kryos_defaults.nml"],
+    "par_defaults" : ["input/kryos_defaults.nml", "input/vilma_defaults.nml"],
 
     "par_library"  : [],
 
