@@ -8,13 +8,15 @@ description comes from the file's header, which also gives the full command line
 the Julia tools run with `julia --project=tools/levante` ([Getting started](getting-started.md#the-levante-tools),
 [Analysis and figures](experiment-analysis.md#environment)). The model runs (`kryos.x`, `vilma.x`, the offline fits) are
 staged and submitted with [runme](https://github.com/fesmc/runme) ([Getting started](getting-started.md)). Scripts that
-run as Slurm jobs submit themselves: run them directly, not with `sbatch`. Everything runs on Levante.
+run as Slurm jobs submit themselves: run them directly, not with `sbatch`. Everything runs on Levante and on AWI's
+albedo (`KRYOS_MACHINE`, env.sh); [tools/albedo/stack.sh](https://github.com/fesmc/kryos/blob/main/tools/albedo/stack.sh)
+builds a kryos stack on albedo.
 
 ## Environment
 
 | File | What |
 |---|---|
-| [env.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/env.sh) | The environment of every tool: `KRYOS`, `KRYOS_WORK`, `FESMDATA`, `FESMDATA_SOURCES`, `KRYOS_DATA`, `VILMA2`, `PM_DIR`, `PM_REF`, `ACCOUNT`, `KRYOS_RUNME`, `KRYOS_JULIA` (overrides in the environment or `~/.kryos.env`); function `kryos_jl` |
+| [env.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/env.sh) | The environment of every tool: `KRYOS`, `KRYOS_WORK`, `FESMDATA`, `FESMDATA_SOURCES`, `KRYOS_DATA`, `VILMA2`, `PM_DIR`, `PM_REF`, `ACCOUNT`, `KRYOS_PART`, `KRYOS_PART_LONG`, `KRYOS_RUNME`, `KRYOS_JULIA`, with the defaults of `KRYOS_MACHINE` (levante, albedo) (overrides in the environment or `~/.kryos.env`); function `kryos_jl` |
 | [setup.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/setup.sh) | The one-time setup: checks the paths and the builds; links `fesmdata` and `kryos_data` into the checkout and copies the shared grid files and remapping weights of `$KRYOS_DATA/maps` into its `maps/`; checks runme (>= 0.5.27) and creates `.runme/config.toml`; Julia (juliaup, 1.13) and the Julia project; creates `KRYOS_WORK`; safe to rerun |
 | [.runme/](https://github.com/fesmc/kryos/tree/main/.runme) | The checkout as a runme project: `info.json` (executables `kryos`, `taub_fit`, `closure_fit`; defaults `input/kryos_defaults.nml`; the links `input`, `fesmdata`, `kryos_data`, `maps`, `ice_data`, `isostasy_data`), the job templates `submit_slurm`, `submit_slurm_omp` (the job writes `status`, exit code and seconds), `config.default.toml` (`dkrz_levante`, account `ba1442`, 16 threads) |
 | [Project.toml](https://github.com/fesmc/kryos/blob/main/tools/levante/Project.toml), `Manifest.toml` | The Julia project of all tools: CairoMakie, NCDatasets, DelimitedFiles, Julia 1.13 |

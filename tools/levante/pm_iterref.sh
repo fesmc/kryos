@@ -16,7 +16,7 @@ CASE=$_h/paleomist/pm_$EARTH.nml
 [ -f "$CASE" ] || { echo "no case $CASE (EARTH: 1d | l80 | bm | 3d | t3)"; exit 1; }
 if [ "${KRYOS_JOB:-}" != 1 ]; then
     bash "$_h/pm_project.sh" "$ROOT" || exit 1
-    sbatch --parsable -A $ACCOUNT -p shared -t $(( 3 * NMAX )):00:00 -c $NTHR --mem=16G -J pm-iterref-$BASE \
+    sbatch --parsable -A $ACCOUNT $KRYOS_PART -t $(( 3 * NMAX )):00:00 -c $NTHR --mem=16G -J pm-iterref-$BASE \
         -o $ROOT/${BASE}_iterref-%j.out --export=ALL,KRYOS_JOB=1 "$_h/pm_iterref.sh"
     exit
 fi

@@ -205,17 +205,20 @@ How the generated dependencies work and how to add a backend:
 ## The Levante tools
 
 The scripts of [tools/levante/](https://github.com/fesmc/kryos/tree/main/tools/levante) share one environment,
-[env.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/env.sh), which every script sources:
+[env.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/env.sh), which every script sources. They run on
+Levante and on AWI's albedo: `KRYOS_MACHINE` (`levante` or `albedo`, from the host name) sets the defaults, given
+below as Levante's / albedo's:
 
 | Variable | Default | |
 |---|---|---|
 | `KRYOS` | the checkout the script is in | |
-| `KRYOS_WORK` | `/work/ba1442/$USER/kryos-work` | your writable work folder: runs, scores, calibrations |
-| `FESMDATA`, `FESMDATA_SOURCES` | `/work/ba1442/fesmdata`, `/work/ba1442/fesmdata-sources` | FesmData and its original data, read-only; `FESMDATA` is linked as `$KRYOS/fesmdata` |
-| `KRYOS_DATA` | `/work/ba1442/kryos_data` | kryos reference data, read-only: refcorr topographies, the released tau_b products (`plastic/`), the shared remapping weights (`maps/`); linked as `$KRYOS/kryos_data` |
+| `KRYOS_WORK` | `/work/ba1442/$USER/kryos-work` / `/albedo/work/user/$USER/kryos-work` | your writable work folder: runs, scores, calibrations |
+| `FESMDATA`, `FESMDATA_SOURCES` | `/work/ba1442/fesmdata` / `/albedo/work/projects/p_forclima/fesmdata`, and `$FESMDATA-sources` | FesmData and its original data, read-only; `FESMDATA` is linked as `$KRYOS/fesmdata` |
+| `KRYOS_DATA` | `/work/ba1442/kryos_data` / `/albedo/work/projects/p_forclima/kryos_data` | kryos reference data, read-only: refcorr topographies, the released tau_b products (`plastic/`), the inputs of the climate backend paleoemu (`paleoemu/`), the shared remapping weights (`maps/`); linked as `$KRYOS/kryos_data`. albedo's is a copy of Levante's |
+| `KRYOS_PART`, `KRYOS_PART_LONG` | `-p shared` / `-p smp --qos=12h` and `--qos=48h` | the sbatch partition of the tools' small jobs (up to 12 h), and of their jobs of days |
 | `VILMA2` | `$KRYOS/vilma2` | the vilma2 checkout of the standalone runs (`bin/vilma.x`, `input/`) |
 | `PM_DIR`, `PM_REF` | `$KRYOS_WORK/paleomist`, the reference runs | your standalone VILMA2 runs; the read-only reference runs the scores compare with |
-| `ACCOUNT` | the `account` of `.runme/config.toml`, else `ba1442` | the Slurm account of the small Julia and analysis jobs of the tools (model runs take runme's) |
+| `ACCOUNT` | the `account` of `.runme/config.toml`, else `ba1442` / `envi.p_forclima` | the Slurm account of the small Julia and analysis jobs of the tools (model runs take runme's) |
 | `KRYOS_RUNME` | `runme` | the runme command: the model runs are staged and submitted with runme (below) |
 | `KRYOS_JULIA` | juliaup's `julia +1.13` | the julia command (by full path: Levante's python module puts an old julia first on `PATH`) |
 
@@ -238,7 +241,8 @@ It checks the paths and the builds, and sets up the checkout:
 - the grid files and remapping weights of `$KRYOS_DATA/maps` copied into the checkout's `maps/`, the maps folder of
   every run (so the runs reuse the weights);
 - runme: installed and >= 0.5.27 (else `runme update`), and `.runme/config.toml` created from
-  `.runme/config.default.toml` (`hpc = "dkrz_levante"`, `account = "ba1442"`; edit it for another account);
+  `.runme/config.default.toml` (`hpc = "dkrz_levante"`, `account = "ba1442"`; on albedo `awi_albedo`,
+  `envi.p_forclima`; edit it for another account);
 - `ice_data` and `isostasy_data`: read only by the Yelmo par files. Without them runme warns that the link is
   missing, which is harmless for the plastic runs;
 - the Julia project of the tools, `tools/levante` (`Project.toml`, `Manifest.toml`: CairoMakie, NCDatasets,
@@ -246,6 +250,19 @@ It checks the paths and the builds, and sets up the checkout:
   runs with `julia --project=tools/levante` (or `kryos_jl`).
 
 It is safe to rerun.
+
+**albedo.** [tools/albedo/stack.sh](https://github.com/fesmc/kryos/blob/main/tools/albedo/stack.sh) builds a stack from
+scratch: the kryos checkout and its dependencies at the refs of `.configme/manifest.toml` (fesm-utils, chion, insol,
+PaleoEmulator), configured with configme for `awi_albedo` and ifx, built with
+`yelmo=0 fastisostasy=0 vilma=0 plastic=0 paleoemu=1`, then `tools/levante/setup.sh`:
+
+```bash
+tools/albedo/stack.sh /albedo/work/user/$USER/kryos-work paleoemu-climate
+```
+
+It needs a configme that knows kryos (`CONFIGME`, see the script). On albedo, git is a module (`module load git`;
+`env.sh` loads it), and FesmData's store is kept current with FesmData's own `julia fesmdata.jl mirror`
+(`source shared/machines/albedo.env` first). Model runs: runme's `awi_albedo` queues (`30min`, `12h`, `48h`, ...).
 
 ## Data
 

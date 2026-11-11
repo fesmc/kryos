@@ -29,7 +29,7 @@ KD=${KD:-$KRYOS_WORK/kryos_data}
 if [ "${KRYOS_JOB:-}" != 1 ]; then
     [ -f "$PAR" ] || { echo "no par file $PAR"; exit 1; }
     mkdir -p $KD/refcorr/$CASE
-    sbatch --parsable -A $ACCOUNT -p shared -t 2-00:00:00 -c 128 --mem=60G -J gia_refcorr-$CASE \
+    sbatch --parsable -A $ACCOUNT $KRYOS_PART_LONG -t 2-00:00:00 -c 128 --mem=60G -J gia_refcorr-$CASE \
         -o $KD/refcorr/$CASE/job-%j.out --export=ALL,KRYOS_JOB=1,PAR=$PAR,KD=$KD "$_h/gia_refcorr.sh"
     exit
 fi
