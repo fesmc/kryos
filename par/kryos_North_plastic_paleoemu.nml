@@ -89,6 +89,7 @@
     ext       = "file"                  ! ice outside the footprints: X + the history's anomaly
     ext_field = "X_dH_ice"
     ext_tref  = 0.0                     ! [yr] model time of the history's present day (its last record, 0 ka)
+    target    = "GAUSS-L170"            ! the host terms' grid (no global geo here: the observer computes them unused)
     out_2D    = "none"                  ! schedule of globe_ice.nc (the hub output)
 /
 &X_z_bed
