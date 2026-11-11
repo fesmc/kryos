@@ -78,12 +78,20 @@ and the floating surface `z_sl + (1 − ρ_i/ρ_sw) H` elsewhere.
   standalone;
 - **ice:** the geometry on the emulator's ice grid, against the reference.
 
-**Scaled anomalies.** The keys `scale_dtas` and `scale_dlogpr` (default 1) multiply the
-emulator's anomalies before they are applied (`paleoemu_downscale(..., scale)`), not
-their standard deviations. Equal values give a colder or warmer climate with CESM-3Ma's
-pattern, a first-order sensitivity dimension of an ensemble. Unlike a CO2 outside the
-range CESM-3Ma saw at that ice (185-236 ppm at LGM ice), it stays within the
-emulator's training states.
+**Adjustments.** The temperature can be adjusted before it is applied
+(`paleoemu_downscale`), not its standard deviation:
+
+- `scale_dtas` (default 1) multiplies the emulator's anomaly: a colder or warmer
+  climate with CESM-3Ma's pattern, within the emulator's training states (unlike a CO2
+  outside the range CESM-3Ma saw at that ice, 185-236 ppm at LGM ice).
+- `bias` (default "", none) adds a bias correction, `bias_scale` (default 1) times the
+  NH ice-volume weight `w` = (dV North America + Eurasia) / `dV_ref`: it follows the
+  glacial state and vanishes at present. PaleoEmulator's
+  `scripts/prep_bias_pmip4.jl` makes it from PMIP4: per model, the LGM minus piControl
+  temperature at the reference surface (the lapse effect of its ice sheets removed)
+  minus the emulator's 21 ka state, in `kryos_data/paleoemu/bias/`
+  (`bias_pmip4_<model>.nc`, and `bias_pmip4_mean.nc` with the spread).
+- `beta_p` carries both into the precipitation, exp(beta_p ΔT).
 
 The emulator's filters of CO2 and ice volume start in equilibrium at the first update
 and advance over the elapsed time. Its anomalies are applied to the pre-industrial
@@ -98,7 +106,7 @@ reference climate on the grid (key `reference`), with the same formulas as
 | `pr` | kg m-2 yr-1 | the emulator's mm d-1 × the days of the run's year |
 | `z_srf_clim` | m | the surface of the reference climate (ERA5) |
 | `lapse` | K m-1 | Γ = 6.5e-3, the emulator's lapse rate |
-| `beta_p` | K-1 | key `beta_p`, default 0: precipitation does not change with elevation, as in the emulator's own downscaling |
+| `beta_p` | K-1 | key `beta_p`, default 0.05: precipitation changes by exp(β ΔT) with the temperature changes imposed on the emulator's climate, the lapse rows' elevation and the adjustments below (5 %/K; 0 as in the emulator's own downscaling) |
 
 **Reference climate.** It is a file on the instance grid holding `tas_ref` [K] and
 `pr_ref` [mm d-1] by month, `z_srf_ref` [m] and the global attribute `grid_name`.

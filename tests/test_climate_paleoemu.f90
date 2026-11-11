@@ -9,7 +9,8 @@ program test_climate_paleoemu
     !     elements of the imports (the forcing's: insol's tables at the evaluation time), to the round-off
     !     of the binning;
     !   * without the orbit imports, the emulator's own orbit table;
-    !   * keys scale_dtas, scale_dlogpr: as paleoemu_downscale with scale;
+    !   * keys scale_dtas, bias, bias_scale, beta_p: as paleoemu_downscale with scale, bias_scale, beta and the
+    !     bias of paleoemu_bias_init (a constant 2 K, dV_ref 50 m SLE: the grown ice gives a weight > 0);
     !   * restart round trip: write, a new instance at the reference, read, PASS_RESTART, continue: bitwise;
     !   * the port copies its imports exactly, with their validity.
     ! Needs the emulator file in $PALEOEMU_FILE (PaleoEmulator scripts/06_emulator.jl); skipped without.
@@ -25,12 +26,14 @@ program test_climate_paleoemu
     use kryos_climate_paleoemu, only: paleoemu_climate_t
     use insolation,      only: insol_class, insol_init, orbit_pars_class, orbit_pars_at
     use paleoemu,        only: paleoemu_class, paleoemu_target_class, paleoemu_init, paleoemu_set_reference, &
-                               paleoemu_update, paleoemu_target_init, paleoemu_downscale
+                               paleoemu_update, paleoemu_target_init, paleoemu_downscale, &
+                               paleoemu_bias_init, paleoemu_bias_weight
 
     implicit none
 
     character(len=*), parameter :: DIR = "tmp/test_climate_paleoemu/", PAR = DIR//"par.nml", REF = DIR//"ref.nc", &
-                                   RST = DIR//"rst", MAPS = "maps", GRID = "GLOBAL-0.5DEG"
+                                   RST = DIR//"rst", MAPS = "maps", GRID = "GLOBAL-0.5DEG", &
+                                   BIAS = DIR//"bias.nc"
     real(dp), parameter :: DTT = 1000.0_dp, SEC_YEAR = 365.0_dp*86400.0_dp
     integer :: nfail = 0
 
@@ -132,15 +135,18 @@ program test_climate_paleoemu
     call compare(glob3, "no orbit imports")
     call climate_end(glob3)
 
-    ! ---- scaled anomalies ---------------------------------------------------------------------------
+    ! ---- the temperature adjustments: scale_dtas, bias, beta_p ----------------------------------------
+    call bias_write()
     ctx%instance = "clim_scl"
     call climate_create(glob4, ctx, census4)
     call climate_init(glob4, ctx)
     call put_geometry(glob4, Hr, zbr, zsr, ref=.true., t1=-21000.0_dp)
     call paleoemu_init(emu, trim(efile))
     call paleoemu_set_reference(emu, Hr, zbr, zsr)
-    call drive(glob4, 2, -21000.0_dp, PASS_BOUNDARY, scale=[1.5_dp, 0.5_dp])
-    call compare(glob4, "scale_dtas 1.5, scale_dlogpr 0.5")
+    call paleoemu_bias_init(emu, BIAS)
+    call drive(glob4, 2, -21000.0_dp, PASS_BOUNDARY, adjust=.true.)
+    call check(paleoemu_bias_weight(emu) > 0.0_dp, "the bias weight of the grown ice is positive")
+    call compare(glob4, "scale_dtas 1.5, bias x 0.5, beta_p 0.05", beta=0.05_dp)
     call climate_end(glob4)
 
     ! ---- the port --------------------------------------------------------------------------------
@@ -156,13 +162,26 @@ program test_climate_paleoemu
 
 contains
 
+    subroutine bias_write()
+        ! A constant 2 K bias on the CESM grid with dV_ref 50 m SLE.
+        real(dp), allocatable :: b(:,:,:)
+        allocate(b(emu%nlon, emu%nlat, 12));  b = 2.0_dp
+        call nc_create(BIAS)
+        call nc_write_dim(BIAS, "lon", x=emu%lon)
+        call nc_write_dim(BIAS, "lat", x=emu%lat)
+        call nc_write_dim(BIAS, "month", x=1, dx=1, nx=12)
+        call nc_write(BIAS, "dtas_b", b, dim1="lon", dim2="lat", dim3="month")
+        call nc_write_attr(BIAS, "dV_ref", 50.0_dp)
+    end subroutine bias_write
+
     subroutine par_write()
         integer :: u
         open(newunit=u, file=PAR, status="replace", action="write")
         write(u,'(a)') "&clim_glob", ' backend = "paleoemu"', ' grid = "'//GRID//'"', ' file = "'//trim(efile)//'"', &
-                       ' reference = "'//REF//'"', "/", &
+                       ' reference = "'//REF//'"', ' beta_p = 0.0', "/", &
                        "&clim_scl", ' backend = "paleoemu"', ' grid = "'//GRID//'"', ' file = "'//trim(efile)//'"', &
-                       ' reference = "'//REF//'"', ' scale_dtas = 1.5', ' scale_dlogpr = 0.5', "/"
+                       ' reference = "'//REF//'"', ' scale_dtas = 1.5', ' bias = "'//BIAS//'"', ' bias_scale = 0.5', &
+                       ' beta_p = 0.05', "/"
         close(u)
     end subroutine par_write
 
@@ -211,7 +230,7 @@ contains
         call nc_write(REF, "z_srf_ref", zs, dim1="lon", dim2="lat")
     end subroutine write_ref
 
-    subroutine drive(g, n, t, pass, direct, orbit, scale)
+    subroutine drive(g, n, t, pass, direct, orbit, adjust)
         ! The load of step n at t into the adapter (and, unless direct = .false., the same update of the
         ! direct emulator): a North American ice that grows with n, CO2 falling with n, the orbit of the
         ! tables at t as the forcing would export it (orbit = .false.: none, the emulator's own).
@@ -220,12 +239,12 @@ contains
         real(dp),             intent(in)    :: t
         integer,  optional,   intent(in)    :: pass
         logical,  optional,   intent(in)    :: direct, orbit
-        real(dp), optional,   intent(in)    :: scale(2)
+        logical,  optional,   intent(in)    :: adjust
 
         real(dp), allocatable :: H(:,:), zs(:,:)
         real(dp) :: co2
         type(orbit_pars_class) :: orb
-        logical :: dir_, orb_
+        logical :: dir_, orb_, adj_
 
         allocate(H(size(Hr, 1), size(Hr, 2)), zs(size(Hr, 1), size(Hr, 2)))
         dir_ = .true.
@@ -255,8 +274,10 @@ contains
             else
                 call paleoemu_update(emu, t, co2, H, zbr, zs)
             end if
-            if (present(scale)) then
-                call paleoemu_downscale(tgt, emu, scale=scale)
+            adj_ = .false.
+            if (present(adjust)) adj_ = adjust
+            if (adj_) then
+                call paleoemu_downscale(tgt, emu, scale=[1.5_dp, 1.0_dp], bias_scale=0.5_dp, beta=0.05_dp)
             else
                 call paleoemu_downscale(tgt, emu)
             end if
@@ -299,15 +320,18 @@ contains
         end do
     end subroutine spread_
 
-    subroutine compare(g, what)
+    subroutine compare(g, what, beta)
         type(climate_slot_t), intent(inout) :: g
         character(len=*),     intent(in)    :: what
-        real(dp) :: dpr, dtas
+        real(dp), optional,   intent(in)    :: beta
+        real(dp) :: dpr, dtas, bp
+        bp = 0.0_dp
+        if (present(beta)) bp = beta
         dpr  = maxval(abs(field3(g, "pr") - tgt%pr*SEC_YEAR/86400.0_dp))
         dtas = maxval(abs(field3(g, "tas") - tgt%tas))
         call check(dtas < 1.0e-10_dp .and. dpr < 1.0e-10_dp*maxval(abs(tgt%pr*SEC_YEAR/86400.0_dp)) .and. &
                    maxval(abs(field2(g, "z_srf_clim") - zs_ref)) == 0.0_dp .and. &
-                   all(field3(g, "lapse") == emu%gamma) .and. all(field2(g, "beta_p") == 0.0_dp), &
+                   all(field3(g, "lapse") == emu%gamma) .and. all(field2(g, "beta_p") == bp), &
                    what//": tas, pr, z_srf_clim, lapse, beta_p as paleoemu directly (the binning's round-off: "// &
                    "max |d tas| "//trim(r2s(dtas))//" K, |d pr| "//trim(r2s(dpr))//" kg m-2 yr-1)")
     end subroutine compare

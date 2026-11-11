@@ -15,9 +15,14 @@ module kryos_climate_paleoemu
     !                       emulator's ice grid, steps the emulator and applies its
     !                       anomalies to the pre-industrial reference climate on
     !                       the grid (key `reference`): tas at the reference surface
-    !                       z_srf_clim, pr, lapse = Gamma, beta_p. Keys scale_dtas,
-    !                       scale_dlogpr (default 1) multiply the anomalies: a
-    !                       colder or warmer climate with the emulator's pattern.
+    !                       z_srf_clim, pr, lapse = Gamma, beta_p. The temperature
+    !                       adjustments (paleoemu_downscale): scale_dtas times the
+    !                       anomaly (a colder or warmer climate with its pattern),
+    !                       the bias correction of the file `bias` (e.g. PMIP4's
+    !                       LGM minus the emulator's) times bias_scale and the NH
+    !                       ice-volume weight; beta_p carries them into the
+    !                       precipitation, exp(beta_p dT), as the lapse rows do
+    !                       for the elevation.
     !   paleoemu_port_t     the regional port (stateless): the global part's
     !                       atmosphere remapped onto the domain's grid by the rows
     !                       climate_g -> climate, passed on; the lapse rows
@@ -38,7 +43,7 @@ module kryos_climate_paleoemu
                                PASS_INIT, PASS_BOUNDARY, PASS_RESTART, component_write_output
     use kryos_climate,   only: climate_t, climate_opt_t
     use paleoemu,        only: paleoemu_class, paleoemu_target_class, paleoemu_init, paleoemu_set_reference, &
-                               paleoemu_update, paleoemu_end, paleoemu_target_init, paleoemu_downscale, &
+                               paleoemu_update, paleoemu_end, paleoemu_target_init, paleoemu_downscale, paleoemu_bias_init, &
                                paleoemu_write_init, paleoemu_write_step
 
     implicit none
@@ -51,8 +56,10 @@ module kryos_climate_paleoemu
     type, extends(climate_t) :: paleoemu_climate_t
         character(len=PATH_LEN) :: file      = ""          ! the emulator file
         character(len=PATH_LEN) :: reference = ""          ! the reference climate on the instance grid
-        real(dp) :: beta_p   = 0.0_dp                      ! [K-1]
-        real(dp) :: scale(2) = 1.0_dp                      ! the emulator's anomalies times [s_T, s_P] (dtas, dlogpr)
+        real(dp) :: beta_p   = 0.05_dp                     ! [K-1] precipitation per K of lapse cooling and of the adjustments
+        real(dp) :: scale_dtas = 1.0_dp                    ! the emulator's temperature anomaly times this
+        character(len=PATH_LEN) :: bias = ""               ! the bias correction file ("" none)
+        real(dp) :: bias_scale = 1.0_dp                    ! the bias correction times this (and the ice-volume weight)
         real(dp) :: day_year = 365.0_dp                    ! days of the run's year (pr: mm d-1 -> kg m-2 yr-1)
         type(paleoemu_class)        :: emu
         type(paleoemu_target_class) :: tgt                 ! the instance grid with its reference climate
@@ -107,15 +114,17 @@ contains
 
         character(len=*), parameter :: proc = "kryos_climate_paleoemu::init"
         character(len=NAME_LEN) :: grid_name
+        character(len=PATH_LEN+32) :: bias_txt
 
         call nml_read(ctx%par_file, ctx%instance, "file", self%file)
         call nml_read(ctx%par_file, ctx%instance, "reference", self%reference)
         if (nml_has_param(ctx%par_file, ctx%instance, "beta_p")) &
             call nml_read(ctx%par_file, ctx%instance, "beta_p", self%beta_p)
         if (nml_has_param(ctx%par_file, ctx%instance, "scale_dtas")) &
-            call nml_read(ctx%par_file, ctx%instance, "scale_dtas", self%scale(1))
-        if (nml_has_param(ctx%par_file, ctx%instance, "scale_dlogpr")) &
-            call nml_read(ctx%par_file, ctx%instance, "scale_dlogpr", self%scale(2))
+            call nml_read(ctx%par_file, ctx%instance, "scale_dtas", self%scale_dtas)
+        if (nml_has_param(ctx%par_file, ctx%instance, "bias")) call nml_read(ctx%par_file, ctx%instance, "bias", self%bias)
+        if (nml_has_param(ctx%par_file, ctx%instance, "bias_scale")) &
+            call nml_read(ctx%par_file, ctx%instance, "bias_scale", self%bias_scale)
         grid_name = ""
         if (nml_has_param(ctx%par_file, ctx%instance, "grid")) call nml_read(ctx%par_file, ctx%instance, "grid", grid_name)
         if (len_trim(self%file) == 0 .or. len_trim(self%reference) == 0 .or. len_trim(grid_name) == 0) then
@@ -135,6 +144,7 @@ contains
         self%ny   = self%grid_obj%G%ny
 
         call paleoemu_init(self%emu, trim(self%file))
+        if (len_trim(self%bias) > 0) call paleoemu_bias_init(self%emu, trim(self%bias))
         call reference_load(self)
         call bins_init(self)
 
@@ -142,10 +152,11 @@ contains
         self%coef_names(1) = "co2"
         self%coef_units(1) = "ppm"
 
+        bias_txt = "none"
+        if (len_trim(self%bias) > 0) bias_txt = trim(self%bias)//" x "//to_str(self%bias_scale)
         call log_msg(LOG_INFO, "kryos_climate_paleoemu", "emulator "//trim(self%file)//" ("//trim(self%emu%temperature)// &
                      "), grid "//trim(grid_name)//" "//to_str(self%nx)//" x "//to_str(self%ny)//", beta_p "// &
-                     to_str(self%beta_p)//", anomalies scaled by "//to_str(self%scale(1))//" (dtas), "// &
-                     to_str(self%scale(2))//" (dlogpr)", &
+                     to_str(self%beta_p)//", scale_dtas "//to_str(self%scale_dtas)//", bias "//trim(bias_txt), &
                      "instance "//trim(self%name))
     end subroutine global_init_
 
@@ -303,7 +314,8 @@ contains
         else
             call paleoemu_update(self%emu, st%t_eval, co2, H, zb, zs)
         end if
-        call paleoemu_downscale(self%tgt, self%emu, scale=self%scale)
+        call paleoemu_downscale(self%tgt, self%emu, scale=[self%scale_dtas, 1.0_dp], bias_scale=self%bias_scale, &
+                                beta=self%beta_p)
         call exports_put(self, st%t1)
     end subroutine step
 
