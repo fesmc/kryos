@@ -85,6 +85,8 @@
     out_emu   = "out_2D"          ! clim_glob_emu.nc: the emulator on the CESM grid (inputs, dV, dz, anomalies, sd)
     file      = "kryos_data/paleoemu/emulator_cesm3ma.nc"
     reference = "kryos_data/paleoemu/paleoemu_reference_GLOBAL-0.5DEG.nc"
+    scale_dtas   = 1.0            ! the emulator's temperature anomaly times this (a colder/warmer climate, its pattern)
+    scale_dlogpr = 1.0            ! its precipitation anomaly times this (= scale_dtas: consistent)
 /
 
 &globe_ice
