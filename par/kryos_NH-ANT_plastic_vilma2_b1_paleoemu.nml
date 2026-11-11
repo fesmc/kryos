@@ -1,13 +1,13 @@
 ! kryos par file: the PaleoMIST plastic ice of North (NH-32KM) and Antarctica (ice grid ANT-32KM) on Gowan's 1-D Earth
 ! (VILMA2, par/kryos_NH-ANT_plastic_vilma2_b1.nml), 80 ka to 0, with the CESM-3Ma emulator (climate paleoemu: the global
 ! part on the merged ice of the globe, a port per domain) driving the chion snowpack (itm, insolation on the forcing's
-! orbit). The ice stays the PaleoMIST margins with Gowan's tau_b (drive = "taub"); chion's smb is the prior of the joint
-! inversion of speed and mass balance (mass_balance = "inverted", the coulomb_n closure of
-! par/kryos_NH-ANT-PAT_plastic_vilma2_inv.nml), which gives the ice velocity (ux_s, uy_s; u_inv, u_law in the stream
-! plastic). CO2: the CESM-3Ma series (PaleoEmulator scripts/prep_kryos_co2.jl). Output: 2D every 5 kyr, 1D every 100 yr.
+! orbit). The ice is the PaleoMIST margins with Gowan's tau_b (drive = "taub", as the _b1 file): the plastic ice takes
+! no smb, so the climate and chion's smb and T_srf are diagnostics of the reconstructed geometry. CO2: the CESM-3Ma
+! series (PaleoEmulator scripts/prep_kryos_co2.jl). Output: 2D every 5 kyr, 1D every 100 yr.
 ! Build: plastic=1 vilma=1 paleoemu=1 (yelmo=0). Inputs on Levante (paths below): the emulator file, its reference
 ! climate on GLOBAL-0.5DEG, the CO2 table.
-!   runme -r -s -q shared -w 08:00:00 --omp 16 -m 60G -o <run> -n par/kryos_NH-ANT_plastic_vilma2_b1_paleoemu.nml
+!   runme -r -s -q shared -w 02:00:00 --omp 16 -m 60G -o <run> -n par/kryos_NH-ANT_plastic_vilma2_b1_paleoemu.nml
+! (about 40 min: VILMA2 and the output most of it)
 
 &kryos
     domains         = "North" "Antarctica"
@@ -215,28 +215,6 @@
     taub_domain_factor_file = "kryos_data/plastic/taub_domain_factor_v3.nc"   ! Stage 1 factors per domain (released v3; "" = none)
     taub_scale_file    = ""             ! multipliers per scale group (tools/levante/plastic_esmda.jl); "" = none
     out_plastic        = "out_2D"       ! ice_nor_plastic.nc: mask, sdist, tau_b, convergence
-    taub_smooth_km     = 50.0
-    mass_balance       = "inverted"
-    mb_smooth_km       = 0.0
-    rheo_A             = 1.0e-16
-    rheo_n             = 3.0
-    slide_law          = "coulomb_n"
-    slide_Hc           = 100.0
-    slide_lambda_min   = 0.1
-    slide_zb0          = -500.0
-    slide_zb1          = 0.0
-    slide_p            = 1.0
-    slide_u0           = 100.0
-    slide_m            = 2.0
-    slide_umax         = 1000.0
-    inv_sigma_u        = 0.7
-    inv_smooth_km      = 0.0
-    inv_smooth_smb_km  = 50.0
-    inv_sigma_smb_rel  = 0.5
-    inv_sigma_smb_min  = 100.0
-    inv_cold           = .true.
-    inv_sigma_cold     = 10.0
-    inv_n_iter         = 50
 /
 
 &topo_nor
@@ -303,28 +281,6 @@
     taub_domain_factor_file = "kryos_data/plastic/taub_domain_factor_v3.nc"   ! Stage 1 factors per domain (released v3; "" = none)
     taub_scale_file    = ""             ! multipliers per scale group (tools/levante/plastic_esmda.jl); "" = none
     out_plastic        = "out_2D"       ! ice_ant_plastic.nc: mask, sdist, tau_b, convergence
-    taub_smooth_km     = 50.0
-    mass_balance       = "inverted"
-    mb_smooth_km       = 0.0
-    rheo_A             = 3.0e-17
-    rheo_n             = 3.0
-    slide_law          = "coulomb_n"
-    slide_Hc           = 50.0
-    slide_lambda_min   = 0.3
-    slide_zb0          = -500.0
-    slide_zb1          = 0.0
-    slide_p            = 0.5
-    slide_u0           = 100.0
-    slide_m            = 2.0
-    slide_umax         = 1000.0
-    inv_sigma_u        = 0.7
-    inv_smooth_km      = 0.0
-    inv_smooth_smb_km  = 50.0
-    inv_sigma_smb_rel  = 0.5
-    inv_sigma_smb_min  = 100.0
-    inv_cold           = .true.
-    inv_sigma_cold     = 10.0
-    inv_n_iter         = 50
 /
 
 &geo_ant
