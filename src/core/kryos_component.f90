@@ -207,7 +207,7 @@ contains
         ! Default writer (core-design section 6): the exports listed in out_vars
         ! (unset: all), unpublished ones skipped. Stream 2D: the rank-2 and rank-3
         ! exports on the native grid (xc, yc [km], time; rank 3 also its axis; an
-        ! instance that owns a global grid, grid_obj, writes lon, lat [degrees]),
+        ! instance that owns a global grid, grid_obj, writes lon, lat [degrees], rank 3 also its axis),
         ! file <instance>.nc. Stream 1D: the 0-D exports, file <instance>_ts.nc.
         ! Values are written as float with the precision of the component
         ! kind's table input/kryos-variables-<kind>.md (lossless under
@@ -257,6 +257,9 @@ contains
                 call outfile_dims_ts(file, t)
             else if (lonlat) then
                 call outfile_dims_lonlat(file, self%grid_obj%G%x, self%grid_obj%G%y, t)
+                do i = 1, size(hs)
+                    if (self%exports%f(hs(i))%rank == 3) call axis_write(self, file, self%exports%f(hs(i))%zdim)
+                end do
             else
                 if (.not. (allocated(self%xkm) .and. allocated(self%ykm))) then
                     call fesm_error(proc, "instance "//trim(self%name)//" has no grid axes for "//trim(file), &
@@ -303,7 +306,12 @@ contains
                 case (3)
                     allocate(a3(f%nx, f%ny, f%nz))
                     call fields_get(self%exports, h, a3)
-                    call var_io_write(file, row, a3, n, ncid=ncid)
+                    if (lonlat) then
+                        call var_io_write(file, row, a3, n, ncid=ncid, &
+                                          dims=[character(len=32) :: "lon", "lat", trim(f%zdim), "time"])
+                    else
+                        call var_io_write(file, row, a3, n, ncid=ncid)
+                    end if
                     deallocate(a3)
                 end select
             end associate
