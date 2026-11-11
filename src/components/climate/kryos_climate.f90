@@ -10,14 +10,26 @@ module kryos_climate
                                FIELD_INTENSIVE, FIELD_EXTENSIVE
     use kryos_component, only: component_t, PATH_LEN, init_ctx_t, step_time_t, census_t, constraints_t, &
                                component_identity, backend_admit, component_close, &
-                               component_enter, component_leave, component_optional, component_axis
+                               component_enter, component_leave, component_optional, component_axis, &
+                               component_core_filled
 
     implicit none
 
     private
 
+    type, public :: climate_opt_t                   ! the two-level form (set in init; as geo_opt_t)
+        logical :: host = .false.                   ! global part (scope global) on its own grid (grid, nx, ny,
+                                                    ! grid_obj set in init): imports the ice geometry and its
+                                                    ! reference, which the core fills (globe_ice)
+        logical :: port = .false.                   ! regional port of such a global part: imports the
+                                                    ! atmosphere of the global part, remapped, and exports it
+    end type climate_opt_t
+
     type, abstract, extends(component_t), public :: climate_t
+        type(climate_opt_t) :: opt
         integer :: hi_z_srf = 0, hi_H_ice = 0, hi_z_bed = 0, hi_f_grnd = 0, hi_z_sl = 0, hi_z_srf_ref = 0
+        integer :: hi_H_ice_ref = 0, hi_z_bed_ref = 0                           ! host
+        integer :: hi_tas = 0, hi_pr = 0, hi_z_srf_clim = 0, hi_lapse = 0, hi_beta_p = 0   ! port
         integer :: h_tas = 0, h_pr = 0, h_z_srf_clim = 0, h_lapse = 0, h_beta_p = 0
         integer :: h_to_ann = 0, h_so_ann = 0, h_dto_ann = 0                   ! has_ocn
         integer :: h_to_shlf = 0, h_so_shlf = 0, h_dto_shlf = 0, h_dso_shlf = 0 ! has_ocn_shelf
@@ -152,21 +164,54 @@ contains
     subroutine climate_declare(c, ctx)
         ! Contracts-design section 2.3: geometry from the hub, coefficients
         ! from the forcing; atmosphere always, ocean and surface by capability.
+        ! The two-level form (as geo's): a global part (opt%host, scope global)
+        ! imports the ice geometry z_srf, H_ice, z_bed and its reference
+        ! z_srf_ref, H_ice_ref, z_bed_ref on its own grid, all filled by the core
+        ! (globe_ice); a regional port of it (opt%port) imports the global
+        ! part's atmosphere (tas, pr, z_srf_clim, lapse, beta_p, remapped onto
+        ! its grid) instead of the geometry.
         class(climate_t), intent(inout) :: c
         type(init_ctx_t), intent(in)    :: ctx
         integer :: d2(2), k
         character(len=:), allocatable :: g
 
+        if (c%opt%host .and. (c%nx < 1 .or. c%ny < 1 .or. len_trim(c%grid) == 0 .or. .not. allocated(c%grid_obj))) then
+            call fesm_error("kryos_climate::climate_init", "a global climate part has no grid", &
+                            "instance "//trim(c%name)//": its init must set grid, nx, ny and grid_obj (opt%host)")
+        end if
         d2 = [c%nx, c%ny]
         g  = trim(c%grid)
 
         call fields_init(c%imports, trim(c%name)//":imports")
-        call fields_add(c%imports, "z_srf", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_z_srf, grid=g, dims=d2)
-        call fields_add(c%imports, "H_ice", "m", FIELD_INSTANT, FIELD_EXTENSIVE, c%hi_H_ice, grid=g, dims=d2)
-        call fields_add(c%imports, "z_bed", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_z_bed, grid=g, dims=d2)
-        call fields_add(c%imports, "f_grnd", "1", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_f_grnd, grid=g, dims=d2)
-        call fields_add(c%imports, "z_sl", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_z_sl, grid=g, dims=d2)
-        call fields_add(c%imports, "z_srf_ref", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_z_srf_ref, grid=g, dims=d2)
+        if (c%opt%port) then
+            call fields_add(c%imports, "tas", "K", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_tas, grid=g, &
+                            dims=[d2, component_axis(c, ctx, "month")], zdim="month")
+            call fields_add(c%imports, "pr", "kg m-2 yr-1", FIELD_INSTANT, FIELD_EXTENSIVE, c%hi_pr, grid=g, &
+                            dims=[d2, component_axis(c, ctx, "month")], zdim="month")
+            call fields_add(c%imports, "z_srf_clim", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_z_srf_clim, grid=g, dims=d2)
+            call fields_add(c%imports, "lapse", "K m-1", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_lapse, grid=g, &
+                            dims=[d2, component_axis(c, ctx, "month")], zdim="month")
+            call fields_add(c%imports, "beta_p", "K-1", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_beta_p, grid=g, dims=d2)
+        else
+            call fields_add(c%imports, "z_srf", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_z_srf, grid=g, dims=d2)
+            call fields_add(c%imports, "H_ice", "m", FIELD_INSTANT, FIELD_EXTENSIVE, c%hi_H_ice, grid=g, dims=d2)
+            call fields_add(c%imports, "z_bed", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_z_bed, grid=g, dims=d2)
+            if (.not. c%opt%host) then
+                call fields_add(c%imports, "f_grnd", "1", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_f_grnd, grid=g, dims=d2)
+                call fields_add(c%imports, "z_sl", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_z_sl, grid=g, dims=d2)
+            end if
+            call fields_add(c%imports, "z_srf_ref", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_z_srf_ref, grid=g, dims=d2)
+            if (c%opt%host) then
+                call fields_add(c%imports, "H_ice_ref", "m", FIELD_INSTANT, FIELD_EXTENSIVE, c%hi_H_ice_ref, grid=g, dims=d2)
+                call fields_add(c%imports, "z_bed_ref", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_z_bed_ref, grid=g, dims=d2)
+                call component_core_filled(c, "z_srf")
+                call component_core_filled(c, "H_ice")
+                call component_core_filled(c, "z_bed")
+                call component_core_filled(c, "z_srf_ref")
+                call component_core_filled(c, "H_ice_ref")
+                call component_core_filled(c, "z_bed_ref")
+            end if
+        end if
         if (.not. allocated(c%coef_names)) allocate(c%coef_names(0), c%coef_units(0))
         allocate(c%hi_coef(size(c%coef_names)))
         do k = 1, size(c%coef_names)

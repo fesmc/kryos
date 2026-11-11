@@ -77,7 +77,7 @@ module kryos_restart
     character(len=*), parameter :: BUNDLE_GROUP  = "bundle"
 
     ! The global instances in write and restore order (core-design 3.3).
-    character(len=8), parameter :: GLOBE_ORDER(2) = [character(len=8) :: "forcing", "geo"]
+    character(len=8), parameter :: GLOBE_ORDER(3) = [character(len=8) :: "forcing", "geo", "climate"]
 
     ! The keys of an instance group the restore checks, in this order.
     character(len=9), parameter :: CHECK_KEYS(5) = [character(len=9) :: "scope", "domain", "component", &

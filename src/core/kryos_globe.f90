@@ -31,8 +31,14 @@ module kryos_globe
     ! forcing_kill) stay the call sites of the bindings; geo_scatter acts on a
     ! domain's geo slot and is called by the domain sequence.
     !
-    ! Kinds: "forcing" and "geo" name the globe side of a row; "geo" is the
-    ! table kind "geo_g" (kryos_wiring).
+    ! A global climate (climate_g, opt%host: paleoemu) is a third instance: it
+    ! steps after the forcing on the ice geometry of globe_ice (the background
+    ! with the domains merged in, globe_climate_ice) and the coefficients of the
+    ! globe's own rows forcing -> climate_g (globe_wire, globe_coefs_to_climate);
+    ! its regional ports read it through the domains' rows climate_g -> climate.
+    !
+    ! Kinds: "forcing", "geo" and "climate" name the globe side of a row; "geo"
+    ! is the table kind "geo_g", "climate" the kind "climate_g" (kryos_wiring).
 
     use precision,       only: dp
     use fesm_log,        only: LOG_INFO, log_msg, fesm_error, to_str
@@ -46,8 +52,14 @@ module kryos_globe
     use nml,             only: nml_has_group
     use kryos_config,    only: config_t, config_read, config_validate, config_validate_instance, config_cadence
     use kryos_component, only: component_t, init_ctx_t, step_time_t, census_t, step_time_of, NAME_LEN, PATH_LEN
-    use kryos_wiring,    only: wire_t, wire_node_t, wire_node, wire_exchange, wire_gather, wire_runs
-    use kryos_globe_ice, only: globe_ice_t, globe_ice_init, globe_ice_end, GI_NAME_LEN
+    use fesm_fields,     only: fields_put
+    use kryos_wiring,    only: wire_t, wire_node_t, wire_node, wire_exchange, wire_gather, wire_runs, wire_resolve, &
+                               wiring_describe
+    use kryos_globe_ice, only: globe_ice_t, globe_ice_init, globe_ice_end, globe_ice_geometry, globe_ice_external, &
+                               GI_NAME_LEN
+    use kryos_climate,   only: climate_slot_t, climate_create, climate_init, climate_init_state, climate_update, &
+                               climate_end, climate_present, climate_restart_write, climate_restart_read, &
+                               climate_restart_files
     use kryos_forcing,   only: forcing_slot_t, forcing_create, forcing_init, forcing_init_state, &
                                forcing_update, forcing_end, forcing_present, forcing_restart_write, &
                                forcing_restart_read, forcing_restart_files
@@ -62,9 +74,13 @@ module kryos_globe
     type, public :: globe_t
         type(forcing_slot_t) :: forcing                 ! tsgen: coefficients on the forcing time
         type(geo_slot_t)     :: geo                     ! global part: fastisostasy bsl (scope "global")
+        type(climate_slot_t) :: climate                 ! global part of a two-level climate (paleoemu)
         character(len=8)     :: clock_forcing = "model" ! the instances' `clock` key: model | forcing
         character(len=8)     :: clock_geo     = "model"
+        character(len=8)     :: clock_climate = "model"
         real(dp)             :: geo_dt = 0.0_dp, geo_phase = 0.0_dp   ! the geo's dt and phase keys (the regional ports take them)
+        real(dp)             :: climate_dt = 0.0_dp, climate_phase = 0.0_dp   ! the global climate's (its ports take them)
+        type(wire_t), allocatable :: wires(:)           ! the globe's own rows (forcing -> climate_g; globe_wire)
         type(coupler_class)  :: cpl                     ! global grids by name, map cache (a host-resolved geo)
         type(globe_ice_t)    :: gi                      ! the global ice field (a host-resolved geo)
         logical              :: has_gi = .false.        ! the global ice field is in use (cpl, gi): the global geo is host-resolved
@@ -80,8 +96,9 @@ module kryos_globe
 
     public :: globe_init, globe_init_state, globe_update, globe_time, globe_reduce, globe_end
     public :: globe_pass, globe_component, globe_restart_write, globe_restart_read, globe_restart_files
-    public :: globe_nodes, globe_register_grid
+    public :: globe_nodes, globe_register_grid, globe_wire
     public :: exchange_globe, exchange_to_globe, gather_src, gather_into
+    public :: globe_coefs_to_climate, globe_climate_ice, globe_climate_reference
 
 contains
 
@@ -133,10 +150,33 @@ contains
             if (globe%geo%c%opt%host) call globe_gia_init(globe, cfg, clk, cnst, name, backend)
         end if
 
+        name = ""
+        call config_read(cfg, cfg%globe, "climate", name, "globe")
+        if (len_trim(name) > 0) then
+            call config_validate_instance(cfg, name, "climate", backend)
+            call globe_ctx(ctx, cfg, name, "climate", backend, clk, cnst)
+            call climate_create(globe%climate, ctx, census)
+            call climate_init(globe%climate, ctx)
+            call config_cadence(cfg, name, "climate", backend, clk, globe%climate%c%cadence, globe%clock_climate, &
+                                dt_key=globe%climate_dt, phase_key=globe%climate_phase)
+            call log_msg(LOG_INFO, "kryos_globe", "climate `"//trim(name)//"` ("//trim(backend)//", global), clock "// &
+                         trim(globe%clock_climate)//", "//cadence_word(cadence_dt_years(globe%climate%c%cadence, clk)))
+            if (.not. globe%climate%c%opt%host) then
+                call fesm_error("kryos_globe::globe_init", "global climate `"//trim(name)//"` is not a global part", &
+                                "backend "//trim(backend)//" has no global form (opt%host)")
+            end if
+        end if
+
         ! the global geometry hub as an observer (phase4-plan 5.4, gate G1b): [globe_ice] without a host-resolved geo
-        ! assembles the reference and the merged ice and writes globe_ice.nc; nothing feeds back
+        ! assembles the reference and the merged ice and writes globe_ice.nc; nothing feeds back except into a
+        ! global climate, which takes its ice geometry from it
         if (.not. globe%has_gi .and. nml_has_group(trim(cfg%par_file), "globe_ice")) then
             call globe_gia_init(globe, cfg, clk, cnst, "", "")
+        end if
+        if (climate_present(globe%climate) .and. .not. globe%has_gi) then
+            call fesm_error("kryos_globe::globe_init", "global climate `"//trim(globe%climate%c%name)// &
+                            "` needs the global ice field", "add the group [globe_ice] (background ice and history): "// &
+                            "the climate's ice geometry is the background with the domains merged in")
         end if
     end subroutine globe_init
 
@@ -170,6 +210,7 @@ contains
             call config_validate(cfg, trim(group), "globe_ice")
             tgt_name = ""
             call config_read(cfg, trim(group), "target", tgt_name, "globe_ice")
+            if (len_trim(tgt_name) == 0 .and. climate_present(globe%climate)) tgt_name = globe%climate%c%grid
             if (len_trim(tgt_name) == 0) then
                 call fesm_error("kryos_globe::globe_init", "[globe_ice] without a host-resolved geo needs `target`", &
                                 "the global grid the host terms are merged onto, a grid_<name>.txt of the map folder "// &
@@ -184,13 +225,18 @@ contains
     end subroutine globe_gia_init
 
     subroutine globe_register_grid(globe, cpl)
-        ! The global geo's own grid (a host-resolved geo: GAUSS-L<lmax>) into the coupler of a domain, which
-        ! resolves the rows geo_g -> geo on it; no-op without one.
+        ! The own grids of the global instances (a host-resolved geo: GAUSS-L<lmax>; a global climate) into the
+        ! coupler of a domain, which resolves the rows geo_g -> geo and climate_g -> climate on them; no-op
+        ! without one.
         type(globe_t),       intent(in)    :: globe
         type(coupler_class), intent(inout) :: cpl
-        if (.not. geo_present(globe%geo)) return
-        if (.not. allocated(globe%geo%c%grid_obj)) return
-        call coupler_add_grid(cpl, trim(globe%geo%c%grid), globe%geo%c%grid_obj)
+        if (geo_present(globe%geo)) then
+            if (allocated(globe%geo%c%grid_obj)) call coupler_add_grid(cpl, trim(globe%geo%c%grid), globe%geo%c%grid_obj)
+        end if
+        if (climate_present(globe%climate)) then
+            if (allocated(globe%climate%c%grid_obj)) &
+                call coupler_add_grid(cpl, trim(globe%climate%c%grid), globe%climate%c%grid_obj)
+        end if
     end subroutine globe_register_grid
 
     subroutine globe_ctx(ctx, cfg, name, comp, backend, clk, cnst)
@@ -236,13 +282,14 @@ contains
 
         if (forcing_present(globe%forcing)) call globe_pass(globe, "forcing", clk, pass)
         if (geo_present(globe%geo))         call globe_pass(globe, "geo", clk, pass)
+        if (climate_present(globe%climate)) call globe_pass(globe, "climate", clk, pass)
     end subroutine globe_init_state
 
     subroutine globe_pass(globe, which, clk, pass)
         ! init_state of one instance at the clock's time (t0 = t1 = now):
         ! PASS_INIT, or PASS_RESTART after its restore (kryos_restart).
         type(globe_t),    intent(inout) :: globe
-        character(len=*), intent(in)    :: which           ! "forcing" | "geo"
+        character(len=*), intent(in)    :: which           ! "forcing" | "geo" | "climate"
         type(clock_t),    intent(in)    :: clk
         integer,          intent(in)    :: pass
 
@@ -253,6 +300,9 @@ contains
         case ("geo")
             call require(geo_present(globe%geo), which)
             call geo_init_state(globe%geo, globe_time(globe, which, clk, init=.true.), pass)
+        case ("climate")
+            call require(climate_present(globe%climate), which)
+            call climate_init_state(globe%climate, globe_time(globe, which, clk, init=.true.), pass)
         case default
             call unknown(which)
         end select
@@ -269,6 +319,7 @@ contains
         select case (trim(which))
         case ("forcing");  if (forcing_present(globe%forcing)) c => globe%forcing%c
         case ("geo");      if (geo_present(globe%geo))         c => globe%geo%c
+        case ("climate");  if (climate_present(globe%climate)) c => globe%climate%c
         case default;      call unknown(which)
         end select
     end function globe_component
@@ -277,7 +328,7 @@ contains
         ! <comp>_restart_write of one instance into the folder `dir` at t (the
         ! backend's state; the field states are the core's, kryos_restart).
         type(globe_t),    intent(inout) :: globe
-        character(len=*), intent(in)    :: which           ! "forcing" | "geo"
+        character(len=*), intent(in)    :: which           ! "forcing" | "geo" | "climate"
         character(len=*), intent(in)    :: dir
         real(dp),         intent(in)    :: t
 
@@ -288,6 +339,9 @@ contains
         case ("geo")
             call require(geo_present(globe%geo), which)
             call geo_restart_write(globe%geo, dir, t)
+        case ("climate")
+            call require(climate_present(globe%climate), which)
+            call climate_restart_write(globe%climate, dir, t)
         case default
             call unknown(which)
         end select
@@ -296,7 +350,7 @@ contains
     subroutine globe_restart_read(globe, which, dir, t)
         ! <comp>_restart_read of one instance from the folder `dir`.
         type(globe_t),    intent(inout) :: globe
-        character(len=*), intent(in)    :: which           ! "forcing" | "geo"
+        character(len=*), intent(in)    :: which           ! "forcing" | "geo" | "climate"
         character(len=*), intent(in)    :: dir
         real(dp),         intent(in)    :: t
 
@@ -307,6 +361,9 @@ contains
         case ("geo")
             call require(geo_present(globe%geo), which)
             call geo_restart_read(globe%geo, dir, t)
+        case ("climate")
+            call require(climate_present(globe%climate), which)
+            call climate_restart_read(globe%climate, dir, t)
         case default
             call unknown(which)
         end select
@@ -326,6 +383,9 @@ contains
         case ("geo")
             call require(geo_present(globe%geo), which)
             files = geo_restart_files(globe%geo)
+        case ("climate")
+            call require(climate_present(globe%climate), which)
+            files = climate_restart_files(globe%climate)
         case default
             call unknown(which)
             allocate(files(0))
@@ -337,6 +397,7 @@ contains
         type(globe_t), intent(inout) :: globe
         if (forcing_present(globe%forcing)) call forcing_end(globe%forcing)
         if (geo_present(globe%geo)) call geo_end(globe%geo)
+        if (climate_present(globe%climate)) call climate_end(globe%climate)
         if (globe%has_gi) call globe_ice_end(globe%gi)
     end subroutine globe_end
 
@@ -358,7 +419,25 @@ contains
         if (geo_present(globe%geo)) &
             nodes = [nodes, wire_node(globe%geo%c, cadence_dt_years(globe%geo%c%cadence, clk), &
                                       check=globe%geo%c%opt%host)]
+        if (climate_present(globe%climate)) &
+            nodes = [nodes, wire_node(globe%climate%c, cadence_dt_years(globe%climate%c%cadence, clk), check=.false.)]
     end function globe_nodes
+
+    subroutine globe_wire(globe, clk)
+        ! The globe's own rows, on the globe's nodes alone: forcing -> climate_g (the coefficients of a global
+        ! climate). The global climate's node is checked here (every import has a row or is filled by the core);
+        ! in a domain's rows it is not. No-op without a global climate.
+        type(globe_t), target, intent(inout) :: globe
+        type(clock_t),         intent(in)    :: clk
+
+        type(wire_node_t), allocatable :: nodes(:)
+
+        if (.not. climate_present(globe%climate)) return
+        nodes = globe_nodes(globe, clk)
+        nodes(size(nodes))%check = .true.                 ! the climate's node is the last one
+        call wire_resolve(globe%wires, nodes, globe%cpl)
+        call wiring_describe(globe%wires)
+    end subroutine globe_wire
 
     ! =========================================================================
     ! The globe's own step
@@ -382,6 +461,9 @@ contains
         case ("geo")
             call require(geo_present(globe%geo), which)
             st = step_time_of(globe%geo%c%cadence, clk, globe%clock_geo, init)
+        case ("climate")
+            call require(climate_present(globe%climate), which)
+            st = step_time_of(globe%climate%c%cadence, clk, globe%clock_climate, init)
         case default
             call unknown(which)
         end select
@@ -394,7 +476,7 @@ contains
         ! "forcing" = coefs_update (after gather_into of M_ice and the derived
         ! rows, exchange_to_globe, of the previous step).
         type(globe_t),    intent(inout) :: globe
-        character(len=*), intent(in)    :: which           ! "forcing" | "geo"
+        character(len=*), intent(in)    :: which           ! "forcing" | "geo" | "climate"
         type(clock_t),    intent(in)    :: clk
 
         type(step_time_t) :: st
@@ -412,6 +494,12 @@ contains
             st = globe_time(globe, which, clk)
             call geo_update(globe%geo, st)
             call cadence_mark(globe%geo%c%cadence, clk)
+        case ("climate")
+            call require(climate_present(globe%climate), which)
+            if (.not. cadence_due(globe%climate%c%cadence, clk)) return
+            st = globe_time(globe, which, clk)
+            call climate_update(globe%climate, st)
+            call cadence_mark(globe%climate%c%cadence, clk)
         case default
             call unknown(which)
         end select
@@ -481,9 +569,88 @@ contains
                 else
                     call wire_exchange(wires(i), globe%geo%c%exports, dst, cpl0, t, t_last, due=due, init=init)
                 end if
+            case ("climate_g")
+                t_last = cadence_t_last(globe%climate%c%cadence, clk)
+                due    = cadence_due(globe%climate%c%cadence, clk)
+                if (rank2) then
+                    call wire_exchange(wires(i), globe%climate%c%exports, dst, cpl, t, t_last, due=due, init=init)
+                else
+                    call wire_exchange(wires(i), globe%climate%c%exports, dst, cpl0, t, t_last, due=due, init=init)
+                end if
             end select
         end do
     end subroutine exchange_globe
+
+    subroutine globe_coefs_to_climate(globe, clk, init)
+        ! The globe's rows forcing -> climate_g (globe_wire): the coefficients the global climate names, lag 0,
+        ! after the forcing's update (init: at the cold start, after its PASS_INIT).
+        type(globe_t),     intent(inout) :: globe
+        type(clock_t),     intent(in)    :: clk
+        logical, optional, intent(in)    :: init
+
+        type(coupler_class) :: cpl0
+        real(dp) :: t, t_last
+        logical  :: due
+        integer  :: i
+
+        if (.not. climate_present(globe%climate) .or. .not. allocated(globe%wires)) return
+        t = clock_time(clk)
+        do i = 1, size(globe%wires)
+            if (.not. wire_runs(globe%wires(i), "forcing", "climate_g")) cycle
+            call require_0d(globe%climate%c%imports, globe%wires(i)%hd, globe%wires(i)%src_kind, globe%wires(i)%dst_kind)
+            t_last = cadence_t_last(globe%forcing%c%cadence, clk)
+            due    = cadence_due(globe%forcing%c%cadence, clk)
+            call wire_exchange(globe%wires(i), globe%forcing%c%exports, globe%climate%c%imports, cpl0, t, t_last, &
+                               due=due, init=init)
+        end do
+    end subroutine globe_coefs_to_climate
+
+    subroutine globe_climate_reference(globe, t0)
+        ! The reference ice geometry of globe_ice (the spliced present day: the domains' reference in the
+        ! background X) into the global climate's imports z_srf_ref, H_ice_ref, z_bed_ref at t0. After the
+        ! reference of globe_ice (gia_reference).
+        type(globe_t), intent(inout) :: globe
+        real(dp),      intent(in)    :: t0
+
+        real(dp), allocatable :: H(:,:), zb(:,:), zs(:,:)
+
+        if (.not. climate_present(globe%climate)) return
+        call globe_ice_geometry(globe%gi, globe%cpl, H, zb, zs, ref=.true.)
+        associate (c => globe%climate%c)
+            call fields_put(c%imports, c%hi_H_ice_ref, H,  t1=t0)
+            call fields_put(c%imports, c%hi_z_bed_ref, zb, t1=t0)
+            call fields_put(c%imports, c%hi_z_srf_ref, zs, t1=t0)
+        end associate
+    end subroutine globe_climate_reference
+
+    subroutine globe_climate_ice(globe, t, external)
+        ! The ice geometry into the global climate's imports H_ice, z_bed, z_srf: the domains of the last
+        ! gather merged into the background (valid at its load time), or (external) the background alone at
+        ! t, before the domains' ice exists (the cold start).
+        type(globe_t),     intent(inout) :: globe
+        real(dp),          intent(in)    :: t
+        logical, optional, intent(in)    :: external
+
+        real(dp), allocatable :: H(:,:), zb(:,:), zs(:,:)
+        real(dp) :: t1
+        logical  :: ext
+
+        if (.not. climate_present(globe%climate)) return
+        ext = .false.
+        if (present(external)) ext = external
+        if (ext) then
+            call globe_ice_external(globe%gi, globe%cpl, t, H, zb, zs)
+            t1 = t
+        else
+            call globe_ice_geometry(globe%gi, globe%cpl, H, zb, zs, ref=.false.)
+            t1 = globe%gi%t_load
+        end if
+        associate (c => globe%climate%c)
+            call fields_put(c%imports, c%hi_H_ice, H,  t1=t1)
+            call fields_put(c%imports, c%hi_z_bed, zb, t1=t1)
+            call fields_put(c%imports, c%hi_z_srf, zs, t1=t1)
+        end associate
+    end subroutine globe_climate_ice
 
     subroutine exchange_to_globe(globe, wires, src_kind, src, t_last, dst_kind, clk, due, init)
         ! The domain's resolved rows `src_kind` -> globe `dst_kind` that are
@@ -596,6 +763,7 @@ contains
         select case (trim(which))
         case ("forcing");        kind = "forcing"
         case ("geo", "geo_g");   kind = "geo_g"
+        case ("climate", "climate_g"); kind = "climate_g"
         case default
             kind = ""
             call unknown(which)
@@ -612,7 +780,7 @@ contains
 
     subroutine unknown(which)
         character(len=*), intent(in) :: which
-        call fesm_error("kryos_globe", "unknown globe instance '"//trim(which)//"'", "use forcing or geo")
+        call fesm_error("kryos_globe", "unknown globe instance '"//trim(which)//"'", "use forcing, geo or climate")
     end subroutine unknown
 
     subroutine require_0d(dst, h, src_kind, dst_kind)

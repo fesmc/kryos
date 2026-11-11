@@ -54,6 +54,7 @@
 &globe
     forcing = ""                               ! the forcing instance
     geo     = ""                               ! the global part of geo
+    climate = ""                               ! the global part of a two-level climate (paleoemu)
 /
 
 &domain

@@ -34,9 +34,12 @@ module kryos_run
     use kryos_gia_check,  only: gia_check
     use kryos_forcing,    only: forcing_present, forcing_kill, forcing_restart_due, forcing_restart_fldr
     use kryos_geo,        only: geo_present
-    use kryos_globe,      only: globe_t, globe_init, globe_init_state, globe_end, globe_nodes, globe_register_grid
+    use kryos_globe,      only: globe_t, globe_init, globe_init_state, globe_end, globe_nodes, globe_register_grid, &
+                                globe_wire
+    use kryos_climate,    only: climate_present
     use kryos_globe_ice,  only: globe_ice_write
     use kryos_domain,     only: domain_t, domain_init, domain_create, domain_wire, domain_component, domain_present, C_CLIMATE, &
+                                port_cadence_t, C_GEO, &
                                 domain_pass, domain_end, domain_hub_write, exchange_static, &
                                 NCOMP, INIT_ORDER
     use kryos_experiment, only: experiment_list_t, experiment_proto_t, experiments_create, experiments_describe, &
@@ -177,9 +180,7 @@ contains
         do d = 1, run%n_dom
             call domain_init(run%dom(d), run%cfg, trim(run%cfg%domains(d)), run%cnst, clock_time(run%clk))
             if (run%globe%has_gi) then
-                call domain_create(run%dom(d), run%cfg, run%clk, run%cnst, run%census, &
-                                   port_dt=run%globe%geo_dt, port_phase=run%globe%geo_phase, &
-                                   port_clock=run%globe%clock_geo)
+                call domain_create(run%dom(d), run%cfg, run%clk, run%cnst, run%census, ports=globe_ports(run%globe))
                 call globe_register_grid(run%globe, run%dom(d)%cpl)
             else
                 call domain_create(run%dom(d), run%cfg, run%clk, run%cnst, run%census)
@@ -189,6 +190,7 @@ contains
         do d = 1, run%n_dom
             call domain_wire(run%dom(d), run%clk, extra=globe_nodes(run%globe, run%clk))
         end do
+        call globe_wire(run%globe, run%clk)              ! the globe's own rows (forcing -> a global climate)
         allocate(run%exps(run%n_dom))
         do d = 1, run%n_dom
             if (present(protos)) then
@@ -359,6 +361,7 @@ contains
         allocate(names(0), owners(0))
         if (forcing_present(run%globe%forcing)) call add(run%globe%forcing%c%name, "the globe")
         if (geo_present(run%globe%geo))         call add(run%globe%geo%c%name, "the globe")
+        if (climate_present(run%globe%climate)) call add(run%globe%climate%c%name, "the globe")
         do d = 1, run%n_dom
             do j = 1, d - 1
                 if (trim(run%dom(j)%name) == trim(run%dom(d)%name)) then
@@ -486,6 +489,7 @@ contains
         call output_init(run%out, run%cfg)
         if (forcing_present(run%globe%forcing)) call output_add_component(run%out, run%cfg, run%clk, run%globe%forcing%c)
         if (geo_present(run%globe%geo))         call output_add_component(run%out, run%cfg, run%clk, run%globe%geo%c)
+        if (climate_present(run%globe%climate)) call output_add_component(run%out, run%cfg, run%clk, run%globe%climate%c)
         if (run%globe%has_gi) &                 ! the global geometry hub, globe_ice.nc on [globe_ice] out_2D
             call output_add_writer(run%out, run%cfg, run%clk, "globe_ice", "2D", "globe_ice.nc", &
                                    trim(run%globe%gi%out_2D), globe_ice_writer, run%globe)
@@ -672,5 +676,17 @@ contains
             s = s//"/"
         end if
     end function with_slash
+
+    function globe_ports(globe) result(ports)
+        ! The cadences of the global parts whose regional ports step with them: a host-resolved geo, a
+        ! global climate.
+        type(globe_t), intent(in) :: globe
+        type(port_cadence_t), allocatable :: ports(:)
+
+        allocate(ports(0))
+        if (globe%host_gi) ports = [ports, port_cadence_t(C_GEO, globe%geo_dt, globe%geo_phase, globe%clock_geo)]
+        if (climate_present(globe%climate)) &
+            ports = [ports, port_cadence_t(C_CLIMATE, globe%climate_dt, globe%climate_phase, globe%clock_climate)]
+    end function globe_ports
 
 end module kryos_run
