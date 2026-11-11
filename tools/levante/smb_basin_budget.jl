@@ -10,12 +10,15 @@
 # Also per basin: the accumulation-area ratio AAR, and the balance flux q accumulated downslope with its speed
 # u = q/(ρ_i H dx); q < 0 inside the ice (more net ablation upstream than supply) marks an inconsistent smb or geometry.
 #
-#   julia --project=tools/levante tools/levante/smb_basin_budget.jl <run dir> <out dir> [amin_km2=20000] [rho_i=910]
+#   julia --project=tools/levante tools/levante/smb_basin_budget.jl <run dir> <out dir> [amin=20000] [rho_i=910]
+#         [tmin=-Inf] [tmax=Inf]
+#   amin: the minimum basin area [km2]; rho_i [kg m-3]; tmin, tmax: the output times taken [ka, negative in the past].
 #
 # Reads every pair ice_<s>.nc + surface_<s>.nc of the run (the same grid: the ice instance on the hub grid of chion) at
 # their common output times. Writes to <out dir>:
-#   basins.csv   per domain, time and basin: type, marine flux fraction, area, ∫smb, ∫ρ_i dH/dt, B, B/area, AAR, the area
-#                fraction with q < 0
+#   basins.csv   per domain, time and basin: type, region, marine flux fraction, area, ∫smb, ∫ρ_i dH/dt, B, B/area, AAR,
+#                the area fraction with q < 0. The region is the most frequent region_3 of the basin's cells in the
+#                FesmData REGIONS file of the grid ($FESMDATA, default /work/ba1442/fesmdata; found by its xc, yc).
 #   domains.csv  per domain and time: totals, and the misfits rms_land = sqrt(Σ A (B/A)² / Σ A) over land basins and
 #                rms_marine (the same of min(B, 0)) [kg m-2 yr-1], the terms of the fit (smb_itm_fit.jl)
 #   basins_<s>.nc  basin id, its type, the balance flux q [Gt/yr] and speed u_bal [m/yr] per time
@@ -121,39 +124,68 @@ end
 
 """Merge basins below amin cells into the neighbour with the longest shared border (smallest first)."""
 function merge_small!(lab, G, amin_cells)
-    nx, ny = size(G)
-    while true
-        ids = unique(lab[G]); n = Dict(b => count(==(b), lab) for b in ids)
-        small = sort([b for b in ids if n[b] < amin_cells]; by=b -> n[b])
-        merged = false
-        for b in small
-            border = Dict{Int,Int}()
-            for c in findall(==(b), lab)
-                i, j = Tuple(c)
-                for (di, dj) in NB
-                    a, bb = i + di, j + dj
-                    (1 <= a <= nx && 1 <= bb <= ny && G[a, bb] && lab[a, bb] != b) || continue
-                    border[lab[a, bb]] = get(border, lab[a, bb], 0) + 1
-                end
-            end
-            isempty(border) && continue                              # an isolated ice cap: stays its own basin
-            to = argmax(border); lab[lab .== b] .= to; merged = true
-            break                                                    # sizes changed: recount
-        end
-        merged || return lab
+    nx, ny = size(G); L = LinearIndices(G); C = CartesianIndices(G)
+    cells = Dict{Int,Vector{Int}}()
+    for c in findall(vec(G))
+        push!(get!(cells, lab[c], Int[]), c)
     end
+    h = Heap()
+    for (b, v) in cells
+        length(v) < amin_cells && push!(h, Float64(length(v)), b)
+    end
+    while !isempty(h)
+        n, b = pop!(h)
+        (haskey(cells, b) && length(cells[b]) == n) || continue      # stale entry
+        border = Dict{Int,Int}()
+        for c in cells[b]
+            i, j = Tuple(C[c])
+            for (di, dj) in NB
+                a, bb = i + di, j + dj
+                (1 <= a <= nx && 1 <= bb <= ny && G[a, bb] && lab[a, bb] != b) || continue
+                border[lab[a, bb]] = get(border, lab[a, bb], 0) + 1
+            end
+        end
+        isempty(border) && continue                                  # an isolated ice cap: stays its own basin
+        to = argmax(border)
+        lab[cells[b]] .= to; append!(cells[to], cells[b]); delete!(cells, b)
+        length(cells[to]) < amin_cells && push!(h, Float64(length(cells[to])), to)
+    end
+    return lab
+end
+
+"""The region_3 codes and names of the FesmData REGIONS file on the grid of (x, y), or nothing."""
+function find_regions(x, y)
+    root = get(ENV, "FESMDATA", "/work/ba1442/fesmdata")
+    for d in readdir(root; join=true), g in (isdir(d) ? readdir(d; join=true) : String[])
+        f = joinpath(g, basename(g) * "_REGIONS.nc")
+        isfile(f) || continue
+        r = NCDataset(f) do ds
+            xr, yr = Float64.(ds["xc"][:]), Float64.(ds["yc"][:])
+            (length(xr) == length(x) && length(yr) == length(y) && maximum(abs.(xr .- x)) < 1e-3 &&
+             maximum(abs.(yr .- y)) < 1e-3 && haskey(ds, "region_3")) || return nothing
+            v = ds["region_3"]
+            (Array(v), Int.(v.attrib["flag_values"]), split(v.attrib["flag_meanings"]))
+        end
+        r === nothing || return r
+    end
+    return nothing
 end
 
 # ---- one domain ---------------------------------------------------------------------------------------------------
 rd(ds, v) = Float64.(coalesce.(Array(ds[v]), NaN))
 
-function domain_budget(run, s, out, amin_km2, rho_i, io_b, io_d)
+function domain_budget(run, s, out, amin_km2, rho_i, trange, io_b, io_d)
     di = NCDataset(joinpath(run, "ice_$s.nc")); ds = NCDataset(joinpath(run, "surface_$s.nc"))
     x = Float64.(ds["xc"][:]); dxm = (x[2] - x[1]) * 1e3; A = dxm^2
     ti, ts = Float64.(di["time"][:]), Float64.(ds["time"][:])
     size(di["H_ice"])[1:2] == size(ds["smb"])[1:2] ||
         error("ice_$s.nc and surface_$s.nc are on different grids: run the ice on the grid of the surface")
-    times = intersect(ti, ts); nt = length(times)
+    times = filter(t -> trange[1] <= t / 1e3 <= trange[2], intersect(ti, ts)); nt = length(times)
+    nt > 0 || error("no common output time of ice_$s.nc and surface_$s.nc in [$(trange[1]), $(trange[2])] ka")
+    reg = find_regions(x, Float64.(ds["yc"][:]))
+    reg === nothing && println("  $s: no REGIONS file of its grid in FESMDATA; region = -")
+    regname(m) = reg === nothing ? "-" : (codes = reg[1][m]; isempty(codes) ? "-" :
+        (c = argmax(k -> count(==(k), codes), unique(codes)); i = findfirst(==(c), reg[2]); i === nothing ? string(c) : reg[3][i]))
     nx, ny = size(di["H_ice"])[1:2]
     lab_t = zeros(Int32, nx, ny, nt); typ_t = zeros(Int8, nx, ny, nt); q_t = fill(NaN32, nx, ny, nt); u_t = fill(NaN32, nx, ny, nt)
     series = NamedTuple[]
@@ -185,7 +217,7 @@ function domain_budget(run, s, out, amin_km2, rho_i, io_b, io_d)
             mf = sq > 0 ? qo[2] / sq : 0.0
             ar = count(m) * A; Ssmb = sum(smb[m]) * A; Sdh = rho_i * sum(dH[m]) * A; B = Ssmb - Sdh
             aar = count(m .& (smb .> 0)) / count(m); qneg = count(m .& (q .< 0)) / count(m)
-            @printf(io_b, "%s,%.1f,%d,%s,%.3f,%.1f,%.3f,%.3f,%.3f,%.2f,%.3f,%.3f\n", s, t / 1e3, b, TYPES[ty], mf,
+            @printf(io_b, "%s,%.1f,%d,%s,%s,%.3f,%.1f,%.3f,%.3f,%.3f,%.2f,%.3f,%.3f\n", s, t / 1e3, b, TYPES[ty], regname(m), mf,
                     ar / 1e6, Ssmb * 1e-12, Sdh * 1e-12, B * 1e-12, B / ar, aar, qneg)
             view(typ_t, :, :, k)[m] .= ty
             tot = merge(tot, (A=tot.A + ar, smb=tot.smb + Ssmb, dh=tot.dh + Sdh, acc=tot.acc + count(m .& (smb .> 0)) * A))
@@ -241,20 +273,22 @@ function domain_budget(run, s, out, amin_km2, rho_i, io_b, io_d)
 end
 
 function main(args)
-    length(args) >= 2 || (println("usage: smb_basin_budget.jl <run dir> <out dir> [amin_km2=20000] [rho_i=910]"); exit(1))
+    length(args) >= 2 || (println("usage: smb_basin_budget.jl <run dir> <out dir> [amin=20000] [rho_i=910] [tmin=-Inf] [tmax=Inf]"); exit(1))
     run, out = args[1], args[2]
-    amin = length(args) >= 3 ? parse(Float64, args[3]) : 2.0e4
-    rho_i = length(args) >= 4 ? parse(Float64, args[4]) : 910.0
+    kw = Dict(String(k) => parse(Float64, v) for (k, v) in (split(a, "=") for a in args[3:end]))
+    issubset(keys(kw), ("amin", "rho_i", "tmin", "tmax")) || error("unknown option(s): ", setdiff(keys(kw), ("amin", "rho_i", "tmin", "tmax")))
+    amin, rho_i = get(kw, "amin", 2.0e4), get(kw, "rho_i", 910.0)
+    trange = (get(kw, "tmin", -Inf), get(kw, "tmax", Inf))
     mkpath(out)
     sfx = [m[1] for m in (match(r"^ice_(\w+)\.nc$", f) for f in readdir(run)) if m !== nothing &&
            !endswith(m[1], "_ts") && !endswith(m[1], "_plastic") && isfile(joinpath(run, "surface_$(m[1]).nc"))]
     isempty(sfx) && error("no pair ice_<s>.nc + surface_<s>.nc in $run")
     open(joinpath(out, "basins.csv"), "w") do io_b
         open(joinpath(out, "domains.csv"), "w") do io_d
-            println(io_b, "domain,time_ka,basin,type,marine_frac,area_km2,smb_Gt,rho_dHdt_Gt,B_Gt,B_per_area,AAR,frac_q_neg")
+            println(io_b, "domain,time_ka,basin,type,region,marine_frac,area_km2,smb_Gt,rho_dHdt_Gt,B_Gt,B_per_area,AAR,frac_q_neg")
             println(io_d, "domain,time_ka,n_basins,area_km2,smb_Gt,rho_dHdt_Gt,B_land_Gt,B_marine_Gt,AAR,rms_land,rms_marine")
             for s in sfx
-                println("domain $s"); domain_budget(run, s, out, amin, rho_i, io_b, io_d)
+                println("domain $s"); domain_budget(run, s, out, amin, rho_i, trange, io_b, io_d)
             end
         end
     end
