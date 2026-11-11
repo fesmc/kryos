@@ -7,7 +7,8 @@
 ! series (PaleoEmulator scripts/prep_kryos_co2.jl). Output: 2D every 2.5 kyr (the PaleoMIST slices), 1D every 100 yr.
 ! Build: paleoemu=1 (plastic, vilma and yelmo not needed). Inputs in kryos_data/paleoemu/ (its README): the emulator
 ! file, its reference climate on GLOBAL-0.5DEG, the CO2 table.
-!   runme -r -s -q shared -w 01:00:00 --omp 16 -m 60G -o <run> -n par/kryos_NH-ANT_data_paleoemu.nml
+!   runme -r -s -q 12h -w 01:00:00 --omp 32 -m 60G -o <run> -n par/kryos_NH-ANT_data_paleoemu.nml   (albedo; Levante: -q shared)
+! (itm: about 8 min from -50 ka; bessi, chion.model = "bessi": surface 16x itm per annual cycle, about 20 min on 32 threads)
 
 &kryos
     domains         = "North" "Antarctica"
@@ -272,7 +273,7 @@
 /
 
 &bessi
-    Ntot             = 15                   ! [1] Layer capacity per column
+    Ntot             = 5                    ! [1] Layer capacity per column (the 4 near-surface layers + 1: firn depth not critical here; 22% faster than 15)
     mass_max         = 500.0                ! [kg m-2] Surface-layer mass that triggers a split
     mass_split       = 300.0                ! [kg m-2] Mass left in the layer below after a split
     mass_min         = 100.0                ! [kg m-2] Surface-layer mass that triggers a merge

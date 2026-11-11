@@ -6,7 +6,7 @@
 ! (fesmdata/Antarctica/ANT-32KM/ANT-32KM_SMB-RACMO2.3p2-*.nc). The emulator's climate is pre-industrial (ERA5 1981-2010
 ! minus the HadCRUT warming since 1850-1900): the RCMs' 1961-1990 means are the closer period.
 ! Build: paleoemu=1.
-!   runme -r -s -q shared -w 00:30:00 --omp 16 -m 60G -o <run> -n par/kryos_GRL-ANT_data_paleoemu_pd.nml
+!   runme -r -s -q 30min --omp 32 -m 60G -o <run> -n par/kryos_GRL-ANT_data_paleoemu_pd.nml   (albedo; Levante: -q shared -w 00:30:00)
 
 &kryos
     domains         = "Greenland" "Antarctica"
@@ -251,7 +251,7 @@
 /
 
 &bessi
-    Ntot             = 15                   ! [1] Layer capacity per column
+    Ntot             = 5                    ! [1] Layer capacity per column (the 4 near-surface layers + 1: firn depth not critical here; 22% faster than 15)
     mass_max         = 500.0                ! [kg m-2] Surface-layer mass that triggers a split
     mass_split       = 300.0                ! [kg m-2] Mass left in the layer below after a split
     mass_min         = 100.0                ! [kg m-2] Surface-layer mass that triggers a merge
