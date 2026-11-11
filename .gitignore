@@ -29,6 +29,7 @@ libkryos/
 # tests/test_remap_sp_dp.f90 or $KRYOS_ICE_DATA)
 /ice_data
 /fesmdata
+/kryos_data
 /isostasy_data
 
 # configme / runme local state

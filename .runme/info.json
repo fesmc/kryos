@@ -5,7 +5,9 @@
     "par_path_as_argument" : true,
 
     "exe_aliases" :
-        {   "kryos"            : "libkryos/bin/kryos.x"
+        {   "kryos"            : "libkryos/bin/kryos.x",
+            "taub_fit"         : "libkryos/bin/plastic_taub_fit.x",
+            "closure_fit"      : "libkryos/bin/plastic_closure_fit.x"
         },
 
     "grp_aliases" :
@@ -13,10 +15,7 @@
             "bsl" : "barysealevel"
         },
 
-    "par_paths" :
-        {
-            "kryos"        : "par/kryos_Greenland.nml"
-        },
+    "par_paths" : {},
 
     "files" : [],
 
@@ -24,12 +23,9 @@
 
     "par_library"  : [],
 
-    "dir-special" :
-    {
-        "None" : "target_dir_name"
-    },
+    "dir-special" : {},
 
     "links" :
-        ["input","ice_data","fesmdata","isostasy_data","maps"]
+        ["input", "fesmdata", "kryos_data", "maps", "ice_data", "isostasy_data"]
 
 }

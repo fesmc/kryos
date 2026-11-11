@@ -30,7 +30,7 @@
 #   julia --project=tools/levante tools/levante/pm_prep.jl rslref <vilma_out.nc> <out.nc> [<previous>]
 #                  pm-ref: the next i_eq = 3 reference correction (rsl at 0 ka) and the 0 ka bed misfit of the run.
 #   julia --project=tools/levante tools/levante/pm_prep.jl taboo <prem200.dat>
-#                  the layer means of TABOO (NV = 2, CDE = 0) for 120 km lithosphere, as SELEN's Earth of PaleoMIST (pm_run.sh t3).
+#                  the layer means of TABOO (NV = 2, CDE = 0) for 120 km lithosphere, as SELEN's Earth of PaleoMIST (paleomist/pm_t3.nml).
 #   julia --project=tools/levante tools/levante/pm_prep.jl selen <shs.bin> <NN> <DELTA [kyr]> <out.nc> [<rsl_spreadsheet.dat>]
 #                  PaleoMIST's SELEN sea level from its Stokes coefficients at the records on the 0.5 degree grid (checked against
 #                  Gowan's calc_sl at points, pm_selen.sh).

@@ -126,7 +126,8 @@ julia --project=tools/levante tools/levante/plastic_ensemble_spread.jl <calibrat
 
 ### pm_compare.jl
 
-The scorer. It was written for the PaleoMIST test of the standalone VILMA2 (`pm_run.sh`), and its scoring functions
+The scorer. It was written for the PaleoMIST test of the standalone VILMA2 (the runme cases of
+`tools/levante/paleomist/`, [Reproducing Gowan et al. (2021)](experiment-gowan.md)), and its scoring functions
 are used by every tool below and by `plastic_esmda.jl`. A `key=folder` argument points a run key at any folder, and
 `read_run` also reads a kryos run's VILMA2 stream `geo_glob_vilma.nc` in place.
 

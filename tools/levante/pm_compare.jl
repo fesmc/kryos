@@ -1,4 +1,4 @@
-# PaleoMIST test of the standalone VILMA2: compare the runs of pm_run.sh with PaleoMIST (Gowan et al. 2021) and with each other.
+# PaleoMIST test of the standalone VILMA2: compare the standalone runs (the cases of paleomist/, pm_project.sh) with PaleoMIST (Gowan et al. 2021) and with each other.
 #   julia --project=tools/levante tools/levante/pm_compare.jl <fesmdata> <runs folder> <out folder> [<key>=<folder> ...]
 # The runs by key (RUNS: B1 = 1-D Gowan lmax 256, B1_170 = lmax 170, B1_L80, B1_bm, B3, A1, A1_170, A3), each the folder of RUNS unless
 # given as key=folder (smoke: B1=S_1d B3=S_3d); a missing run is skipped. Everything on the 0.5 degree PaleoMIST grid: the VILMA2 fields
@@ -51,7 +51,7 @@ struct Run
     bsl::Vector{Float64}; bsl_ive::Vector{Float64}
 end
 
-# A standalone run (pm_run.sh: vilma_out.nc) or a kryos run (geo = vilma2: the VILMA2 stream <inst>_vilma.nc of its global
+# A standalone run (a case of paleomist/: vilma_out.nc) or a kryos run (geo = vilma2: the VILMA2 stream <inst>_vilma.nc of its global
 # instance, read in place). The time of a kryos record is moved by +1 yr except the first (trec: record t_k of a standalone run is
 # the state at t_k + 1 yr, its 80 ka record the spun-up start; a kryos record at t_k is the state after the step ending at t_k).
 function read_run(dir; inst = "geo_glob")

@@ -3,7 +3,7 @@
 # (when it wrote ice_nor.nc / ice_ant.nc: final_set of the config; plastic_pd_regions.jl), and an offline Greenland check.
 #   julia --project=tools/levante tools/levante/plastic_esmda_report.jl <calibration folder> <out folder> [<prior slices.nc> <posterior slices.nc>]
 # Writes <out>/report.md and <out>/theta_factors.png. The slices files: tests/plastic_slices.f90 with <out.nc>, without and with the
-# posterior-mean multiplier file (the last iteration's m000/taub_scale.nc): Greenland at 0 ka against PaleoMIST and BedMachine v6
+# posterior-mean multiplier file (the last iteration's scale/m000.nc): Greenland at 0 ka against PaleoMIST and BedMachine v6
 # (FesmData NH-32KM TOPO-GEBCO2026, its H_ice) over the Greenland region (REGIONS region_2 = 103).
 using CairoMakie, NCDatasets, Printf, Statistics, TOML
 include(joinpath(@__DIR__, "plastic_pd_regions.jl"))
@@ -16,6 +16,8 @@ C, out = ARGS[1], ARGS[2]; mkpath(out)
 cfg = TOML.parsefile(joinpath(C, "config.toml"))
 iters = sort([parse(Int, d[6:end]) for d in readdir(C) if startswith(d, "iter_")])
 itd(k) = joinpath(C, @sprintf("iter_%02d", k))
+# the mean member 0 of iteration k: 0/ (staged by runme), or m000/ in a folder of before 2026-11-11
+m0(k) = (d = joinpath(itd(k), "0"); isdir(d) ? d : joinpath(itd(k), "m000"))
 readcsv(f) = (l = readlines(f); h = split(l[1], ","); [Dict(zip(h, split(r, ","))) for r in l[2:end]])
 num(x) = parse(Float64, x)
 io = open(joinpath(out, "report.md"), "w")
@@ -59,7 +61,7 @@ if σm > 0
     println(io, "\n### Mean members: RMS of z_m = d / sqrt(sigma^2 + sigma_m^2), sigma_m = $(σm) m (index points; n with scorer sigma < 0.1 m)\n")
     println(io, "| iteration | all | ", join(gs, " | "), " | sigma < 0.1 m |\n|---|---|", repeat("---|", length(gs) + 1))
     for k in iters
-        D = joinpath(itd(k), "m000"); isfile(joinpath(D, "geo_glob_vilma.nc")) || continue
+        D = m0(k); isfile(joinpath(D, "geo_glob_vilma.nc")) || continue
         r = PM.read_run(D); S = PM.series_run(r, [o.lon for o in obs], [o.lat for o in obs], A)
         zm = fill(NaN, length(obs)); small = 0
         for (i, o) in enumerate(obs)
@@ -128,11 +130,11 @@ end
 dxdy, slpm = pm_sle("North", "NH-32KM")
 println(io, "\n### Ice volume (m SLE; M_ice of <instance>_ts.nc; ratio to PaleoMIST)\n\n| | grid | 20 ka | 0 ka |\n|---|---|---|---|")
 for (inst, dom, grid) in (("ice_nor", "North", "NH-32KM"), ("ice_ant", "Antarctica", "ANT-16KM"))
-    isfile(joinpath(itd(1), "m000", "$(inst)_ts.nc")) || continue
+    isfile(joinpath(m0(1), "$(inst)_ts.nc")) || continue
     _, sp = pm_sle(dom, grid)
     @printf(io, "| PaleoMIST | %s | %.2f | %.2f |\n", grid, sp[20000.0], sp[0.0])
     for k in (1, kl)
-        f = joinpath(itd(k), "m000", "$(inst)_ts.nc"); isfile(f) || continue
+        f = joinpath(m0(k), "$(inst)_ts.nc"); isfile(f) || continue
         v = NCDataset(f) do ds
             t = Float64.(ds["time"][:]); M = Float64.(ds["M_ice"][:])
             Dict(a => M[argmin(abs.(t .+ a))] * 1e12 / RHO_SW / A_OCN for a in (20000.0, 0.0))
@@ -143,9 +145,9 @@ for (inst, dom, grid) in (("ice_nor", "North", "NH-32KM"), ("ice_ant", "Antarcti
 end
 
 # --- present day of the last mean member per region ----------------------------------------------------------------------------------
-if isfile(joinpath(itd(kl), "m000", "ice_nor.nc"))
+if isfile(joinpath(m0(kl), "ice_nor.nc"))
     println(io, "\n### Present-day thickness of m000 of iteration $kl against the observations\n")
-    pd_run(io, joinpath(itd(kl), "m000"), fes; label = "posterior mean")
+    pd_run(io, m0(kl), fes; label = "posterior mean")
 end
 
 # --- cost -----------------------------------------------------------------------------------------------------------------------------

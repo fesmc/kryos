@@ -17,7 +17,8 @@
 #   DOMAINS  "<domain>:<hub grid>:<topo file under fesmdata> ..." the domain reference topographies to correct (default North and
 #            Antarctica; the case PaleoMIST-sci also has PatagoniaPaleo:PAT-PAL-8KM:PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_TOPO-GEBCO2026.nc)
 #   NTHR     OpenMP threads (64)
-# Restartable: an iteration with a finished vilma_out.nc is not rerun.
+# Restartable: an iteration whose status is 0 is not rerun. The folder is a PaleoMIST runme project (pm_project.sh): the
+# iterations it<n> are runs of its case vilma_rc.nml, staged by runme.
 set -uo pipefail
 _h=$(dirname "$(readlink -f "$0")"); [ -f "$_h/env.sh" ] || _h=$KRYOS/tools/levante; . "$_h/env.sh"
 T=$_h; F=$FESMDATA
@@ -46,18 +47,11 @@ awk '/^&vilma[ \t]*$/{f=1} f{print} f&&/^\//{exit}' $PAR | sed '1d;$d' > $O/vilm
 echo "== gia_refcorr $CASE: $PAR, $HIST ($INTERP), rho $RHOI/$RHOW, vilma.x $VX, tol $TOL m $(date -Is)" | tee -a $O/iter.log
 [ -f $O/data/force.nc ] || $JL $T/gia_refcorr.jl prep $HIST $INTERP $O/data || exit 1
 
-export OMP_NUM_THREADS=$NTHR OMP_PROC_BIND=spread OMP_PLACES=cores OMP_STACKSIZE=512M
-ulimit -s unlimited
-prev=""; conv=0
-for n in $(seq 0 $((NMAX - 1))); do
-  R=$O/it$n; r=$O/r_$((n + 1)).nc
-  if ! grep -q "vilma.x exit 0" $R/run.out 2>/dev/null; then
-    rm -rf $R; mkdir -p $R/input; cd $R
-    for f in $VILMA2/input/*; do ln -s $f input/; done
-    ln -s $F fesmdata
-    cat > vilma_rc.nml <<EOF
+# the folder as a PaleoMIST runme project (pm_project.sh: pm_data -> data/), the iterations its runs of the case vilma_rc.nml
+bash $T/pm_project.sh $O $O/data > /dev/null || exit 1
+cat > $O/vilma_rc.nml <<EOF
 &ctl
- file_forcing = "$O/data/force.nc"
+ file_forcing = "pm_data/force.nc"
  name_ice = "h_ice"
  name_time = "time"
  file_ref = ""
@@ -71,14 +65,14 @@ for n in $(seq 0 $((NMAX - 1))); do
  remap_input = .true.
  name_lon = "lon"
  name_lat = "lat"
- i_eq = $([ -n "$prev" ] && echo 3 || echo 1)
- z_bed_ref_file = "$O/data/ref.nc"
- h_ice_ref_file = "$O/data/ref.nc"
+ i_eq = 1
+ z_bed_ref_file = "pm_data/ref.nc"
+ h_ice_ref_file = "pm_data/ref.nc"
  name_z_bed_ref = "z_bed"
  name_h_ice_ref = "H_ice"
  z_bed_eq_file = ""
  h_ice_eq_file = ""
- rsl_restart_file = "$prev"
+ rsl_restart_file = ""
  name_rsl = "rsl"
  restart_in_file = ""
 /
@@ -88,10 +82,18 @@ $(cat $O/vilma.nml)
  rho_water = $RHOW
 /
 EOF
+export OMP_NUM_THREADS=$NTHR OMP_PROC_BIND=true OMP_STACKSIZE=512M OMP_MAX_ACTIVE_LEVELS=1
+ulimit -s unlimited
+prev=""; conv=0
+for n in $(seq 0 $((NMAX - 1))); do
+  R=$O/it$n; r=$O/r_$((n + 1)).nc
+  if [ "$(cut -d' ' -f1 $R/status 2> /dev/null)" != 0 ]; then
+    ref=""; [ -n "$prev" ] && ref="-p ctl.i_eq=3 ctl.rsl_restart_file=$prev"
+    (cd $O && $KRYOS_RUNME -e vilma -n $O/vilma_rc.nml -o it$n $ref > /dev/null) || { echo "it$n: runme failed" | tee -a $O/iter.log; exit 1; }
     echo "== it$n $(date -Is) on $(hostname)" | tee -a $O/iter.log
-    { /usr/bin/time -v $VX vilma_rc.nml > run.log 2>&1; echo "vilma.x exit $?"; } > run.out 2>&1
-    grep -E "exit|Elapsed" run.out | tee -a $O/iter.log
-    grep -q "vilma.x exit 0" run.out || { echo "it$n failed: $R/run.log" | tee -a $O/iter.log; exit 1; }
+    (cd $R && t0=$(date +%s) && ./vilma.x vilma_rc.nml > out.out 2> out.err; echo "$? $(( $(date +%s) - t0 ))" > status)
+    read rc sec < $R/status; echo "it$n: exit $rc, $sec s" | tee -a $O/iter.log
+    [ "$rc" = 0 ] || { echo "it$n failed: $R/out.err" | tee -a $O/iter.log; exit 1; }
   fi
   $JL $T/gia_refcorr.jl next $R/vilma_out.nc $r $prev | tee -a $O/iter.log
   m=$(tail -1 $O/iter.log | sed -n 's/.*max |d| = \([0-9.]*\).*/\1/p')

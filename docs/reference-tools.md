@@ -6,15 +6,17 @@ The scripts in [tools/levante/](https://github.com/fesmc/kryos/tree/main/tools/l
 [tests/](https://github.com/fesmc/kryos/tree/main/tests) that the plastic-ice and VILMA2 work uses. Each one-line
 description comes from the file's header, which also gives the full command line. Every script sources `env.sh`;
 the Julia tools run with `julia --project=tools/levante` ([Getting started](getting-started.md#the-levante-tools),
-[Analysis and figures](experiment-analysis.md#environment)). Scripts that run as Slurm jobs submit themselves: run them
-directly, not with `sbatch`. Everything runs on Levante.
+[Analysis and figures](experiment-analysis.md#environment)). The model runs (`kryos.x`, `vilma.x`, the offline fits) are
+staged and submitted with [runme](https://github.com/fesmc/runme) ([Getting started](getting-started.md)). Scripts that
+run as Slurm jobs submit themselves: run them directly, not with `sbatch`. Everything runs on Levante.
 
 ## Environment
 
 | File | What |
 |---|---|
-| [env.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/env.sh) | The environment of every tool: `KRYOS`, `KRYOS_WORK`, `KRYOS_MAPS`, `FESMDATA`, `FESMDATA_SOURCES`, `KRYOS_DATA`, `VILMA2`, `PM_DIR`, `PM_REF`, `ACCOUNT`, `KRYOS_JULIA` (overrides in the environment or `~/.kryos.env`); functions `kryos_jl`, `kryos_maps_init`, `kryos_link_data` |
-| [setup.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/setup.sh) | The one-time setup: checks the paths, the builds and Julia (juliaup, 1.13), instantiates the Julia project, creates `KRYOS_WORK` and `KRYOS_MAPS`; safe to rerun |
+| [env.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/env.sh) | The environment of every tool: `KRYOS`, `KRYOS_WORK`, `FESMDATA`, `FESMDATA_SOURCES`, `KRYOS_DATA`, `VILMA2`, `PM_DIR`, `PM_REF`, `ACCOUNT`, `KRYOS_RUNME`, `KRYOS_JULIA` (overrides in the environment or `~/.kryos.env`); function `kryos_jl` |
+| [setup.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/setup.sh) | The one-time setup: checks the paths and the builds; links `fesmdata` and `kryos_data` into the checkout and copies the shared grid files and remapping weights of `$KRYOS_DATA/maps` into its `maps/`; checks runme (>= 0.5.27) and creates `.runme/config.toml`; Julia (juliaup, 1.13) and the Julia project; creates `KRYOS_WORK`; safe to rerun |
+| [.runme/](https://github.com/fesmc/kryos/tree/main/.runme) | The checkout as a runme project: `info.json` (executables `kryos`, `taub_fit`, `closure_fit`; defaults `input/kryos_defaults.nml`; the links `input`, `fesmdata`, `kryos_data`, `maps`, `ice_data`, `isostasy_data`), the job templates `submit_slurm`, `submit_slurm_omp` (the job writes `status`, exit code and seconds), `config.default.toml` (`dkrz_levante`, account `ba1442`, 16 threads) |
 | [Project.toml](https://github.com/fesmc/kryos/blob/main/tools/levante/Project.toml), `Manifest.toml` | The Julia project of all tools: CairoMakie, NCDatasets, DelimitedFiles, Julia 1.13 |
 | [jl.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/jl.sh) | Runs a Julia script of the tools as a small job on the shared partition (1 h, 4 cpus, 16 GB; `JL_TIME`, `JL_MEM`) |
 
@@ -23,19 +25,19 @@ directly, not with `sbatch`. Everything runs on Levante.
 | File | What |
 |---|---|
 | [pm_prep.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_prep.jl) | Builds the inputs of the standalone `vilma.x` from the FesmData PaleoMIST product (reference, forcing variants A, B, S and the pm-diag variants). Subcommands: `budget` (ice volume against Gowan's), `margins` (registration against Gowan's polygons), `rslref` (the next reference correction), `taboo`, `selen` (PaleoMIST's SELEN sea level from its Stokes coefficients), `visc1d` |
-| [pm_visc1d.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_visc1d.sh), [pm_visc1d.f90](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_visc1d.f90) | Computes the 1-D radial viscosity profile that VILMA2's `pre_spinup_1d` uses for a 3-D run, for `EARTH=bm` of `pm_run.sh` (build against `libvilma.a`, run, then `pm_prep.jl visc1d`) |
-| [gia_refcorr.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr.sh), [gia_refcorr.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr.jl) | Computes the present-day reference correction r of a glacial-cycle run (standalone VILMA2 with the Earth of a kryos par file, iterated with `i_eq = 3` until its 0 ka bed is today's), then writes the kryos reference files (`_REFCORR.nc`, the domain topography with `z_bed + r`) |
-| [pm_iterref.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_iterref.sh) | pm-ref: iterates the present-day reference of the standalone B1 run until its modelled 0 ka bed equals today's |
+| [pm_visc1d.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_visc1d.sh), [pm_visc1d.f90](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_visc1d.f90) | Computes the 1-D radial viscosity profile that VILMA2's `pre_spinup_1d` uses for a 3-D run, for the case `pm_bm.nml` (build against `libvilma.a`, run on the namelist of a run of `pm_3d.nml`, then `pm_prep.jl visc1d`) |
+| [gia_refcorr.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr.sh), [gia_refcorr.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr.jl) | Computes the present-day reference correction r of a glacial-cycle run (standalone VILMA2 with the Earth of a kryos par file, iterated with `i_eq = 3` until its 0 ka bed is today's; the case folder is a PaleoMIST runme project, the iterations `it<n>` runme runs of its `vilma_rc.nml`), then writes the kryos reference files (`_REFCORR.nc`, the domain topography with `z_bed + r`) |
+| [pm_iterref.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_iterref.sh) | pm-ref: iterates the present-day reference of the standalone B1 run until its modelled 0 ka bed equals today's (each iteration a runme run of a `paleomist/` case in `ROOT`; `BASE`, `EARTH`, `FORCE`, `LMAX`, `TMAX`, `RHOI`, `PM_P`, `NTHR`, `TOL`, `NMAX`, `ROOT`) |
 | [pm_selen.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_selen.sh) | Computes PaleoMIST's own SELEN sea level at points with Gowan's `calc_sl`, as a check of `pm_prep.jl selen` |
 
 ## Runs
 
 | File | What |
 |---|---|
-| [pm_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_run.sh) | Runs the standalone VILMA2 (`$VILMA2/bin/vilma.x`) under the PaleoMIST ice history: `RUN`, `LMAX`, `EARTH` (1d, l80, bm, 3d, t3), `FORCE` (A, B, S and the pm-diag variants) |
-| [plastic_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_run.sh) | One kryos run of a plastic par file: stages the run folder (driver, data links, par file with the factor and scale files set, `group.key=value` overrides) and submits its Slurm job |
+| [pm_project.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_project.sh) | `pm_project.sh [<folder>] [<data folder>]`: a folder of standalone VILMA2 runs (default `PM_DIR`) as a runme project for `vilma.x` of the VILMA2 checkout, with the links `input` (VILMA2's `input/`), `fesmdata`, `pm_data` (default `$PM_DIR/data`, else `$PM_REF/data`) |
+| [paleomist/](https://github.com/fesmc/kryos/tree/main/tools/levante/paleomist) | The runme cases of the standalone VILMA2 under the PaleoMIST ice history, one per Earth: `pm_1d.nml`, `pm_l80.nml`, `pm_bm.nml`, `pm_3d.nml`, `pm_t3.nml` (complete `&ctl` and `&vilma`; the `-p` options in the header) |
+| [members.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/members.sh) | Sourced by `plastic_esmda.sh` and `plastic_ensemble.sh`: the members of an iteration or wave as one job array, staged and submitted by runme (`--array THROTTLE`) from the calibration folder; prints the job id |
 | [set_nml.py](https://github.com/fesmc/kryos/blob/main/tools/levante/set_nml.py) | Sets existing keys of a fully expanded par file in place (`group.key=value`) |
-| [plastic_esmda.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_esmda.sh) `member` | One calibration or ensemble member: the frozen `kryos.x` on the member's `par.nml`, with `status` (exit code, seconds) |
 | [tests/plastic_slices.f90](https://github.com/fesmc/kryos/blob/main/tests/plastic_slices.f90) | Offline check against PaleoMIST: the plastic thickness at every slice on PaleoMIST's own bed, margin and tau_b (optionally with the scale and domain-factor files), against its `H_ice`; `plastic=1` |
 
 ## Calibration
@@ -43,7 +45,7 @@ directly, not with `sbatch`. Everything runs on Levante.
 | File | What |
 |---|---|
 | [tests/plastic_taub_fit.f90](https://github.com/fesmc/kryos/blob/main/tests/plastic_taub_fit.f90) | Stage 1: one tau_b factor per Gowan domain, fitted to the present-day thickness by Levenberg-Marquardt with a smoothness penalty, for a list of lambda; `plastic=1` |
-| [taub_fit/](https://github.com/fesmc/kryos/tree/main/tools/levante/taub_fit) | The Stage 1 fit namelists of the released factor files (`fit_NH.nml`, `fit_ANT.nml`, `fit_PAT.nml`) and `fit.sh <fit folder> <fit.nml> ...` (one job per namelist) |
+| [taub_fit/](https://github.com/fesmc/kryos/tree/main/tools/levante/taub_fit) | The Stage 1 fit namelists of the released factor files (`fit_NH.nml`, `fit_ANT.nml`, `fit_PAT.nml`; `fesmdata/...` relative to the run folder), each one runme run of `taub_fit` |
 | [plastic_taub_fit_report.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_taub_fit_report.jl) | Stage 1 report: L-curve and choice of lambda per grid, the `taub_domain_factor.nc` of all grids, present-day thickness per region before and after, maps |
 | [plastic_taub_scale.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_taub_scale.jl) | Builds the scale groups of Gowan's domains from the `[scale]` table of a config, and the multiplier files (`taub_scale_file`) |
 | [plastic_esmda.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_esmda.jl) | ES-MDA calibration of tau_b against the GAPSLIP 2.1 index points, VILMA2 in the loop: `init`, `update`, `selftest` |

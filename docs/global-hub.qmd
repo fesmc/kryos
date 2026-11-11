@@ -214,14 +214,17 @@ kryos par file and the run's densities, under a FesmData ice history, iterated w
 `r_{n+1} = rsl_n(0 ka)` from `r_0 = 0` until `max |r_n − rsl_n(0 ka)| < TOL` (default 1.5 m, at most `NMAX = 8` runs).
 It writes the reference files under `$KRYOS_WORK/kryos_data/refcorr/<CASE>/` (`KD` overrides the parent; domains from
 `DOMAINS`, `"<domain>:<hub grid>:<topo file under fesmdata> ..."`, default North and Antarctica), and is restartable per
-iteration. It submits itself (shared partition, 2 days, 128 cpus, 60 GB):
+iteration (the case folder is a PaleoMIST runme project, `tools/levante/pm_project.sh` with `pm_data` -> its
+`data/`; each iteration `it<n>` is a runme run of its `vilma_rc.nml`, rerun unless its `status` is 0). It submits
+itself (shared partition, 2 days, 128 cpus, 60 GB) and runs the iterations within that job:
 
 ```bash
 CASE=PaleoMIST-sci PAR=<kryos par file> tools/levante/gia_refcorr.sh
 ```
 
-A run reads the case through its `kryos_data` link: point `KRYOS_DATA` at `$KRYOS_WORK/kryos_data`, or copy the case
-into the shared `/work/ba1442/kryos_data`, where the published cases are.
+A run reads the case through its `kryos_data` link, runme's copy of the checkout's: point that link at
+`$KRYOS_WORK/kryos_data` (remove it, set `KRYOS_DATA` and rerun `tools/levante/setup.sh`), or copy the case into the
+shared `/work/ba1442/kryos_data`, where the published cases are.
 
 For the science case (3-D Earth, PaleoMIST 80 → 0 ka linear in time, ρ_i 910, ρ_w 1028) it converged in 4 runs to a
 0 ka bed misfit of 0.23 m; `r` reaches 396 m over Quebec-Labrador and 126 m under the Ronne-Filchner ice, 24 m RMS
@@ -240,8 +243,8 @@ added to a case this way, or with `DOMAINS` when running `gia_refcorr.sh`:
 julia --project=tools/levante tools/levante/gia_refcorr.jl write <r.nc> <out folder> <X grid>:<history on that grid> <domain>:<hub grid>:<topo file> ...
 ```
 
-runme does not link `kryos_data` into a run folder (`.runme/info.json` links input, ice_data, fesmdata, isostasy_data
-and maps); [tools/levante/plastic_run.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_run.sh) does.
+runme links `kryos_data` into every run folder from the checkout's link (`.runme/info.json` links input, fesmdata,
+kryos_data, maps, ice_data and isostasy_data; `tools/levante/setup.sh` makes `kryos_data -> $KRYOS_DATA`).
 
 ## Cadence and time constraints
 
