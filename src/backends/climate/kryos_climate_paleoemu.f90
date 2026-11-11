@@ -15,7 +15,9 @@ module kryos_climate_paleoemu
     !                       emulator's ice grid, steps the emulator and applies its
     !                       anomalies to the pre-industrial reference climate on
     !                       the grid (key `reference`): tas at the reference surface
-    !                       z_srf_clim, pr, lapse = Gamma, beta_p.
+    !                       z_srf_clim, pr, lapse = Gamma, beta_p. Keys scale_dtas,
+    !                       scale_dlogpr (default 1) multiply the anomalies: a
+    !                       colder or warmer climate with the emulator's pattern.
     !   paleoemu_port_t     the regional port (stateless): the global part's
     !                       atmosphere remapped onto the domain's grid by the rows
     !                       climate_g -> climate, passed on; the lapse rows
@@ -50,6 +52,7 @@ module kryos_climate_paleoemu
         character(len=PATH_LEN) :: file      = ""          ! the emulator file
         character(len=PATH_LEN) :: reference = ""          ! the reference climate on the instance grid
         real(dp) :: beta_p   = 0.0_dp                      ! [K-1]
+        real(dp) :: scale(2) = 1.0_dp                      ! the emulator's anomalies times [s_T, s_P] (dtas, dlogpr)
         real(dp) :: day_year = 365.0_dp                    ! days of the run's year (pr: mm d-1 -> kg m-2 yr-1)
         type(paleoemu_class)        :: emu
         type(paleoemu_target_class) :: tgt                 ! the instance grid with its reference climate
@@ -109,6 +112,10 @@ contains
         call nml_read(ctx%par_file, ctx%instance, "reference", self%reference)
         if (nml_has_param(ctx%par_file, ctx%instance, "beta_p")) &
             call nml_read(ctx%par_file, ctx%instance, "beta_p", self%beta_p)
+        if (nml_has_param(ctx%par_file, ctx%instance, "scale_dtas")) &
+            call nml_read(ctx%par_file, ctx%instance, "scale_dtas", self%scale(1))
+        if (nml_has_param(ctx%par_file, ctx%instance, "scale_dlogpr")) &
+            call nml_read(ctx%par_file, ctx%instance, "scale_dlogpr", self%scale(2))
         grid_name = ""
         if (nml_has_param(ctx%par_file, ctx%instance, "grid")) call nml_read(ctx%par_file, ctx%instance, "grid", grid_name)
         if (len_trim(self%file) == 0 .or. len_trim(self%reference) == 0 .or. len_trim(grid_name) == 0) then
@@ -137,7 +144,8 @@ contains
 
         call log_msg(LOG_INFO, "kryos_climate_paleoemu", "emulator "//trim(self%file)//" ("//trim(self%emu%temperature)// &
                      "), grid "//trim(grid_name)//" "//to_str(self%nx)//" x "//to_str(self%ny)//", beta_p "// &
-                     to_str(self%beta_p), &
+                     to_str(self%beta_p)//", anomalies scaled by "//to_str(self%scale(1))//" (dtas), "// &
+                     to_str(self%scale(2))//" (dlogpr)", &
                      "instance "//trim(self%name))
     end subroutine global_init_
 
@@ -295,7 +303,7 @@ contains
         else
             call paleoemu_update(self%emu, st%t_eval, co2, H, zb, zs)
         end if
-        call paleoemu_downscale(self%tgt, self%emu)
+        call paleoemu_downscale(self%tgt, self%emu, scale=self%scale)
         call exports_put(self, st%t1)
     end subroutine step
 

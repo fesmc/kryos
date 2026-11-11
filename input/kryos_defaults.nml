@@ -295,6 +295,8 @@
     reference = ""                             ! global: the pre-industrial reference climate on `grid` (tas_ref, pr_ref,
                                                ! z_srf_ref; PaleoEmulator scripts/prep_kryos_reference.jl)
     beta_p    = 0.0                            ! [K-1] global: precipitation change per kelvin of lapse cooling (lapse rows)
+    scale_dtas   = 1.0                         ! global: the emulator's temperature anomaly dtas times this
+    scale_dlogpr = 1.0                         ! global: its precipitation anomaly dlogpr times this (= scale_dtas: consistent)
     out_emu   = "none"                         ! global: schedule of <instance>_emu.nc (the emulator on the CESM grid)
 /
 

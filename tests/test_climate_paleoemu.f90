@@ -9,6 +9,7 @@ program test_climate_paleoemu
     !     elements of the imports (the forcing's: insol's tables at the evaluation time), to the round-off
     !     of the binning;
     !   * without the orbit imports, the emulator's own orbit table;
+    !   * keys scale_dtas, scale_dlogpr: as paleoemu_downscale with scale;
     !   * restart round trip: write, a new instance at the reference, read, PASS_RESTART, continue: bitwise;
     !   * the port copies its imports exactly, with their validity.
     ! Needs the emulator file in $PALEOEMU_FILE (PaleoEmulator scripts/06_emulator.jl); skipped without.
@@ -40,8 +41,8 @@ program test_climate_paleoemu
     type(paleoemu_class) :: emu
     type(paleoemu_target_class) :: tgt
     type(insol_class)     :: ois
-    type(climate_slot_t)  :: glob3
-    type(census_t)        :: census3
+    type(climate_slot_t)  :: glob3, glob4
+    type(census_t)        :: census3, census4
     integer,  allocatable :: bin(:,:)
     real(dp), allocatable :: Hr(:,:), zbr(:,:), zsr(:,:), lon(:,:), lat(:,:), tas_ref(:,:,:), pr_ref(:,:,:), zs_ref(:,:)
     real(dp) :: t
@@ -131,6 +132,17 @@ program test_climate_paleoemu
     call compare(glob3, "no orbit imports")
     call climate_end(glob3)
 
+    ! ---- scaled anomalies ---------------------------------------------------------------------------
+    ctx%instance = "clim_scl"
+    call climate_create(glob4, ctx, census4)
+    call climate_init(glob4, ctx)
+    call put_geometry(glob4, Hr, zbr, zsr, ref=.true., t1=-21000.0_dp)
+    call paleoemu_init(emu, trim(efile))
+    call paleoemu_set_reference(emu, Hr, zbr, zsr)
+    call drive(glob4, 2, -21000.0_dp, PASS_BOUNDARY, scale=[1.5_dp, 0.5_dp])
+    call compare(glob4, "scale_dtas 1.5, scale_dlogpr 0.5")
+    call climate_end(glob4)
+
     ! ---- the port --------------------------------------------------------------------------------
     call port_test()
 
@@ -148,7 +160,9 @@ contains
         integer :: u
         open(newunit=u, file=PAR, status="replace", action="write")
         write(u,'(a)') "&clim_glob", ' backend = "paleoemu"', ' grid = "'//GRID//'"', ' file = "'//trim(efile)//'"', &
-                       ' reference = "'//REF//'"', "/"
+                       ' reference = "'//REF//'"', "/", &
+                       "&clim_scl", ' backend = "paleoemu"', ' grid = "'//GRID//'"', ' file = "'//trim(efile)//'"', &
+                       ' reference = "'//REF//'"', ' scale_dtas = 1.5', ' scale_dlogpr = 0.5', "/"
         close(u)
     end subroutine par_write
 
@@ -197,7 +211,7 @@ contains
         call nc_write(REF, "z_srf_ref", zs, dim1="lon", dim2="lat")
     end subroutine write_ref
 
-    subroutine drive(g, n, t, pass, direct, orbit)
+    subroutine drive(g, n, t, pass, direct, orbit, scale)
         ! The load of step n at t into the adapter (and, unless direct = .false., the same update of the
         ! direct emulator): a North American ice that grows with n, CO2 falling with n, the orbit of the
         ! tables at t as the forcing would export it (orbit = .false.: none, the emulator's own).
@@ -206,6 +220,7 @@ contains
         real(dp),             intent(in)    :: t
         integer,  optional,   intent(in)    :: pass
         logical,  optional,   intent(in)    :: direct, orbit
+        real(dp), optional,   intent(in)    :: scale(2)
 
         real(dp), allocatable :: H(:,:), zs(:,:)
         real(dp) :: co2
@@ -240,7 +255,11 @@ contains
             else
                 call paleoemu_update(emu, t, co2, H, zbr, zs)
             end if
-            call paleoemu_downscale(tgt, emu)
+            if (present(scale)) then
+                call paleoemu_downscale(tgt, emu, scale=scale)
+            else
+                call paleoemu_downscale(tgt, emu)
+            end if
         end if
     end subroutine drive
 

@@ -76,6 +76,13 @@ and the floating surface `z_sl + (1 − ρ_i/ρ_sw) H` elsewhere.
   standalone;
 - **ice:** the geometry on the emulator's ice grid, against the reference.
 
+**Scaled anomalies.** The keys `scale_dtas` and `scale_dlogpr` (default 1) multiply the
+emulator's anomalies before they are applied (`paleoemu_downscale(..., scale)`), not
+their standard deviations. Equal values give a colder or warmer climate with CESM-3Ma's
+pattern, a first-order sensitivity dimension of an ensemble. Unlike a CO2 outside the
+range CESM-3Ma saw at that ice (185-236 ppm at LGM ice), it stays within the
+emulator's training states.
+
 The emulator's filters of CO2 and ice volume start in equilibrium at the first update
 and advance over the elapsed time. Its anomalies are applied to the pre-industrial
 reference climate on the grid (key `reference`), with the same formulas as
