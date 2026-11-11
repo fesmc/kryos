@@ -8,8 +8,10 @@ module kryos_climate_paleoemu
     !                       [globe_ice]): the ice geometry and its reference come
     !                       from the core (globe_ice: the background with the
     !                       domains merged in), CO2 from the forcing (coef_co2), the
-    !                       orbit from [orbit] (kryos_orbit, as the insolation of
-    !                       the surface). Each update binds the geometry to the
+    !                       orbit from the forcing (orbit_ecc, orbit_obl,
+    !                       orbit_per: the run's orbit, also the surface's
+    !                       insolation; without them the emulator's own table at
+    !                       the evaluation time). Each update binds the geometry to the
     !                       emulator's ice grid, steps the emulator and applies its
     !                       anomalies to the pre-industrial reference climate on
     !                       the grid (key `reference`): tas at the reference surface
@@ -30,11 +32,9 @@ module kryos_climate_paleoemu
     use fesm_fields,     only: fields_get, fields_put
     use nml,             only: nml_read, nml_has_param
     use ncio,            only: nc_read, nc_read_attr, nc_size, nc_create, nc_write_dim, nc_write
-    use insolation,      only: insol_class, insol_init
     use kryos_component, only: init_ctx_t, step_time_t, constraints_t, NAME_LEN, PATH_LEN, &
                                PASS_INIT, PASS_BOUNDARY, PASS_RESTART, component_write_output
     use kryos_climate,   only: climate_t, climate_opt_t
-    use kryos_orbit,     only: orbit_ctl_class, orbit_pars_class, orbit_ctl_load, orbit_pars_now
     use paleoemu,        only: paleoemu_class, paleoemu_target_class, paleoemu_init, paleoemu_set_reference, &
                                paleoemu_update, paleoemu_end, paleoemu_target_init, paleoemu_downscale, &
                                paleoemu_write_init, paleoemu_write_step
@@ -49,13 +49,10 @@ module kryos_climate_paleoemu
     type, extends(climate_t) :: paleoemu_climate_t
         character(len=PATH_LEN) :: file      = ""          ! the emulator file
         character(len=PATH_LEN) :: reference = ""          ! the reference climate on the instance grid
-        character(len=NAME_LEN) :: orbit_group = "orbit"
         real(dp) :: beta_p   = 0.0_dp                      ! [K-1]
         real(dp) :: day_year = 365.0_dp                    ! days of the run's year (pr: mm d-1 -> kg m-2 yr-1)
         type(paleoemu_class)        :: emu
         type(paleoemu_target_class) :: tgt                 ! the instance grid with its reference climate
-        type(orbit_ctl_class)       :: orb_ctl
-        type(insol_class)           :: orb_is              ! the orbital tables (orbit_pars_now)
         integer,  allocatable :: bin(:,:)                  ! emulator ice-grid cell of each instance cell (0: outside)
         real(dp), allocatable :: wsum(:,:)                 ! area of the instance cells in each ice-grid cell [m2]
         logical  :: ref_set = .false.
@@ -101,7 +98,7 @@ contains
 
     subroutine global_init_(self, ctx)
         ! Keys, the emulator file, the instance grid (a grid_<name>.txt of the map folder), the reference
-        ! climate on it, the binning onto the emulator's ice grid, the orbit; the coefficient co2.
+        ! climate on it, the binning onto the emulator's ice grid; the coefficient co2, the orbit (optional).
         class(paleoemu_climate_t), intent(inout) :: self
         type(init_ctx_t),          intent(in)    :: ctx
 
@@ -110,8 +107,6 @@ contains
 
         call nml_read(ctx%par_file, ctx%instance, "file", self%file)
         call nml_read(ctx%par_file, ctx%instance, "reference", self%reference)
-        if (nml_has_param(ctx%par_file, ctx%instance, "orbit")) &
-            call nml_read(ctx%par_file, ctx%instance, "orbit", self%orbit_group)
         if (nml_has_param(ctx%par_file, ctx%instance, "beta_p")) &
             call nml_read(ctx%par_file, ctx%instance, "beta_p", self%beta_p)
         grid_name = ""
@@ -123,9 +118,8 @@ contains
         end if
 
         self%prec = dp
-        self%opt  = climate_opt_t(host=.true.)
+        self%opt  = climate_opt_t(host=.true., orbit=.true.)
         self%day_year = ctx%sec_year/86400.0_dp
-        self%orbit = self%orbit_group
 
         allocate(self%grid_obj)
         call grid_cdo_read_desc(self%grid_obj, trim(grid_name), trim(ctx%map_fldr))
@@ -137,16 +131,13 @@ contains
         call reference_load(self)
         call bins_init(self)
 
-        call orbit_ctl_load(self%orb_ctl, trim(ctx%par_file), trim(self%orbit_group))
-        call insol_init(self%orb_is, fldr=trim(self%orb_ctl%fldr))
-
         allocate(self%coef_names(1), self%coef_units(1))
         self%coef_names(1) = "co2"
         self%coef_units(1) = "ppm"
 
         call log_msg(LOG_INFO, "kryos_climate_paleoemu", "emulator "//trim(self%file)//" ("//trim(self%emu%temperature)// &
-                     "), grid "//trim(grid_name)//" "//to_str(self%nx)//" x "//to_str(self%ny)//", orbit ["// &
-                     trim(self%orbit_group)//"] "//trim(self%orb_ctl%method)//", beta_p "//to_str(self%beta_p), &
+                     "), grid "//trim(grid_name)//" "//to_str(self%nx)//" x "//to_str(self%ny)//", beta_p "// &
+                     to_str(self%beta_p), &
                      "instance "//trim(self%name))
     end subroutine global_init_
 
@@ -280,23 +271,29 @@ contains
 
     subroutine step(self, st, what)
         ! One emulator update at the evaluation time (the forcing time with clock = "forcing") with the
-        ! orbit of [orbit] at that time, the coefficient co2 and the ice geometry the core put; then the
+        ! run's orbit (the forcing's elements; without them the emulator's own table at that time), the
+        ! coefficient co2 and the ice geometry the core put; then the
         ! exports at t1.
         class(paleoemu_climate_t), intent(inout) :: self
         type(step_time_t),         intent(in)    :: st
         character(len=*),          intent(in)    :: what
 
         real(dp), allocatable :: H(:,:), zb(:,:), zs(:,:)
-        type(orbit_pars_class) :: orb
-        real(dp) :: co2
+        real(dp) :: co2, orb(3)
 
         if (.not. self%ref_set) call fesm_error("kryos_climate_paleoemu::"//what, "no reference ice", &
                                                 "instance "//trim(self%name)//": PASS_BOUNDARY sets it")
         call require_published(self, self%hi_coef(1), "coef_co2", what)
         call fields_get(self%imports, self%hi_coef(1), co2)
         call geometry_get(self, self%hi_H_ice, self%hi_z_bed, self%hi_z_srf, H, zb, zs, what)
-        orb = orbit_pars_now(self%orb_ctl, self%orb_is, st%t_eval)
-        call paleoemu_update(self%emu, st%t_eval, co2, H, zb, zs, orbit=[orb%ecc, orb%obl, orb%per])
+        if (self%imports%f(self%hi_orbit(1))%published) then
+            call fields_get(self%imports, self%hi_orbit(1), orb(1))
+            call fields_get(self%imports, self%hi_orbit(2), orb(2))
+            call fields_get(self%imports, self%hi_orbit(3), orb(3))
+            call paleoemu_update(self%emu, st%t_eval, co2, H, zb, zs, orbit=orb)
+        else
+            call paleoemu_update(self%emu, st%t_eval, co2, H, zb, zs)
+        end if
         call paleoemu_downscale(self%tgt, self%emu)
         call exports_put(self, st%t1)
     end subroutine step

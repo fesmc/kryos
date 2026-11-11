@@ -977,7 +977,7 @@ contains
             "&out_1D", "  method = 'const'", "  dt = 10.0", "/", &
             "&out_rst", "  method = 'const'", "  dt = "//ftoa(max(restart_dt, 1.0_dp)), "/", &
             "&globe", "  forcing = 'forcing'", "  geo = 'geo_glob'", "/", &
-            "&forcing", "  backend = 'tsgen'", "  clock = 'forcing'", coefs, "  out_1D = 'out_1D'", "/", &
+            "&forcing", "  backend = 'tsgen'", "  orbit = 'orbit'", "  clock = 'forcing'", coefs, "  out_1D = 'out_1D'", "/", &
             geo_glob_lines(), &
             "&"//nm, "  grid_hub = '"//grid//"'", "  topo = 'topo'", "  regions = 'regions'", &
             "  basins = 'basin'", "  out_2D = 'out_2D'", "  ice = 'ice_"//sx//"'", "  geo = 'geo_"//sx//"'", &
@@ -992,7 +992,7 @@ contains
             "&climate_"//sx, "  backend = 'snapshots'", "  clock = 'forcing'", "  dt = 20.0", &
             "  snapshots = 'snapshots'", "  reference = 'pd'", terms, "  out_2D = 'out_2D'", "/", &
             "&surface_"//sx, "  backend = 'chion'", "  clock = 'forcing'", "  surface_chion = 'surface_chion'", &
-            "  chion = 'chion'", "  orbit = 'orbit'", "  out_2D = 'out_2D'", "/", &
+            "  chion = 'chion'", "  out_2D = 'out_2D'", "/", &
             "&shelf_"//sx, "  backend = 'marine_shelf'", "  marine_shelf = 'marine_shelf'", "  corr = 'shelf_corr'", &
             "  out_2D = 'out_2D'", "/", &
             "&ghf_"//sx, "  backend = 'data'", "  dt = -1.0", "  Q_geo = 'ghf_const'", "  out_2D = 'out_2D'", "/", &

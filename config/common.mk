@@ -72,7 +72,7 @@ INC_CHION = -I${CHIONROOT}/libchion/include
 LIB_CHION = -L${CHIONROOT}/libchion/include -lchion
 CHION_ARCHIVE = $(CHIONROOT)/libchion/include/libchion.a
 
-# insol: serial, no dependencies.
+# insol: serial, no dependencies; always linked (the forcing resolves the orbit, kryos_orbit).
 INSOLROOT = insol
 INC_INSOL = -I${INSOLROOT}/libinsol/include
 LIB_INSOL = -L${INSOLROOT}/libinsol/include -linsol
@@ -132,7 +132,6 @@ SHTNS_ARCHIVE = ${FESMUTILSROOT}/SHTns/$(SHTNS_DIR)/lib/lib$(SHTNS_NAME).a
 yelmo        ?= 1
 fastisostasy ?= 1
 chion        ?= 1
-insol        ?= 1
 cism         ?= 0
 pism         ?= 0
 vilma        ?= 0
@@ -141,7 +140,7 @@ paleoemu     ?= 0
 rembo        ?= 0
 
 # The switch settings, recorded in the object-dir stamp (config/Makefile).
-backend_config = yelmo$(yelmo)-fastisostasy$(fastisostasy)-chion$(chion)-insol$(insol)-cism$(cism)-pism$(pism)-vilma$(vilma)-plastic$(plastic)-paleoemu$(paleoemu)-rembo$(rembo)
+backend_config = yelmo$(yelmo)-fastisostasy$(fastisostasy)-chion$(chion)-cism$(cism)-pism$(pism)-vilma$(vilma)-plastic$(plastic)-paleoemu$(paleoemu)-rembo$(rembo)
 
 INC_BACKENDS   =
 LIB_BACKENDS   =
@@ -192,10 +191,6 @@ else
 endif
 
 ifeq ($(chion), 1)
-    # The chion host (kryos_surface_chion.f90) takes its daily insolation from insol.
-    ifneq ($(insol), 1)
-        $(error chion=1 needs insol=1: the chion host uses libinsol)
-    endif
     kryos_surface_chion_obj = $(objdir)/kryos_surface_chion.o
     INC_BACKENDS   += $(INC_CHION)
     LIB_BACKENDS   += $(LIB_CHION)
@@ -208,17 +203,13 @@ else
     test_skip += $(testdir)/test_run_sequence.f90
 endif
 
-ifeq ($(insol), 1)
-    kryos_orbit_obj = $(objdir)/kryos_orbit.o
-    INC_BACKENDS   += $(INC_INSOL)
-    LIB_BACKENDS   += $(LIB_INSOL)
-    dep_archives   += $(INSOL_ARCHIVE)
-    backend_roots  += $(INSOLROOT)
-    build_info_libs += insol:$(INSOLROOT)
-    backend_static += insol-static
-else
-    kryos_orbit_obj = $(objdir)/kryos_orbit_stub.o
-endif
+# insol: a dependency of the core (the forcing's orbit), not a switch
+INC_BACKENDS   += $(INC_INSOL)
+LIB_BACKENDS   += $(LIB_INSOL)
+dep_archives   += $(INSOL_ARCHIVE)
+backend_roots  += $(INSOLROOT)
+build_info_libs += insol:$(INSOLROOT)
+backend_static += insol-static
 
 ifeq ($(vilma), 1)
     kryos_geo_vilma2_obj = $(objdir)/kryos_geo_vilma2.o
@@ -250,10 +241,6 @@ else
 endif
 
 ifeq ($(paleoemu), 1)
-    # paleoemu takes the orbit of [orbit] (kryos_orbit, libinsol), as the insolation of chion.
-    ifneq ($(insol), 1)
-        $(error paleoemu=1 needs insol=1: its orbit is that of the insol library)
-    endif
     kryos_climate_paleoemu_obj = $(objdir)/kryos_climate_paleoemu.o
     INC_BACKENDS   += $(INC_PALEOEMU)
     LIB_BACKENDS   += $(LIB_PALEOEMU)

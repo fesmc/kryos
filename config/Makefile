@@ -285,7 +285,7 @@ usage:
 	@echo ""
 	@echo " Options: debug=1|2, openmp=0|1 (default 1), pic=1"
 	@echo " Backends (1 = link the library, 0 = stub that stops at init):"
-	@echo "   yelmo=$(yelmo) fastisostasy=$(fastisostasy) chion=$(chion) insol=$(insol)"
+	@echo "   yelmo=$(yelmo) fastisostasy=$(fastisostasy) chion=$(chion)"
 	@echo "   cism=$(cism) pism=$(pism) vilma=$(vilma) plastic=$(plastic) paleoemu=$(paleoemu) rembo=$(rembo)"
 	@echo ""
 

@@ -22,7 +22,7 @@ submodule (kryos_run) kryos_run_sequence
     use kryos_wiring,    only: wire_node
     use kryos_geo,       only: geo_scatter
     use kryos_globe,     only: gather_src_t, gather_src, gather_into, globe_update, globe_reduce, globe_pass, &
-                               exchange_globe, exchange_to_globe, globe_coefs_to_climate, globe_climate_ice, &
+                               exchange_globe, exchange_to_globe, globe_forcing_to_climate, globe_climate_ice, &
                                globe_climate_reference
     use kryos_climate,   only: climate_present
     use kryos_domain,    only: domain_present, domain_due, domain_prepare, domain_update, domain_time, exchange, exchange_into, &
@@ -80,7 +80,7 @@ contains
         ! ice geometry is the background alone at t0; from the first step on, the merged ice of the gather
         if (climate_present(run%globe%climate)) then
             call globe_climate_ice(run%globe, t0, external=.true.)
-            call globe_coefs_to_climate(run%globe, run%clk, init=.true.)
+            call globe_forcing_to_climate(run%globe, run%clk, init=.true.)
             call globe_pass(run%globe, "climate", run%clk, PASS_BOUNDARY)
         end if
 
@@ -99,6 +99,7 @@ contains
                     call climate_to_forcing(run, d, init=.true.)                  ! 3.6 item 3: dTo at t0
                 end if
                 if (domain_present(dom, C_SURFACE)) then                          ! step_surface(init)
+                    call forcing_to_surface(run, d, init=.true.)                  ! the orbit (insolation)
                     call exchange(dom, "hub", "surface", t0, run%clk, init=.true.)
                     call exchange(dom, "climate", "surface", t0, run%clk, init=.true.)
                     call exchange(dom, "ice", "surface", t0, run%clk, init=.true.)    ! H_ice_ref (smb_simple)
@@ -137,6 +138,7 @@ contains
                 ! d) the surface on the final initial geometry: one more cycle, no spin-up
                 call domain_hub_update(dom, t0, run%clk, init=.true.)            ! couple_yelmo_to_htopo
                 if (domain_present(dom, C_SURFACE)) then
+                    call forcing_to_surface(run, d, init=.true.)
                     call exchange(dom, "hub", "surface", t0, run%clk, init=.true.)
                     call exchange(dom, "ice", "surface", t0, run%clk, init=.true.)    ! H_ice_ref (recon: the new one)
                     call domain_pass(dom, C_SURFACE, run%clk, PASS_FINAL)         ! step_surface
@@ -298,7 +300,7 @@ contains
         if (climate_present(run%globe%climate)) then
             if (cadence_due(run%globe%climate%c%cadence, run%clk)) then
                 call globe_climate_ice(run%globe, t)
-                call globe_coefs_to_climate(run%globe, run%clk)
+                call globe_forcing_to_climate(run%globe, run%clk)
             end if
             call globe_update(run%globe, "climate", run%clk)
         end if
@@ -347,6 +349,7 @@ contains
                 end if
                 call timer_step(run%tmr, TT_CLIMATE)
                 if (domain_due(dom, C_SURFACE, run%clk)) then                      ! step_surface
+                    call forcing_to_surface(run, d, init=.false.)                 ! the orbit (insolation)
                     call exchange(dom, "hub", "surface", t, run%clk)
                     call exchange(dom, "climate", "surface", t, run%clk)
                     call exchange(dom, "ice", "surface", t, run%clk)               ! H_ice_ref (smb_simple)
@@ -484,6 +487,18 @@ contains
         call exchange_globe(run%globe, "forcing", run%dom(d)%wires, "climate", run%dom(d)%climate%c%imports, &
                             run%clk, init=init)
     end subroutine forcing_to_climate
+
+    subroutine forcing_to_surface(run, d, init)
+        ! The forcing's orbital elements into domain d's surface (lag 0: the forcing's update of this step).
+        type(run_t), target, intent(inout) :: run
+        integer,             intent(in)    :: d
+        logical,             intent(in)    :: init
+
+        if (.not. forcing_present(run%globe%forcing)) return
+        if (.not. domain_present(run%dom(d), C_SURFACE)) return
+        call exchange_globe(run%globe, "forcing", run%dom(d)%wires, "surface", run%dom(d)%surface%c%imports, &
+                            run%clk, init=init)
+    end subroutine forcing_to_surface
 
     subroutine climate_g_to_climate(run, d, init)
         ! A global climate's atmosphere into domain d's climate (its regional port): the rows

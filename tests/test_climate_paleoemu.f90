@@ -5,8 +5,10 @@ program test_climate_paleoemu
     !   * the instance grid (GLOBAL-0.5DEG of maps/), opt%host, the coefficient co2;
     !   * the ice geometry is put piecewise constant on the emulator's ice-grid cells, so the adapter's
     !     binning returns the ice-grid fields: every export (tas at z_srf_clim, pr in kg m-2 yr-1, lapse,
-    !     beta_p) bitwise equal to paleoemu_update + paleoemu_downscale with the same ice, CO2 and the
-    !     orbit of [orbit] (kryos_orbit) at the evaluation time;
+    !     beta_p) equal to paleoemu_update + paleoemu_downscale with the same ice, CO2 and the orbital
+    !     elements of the imports (the forcing's: insol's tables at the evaluation time), to the round-off
+    !     of the binning;
+    !   * without the orbit imports, the emulator's own orbit table;
     !   * restart round trip: write, a new instance at the reference, read, PASS_RESTART, continue: bitwise;
     !   * the port copies its imports exactly, with their validity.
     ! Needs the emulator file in $PALEOEMU_FILE (PaleoEmulator scripts/06_emulator.jl); skipped without.
@@ -20,8 +22,7 @@ program test_climate_paleoemu
     use kryos_climate,   only: climate_slot_t, climate_create, climate_init, climate_init_state, climate_update, &
                                climate_restart_write, climate_restart_read, climate_end
     use kryos_climate_paleoemu, only: paleoemu_climate_t
-    use kryos_orbit,     only: orbit_ctl_class, orbit_pars_class, orbit_ctl_load, orbit_pars_now
-    use insolation,      only: insol_class, insol_init
+    use insolation,      only: insol_class, insol_init, orbit_pars_class, orbit_pars_at
     use paleoemu,        only: paleoemu_class, paleoemu_target_class, paleoemu_init, paleoemu_set_reference, &
                                paleoemu_update, paleoemu_target_init, paleoemu_downscale
 
@@ -38,8 +39,9 @@ program test_climate_paleoemu
     type(climate_slot_t) :: glob, glob2, port
     type(paleoemu_class) :: emu
     type(paleoemu_target_class) :: tgt
-    type(orbit_ctl_class) :: octl
     type(insol_class)     :: ois
+    type(climate_slot_t)  :: glob3
+    type(census_t)        :: census3
     integer,  allocatable :: bin(:,:)
     real(dp), allocatable :: Hr(:,:), zbr(:,:), zsr(:,:), lon(:,:), lat(:,:), tas_ref(:,:,:), pr_ref(:,:,:), zs_ref(:,:)
     real(dp) :: t
@@ -76,15 +78,14 @@ program test_climate_paleoemu
     call check(trim(glob%c%grid) == GRID .and. glob%c%nx == 720 .and. glob%c%ny == 360 .and. glob%c%opt%host, &
                "global part: grid GLOBAL-0.5DEG (720 x 360), opt%host")
     call check(size(glob%c%coef_names) == 1 .and. trim(glob%c%coef_names(1)) == "co2", "coefficient co2")
-    call check(trim(glob%c%orbit) == "orbit", "orbit group [orbit] (component_t%orbit)")
+    call check(glob%c%opt%orbit .and. glob%c%hi_orbit(1) > 0, "orbit imports declared (optional)")
     select type (c => glob%c)
     type is (paleoemu_climate_t)
         bin = c%bin
     end select
 
     call paleoemu_target_init(tgt, emu, lon, lat, tas_ref, pr_ref, zs_ref)
-    call orbit_ctl_load(octl, PAR, "orbit")
-    call insol_init(ois, fldr=trim(octl%fldr))
+    call insol_init(ois, fldr="input")
 
     Hr = emu%ice_H_ref;  zbr = emu%ice_z_bed_ref;  zsr = emu%ice_z_srf_ref
     call put_geometry(glob, Hr, zbr, zsr, ref=.true., t1=-21000.0_dp)
@@ -120,6 +121,16 @@ program test_climate_paleoemu
     call check(all(field3(glob2, "tas") == field3(glob, "tas")) .and. all(field3(glob2, "pr") == field3(glob, "pr")), &
                "restarted = continued, bitwise")
 
+    ! ---- without the orbit: the emulator's own table -----------------------------------------------
+    call climate_create(glob3, ctx, census3)
+    call climate_init(glob3, ctx)
+    call put_geometry(glob3, Hr, zbr, zsr, ref=.true., t1=-21000.0_dp)
+    call paleoemu_init(emu, trim(efile))
+    call paleoemu_set_reference(emu, Hr, zbr, zsr)
+    call drive(glob3, 0, -21000.0_dp, PASS_BOUNDARY, orbit=.false.)
+    call compare(glob3, "no orbit imports")
+    call climate_end(glob3)
+
     ! ---- the port --------------------------------------------------------------------------------
     call port_test()
 
@@ -137,8 +148,7 @@ contains
         integer :: u
         open(newunit=u, file=PAR, status="replace", action="write")
         write(u,'(a)') "&clim_glob", ' backend = "paleoemu"', ' grid = "'//GRID//'"', ' file = "'//trim(efile)//'"', &
-                       ' reference = "'//REF//'"', "/", &
-                       "&orbit", ' method = "forcing_time"', "/"
+                       ' reference = "'//REF//'"', "/"
         close(u)
     end subroutine par_write
 
@@ -187,35 +197,47 @@ contains
         call nc_write(REF, "z_srf_ref", zs, dim1="lon", dim2="lat")
     end subroutine write_ref
 
-    subroutine drive(g, n, t, pass, direct)
+    subroutine drive(g, n, t, pass, direct, orbit)
         ! The load of step n at t into the adapter (and, unless direct = .false., the same update of the
-        ! direct emulator): a North American ice that grows with n, CO2 falling with n.
+        ! direct emulator): a North American ice that grows with n, CO2 falling with n, the orbit of the
+        ! tables at t as the forcing would export it (orbit = .false.: none, the emulator's own).
         type(climate_slot_t), intent(inout) :: g
         integer,              intent(in)    :: n
         real(dp),             intent(in)    :: t
         integer,  optional,   intent(in)    :: pass
-        logical,  optional,   intent(in)    :: direct
+        logical,  optional,   intent(in)    :: direct, orbit
 
         real(dp) :: H(size(Hr, 1), size(Hr, 2)), zs(size(Hr, 1), size(Hr, 2)), co2
         type(orbit_pars_class) :: orb
-        logical :: dir_
+        logical :: dir_, orb_
 
         dir_ = .true.
         if (present(direct)) dir_ = direct
+        orb_ = .true.
+        if (present(orbit)) orb_ = orbit
+        orb = orbit_pars_at(ois, t)
         H = Hr
         where (emu%ice_region == 1) H = Hr + 300.0_dp*(n + 1)
         zs = max(zbr + H, zsr)
         co2 = 280.0_dp - 20.0_dp*(4 - n)
         call put_geometry(g, H, zbr, zs, ref=.false., t1=t)
         call fields_put(g%c%imports, g%c%hi_coef(1), co2, t1=t)
+        if (orb_) then
+            call fields_put(g%c%imports, g%c%hi_orbit(1), orb%ecc, t1=t)
+            call fields_put(g%c%imports, g%c%hi_orbit(2), orb%obl, t1=t)
+            call fields_put(g%c%imports, g%c%hi_orbit(3), orb%per, t1=t)
+        end if
         if (present(pass)) then
             call climate_init_state(g, st(t, t), pass)
         else
             call climate_update(g, st(t - DTT, t))
         end if
         if (dir_) then
-            orb = orbit_pars_now(octl, ois, t)
-            call paleoemu_update(emu, t, co2, H, zbr, zs, orbit=[orb%ecc, orb%obl, orb%per])
+            if (orb_) then
+                call paleoemu_update(emu, t, co2, H, zbr, zs, orbit=[orb%ecc, orb%obl, orb%per])
+            else
+                call paleoemu_update(emu, t, co2, H, zbr, zs)
+            end if
             call paleoemu_downscale(tgt, emu)
         end if
     end subroutine drive

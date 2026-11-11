@@ -8,6 +8,7 @@ module kryos_climate
     use fesm_log,        only: fesm_error
     use fesm_fields,     only: fields_init, fields_add, fields_lock, FIELD_INSTANT, FIELD_MEAN, &
                                FIELD_INTENSIVE, FIELD_EXTENSIVE
+    use kryos_forcing,   only: ORBIT_FIELDS, ORBIT_UNITS
     use kryos_component, only: component_t, PATH_LEN, init_ctx_t, step_time_t, census_t, constraints_t, &
                                component_identity, backend_admit, component_close, &
                                component_enter, component_leave, component_optional, component_axis, &
@@ -23,6 +24,8 @@ module kryos_climate
                                                     ! reference, which the core fills (globe_ice)
         logical :: port = .false.                   ! regional port of such a global part: imports the
                                                     ! atmosphere of the global part, remapped, and exports it
+        logical :: orbit = .false.                  ! imports the orbital elements of the forcing (optional: a
+                                                    ! backend with an orbit of its own uses it without them)
     end type climate_opt_t
 
     type, abstract, extends(component_t), public :: climate_t
@@ -30,6 +33,7 @@ module kryos_climate
         integer :: hi_z_srf = 0, hi_H_ice = 0, hi_z_bed = 0, hi_f_grnd = 0, hi_z_sl = 0, hi_z_srf_ref = 0
         integer :: hi_H_ice_ref = 0, hi_z_bed_ref = 0                           ! host
         integer :: hi_tas = 0, hi_pr = 0, hi_z_srf_clim = 0, hi_lapse = 0, hi_beta_p = 0   ! port
+        integer :: hi_orbit(3) = 0                                              ! orbit_ecc, orbit_obl, orbit_per
         integer :: h_tas = 0, h_pr = 0, h_z_srf_clim = 0, h_lapse = 0, h_beta_p = 0
         integer :: h_to_ann = 0, h_so_ann = 0, h_dto_ann = 0                   ! has_ocn
         integer :: h_to_shlf = 0, h_so_shlf = 0, h_dto_shlf = 0, h_dso_shlf = 0 ! has_ocn_shelf
@@ -211,6 +215,13 @@ contains
                 call component_core_filled(c, "H_ice_ref")
                 call component_core_filled(c, "z_bed_ref")
             end if
+        end if
+        if (c%opt%orbit) then
+            do k = 1, 3
+                call fields_add(c%imports, trim(ORBIT_FIELDS(k)), trim(ORBIT_UNITS(k)), FIELD_INSTANT, FIELD_INTENSIVE, &
+                                c%hi_orbit(k))
+                call component_optional(c, trim(ORBIT_FIELDS(k)))
+            end do
         end if
         if (.not. allocated(c%coef_names)) allocate(c%coef_names(0), c%coef_units(0))
         allocate(c%hi_coef(size(c%coef_names)))

@@ -1815,7 +1815,7 @@ contains
             "&out_1D", "  method = 'const'", "  dt = 10.0", "/", &
             "&out_rst", "  method = 'const'", "  dt = "//ftoa(dt_rst), "/", &
             "&globe", "  forcing = 'forcing'", "  geo = 'geo_glob'", "/", &
-            "&forcing", "  backend = 'tsgen'", "  clock = 'forcing'", "  coefs = 'alpha' 'dTo' 'beta'", &
+            "&forcing", "  backend = 'tsgen'", "  orbit = 'orbit'", "  clock = 'forcing'", "  coefs = 'alpha' 'dTo' 'beta'", &
             "  out_1D = 'out_1D'", "/", &
             "&geo_glob", "  backend = 'fastisostasy'", "  clock = 'forcing'", "  bsl = 'barysealevel'", &
             "  out_1D = 'out_1D'", "/", &
@@ -1832,7 +1832,7 @@ contains
             "&climate_grl", "  backend = 'snapshots'", "  clock = 'forcing'", "  dt = 20.0", &
             "  snapshots = 'snapshots'", "  reference = 'pd'", "  terms = 'lgm' 'ocean'", "  out_2D = 'out_2D'", "/", &
             "&surface_grl", "  backend = 'chion'", "  clock = 'forcing'", "  surface_chion = 'surface_chion'", &
-            "  chion = 'chion'", "  orbit = 'orbit'", "  out_2D = 'out_2D'", "/", &
+            "  chion = 'chion'", "  out_2D = 'out_2D'", "/", &
             "&shelf_grl", "  backend = 'marine_shelf'", "  marine_shelf = 'marine_shelf'", "  corr = 'shelf_corr'", &
             "  out_2D = 'out_2D'", "/", &
             "&ghf_grl", "  backend = 'data'", "  dt = -1.0", "  Q_geo = 'ghf_const'", "  out_2D = 'out_2D'", "/", &

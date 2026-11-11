@@ -16,9 +16,15 @@ module kryos_forcing
 
     private
 
-    type, public :: forcing_opt_t                   ! optional imports (set in init)
+    type, public :: forcing_opt_t                   ! optional fields (set in init)
         logical :: M_ice = .false.                  ! a coefficient uses the ice-mass feedback
+        logical :: orbit = .false.                  ! exports the orbital elements (ORBIT_FIELDS)
     end type forcing_opt_t
+
+    ! The orbital elements a forcing with opt%orbit exports (kryos_orbit, insol's convention: the longitude of
+    ! perihelion as in Berger 1978), read by every component that takes the orbit (climate, surface).
+    character(len=*), parameter, public :: ORBIT_FIELDS(3) = [character(len=9) :: "orbit_ecc", "orbit_obl", "orbit_per"]
+    character(len=*), parameter, public :: ORBIT_UNITS(3)  = [character(len=7) :: "1", "degrees", "degrees"]
 
     type, abstract, extends(component_t), public :: forcing_t
         type(forcing_opt_t) :: opt
@@ -28,6 +34,7 @@ module kryos_forcing
         logical,           allocatable :: coef_derived(:)
         integer, allocatable :: h_coef(:)           ! exports, one per coefficient
         integer, allocatable :: hi_derived(:)       ! imports, per coefficient (0 unless derived)
+        integer :: h_orbit(3) = 0                   ! exports orbit_ecc, orbit_obl, orbit_per (opt%orbit)
         real(dp), allocatable :: t_set(:)           ! forcing_set: time of the last set
         integer :: hi_M_ice = 0
         integer :: n_restart = 0                    ! forcing-increment bundles written (the n of restart-<n>)
@@ -223,8 +230,9 @@ contains
     end subroutine forcing_set
 
     subroutine forcing_declare(c, ctx)
-        ! Contracts-design section 2.7: 0-D only; exports every coefficient,
-        ! imports M_ice (feedback) and every derived coefficient.
+        ! Contracts-design section 2.7: 0-D only; exports every coefficient
+        ! and, with opt%orbit, the orbital elements; imports M_ice (feedback)
+        ! and every derived coefficient.
         class(forcing_t), intent(inout) :: c
         type(init_ctx_t), intent(in)    :: ctx
         integer :: k, n
@@ -248,6 +256,12 @@ contains
         do k = 1, n
             call fields_add(c%exports, c%coef_names(k), c%coef_units(k), FIELD_INSTANT, FIELD_INTENSIVE, c%h_coef(k))
         end do
+        if (c%opt%orbit) then
+            do k = 1, 3
+                call fields_add(c%exports, trim(ORBIT_FIELDS(k)), trim(ORBIT_UNITS(k)), FIELD_INSTANT, FIELD_INTENSIVE, &
+                                c%h_orbit(k))
+            end do
+        end if
         call fields_lock(c%exports)
     end subroutine forcing_declare
 

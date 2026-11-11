@@ -167,6 +167,10 @@ contains
         call add(t, "climate", RULE_DERIVED, "forcing", RULE_DERIVED, lag=1)
         call add(t, "forcing", RULE_COEF, "climate", RULE_COEF)
         call add(t, "forcing", RULE_COEF, "climate_g", RULE_COEF)
+        ! the orbit of the run (the forcing's [orbit]) into every component that takes it
+        call add_set(t, "forcing", "orbit_ecc orbit_obl orbit_per", "climate_g", "")
+        call add_set(t, "forcing", "orbit_ecc orbit_obl orbit_per", "climate", "")
+        call add_set(t, "forcing", "orbit_ecc orbit_obl orbit_per", "surface", "")
     end function wiring_table
 
     subroutine add(t, src_kind, src_field, dst_kind, dst_field, method, lag, transform, aux, gather, srcs)

@@ -201,7 +201,6 @@ contains
         end do
         call run_check_names(run)
         call run_check_producers(run)
-        call run_check_orbit(run)
         run%dom_order = name_order(run%dom)
 
         ! 5. schedules: the run's (restart), the output streams (instances, hubs, timing)
@@ -396,42 +395,6 @@ contains
         end subroutine add
 
     end subroutine run_check_names
-
-    subroutine run_check_orbit(run)
-        ! Every instance that takes an orbit (component_t%orbit: the insolation of chion, the climate paleoemu)
-        ! takes the same one: the same [orbit] group and the same clock (its time is the instance's evaluation
-        ! time), so that the climate and the insolation of the surface see one orbit. Stops at init, naming both.
-        type(run_t), intent(in), target :: run
-
-        class(component_t), pointer :: c
-        character(len=NAME_LEN) :: grp, clk, who
-        integer :: d, j
-
-        grp = "";  clk = "";  who = ""
-        if (climate_present(run%globe%climate)) call one(run%globe%climate%c, run%globe%clock_climate)
-        do d = 1, run%n_dom
-            do j = 1, NCOMP
-                c => domain_component(run%dom(d), j)
-                if (associated(c)) call one(c, run%dom(d)%clock(j))
-            end do
-        end do
-
-    contains
-
-        subroutine one(c, clock)
-            class(component_t), intent(in) :: c
-            character(len=*),   intent(in) :: clock
-            if (len_trim(c%orbit) == 0) return
-            if (len_trim(grp) == 0) then
-                grp = c%orbit;  clk = clock;  who = c%name
-            else if (trim(c%orbit) /= trim(grp) .or. trim(clock) /= trim(clk)) then
-                call fesm_error("kryos_run::run_init", "instances `"//trim(who)//"` and `"//trim(c%name)// &
-                                "` take different orbits", "orbit group ["//trim(grp)//"], clock "//trim(clk)// &
-                                " against ["//trim(c%orbit)//"], clock "//trim(clock)//": the climate and the insolation "// &
-                                "of the surface take one orbit (one group, one `clock` key)")
-            end if
-        end subroutine one
-    end subroutine run_check_orbit
 
     subroutine run_check_producers(run)
         ! A derived forcing coefficient has one producer (contracts-design 7): two domains whose climates both produce

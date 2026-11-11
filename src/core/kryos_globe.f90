@@ -34,7 +34,7 @@ module kryos_globe
     ! A global climate (climate_g, opt%host: paleoemu) is a third instance: it
     ! steps after the forcing on the ice geometry of globe_ice (the background
     ! with the domains merged in, globe_climate_ice) and the coefficients of the
-    ! globe's own rows forcing -> climate_g (globe_wire, globe_coefs_to_climate);
+    ! globe's own rows forcing -> climate_g (globe_wire, globe_forcing_to_climate);
     ! its regional ports read it through the domains' rows climate_g -> climate.
     !
     ! Kinds: "forcing", "geo" and "climate" name the globe side of a row; "geo"
@@ -98,7 +98,7 @@ module kryos_globe
     public :: globe_pass, globe_component, globe_restart_write, globe_restart_read, globe_restart_files
     public :: globe_nodes, globe_register_grid, globe_wire
     public :: exchange_globe, exchange_to_globe, gather_src, gather_into
-    public :: globe_coefs_to_climate, globe_climate_ice, globe_climate_reference
+    public :: globe_forcing_to_climate, globe_climate_ice, globe_climate_reference
 
 contains
 
@@ -580,9 +580,9 @@ contains
         end do
     end subroutine exchange_globe
 
-    subroutine globe_coefs_to_climate(globe, clk, init)
-        ! The globe's rows forcing -> climate_g (globe_wire): the coefficients the global climate names, lag 0,
-        ! after the forcing's update (init: at the cold start, after its PASS_INIT).
+    subroutine globe_forcing_to_climate(globe, clk, init)
+        ! The globe's rows forcing -> climate_g (globe_wire): the coefficients the global climate names and the
+        ! orbit, lag 0, after the forcing's update (init: at the cold start, after its PASS_INIT).
         type(globe_t),     intent(inout) :: globe
         type(clock_t),     intent(in)    :: clk
         logical, optional, intent(in)    :: init
@@ -602,7 +602,7 @@ contains
             call wire_exchange(globe%wires(i), globe%forcing%c%exports, globe%climate%c%imports, cpl0, t, t_last, &
                                due=due, init=init)
         end do
-    end subroutine globe_coefs_to_climate
+    end subroutine globe_forcing_to_climate
 
     subroutine globe_climate_reference(globe, t0)
         ! The reference ice geometry of globe_ice (the spliced present day: the domains' reference in the

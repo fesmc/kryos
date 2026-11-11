@@ -9,8 +9,8 @@ module kryos_chion_host
     ! units so couple_surface_to_yelmo treats both models alike.
     !
     ! Inputs chion does not own, supplied here (as smbpal does internally):
-    !   - daily top-of-atmosphere insolation (ITM, BESSI; fesmc/insol, on the orbit of
-    !     [orbit<sfx>], orbit_forcing) from a per-day latitude table (insol_dlat)
+    !   - daily top-of-atmosphere insolation (ITM, BESSI; fesmc/insol, on the orbit the
+    !     host passes: the run's, from the forcing) from a per-day latitude table (insol_dlat)
     !     interpolated to the columns, as shortwave_down: as is
     !     for ITM (which applies its own transmissivity), times a constant
     !     transmissivity trans_sw for BESSI (surface shortwave), and as the
@@ -54,8 +54,7 @@ module kryos_chion_host
     use ncio,       only : nc_open, nc_close, nc_write, nc_read, nc_exists_var
     use phys_constants, only : phys_const_class, sec_day
     use insolation, only : insol_class, insol_init, calc_insol_days, insol_wp => wp
-    use kryos_orbit, only : orbit_ctl_class, orbit_pars_class, orbit_ctl_load, &
-                              orbit_pars_now, orbit_pars_equal
+    use insolation, only : orbit_pars_class
     use chion,      only : wp, dp, wp_acc, MV, chion_class, chion_init, chion_init_state, &
                            chion_update, chion_set_active_mask, &
                            chion_get_surface_flux_totals, chion_get_surface, &
@@ -105,11 +104,10 @@ module kryos_chion_host
 
     type surface_chion_insol_class
         ! Daily TOA insolation on a regular latitude table, rebuilt only when
-        ! the orbital elements change (once per run unless [orbit] method =
-        ! "clock"), and the fixed linear-interpolation stencil of every column
-        ! into it.
-        type(orbit_ctl_class)  :: ctl                  ! [orbit<sfx>]
-        type(insol_class)      :: is                   ! insol state on the table latitudes
+        ! the orbital elements change, and the fixed linear-interpolation
+        ! stencil of every column into it. The state has no orbital tables:
+        ! the host passes the elements.
+        type(insol_class)      :: is                   ! insol state on the table latitudes (no tables)
         type(orbit_pars_class) :: orbit                ! the elements of the table
         logical               :: set = .false.         ! the table holds the insolation of orbit
         real(dp), allocatable :: lat(:)                ! (nlat) [deg N]
@@ -139,7 +137,7 @@ module kryos_chion_host
 
 contains
 
-    subroutine surface_chion_init(sc, filename, lats, group, chion_group, orbit_group, cnst)
+    subroutine surface_chion_init(sc, filename, lats, group, chion_group, cnst)
         ! Parameters, chion (cold state) and the annual fields on an (nx,ny) grid.
         ! chion takes its shared physical constants from the domain's record.
         type(surface_chion_class), intent(inout) :: sc
@@ -147,7 +145,6 @@ contains
         real(wp),                  intent(in)    :: lats(:,:)      ! [deg N]
         character(len=*),          intent(in)    :: group          ! &surface_chion
         character(len=*),          intent(in)    :: chion_group    ! &chion
-        character(len=*),          intent(in)    :: orbit_group    ! &orbit
         type(phys_const_class),    intent(in)    :: cnst
 
         call surface_chion_par_load(sc%par, filename, group)
@@ -187,8 +184,7 @@ contains
 
         ! Column icol = i + (j-1)*nx: reshape order.
         sc%chn%forc%latitude_deg = reshape(lats, [sc%ncol])
-        if (sc%insol) call insol_table_init(sc%ins, sc%chn%forc%latitude_deg, sc%md%nday_year, &
-                                            filename, orbit_group)
+        if (sc%insol) call insol_table_init(sc%ins, sc%chn%forc%latitude_deg, sc%md%nday_year)
 
         ! Constant for the run.
         sc%chn%forc%wind_speed            = sc%par%wind_speed
@@ -201,22 +197,22 @@ contains
         call ann_alloc(sc%ann, sc%nx, sc%ny)
     end subroutine surface_chion_init
 
-    subroutine surface_chion_spinup(sc, t2m, pr, z_srf, z_bed, H_ice, z_sl, time_rel)
+    subroutine surface_chion_spinup(sc, t2m, pr, z_srf, z_bed, H_ice, z_sl, orbit)
         ! Cold-start snowpack: time_equil annual cycles under the initial climate
         ! and geometry (smbpal's 100-yr ITM equilibration).
         type(surface_chion_class), intent(inout) :: sc
         real(wp), intent(in) :: t2m(:,:,:), pr(:,:,:)       ! [K], [mm w.e./d] monthly
         real(wp), intent(in) :: z_srf(:,:), z_bed(:,:), H_ice(:,:), z_sl(:,:)
-        real(dp), intent(in) :: time_rel   ! [yr] model time relative to 1950 (past < 0), for the orbit
+        type(orbit_pars_class), intent(in), optional :: orbit   ! the orbital elements (required with insolation)
 
         integer :: n
 
         do n = 1, nint(sc%par%time_equil)
-            call surface_chion_update(sc, t2m, pr, z_srf, z_bed, H_ice, z_sl, time_rel)
+            call surface_chion_update(sc, t2m, pr, z_srf, z_bed, H_ice, z_sl, orbit)
         end do
     end subroutine surface_chion_spinup
 
-    subroutine surface_chion_update(sc, t2m, pr, z_srf, z_bed, H_ice, z_sl, time_rel)
+    subroutine surface_chion_update(sc, t2m, pr, z_srf, z_bed, H_ice, z_sl, orbit)
         ! One annual cycle of daily chion steps from monthly climate, aggregated
         ! to sc%ann.
         type(surface_chion_class), intent(inout) :: sc
@@ -226,7 +222,7 @@ contains
         real(wp), intent(in) :: z_bed(:,:)          ! [m]
         real(wp), intent(in) :: H_ice(:,:)          ! [m]
         real(wp), intent(in) :: z_sl(:,:)           ! [m]
-        real(dp), intent(in) :: time_rel            ! [yr] model time relative to 1950 (past < 0), for the orbit
+        type(orbit_pars_class), intent(in), optional :: orbit   ! the orbital elements (required with insolation)
 
         real(wp), allocatable :: t_ctl(:,:), p_ctl(:,:), mon(:,:), ctl(:,:), col(:), t_ann(:)
         real(wp), allocatable :: t_sum(:), pr_sum(:), sf_sum(:), S_sum(:), PDDs(:)
@@ -249,8 +245,13 @@ contains
         na  = sc%chn%grd%n_active
         idx = sc%chn%grd%active_idx(1:na)
 
-        if (sc%insol) call insol_table_update(sc%ins, orbit_pars_now(sc%ins%ctl, sc%ins%is, time_rel), &
-                                             sc%par%dt_days)
+        if (sc%insol) then
+            if (.not. present(orbit)) then
+                write(*,*) "surface_chion_update:: Error: the insolation (itm, bessi) needs the orbital elements"
+                error stop 1
+            end if
+            call insol_table_update(sc%ins, orbit, sc%par%dt_days)
+        end if
 
         ! Mean-preserving daily control values, (nmon,na) so a column is contiguous.
         allocate(mon(na,nmon), ctl(na,nmon))
@@ -571,14 +572,13 @@ contains
         if (tot1 /= real(MV, wp_acc) .and. tot0 /= real(MV, wp_acc)) y = real(tot1 - tot0, wp)
     end function annual_total
 
-    subroutine insol_table_init(ins, lats, nday, filename, orbit_group)
-        ! The orbit ([orbit<sfx>]), the regular latitude table (insol_dlat)
+    subroutine insol_table_init(ins, lats, nday)
+        ! The regular latitude table (insol_dlat)
         ! over [-90,90] with its insol state, and each column's
         ! linear-interpolation stencil into it.
         type(surface_chion_insol_class), intent(inout) :: ins
         real(wp),                        intent(in)    :: lats(:)     ! (ncol) [deg N]
         integer,                         intent(in)    :: nday
-        character(len=*),                intent(in)    :: filename, orbit_group
 
         integer :: nlat, j, icol
         real(dp) :: x
@@ -591,8 +591,7 @@ contains
         ins%S   = 0.0_wp
         ins%set = .false.
 
-        call orbit_ctl_load(ins%ctl, filename, orbit_group)
-        call insol_init(ins%is, ins%lat, fldr=trim(ins%ctl%fldr), day_year=nday)
+        call insol_init(ins%is, ins%lat, day_year=nday, tables=.false.)
 
         allocate(ins%j0(size(lats)), ins%w1(size(lats)))
         do icol = 1, size(lats)
@@ -614,7 +613,7 @@ contains
         integer :: q
 
         if (ins%set) then
-            if (orbit_pars_equal(orbit, ins%orbit)) return
+            if (orbit%ecc == ins%orbit%ecc .and. orbit%obl == ins%orbit%obl .and. orbit%per == ins%orbit%per) return
         end if
 
         days = [(q, q = 1, size(ins%S,2), dt_days)]
@@ -664,8 +663,8 @@ module kryos_surface_chion
     ! libs/surface_chion.f90 of yelmox 74f3a2b (branch topo-prep), unchanged
     ! except its module name (kryos_chion_host); compiling it here, in the file
     ! of the backend, takes it out of the build when chion=0. The orbit of its
-    ! insolation is kryos_orbit (libs/orbit_forcing.f90 of yelmox, shared with
-    ! the climate paleoemu).
+    ! insolation is the run's: the forcing's elements orbit_ecc, orbit_obl,
+    ! orbit_per (imports, with itm or bessi), resolved there by kryos_orbit.
     !
     ! chion computes in wp (sp), accumulators in dp; the exchange is dp: imports
     ! are narrowed once, exports widened from chion's values (P1, P5). One
@@ -682,6 +681,7 @@ module kryos_surface_chion
                                sec_year_check, NAME_LEN, PASS_BOUNDARY, PASS_FINAL
     use kryos_surface,   only: surface_t, surface_opt_t
     use chion,           only: cwp => wp, chion_end
+    use insolation,      only: orbit_pars_class, orbit_pars_fixed
     use kryos_chion_host, only: surface_chion_class, surface_chion_init, surface_chion_spinup, &
                                 surface_chion_update, surface_chion_restart_write, &
                                 surface_chion_restart_read
@@ -700,7 +700,6 @@ module kryos_surface_chion
         type(surface_chion_class) :: sc               ! chion + its yelmox host
         character(len=NAME_LEN) :: host_group  = "surface_chion"   ! host parameters ([surface_chion])
         character(len=NAME_LEN) :: chion_group = "chion"           ! chion's group
-        character(len=NAME_LEN) :: orbit_group = "orbit"           ! the insolation orbit
         real(dp) :: pr_scale = 1.0_dp                 ! pr [kg m-2 yr-1] = pr [mm d-1] * pr_scale
         real(cwp), allocatable :: t2m(:,:,:), pr_mmd(:,:,:)        ! narrowed imports (nx,ny,12)
         real(dp),  allocatable :: pr_in(:,:,:)
@@ -742,8 +741,8 @@ contains
 
         call surface_chion_init(self%sc, trim(ctx%par_file), real(ctx%grid%lat, cwp), &
                                 group=trim(self%host_group), chion_group=trim(self%chion_group), &
-                                orbit_group=trim(self%orbit_group), cnst=ctx%cnst)
-        if (self%sc%insol) self%orbit = self%orbit_group    ! the insolation's orbit (kryos_run: one per run)
+                                cnst=ctx%cnst)
+        self%opt%orbit = self%sc%insol                       ! the forcing's orbit for the insolation
 
         select case (trim(self%sc%chn%par%restart))
         case ("none", "None", "")
@@ -781,14 +780,14 @@ contains
         case (PASS_BOUNDARY)
             call imports_narrow(self)
             call surface_chion_spinup(self%sc, self%t2m, self%pr_mmd, self%z_srf_s, self%z_bed_s, &
-                                      self%H_ice_s, self%z_sl_s, st%t_eval)
+                                      self%H_ice_s, self%z_sl_s, orbit_now(self))
             call surface_chion_update(self%sc, self%t2m, self%pr_mmd, self%z_srf_s, self%z_bed_s, &
-                                      self%H_ice_s, self%z_sl_s, st%t_eval)
+                                      self%H_ice_s, self%z_sl_s, orbit_now(self))
             call exports_put(self, st)
         case (PASS_FINAL)
             call imports_narrow(self)
             call surface_chion_update(self%sc, self%t2m, self%pr_mmd, self%z_srf_s, self%z_bed_s, &
-                                      self%H_ice_s, self%z_sl_s, st%t_eval)
+                                      self%H_ice_s, self%z_sl_s, orbit_now(self))
             call exports_put(self, st)
         end select
     end subroutine chion_init_state_
@@ -801,9 +800,29 @@ contains
 
         call imports_narrow(self)
         call surface_chion_update(self%sc, self%t2m, self%pr_mmd, self%z_srf_s, self%z_bed_s, &
-                                  self%H_ice_s, self%z_sl_s, st%t_eval)
+                                  self%H_ice_s, self%z_sl_s, orbit_now(self))
         call exports_put(self, st)
     end subroutine chion_update_
+
+    function orbit_now(self) result(orbit)
+        ! The orbital elements the forcing exported (rows forcing -> surface, lag 0); the elements of 1950
+        ! without insolation (then unused).
+        class(chion_surface_t), intent(in) :: self
+        type(orbit_pars_class) :: orbit
+        real(dp) :: e(3)
+        integer  :: k
+        orbit = orbit_pars_fixed(0.016725_dp, 23.4458_dp, 102.063_dp)
+        if (.not. self%opt%orbit) return
+        do k = 1, 3
+            if (.not. self%imports%f(self%hi_orbit(k))%published) then
+                call fesm_error("kryos_surface_chion::update", "import "//trim(self%imports%f(self%hi_orbit(k))%name)// &
+                                " has not been published", "instance "//trim(self%name)//": the insolation (itm, bessi) "// &
+                                "takes the run's orbit from the forcing ([forcing] orbit = 'orbit')")
+            end if
+            call fields_get(self%imports, self%hi_orbit(k), e(k))
+        end do
+        orbit = orbit_pars_fixed(e(1), e(2), e(3))
+    end function orbit_now
 
     subroutine chion_restart_write_(self, dir, t)
         ! kryos_startup.f90:431-432: chion state plus the annual fields.
@@ -883,8 +902,6 @@ contains
             call nml_read(ctx%par_file, ctx%instance, "surface_chion", self%host_group)
         if (nml_has_param(ctx%par_file, ctx%instance, "chion")) &
             call nml_read(ctx%par_file, ctx%instance, "chion", self%chion_group)
-        if (nml_has_param(ctx%par_file, ctx%instance, "orbit")) &
-            call nml_read(ctx%par_file, ctx%instance, "orbit", self%orbit_group)
     end subroutine group_read
 
     function restart_file(self, dir) result(file)

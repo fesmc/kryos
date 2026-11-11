@@ -1,11 +1,10 @@
 module kryos_orbit
-    ! The orbit of the insolation ([orbit<sfx>], one per domain): the orbital
-    ! elements that apply at a time of the forcing time. Shared by the models
-    ! that take insolation or the orbit (chion's host for itm/bessi, smbpal's
-    ! itm, the climate paleoemu), built with insol=1 (kryos_orbit_stub.f90
-    ! otherwise: an empty module, as none of its users is built then);
-    ! each owns its insol_class (fesmc/insol), initialised once with its
-    ! latitudes and the tables in fldr, and recomputes its insolation only when
+    ! The orbit of the run ([orbit]): the orbital elements that apply at a
+    ! time of the forcing time. The forcing resolves them (tsgen, key `orbit`)
+    ! and exports them to every component that takes the orbit (the climate,
+    ! the surface's insolation), so the run has one orbit; insol (fesmc/insol)
+    ! holds the tables. Each consumer computes its own insolation, if any, from
+    ! the elements, on its own grid; it recomputes only when
     ! the elements change. This module only resolves the elements:
     !
     !   method = "forcing_time": the elements at the forcing time time_rel (Laskar et al. 2004 tables)
