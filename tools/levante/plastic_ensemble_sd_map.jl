@@ -58,11 +58,11 @@ k = 1
 if im !== nothing
     Colorbar(fig[1, 2][k, 1], im, label = "sd of ice thickness [m]", height = Relative(0.85), labelsize = 24); k += 1
 end
-Colorbar(fig[1, 2][k, 1], rm, label = "sd of RSL at $(kyr(age)) [m]", height = Relative(0.85), labelsize = 24)
+Colorbar(fig[1, 2][k, 1], rm, label = "sd of RSL [m]", height = Relative(0.85), labelsize = 24)
 elems = [MarkerElement(marker = :utriangle, color = :white, strokecolor = :black, strokewidth = 0.9, markersize = 18),
          MarkerElement(marker = :circle, color = :white, strokecolor = :black, strokewidth = 0.9, markersize = 18),
          LineElement(color = MARGIN, linewidth = 2.5), LineElement(color = :black, linewidth = 1.5)]
-axislegend(ax, elems, ["ice-sheet sites (± $(kyr(window)))", "far-field sites (± $(kyr(window)))", "target ice margin",
+axislegend(ax, elems, ["ice-sheet sites", "far-field sites", "target ice margin",
                        "coast"], position = :lb, labelsize = 20, framevisible = true, backgroundcolor = (:white, 0.85))
 colsize!(fig.layout, 2, Auto(0.08))
 save(outpng, fig, px_per_unit = 1.3)
