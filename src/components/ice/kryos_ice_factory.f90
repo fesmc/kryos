@@ -6,6 +6,7 @@ submodule (kryos_ice) kryos_ice_factory
     use fesm_log,          only: fesm_error
     use kryos_ice_yelmo,   only: yelmo_ice_t, yelmo_ice_constraints
     use kryos_ice_plastic, only: plastic_ice_t, plastic_ice_constraints
+    use kryos_ice_data,    only: data_ice_t, data_ice_constraints
 
     implicit none
 
@@ -24,10 +25,12 @@ contains
         case ("plastic")
             allocate(plastic_ice_t :: ice%c)
             con = plastic_ice_constraints()
-        ! phase 2: case ("data")
+        case ("data")
+            allocate(data_ice_t :: ice%c)
+            con = data_ice_constraints()
         case default
             call fesm_error("kryos_ice::ice_create", "unknown ice backend '"//trim(ctx%backend)//"'", &
-                            "instance "//trim(ctx%instance)//"; known: yelmo, plastic")
+                            "instance "//trim(ctx%instance)//"; known: yelmo, plastic, data")
         end select
         call component_identity(ice%c, ctx, "ice", con)
         call backend_admit(ice%c, census)

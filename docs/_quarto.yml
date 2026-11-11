@@ -34,6 +34,8 @@ website:
         menu:
           - text: "PlasticIceSheet (ice)"
             href: backend-plastic.md
+          - text: "data (ice)"
+            href: backend-data.md
           - text: "VILMA2 (solid Earth)"
             href: backend-vilma2.md
           - text: "PaleoEmulator (climate)"

@@ -183,6 +183,13 @@
     out_yelmo_ts    = "none"                   ! schedule of <instance>_yelmo_ts[_<region>].nc
 /
 
+&ice_data
+    ! The ice geometry read, not solved: field groups (input/datasrc_defaults.nml) on the instance grid.
+    H_ice = ""                                 ! required: the ice thickness [m]
+    z_bed = ""                                 ! the bed [m]; "" = the domain's reference topography
+    z_sl  = ""                                 ! the sea surface [m]; "" = 0
+/
+
 &ice_plastic
     ! The perfectly-plastic ice sheet (PlasticIceSheet; docs/dev/plastic-backend.md): at every update the ice
     ! mask of the margin chronology at t1 and tau_b at t1 on the imported bed and sea level give the thickness.
