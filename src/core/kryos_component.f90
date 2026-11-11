@@ -257,18 +257,14 @@ contains
                 call outfile_dims_ts(file, t)
             else if (lonlat) then
                 call outfile_dims_lonlat(file, self%grid_obj%G%x, self%grid_obj%G%y, t)
-                do i = 1, size(hs)
-                    if (self%exports%f(hs(i))%rank == 3) call axis_write(self, file, self%exports%f(hs(i))%zdim)
-                end do
+                call axes_write(self, file, hs)
             else
                 if (.not. (allocated(self%xkm) .and. allocated(self%ykm))) then
                     call fesm_error(proc, "instance "//trim(self%name)//" has no grid axes for "//trim(file), &
                                     "component_identity sets them from the init context; a global instance has none")
                 end if
                 call outfile_dims_2d(file, self%xkm, self%ykm, t)
-                do i = 1, size(hs)
-                    if (self%exports%f(hs(i))%rank == 3) call axis_write(self, file, self%exports%f(hs(i))%zdim)
-                end do
+                call axes_write(self, file, hs)
             end if
         end if
 
@@ -352,6 +348,24 @@ contains
         row%prec_abs  = 0.0d0
         row%prec_rel  = 0.0d0
     end function scalar_row
+
+    subroutine axes_write(self, file, hs)
+        ! The third axes of the rank-3 exports hs, each once.
+        class(component_t), intent(in) :: self
+        character(len=*),   intent(in) :: file
+        integer,            intent(in) :: hs(:)
+        character(len=FIELD_NAME_LEN), allocatable :: done(:)
+        integer :: i
+        allocate(done(0))
+        do i = 1, size(hs)
+            associate (f => self%exports%f(hs(i)))
+                if (f%rank /= 3) cycle
+                if (any(done == f%zdim)) cycle
+                call axis_write(self, file, f%zdim)
+                done = [done, f%zdim]
+            end associate
+        end do
+    end subroutine axes_write
 
     subroutine axis_write(self, file, name)
         ! The third axis `name` of a rank-3 export, from the instance's axes.
