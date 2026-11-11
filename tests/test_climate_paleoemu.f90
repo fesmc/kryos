@@ -207,10 +207,12 @@ contains
         integer,  optional,   intent(in)    :: pass
         logical,  optional,   intent(in)    :: direct, orbit
 
-        real(dp) :: H(size(Hr, 1), size(Hr, 2)), zs(size(Hr, 1), size(Hr, 2)), co2
+        real(dp), allocatable :: H(:,:), zs(:,:)
+        real(dp) :: co2
         type(orbit_pars_class) :: orb
         logical :: dir_, orb_
 
+        allocate(H(size(Hr, 1), size(Hr, 2)), zs(size(Hr, 1), size(Hr, 2)))
         dir_ = .true.
         if (present(direct)) dir_ = direct
         orb_ = .true.
@@ -250,7 +252,8 @@ contains
         type(climate_slot_t), intent(inout) :: g
         real(dp),             intent(in)    :: H(:,:), zb(:,:), zs(:,:), t1
         logical,              intent(in)    :: ref
-        real(dp) :: aH(size(bin, 1), size(bin, 2)), ab(size(bin, 1), size(bin, 2)), as(size(bin, 1), size(bin, 2))
+        real(dp), allocatable :: aH(:,:), ab(:,:), as(:,:)
+        allocate(aH(size(bin, 1), size(bin, 2)), ab(size(bin, 1), size(bin, 2)), as(size(bin, 1), size(bin, 2)))
         call spread_(H, aH);  call spread_(zb, ab);  call spread_(zs, as)
         if (ref) then
             call fields_put(g%c%imports, g%c%hi_H_ice_ref, aH, t1=t1)

@@ -215,9 +215,10 @@ contains
         real(dp),                  intent(in)  :: X(:,:)
         real(dp),                  intent(out) :: Xi(:,:)
 
-        real(dp) :: acc(size(Xi))
+        real(dp), allocatable :: acc(:)
         integer  :: i, j
 
+        allocate(acc(size(Xi)))
         acc = 0.0_dp
         do j = 1, self%ny
             do i = 1, self%nx
@@ -305,11 +306,11 @@ contains
         real(dp), allocatable,     intent(out) :: H(:,:), zb(:,:), zs(:,:)
         character(len=*),          intent(in)  :: what
 
-        real(dp) :: a(self%nx, self%ny)
+        real(dp), allocatable :: a(:,:)
         integer  :: nix, niy
 
         nix = size(self%emu%ice_lon); niy = size(self%emu%ice_lat)
-        allocate(H(nix, niy), zb(nix, niy), zs(nix, niy))
+        allocate(H(nix, niy), zb(nix, niy), zs(nix, niy), a(self%nx, self%ny))
         call require_published(self, hH, self%imports%f(hH)%name, what)
         call require_published(self, hb, self%imports%f(hb)%name, what)
         call require_published(self, hs, self%imports%f(hs)%name, what)
@@ -323,8 +324,9 @@ contains
         class(paleoemu_climate_t), intent(inout) :: self
         real(dp),                  intent(in)    :: t1
 
-        real(dp) :: lapse(self%nx, self%ny, NMON), bp(self%nx, self%ny)
+        real(dp), allocatable :: lapse(:,:,:), bp(:,:)     ! (heap: 25 MB on GLOBAL-0.5DEG)
 
+        allocate(lapse(self%nx, self%ny, NMON), bp(self%nx, self%ny))
         lapse = self%tgt%lapse
         bp = self%beta_p
         call fields_put(self%exports, self%h_tas,        self%tgt%tas,                t1=t1)
@@ -460,7 +462,10 @@ contains
         class(paleoemu_port_t), intent(inout) :: self
         character(len=*),       intent(in)    :: what
 
-        real(dp) :: a3(self%nx, self%ny, NMON), a2(self%nx, self%ny), t0, t1
+        real(dp), allocatable :: a3(:,:,:), a2(:,:)
+        real(dp) :: t0, t1
+
+        allocate(a3(self%nx, self%ny, NMON), a2(self%nx, self%ny))
 
         call require_published(self, self%hi_tas, "tas", what)
         call fields_get(self%imports, self%hi_tas, a3, t0=t0, t1=t1)
