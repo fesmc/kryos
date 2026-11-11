@@ -20,7 +20,7 @@
 #                the area fraction with q < 0. The region is the most frequent region_3 of the basin's cells in the
 #                FesmData REGIONS file of the grid ($FESMDATA, default /work/ba1442/fesmdata; found by its xc, yc).
 #   domains.csv  per domain and time: totals, and the misfits rms_land = sqrt(Σ A (B/A)² / Σ A) over land basins and
-#                rms_marine (the same of min(B, 0)) [kg m-2 yr-1], the terms of the fit (smb_itm_fit.jl)
+#                rms_marine (the same of min(B, 0)) [kg m-2 yr-1], the terms of the fit (smb_fit.jl)
 #   basins_<s>.nc  basin id, its type, the balance flux q [Gt/yr] and speed u_bal [m/yr] per time
 #   budget_<s>.png the budget through time and the maps at the time nearest 20 ka (or the last)
 using NCDatasets, CairoMakie, Printf, Statistics

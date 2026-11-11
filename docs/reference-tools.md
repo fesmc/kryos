@@ -86,7 +86,10 @@ builds a kryos stack on albedo.
 | [pm_maps.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_maps.jl) | Figures of the standalone VILMA2 PaleoMIST test from `pm_compare.jl` output |
 | [gia_refcorr_plot.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr_plot.jl) | The figure of a `gia_refcorr.sh` case: the converged r and the 0 ka bed misfit per iteration |
 | [smb_basin_budget.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/smb_basin_budget.jl) | The mass budget per drainage basin of a run on imposed ice (ice backend `data`): ∫(smb − ρ_i ∂H/∂t) per basin (≈ 0 land-terminating, ≥ 0 marine), AAR, balance flux and speed; the misfit terms of the SMB tuning |
-| [smb_itm_fit.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/smb_itm_fit.jl) | The fit of chion's ITM (itm_c, itm_t) per domain from an ensemble on imposed ice: the LGM basin budgets (land ≈ 0, marine ≥ 0) and the present-day misfit against MAR and RACMO |
+| [smb_fit.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/smb_fit.jl) | The fit of chion's parameters per domain from an ensemble on imposed ice (any parameters of params.txt; `_ant` groups Antarctica's): the LGM basin budgets (land ≈ 0, marine ≥ 0, `exclude=` regions) and the present-day misfit against MAR and RACMO; best member and a quadratic minimum |
+| [smb_ensemble.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/smb_ensemble.sh) | An SMB-tuning ensemble: `submit` the members (LGM snapshot -22 to -20 ka, or `TRANSIENT=1`, and the present day) as runme arrays; `post` the budgets and the fit (submits itself) |
+| [smb_margins.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/smb_margins.jl) | Where the NH ablation comes from: per region at 20 ka and 0 ka, ∫smb, the ablation band, its JJA temperature split into the climate and the lapse term, chion's terms |
+| [smb_pd_compare.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/smb_pd_compare.jl) | The present-day run against MAR (Greenland) and RACMO (Antarctica): integrals, ablation area, T_srf bias, SMB rmse, maps |
 
 ## Tests of the backend
 
