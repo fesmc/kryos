@@ -4,9 +4,14 @@
 #   julia --project=tools/levante plastic_ensemble.jl init <config.toml> <ensemble folder>    wave 1: the members (iter_01/<m>)
 #   julia --project=tools/levante plastic_ensemble.jl weights <ensemble folder> [<wave>]     score the members, the weights
 #   julia --project=tools/levante plastic_ensemble.jl errmodel <ensemble folder> [<wave>] [<top>]   the error model from a wave
+#   julia --project=tools/levante plastic_ensemble.jl earth-regions <config.toml> <out.nc>   the region masks of [earth]
+#   julia --project=tools/levante plastic_ensemble.jl earth-shift <config.toml> <out.nc> UM=0.5 LM=0 <region>=1.0   one shift file
 # The folder, the members and the scale groups are those of plastic_esmda.jl (prepare, write_iteration, member_series). Config:
 # [scale], [prior] (sigma, ramp_ka, corr_time_kyr, theta_max), [run], [score] as plastic_esmda_v2.toml; [ensemble]: n (members
 # besides the prior mean, m000), seed, obs_groups; [likelihood.<obs group>]: sigma_m [m], corr_dist_km, corr_time_kyr.
+# [earth] (optional): the Earth as parameters, sampled with tau_b: shifts of log10(eta) of VILMA2's 3-D field, global in the upper
+# and lower mantle and per region in the upper mantle (plastic_earth_shift.jl): sigma (prior sd [dex]), theta_max, boundary_km,
+# regions_file (the masks, earth-regions), [[earth.regions]] (name, groups: scale groups), key (vilma.visc_shift_file).
 # Sample: a Latin hypercube in the standard normal space of the parameters (n strata per parameter, one point in each, random
 # order), correlated by the Cholesky factor of the prior covariance, clipped to |theta| <= theta_max; m000 = the prior mean.
 # Likelihood: per data group g the index points of the group (pm_compare.jl GROUPS), d = model - obs, R_g = diag(sigma_i^2) +
@@ -55,17 +60,23 @@ function init(cfgfile, C)
     C = abspath(C)
     en = TOML.parsefile(cfgfile)["ensemble"]
     cfg, sg, obs = ES.prepare(cfgfile, C, en["obs_groups"])
-    P = ES.params(cfg, sg); pr = cfg["prior"]
+    P = ES.params(cfg, sg); pr = cfg["prior"]; nP = length(P)
+    E = haskey(cfg, "earth") ? ES.earth_spec(cfg) : nothing; nE = E === nothing ? 0 : length(E.names)
     Cθ = ES.prior_cov(P, pr, cfg["scale"]["groups"])
-    Z = lhs_normal(length(P), en["n"], MersenneTwister(en["seed"]))
-    Θ = clamp.(cholesky(Symmetric(Cθ)).L * Z, -pr["theta_max"], pr["theta_max"])
+    nE > 0 && (Cθ = [Cθ zeros(nP, nE); zeros(nE, nP) E.sigma^2 * I(nE)])     # the Earth shifts: independent, sd sigma
+    Z = lhs_normal(nP + nE, en["n"], MersenneTwister(en["seed"]))
+    Θ = cholesky(Symmetric(Cθ)).L * Z
+    Θ[1:nP, :] .= clamp.(Θ[1:nP, :], -pr["theta_max"], pr["theta_max"])
+    nE > 0 && (Θ[nP+1:end, :] .= clamp.(Θ[nP+1:end, :], -E.theta_max, E.theta_max))
     ids = collect(0:en["n"])
-    ES.write_iteration(C, 1, cfg, sg, P, ids, hcat(zeros(length(P)), Θ), ids)
+    ES.write_iteration(C, 1, cfg, sg, P, ids, hcat(zeros(nP + nE), Θ), ids)
     open(joinpath(C, "ensemble.md"), "w") do io
         println(io, "# Weighted ensemble of tau_b (plastic backend)\n\nconfig: ", cfgfile, "; ", ES.ngroups(sg), " groups x ", ES.nnodes(sg),
                 " nodes, ", length(P), " parameters; prior sigma ", pr["sigma"], ", wave 1: ", en["n"], " members (Latin hypercube) and m000 ",
                 "(the prior mean)\n\n```\n", join(ES.groups_summary(sg), "\n"), "\n```\n\nparameters (prior sd): ",
-                join([@sprintf("%s (%.2f)", p.name, sqrt(Cθ[q, q])) for (q, p) in enumerate(P)], ", "))
+                join([@sprintf("%s (%.2f)", p.name, sqrt(Cθ[q, q])) for (q, p) in enumerate(P)], ", "),
+                nE == 0 ? "" : "\n\nEarth (log10 viscosity shifts [dex], prior sd $(E.sigma), |shift| <= $(E.theta_max); " *
+                "upper mantle above $(E.boundary_km) km, regions weighted by $(E.masks_file)): " * join(E.names, ", "))
     end
     println("init: ", C, ", wave 1 with members 0-", en["n"])
 end
@@ -200,6 +211,7 @@ function weights(C, k)
         for m in plaus; println(io, ES.mdir(C, k, m)); end
     end
     th = Θ[:, [findfirst(==(m), ids) for m in ok]]; wv = [w[m] for m in ok]
+    names = haskey(cfg, "earth") ? [ES.pnames(P); ES.earth_spec(cfg).names] : ES.pnames(P)
     μ = th * wv; sd = sqrt.(max.(((th .- μ) .^ 2) * wv, 0))
     eslp = [res[m].esl for m in plaus]
     open(joinpath(It, "weights.md"), "w") do io
@@ -216,18 +228,33 @@ function weights(C, k)
                     " | ", join([@sprintf("%.1f", I[m][g]) for g in og], " | "), " | ", @sprintf("%.1f", res[m].esl), " |")
         end
         if !isempty(plaus)
-            println(io, "\nWeighted parameters of the plausible members (log factor; prior mean 0): mean (sd)\n")
-            for (q, p) in enumerate(P); println(io, "- ", p.name, ": ", @sprintf("%+.2f (%.2f)", μ[q], sd[q])); end
+            println(io, "\nWeighted parameters of the plausible members (tau_b: log factor; Earth: dex; prior mean 0): mean (sd)\n")
+            for (q, n) in enumerate(names); println(io, "- ", n, ": ", @sprintf("%+.2f (%.2f)", μ[q], sd[q])); end
         end
     end
     println("wrote ", joinpath(It, "weights.md"), "; ", length(plaus), " plausible, ESS ", @sprintf("%.2f", ess))
 end
 
+# the Earth parameters: the region masks of a config ([earth]), and a shift file of given values (a test, or a check of r)
+function earth_regions(cfgfile, out)
+    ES.region_masks(ES.load_config(cfgfile), out)
+end
+function earth_shift(cfgfile, out, kv)
+    cfg = ES.load_config(cfgfile); E = ES.earth_spec(cfg); lon, lat, W = ES.read_masks(E.masks_file, E.regions)
+    v = Dict(split(a, "=")[1] => parse(Float64, split(a, "=")[2]) for a in kv)
+    unknown = setdiff(keys(v), ["UM"; "LM"; E.regions]); isempty(unknown) || error("earth-shift: no parameter $(unknown); UM, LM, $(E.regions)")
+    θe = [get(v, "UM", 0.0); get(v, "LM", 0.0); [get(v, r, 0.0) for r in E.regions]]
+    ES.write_earth(out, E, lon, lat, W, θe); println("wrote ", out, ": ", join([n * "=" * string(x) for (n, x) in zip(E.names, θe)], " "))
+end
+
 function main(args)
     args[1] == "init" && return init(args[2], args[3])
+    args[1] == "earth-regions" && return earth_regions(args[2], args[3])
+    args[1] == "earth-shift" && return earth_shift(args[2], args[3], args[4:end])
     args[1] == "weights" && return weights(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1)
     args[1] == "errmodel" && return errmodel(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1;
                                              top = length(args) >= 4 ? parse(Int, args[4]) : 6)
-    error("plastic_ensemble.jl init <config> <folder> | weights <folder> [<wave>] | errmodel <folder> [<wave>] [<top>]")
+    error("plastic_ensemble.jl init <config> <folder> | weights <folder> [<wave>] | errmodel <folder> [<wave>] [<top>] | " *
+          "earth-regions <config> <out.nc> | earth-shift <config> <out.nc> UM=.. LM=.. <region>=..")
 end
 abspath(PROGRAM_FILE) == @__FILE__() && main(ARGS)
