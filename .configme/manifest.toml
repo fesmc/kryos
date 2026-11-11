@@ -11,4 +11,5 @@ deps = [
     "chion:stable",
     "insol:stable",
     "vilma2:main",
+    "PlasticIceSheet:main",
 ]
