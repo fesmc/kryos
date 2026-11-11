@@ -4,6 +4,8 @@ submodule (kryos_climate) kryos_climate_factory
     ! it (decision 12), so a stub stops here, before init.
 
     use kryos_climate_snapshots, only: snapshots_climate_t, snapshots_climate_constraints
+    use kryos_climate_paleoemu,  only: paleoemu_climate_t, paleoemu_port_t, paleoemu_global_constraints, &
+                                       paleoemu_port_constraints
 
     implicit none
 
@@ -19,9 +21,17 @@ contains
         case ("snapshots")
             allocate(snapshots_climate_t :: climate%c)
             con = snapshots_climate_constraints()
+        case ("paleoemu")                               ! two-level: the global part, or its regional port
+            if (trim(ctx%scope) == "global") then
+                allocate(paleoemu_climate_t :: climate%c)
+                con = paleoemu_global_constraints()
+            else
+                allocate(paleoemu_port_t :: climate%c)
+                con = paleoemu_port_constraints()
+            end if
         case default
             call fesm_error("kryos_climate::climate_create", "unknown climate backend '"//trim(ctx%backend)//"'", &
-                            "instance "//trim(ctx%instance)//"; known: snapshots")
+                            "instance "//trim(ctx%instance)//"; known: snapshots, paleoemu")
         end select
         call component_identity(climate%c, ctx, "climate", con)
         call backend_admit(climate%c, census)

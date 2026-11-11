@@ -280,6 +280,16 @@
     terms     = ""
 /
 
+&climate_paleoemu
+    ! The global part (scope global, [globe] climate); the regional ports (each domain's climate) take no keys.
+    file      = ""                             ! global: the emulator file (PaleoEmulator scripts/06_emulator.jl)
+    reference = ""                             ! global: the pre-industrial reference climate on `grid` (tas_ref, pr_ref,
+                                               ! z_srf_ref; PaleoEmulator scripts/prep_kryos_reference.jl)
+    orbit     = "orbit"                        ! global: the orbit group (kryos_orbit), the one of the surface's insolation
+    beta_p    = 0.0                            ! [K-1] global: precipitation change per kelvin of lapse cooling (lapse rows)
+    out_emu   = "none"                         ! global: schedule of <instance>_emu.nc (the emulator on the CESM grid)
+/
+
 &surface_chion
     surface_chion = "surface_chion"            ! host group
     chion         = "chion"

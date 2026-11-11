@@ -105,6 +105,15 @@ INC_PLASTIC = -I${PLASTICROOT}/libplastic/include
 LIB_PLASTIC = -L${PLASTICROOT}/libplastic/include -lplastic ${LIB_LIS}
 PLASTIC_ARCHIVE = $(PLASTICROOT)/libplastic/include/libplastic.a
 
+# PaleoEmulator (climate = paleoemu): the Fortran module paleoemu (fortran/ of
+# the PaleoEmulator repository, a sibling checkout or symlink `PaleoEmulator`),
+# libpaleoemu.a with paleoemu.mod. Serial, uses ncio of fesm-utils: build it
+# with the compiler and the fesm-utils of kryos (make paleoemu-static).
+PALEOEMUROOT = PaleoEmulator
+INC_PALEOEMU = -I${PALEOEMUROOT}/fortran/build
+LIB_PALEOEMU = -L${PALEOEMUROOT}/fortran/build -lpaleoemu
+PALEOEMU_ARCHIVE = $(PALEOEMUROOT)/fortran/build/libpaleoemu.a
+
 SHTNS_NAME = shtns
 SHTNS_DIR  = shtns-serial
 ifeq ($(openmp), 1)
@@ -128,10 +137,11 @@ cism         ?= 0
 pism         ?= 0
 vilma        ?= 0
 plastic      ?= 0
+paleoemu     ?= 0
 rembo        ?= 0
 
 # The switch settings, recorded in the object-dir stamp (config/Makefile).
-backend_config = yelmo$(yelmo)-fastisostasy$(fastisostasy)-chion$(chion)-insol$(insol)-cism$(cism)-pism$(pism)-vilma$(vilma)-plastic$(plastic)-rembo$(rembo)
+backend_config = yelmo$(yelmo)-fastisostasy$(fastisostasy)-chion$(chion)-insol$(insol)-cism$(cism)-pism$(pism)-vilma$(vilma)-plastic$(plastic)-paleoemu$(paleoemu)-rembo$(rembo)
 
 INC_BACKENDS   =
 LIB_BACKENDS   =
@@ -237,6 +247,24 @@ ifeq ($(plastic), 1)
 else
     kryos_ice_plastic_obj = $(objdir)/kryos_ice_plastic_stub.o
     test_skip += $(testdir)/test_ice_plastic.f90
+endif
+
+ifeq ($(paleoemu), 1)
+    # paleoemu takes the orbit of [orbit] (kryos_orbit, libinsol), as the insolation of chion.
+    ifneq ($(insol), 1)
+        $(error paleoemu=1 needs insol=1: its orbit is that of the insol library)
+    endif
+    kryos_climate_paleoemu_obj = $(objdir)/kryos_climate_paleoemu.o
+    INC_BACKENDS   += $(INC_PALEOEMU)
+    LIB_BACKENDS   += $(LIB_PALEOEMU)
+    dep_archives   += $(PALEOEMU_ARCHIVE)
+    backend_roots  += $(PALEOEMUROOT)
+    build_info_libs += paleoemu:$(PALEOEMUROOT)
+    backend_static += paleoemu-static
+    test_skip += $(testdir)/test_climate_paleoemu_stub.f90
+else
+    kryos_climate_paleoemu_obj = $(objdir)/kryos_climate_paleoemu_stub.o
+    test_skip += $(testdir)/test_climate_paleoemu.f90
 endif
 
 # Backends whose adapters arrive in later phases (design section 14).

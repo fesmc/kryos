@@ -1,0 +1,500 @@
+module kryos_climate_paleoemu
+    ! climate backend paleoemu, built with paleoemu=1, else the stub: the
+    ! CESM-3Ma emulator of PaleoEmulator (fesmc/PaleoEmulator, module paleoemu of
+    ! its fortran/) as a two-level climate, as geo = vilma2 is a two-level geo:
+    !
+    !   paleoemu_climate_t  the global part (scope global, one per run) on its own
+    !                       lon-lat grid (key `grid`, the background grid of
+    !                       [globe_ice]): the ice geometry and its reference come
+    !                       from the core (globe_ice: the background with the
+    !                       domains merged in), CO2 from the forcing (coef_co2), the
+    !                       orbit from [orbit] (kryos_orbit, as the insolation of
+    !                       the surface). Each update binds the geometry to the
+    !                       emulator's ice grid, steps the emulator and applies its
+    !                       anomalies to the pre-industrial reference climate on
+    !                       the grid (key `reference`): tas at the reference surface
+    !                       z_srf_clim, pr, lapse = Gamma, beta_p.
+    !   paleoemu_port_t     the regional port (stateless): the global part's
+    !                       atmosphere remapped onto the domain's grid by the rows
+    !                       climate_g -> climate, passed on; the lapse rows
+    !                       climate -> surface take tas and pr to the ice surface.
+    !
+    ! The factory picks by scope. The emulator works in dp; nothing is narrowed.
+    ! Precipitation: the emulator's mm d-1, exported as kg m-2 yr-1 (days of the
+    ! run's year, sec_year / 86400).
+
+    use precision,       only: dp
+    use coordinates,     only: grid_class
+    use coords,          only: grid_cdo_read_desc
+    use fesm_log,        only: LOG_INFO, log_msg, fesm_error, to_str
+    use fesm_fields,     only: fields_get, fields_put
+    use nml,             only: nml_read, nml_has_param
+    use ncio,            only: nc_read, nc_read_attr, nc_size, nc_create, nc_write_dim, nc_write
+    use insolation,      only: insol_class, insol_init
+    use kryos_component, only: init_ctx_t, step_time_t, constraints_t, NAME_LEN, PATH_LEN, &
+                               PASS_INIT, PASS_BOUNDARY, PASS_RESTART, component_write_output
+    use kryos_climate,   only: climate_t, climate_opt_t
+    use kryos_orbit,     only: orbit_ctl_class, orbit_pars_class, orbit_ctl_load, orbit_pars_now
+    use paleoemu,        only: paleoemu_class, paleoemu_target_class, paleoemu_init, paleoemu_set_reference, &
+                               paleoemu_update, paleoemu_end, paleoemu_target_init, paleoemu_downscale, &
+                               paleoemu_write_init, paleoemu_write_step
+
+    implicit none
+
+    private
+    public :: paleoemu_climate_t, paleoemu_port_t, paleoemu_global_constraints, paleoemu_port_constraints
+
+    integer, parameter :: NMON = 12
+
+    type, extends(climate_t) :: paleoemu_climate_t
+        character(len=PATH_LEN) :: file      = ""          ! the emulator file
+        character(len=PATH_LEN) :: reference = ""          ! the reference climate on the instance grid
+        character(len=NAME_LEN) :: orbit_group = "orbit"
+        real(dp) :: beta_p   = 0.0_dp                      ! [K-1]
+        real(dp) :: day_year = 365.0_dp                    ! days of the run's year (pr: mm d-1 -> kg m-2 yr-1)
+        type(paleoemu_class)        :: emu
+        type(paleoemu_target_class) :: tgt                 ! the instance grid with its reference climate
+        type(orbit_ctl_class)       :: orb_ctl
+        type(insol_class)           :: orb_is              ! the orbital tables (orbit_pars_now)
+        integer,  allocatable :: bin(:,:)                  ! emulator ice-grid cell of each instance cell (0: outside)
+        real(dp), allocatable :: wsum(:,:)                 ! area of the instance cells in each ice-grid cell [m2]
+        logical  :: ref_set = .false.
+        real(dp), allocatable :: filt_rst(:,:)             ! the filter state of a restart, applied at PASS_RESTART
+        real(dp) :: time_rst = 0.0_dp
+        logical  :: has_rst = .false.
+    contains
+        procedure :: init          => global_init_
+        procedure :: init_state    => global_init_state_
+        procedure :: update        => global_update_
+        procedure :: restart_write => global_restart_write_
+        procedure :: restart_read  => global_restart_read_
+        procedure :: write_output  => global_write_output_
+        procedure :: end           => global_end_
+    end type paleoemu_climate_t
+
+    type, extends(climate_t) :: paleoemu_port_t
+    contains
+        procedure :: init          => port_init_
+        procedure :: init_state    => port_init_state_
+        procedure :: update        => port_update_
+        procedure :: restart_write => port_restart_write_
+        procedure :: restart_read  => port_restart_read_
+    end type paleoemu_port_t
+
+contains
+
+    function paleoemu_global_constraints() result(con)
+        ! Global only, one instance per run.
+        type(constraints_t) :: con
+        con = constraints_t(build_flag="paleoemu=1", regional=.false., global=.true., max_instances=1)
+    end function paleoemu_global_constraints
+
+    function paleoemu_port_constraints() result(con)
+        ! Regional only (the port), any number of domains; no backend restart file.
+        type(constraints_t) :: con
+        con = constraints_t(build_flag="paleoemu=1", restart=.false.)
+    end function paleoemu_port_constraints
+
+    ! =========================================================================
+    ! Global part
+    ! =========================================================================
+
+    subroutine global_init_(self, ctx)
+        ! Keys, the emulator file, the instance grid (a grid_<name>.txt of the map folder), the reference
+        ! climate on it, the binning onto the emulator's ice grid, the orbit; the coefficient co2.
+        class(paleoemu_climate_t), intent(inout) :: self
+        type(init_ctx_t),          intent(in)    :: ctx
+
+        character(len=*), parameter :: proc = "kryos_climate_paleoemu::init"
+        character(len=NAME_LEN) :: grid_name
+
+        call nml_read(ctx%par_file, ctx%instance, "file", self%file)
+        call nml_read(ctx%par_file, ctx%instance, "reference", self%reference)
+        if (nml_has_param(ctx%par_file, ctx%instance, "orbit")) &
+            call nml_read(ctx%par_file, ctx%instance, "orbit", self%orbit_group)
+        if (nml_has_param(ctx%par_file, ctx%instance, "beta_p")) &
+            call nml_read(ctx%par_file, ctx%instance, "beta_p", self%beta_p)
+        grid_name = ""
+        if (nml_has_param(ctx%par_file, ctx%instance, "grid")) call nml_read(ctx%par_file, ctx%instance, "grid", grid_name)
+        if (len_trim(self%file) == 0 .or. len_trim(self%reference) == 0 .or. len_trim(grid_name) == 0) then
+            call fesm_error(proc, "keys `file`, `reference` and `grid` are required", &
+                            "instance "//trim(self%name)//": the emulator file, the reference climate on the grid, "// &
+                            "the grid (the background grid of [globe_ice], a grid_<name>.txt of the map folder)")
+        end if
+
+        self%prec = dp
+        self%opt  = climate_opt_t(host=.true.)
+        self%day_year = ctx%sec_year/86400.0_dp
+        self%orbit = self%orbit_group
+
+        allocate(self%grid_obj)
+        call grid_cdo_read_desc(self%grid_obj, trim(grid_name), trim(ctx%map_fldr))
+        self%grid = trim(grid_name)
+        self%nx   = self%grid_obj%G%nx
+        self%ny   = self%grid_obj%G%ny
+
+        call paleoemu_init(self%emu, trim(self%file))
+        call reference_load(self)
+        call bins_init(self)
+
+        call orbit_ctl_load(self%orb_ctl, trim(ctx%par_file), trim(self%orbit_group))
+        call insol_init(self%orb_is, fldr=trim(self%orb_ctl%fldr))
+
+        allocate(self%coef_names(1), self%coef_units(1))
+        self%coef_names(1) = "co2"
+        self%coef_units(1) = "ppm"
+
+        call log_msg(LOG_INFO, "kryos_climate_paleoemu", "emulator "//trim(self%file)//" ("//trim(self%emu%temperature)// &
+                     "), grid "//trim(grid_name)//" "//to_str(self%nx)//" x "//to_str(self%ny)//", orbit ["// &
+                     trim(self%orbit_group)//"] "//trim(self%orb_ctl%method)//", beta_p "//to_str(self%beta_p), &
+                     "instance "//trim(self%name))
+    end subroutine global_init_
+
+    subroutine reference_load(self)
+        ! The reference climate (tas_ref [K], pr_ref [mm d-1] by month, z_srf_ref [m]) on the instance grid,
+        ! with its bilinear weights from the CESM grid (paleoemu_target_init).
+        class(paleoemu_climate_t), intent(inout) :: self
+
+        character(len=*), parameter :: proc = "kryos_climate_paleoemu::init"
+        real(dp), allocatable :: tas(:,:,:), pr(:,:,:), zs(:,:), lon(:), lat(:)
+        character(len=NAME_LEN) :: gname
+        integer :: nx, ny
+
+        nx = nc_size(trim(self%reference), "lon")
+        ny = nc_size(trim(self%reference), "lat")
+        if (nx /= self%nx .or. ny /= self%ny) then
+            call fesm_error(proc, "the reference climate is not on the instance grid", "instance "//trim(self%name)// &
+                            ": "//trim(self%reference)//" is "//to_str(nx)//" x "//to_str(ny)//", grid "//trim(self%grid)// &
+                            " "//to_str(self%nx)//" x "//to_str(self%ny))
+        end if
+        allocate(lon(nx), lat(ny), tas(nx, ny, NMON), pr(nx, ny, NMON), zs(nx, ny))
+        call nc_read(trim(self%reference), "lon", lon)
+        call nc_read(trim(self%reference), "lat", lat)
+        if (maxval(abs(lon - self%grid_obj%lon(:, 1))) > 1.0e-6_dp .or. maxval(abs(lat - self%grid_obj%lat(1, :))) > 1.0e-6_dp) then
+            call fesm_error(proc, "the axes of the reference climate differ from the instance grid", &
+                            "instance "//trim(self%name)//": "//trim(self%reference)//" against grid "//trim(self%grid))
+        end if
+        gname = ""
+        call nc_read_attr(trim(self%reference), "grid_name", gname)
+        if (trim(gname) /= trim(self%grid)) then
+            call fesm_error(proc, "the reference climate names another grid", "instance "//trim(self%name)//": "// &
+                            trim(self%reference)//" has grid_name `"//trim(gname)//"`, the instance grid is "//trim(self%grid))
+        end if
+        call nc_read(trim(self%reference), "tas_ref", tas)
+        call nc_read(trim(self%reference), "pr_ref", pr)
+        call nc_read(trim(self%reference), "z_srf_ref", zs)
+        call paleoemu_target_init(self%tgt, self%emu, self%grid_obj%lon, self%grid_obj%lat, tas, pr, zs)
+    end subroutine reference_load
+
+    subroutine bins_init(self)
+        ! Each instance cell in the emulator's ice-grid cell that holds its centre (0 outside the ice grid);
+        ! every ice-grid cell must hold at least one (an instance grid at least as fine as the ice grid).
+        class(paleoemu_climate_t), intent(inout) :: self
+
+        integer :: i, j, ii, jj, nix, niy
+        real(dp) :: dlon, dlat, lon0, lat0
+
+        nix = size(self%emu%ice_lon); niy = size(self%emu%ice_lat)
+        dlon = self%emu%ice_lon(2) - self%emu%ice_lon(1)
+        dlat = self%emu%ice_lat(2) - self%emu%ice_lat(1)
+        lon0 = self%emu%ice_lon(1) - 0.5_dp*dlon
+        lat0 = self%emu%ice_lat(1) - 0.5_dp*dlat
+        allocate(self%bin(self%nx, self%ny), self%wsum(nix, niy))
+        self%bin = 0
+        self%wsum = 0.0_dp
+        do j = 1, self%ny
+            do i = 1, self%nx
+                ii = floor(modulo(self%grid_obj%lon(i, j) - lon0, 360.0_dp)/dlon) + 1
+                jj = floor((self%grid_obj%lat(i, j) - lat0)/dlat) + 1
+                if (ii < 1 .or. ii > nix .or. jj < 1 .or. jj > niy) cycle
+                self%bin(i, j) = ii + (jj - 1)*nix
+                self%wsum(ii, jj) = self%wsum(ii, jj) + self%grid_obj%area(i, j)
+            end do
+        end do
+        if (any(self%wsum <= 0.0_dp)) then
+            call fesm_error("kryos_climate_paleoemu::init", "the instance grid is coarser than the emulator's ice grid", &
+                            "instance "//trim(self%name)//": "//to_str(count(self%wsum <= 0.0_dp))//" ice-grid cells "// &
+                            "hold no cell centre of grid "//trim(self%grid))
+        end if
+    end subroutine bins_init
+
+    subroutine to_ice_grid(self, X, Xi)
+        ! The area-weighted mean over the instance cells of each ice-grid cell.
+        class(paleoemu_climate_t), intent(in)  :: self
+        real(dp),                  intent(in)  :: X(:,:)
+        real(dp),                  intent(out) :: Xi(:,:)
+
+        real(dp) :: acc(size(Xi))
+        integer  :: i, j
+
+        acc = 0.0_dp
+        do j = 1, self%ny
+            do i = 1, self%nx
+                if (self%bin(i, j) > 0) acc(self%bin(i, j)) = acc(self%bin(i, j)) + self%grid_obj%area(i, j)*X(i, j)
+            end do
+        end do
+        Xi = reshape(acc, shape(Xi))/self%wsum
+    end subroutine to_ice_grid
+
+    subroutine global_init_state_(self, st, pass)
+        ! PASS_INIT: the reference climate (no anomaly). PASS_BOUNDARY (cold start): the reference ice from
+        ! the core, the first update (its filters in equilibrium) on the geometry the core put (the background
+        ! at t0). PASS_RESTART: the reference again, then the filter state of the bundle; the exports stand.
+        class(paleoemu_climate_t), intent(inout) :: self
+        type(step_time_t),         intent(in)    :: st
+        integer,                   intent(in)    :: pass
+
+        select case (pass)
+        case (PASS_INIT)
+            call exports_reference(self, st%t1)
+        case (PASS_BOUNDARY)
+            call reference_set(self, "init_state")
+            call step(self, st, "init_state")
+        case (PASS_RESTART)
+            call reference_set(self, "init_state")
+            if (.not. self%has_rst) call fesm_error("kryos_climate_paleoemu::init_state", "no restart file was read", &
+                                                    "instance "//trim(self%name))
+            self%emu%filt = self%filt_rst
+            self%emu%now%time = self%time_rst
+            self%emu%now%active = .true.
+        end select
+    end subroutine global_init_state_
+
+    subroutine global_update_(self, st)
+        class(paleoemu_climate_t), intent(inout) :: self
+        type(step_time_t),         intent(in)    :: st
+        call step(self, st, "update")
+    end subroutine global_update_
+
+    subroutine reference_set(self, what)
+        ! The reference ice (the spliced present day of globe_ice) on the emulator's ice grid.
+        class(paleoemu_climate_t), intent(inout) :: self
+        character(len=*),          intent(in)    :: what
+
+        real(dp), allocatable :: H(:,:), zb(:,:), zs(:,:)
+
+        call geometry_get(self, self%hi_H_ice_ref, self%hi_z_bed_ref, self%hi_z_srf_ref, H, zb, zs, what)
+        call paleoemu_set_reference(self%emu, H, zb, zs)
+        self%ref_set = .true.
+    end subroutine reference_set
+
+    subroutine step(self, st, what)
+        ! One emulator update at the evaluation time (the forcing time with clock = "forcing") with the
+        ! orbit of [orbit] at that time, the coefficient co2 and the ice geometry the core put; then the
+        ! exports at t1.
+        class(paleoemu_climate_t), intent(inout) :: self
+        type(step_time_t),         intent(in)    :: st
+        character(len=*),          intent(in)    :: what
+
+        real(dp), allocatable :: H(:,:), zb(:,:), zs(:,:)
+        type(orbit_pars_class) :: orb
+        real(dp) :: co2
+
+        if (.not. self%ref_set) call fesm_error("kryos_climate_paleoemu::"//what, "no reference ice", &
+                                                "instance "//trim(self%name)//": PASS_BOUNDARY sets it")
+        call require_published(self, self%hi_coef(1), "coef_co2", what)
+        call fields_get(self%imports, self%hi_coef(1), co2)
+        call geometry_get(self, self%hi_H_ice, self%hi_z_bed, self%hi_z_srf, H, zb, zs, what)
+        orb = orbit_pars_now(self%orb_ctl, self%orb_is, st%t_eval)
+        call paleoemu_update(self%emu, st%t_eval, co2, H, zb, zs, orbit=[orb%ecc, orb%obl, orb%per])
+        call paleoemu_downscale(self%tgt, self%emu)
+        call exports_put(self, st%t1)
+    end subroutine step
+
+    subroutine geometry_get(self, hH, hb, hs, H, zb, zs, what)
+        ! Three imports (ice thickness, bed, surface on the instance grid) on the emulator's ice grid.
+        class(paleoemu_climate_t), intent(in)  :: self
+        integer,                   intent(in)  :: hH, hb, hs
+        real(dp), allocatable,     intent(out) :: H(:,:), zb(:,:), zs(:,:)
+        character(len=*),          intent(in)  :: what
+
+        real(dp) :: a(self%nx, self%ny)
+        integer  :: nix, niy
+
+        nix = size(self%emu%ice_lon); niy = size(self%emu%ice_lat)
+        allocate(H(nix, niy), zb(nix, niy), zs(nix, niy))
+        call require_published(self, hH, self%imports%f(hH)%name, what)
+        call require_published(self, hb, self%imports%f(hb)%name, what)
+        call require_published(self, hs, self%imports%f(hs)%name, what)
+        call fields_get(self%imports, hH, a);  call to_ice_grid(self, a, H)
+        call fields_get(self%imports, hb, a);  call to_ice_grid(self, a, zb)
+        call fields_get(self%imports, hs, a);  call to_ice_grid(self, a, zs)
+    end subroutine geometry_get
+
+    subroutine exports_put(self, t1)
+        ! tas at the reference surface z_srf_clim, pr [kg m-2 yr-1], lapse = Gamma, beta_p.
+        class(paleoemu_climate_t), intent(inout) :: self
+        real(dp),                  intent(in)    :: t1
+
+        real(dp) :: lapse(self%nx, self%ny, NMON), bp(self%nx, self%ny)
+
+        lapse = self%tgt%lapse
+        bp = self%beta_p
+        call fields_put(self%exports, self%h_tas,        self%tgt%tas,                t1=t1)
+        call fields_put(self%exports, self%h_pr,         self%tgt%pr*self%day_year,   t1=t1)
+        call fields_put(self%exports, self%h_z_srf_clim, self%tgt%z_srf_ref,          t1=t1)
+        call fields_put(self%exports, self%h_lapse,      lapse,                       t1=t1)
+        call fields_put(self%exports, self%h_beta_p,     bp,                          t1=t1)
+    end subroutine exports_put
+
+    subroutine exports_reference(self, t1)
+        ! The reference climate itself (PASS_INIT: no update yet).
+        class(paleoemu_climate_t), intent(inout) :: self
+        real(dp),                  intent(in)    :: t1
+        self%tgt%tas = self%tgt%tas_ref
+        self%tgt%pr  = self%tgt%pr_ref
+        call exports_put(self, t1)
+    end subroutine exports_reference
+
+    subroutine global_restart_write_(self, dir, t)
+        ! The emulator's memory: its filter states and the time of its last update.
+        class(paleoemu_climate_t), intent(inout) :: self
+        character(len=*),          intent(in)    :: dir
+        real(dp),                  intent(in)    :: t
+
+        character(len=:), allocatable :: file
+
+        file = trim(dir)//"/"//trim(self%name)//"_restart.nc"
+        call nc_create(file)
+        call nc_write_dim(file, "slow", x=1, nx=size(self%emu%filt, 1))
+        call nc_write_dim(file, "tau",  x=1, nx=size(self%emu%filt, 2))
+        call nc_write_dim(file, "one",  x=1, nx=1)
+        call nc_write(file, "filt", self%emu%filt, dim1="slow", dim2="tau", &
+                      long_name="filter states of log(CO2/CO2_ref) and the regional ice volume changes")
+        call nc_write(file, "time_last", [self%emu%now%time], dim1="one", units="yr", &
+                      long_name="time of the last update")
+        call nc_write(file, "time_bundle", [t], dim1="one", units="yr")
+    end subroutine global_restart_write_
+
+    subroutine global_restart_read_(self, dir, t)
+        ! The filter state; applied at PASS_RESTART, after the reference (paleoemu_set_reference restarts the filters).
+        class(paleoemu_climate_t), intent(inout) :: self
+        character(len=*),          intent(in)    :: dir
+        real(dp),                  intent(in)    :: t
+
+        character(len=:), allocatable :: file
+        real(dp) :: tl(1)
+        logical  :: found
+
+        associate (unused => t); end associate
+        file = trim(dir)//"/"//trim(self%name)//"_restart.nc"
+        inquire(file=file, exist=found)
+        if (.not. found) call fesm_error("kryos_climate_paleoemu::restart_read", "restart file not found: "//file, &
+                                         "instance "//trim(self%name))
+        allocate(self%filt_rst(size(self%emu%filt, 1), size(self%emu%filt, 2)))
+        call nc_read(file, "filt", self%filt_rst)
+        call nc_read(file, "time_last", tl)
+        self%time_rst = tl(1)
+        self%has_rst = .true.
+    end subroutine global_restart_read_
+
+    subroutine global_write_output_(self, file, t, stream, init)
+        ! Streams 2D and 1D: the default writer (the exports on lon, lat). `emu`: the emulator's state on the
+        ! CESM grid (paleoemu_write_*: inputs, dV, dz, dtas, dlogpr and their standard deviations).
+        class(paleoemu_climate_t), intent(inout) :: self
+        character(len=*),          intent(in)    :: file, stream
+        real(dp),                  intent(in)    :: t
+        logical,                   intent(in)    :: init
+
+        select case (trim(stream))
+        case ("emu")
+            if (.not. self%emu%now%active) return
+            if (init) call paleoemu_write_init(file, self%emu, t)
+            call paleoemu_write_step(file, self%emu)
+        case default
+            call component_write_output(self, file, t, stream, init)
+        end select
+    end subroutine global_write_output_
+
+    subroutine global_end_(self)
+        class(paleoemu_climate_t), intent(inout) :: self
+        call paleoemu_end(self%emu)
+    end subroutine global_end_
+
+    subroutine require_published(self, h, name, what)
+        class(climate_t), intent(in) :: self
+        integer,          intent(in) :: h
+        character(len=*), intent(in) :: name, what
+        if (h <= 0) then
+            call fesm_error("kryos_climate_paleoemu::"//what, "import "//trim(name)//" is not declared", &
+                            "instance "//trim(self%name))
+        else if (.not. self%imports%f(h)%published) then
+            call fesm_error("kryos_climate_paleoemu::"//what, "import "//trim(name)//" has not been published", &
+                            "instance "//trim(self%name)//": the core (globe_ice), the forcing or the global part "// &
+                            "puts it before this call")
+        end if
+    end subroutine require_published
+
+    ! =========================================================================
+    ! Regional port
+    ! =========================================================================
+
+    subroutine port_init_(self, ctx)
+        ! On the grid the chain gives it; it holds the global part's atmosphere, remapped. Its cadence is the
+        ! global part's (kryos_run).
+        class(paleoemu_port_t), intent(inout) :: self
+        type(init_ctx_t),       intent(in)    :: ctx
+
+        self%prec = dp
+        self%nx   = ctx%grid%G%nx
+        self%ny   = ctx%grid%G%ny
+        self%opt  = climate_opt_t(port=.true.)
+    end subroutine port_init_
+
+    subroutine port_init_state_(self, st, pass)
+        ! PASS_BOUNDARY: the imports the core passed (cold start). Other passes: nothing (PASS_RESTART: the
+        ! bundle's exports stand).
+        class(paleoemu_port_t), intent(inout) :: self
+        type(step_time_t),      intent(in)    :: st
+        integer,                intent(in)    :: pass
+        associate (unused => st%t1); end associate
+        if (pass == PASS_BOUNDARY) call copy_imports(self, "init_state")
+    end subroutine port_init_state_
+
+    subroutine port_update_(self, st)
+        class(paleoemu_port_t), intent(inout) :: self
+        type(step_time_t),      intent(in)    :: st
+        associate (unused => st%t1); end associate
+        call copy_imports(self, "update")
+    end subroutine port_update_
+
+    subroutine copy_imports(self, what)
+        ! tas, pr, z_srf_clim, lapse, beta_p as remapped, with their validity.
+        class(paleoemu_port_t), intent(inout) :: self
+        character(len=*),       intent(in)    :: what
+
+        real(dp) :: a3(self%nx, self%ny, NMON), a2(self%nx, self%ny), t0, t1
+
+        call require_published(self, self%hi_tas, "tas", what)
+        call fields_get(self%imports, self%hi_tas, a3, t0=t0, t1=t1)
+        call fields_put(self%exports, self%h_tas, a3, t1=t1, t0=t0)
+        call require_published(self, self%hi_pr, "pr", what)
+        call fields_get(self%imports, self%hi_pr, a3, t0=t0, t1=t1)
+        call fields_put(self%exports, self%h_pr, a3, t1=t1, t0=t0)
+        call require_published(self, self%hi_lapse, "lapse", what)
+        call fields_get(self%imports, self%hi_lapse, a3, t0=t0, t1=t1)
+        call fields_put(self%exports, self%h_lapse, a3, t1=t1, t0=t0)
+        call require_published(self, self%hi_z_srf_clim, "z_srf_clim", what)
+        call fields_get(self%imports, self%hi_z_srf_clim, a2, t0=t0, t1=t1)
+        call fields_put(self%exports, self%h_z_srf_clim, a2, t1=t1, t0=t0)
+        call require_published(self, self%hi_beta_p, "beta_p", what)
+        call fields_get(self%imports, self%hi_beta_p, a2, t0=t0, t1=t1)
+        call fields_put(self%exports, self%h_beta_p, a2, t1=t1, t0=t0)
+    end subroutine copy_imports
+
+    subroutine port_restart_write_(self, dir, t)
+        ! Stateless: constraints restart = .false., so the core never calls this.
+        class(paleoemu_port_t), intent(inout) :: self
+        character(len=*),       intent(in)    :: dir
+        real(dp),               intent(in)    :: t
+        associate (unused => t + len(dir) + self%nx); end associate
+    end subroutine port_restart_write_
+
+    subroutine port_restart_read_(self, dir, t)
+        class(paleoemu_port_t), intent(inout) :: self
+        character(len=*),       intent(in)    :: dir
+        real(dp),               intent(in)    :: t
+        associate (unused => t + len(dir) + self%nx); end associate
+    end subroutine port_restart_read_
+
+end module kryos_climate_paleoemu
