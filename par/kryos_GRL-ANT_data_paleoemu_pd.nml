@@ -1,6 +1,6 @@
 ! kryos par file: the present-day anchor of the SMB tuning. Greenland (GRL-16KM, BedMachine v6) and Antarctica (ANT-32KM,
 ! BedMachine v4) on their reference topography (ice backend data without keys), no solid Earth, with the CESM-3Ma
-! emulator (paleoemu; the rest of the globe PaleoMIST's 0 ka ice) driving chion (itm) as par/kryos_NH-ANT_data_paleoemu.nml.
+! emulator (paleoemu; the rest of the globe PaleoMIST's 0 ka ice) driving chion (bessi) as par/kryos_NH-ANT_data_paleoemu.nml.
 ! chion spins up 100 annual cycles at -100 yr, then one cycle per 10 yr to 0 (1950). Compare surface_grl.nc with
 ! MAR v3.14 (fesmdata/Greenland/GRL-16KM/GRL-16KM_SMB-MARv3.14-*.nc) and surface_ant.nc with RACMO2.3p2
 ! (fesmdata/Antarctica/ANT-32KM/ANT-32KM_SMB-RACMO2.3p2-*.nc). The emulator's climate is pre-industrial (ERA5 1981-2010
@@ -242,7 +242,7 @@
 /
 
 &chion
-    model           = "itm"                          ! Snowpack model: "itm", "bessi" or "pdd"
+    model           = "bessi"                        ! Snowpack model: "itm", "bessi" or "pdd" (bessi: the tuning default)
     nml_bessi       = "bessi"                        ! Namelist group holding the BESSI parameters
     nml_pdd         = "pdd_chion"                    ! PDD parameters (chion's own group)
     nml_itm         = "itm_chion"                          ! Namelist group holding the ITM parameters
@@ -373,7 +373,7 @@
 /
 
 &chion_ant
-    model           = "itm"                          ! Snowpack model: "itm", "bessi" or "pdd"
+    model           = "bessi"                        ! Snowpack model: "itm", "bessi" or "pdd" (bessi: the tuning default)
     nml_bessi       = "bessi"                        ! Namelist group holding the BESSI parameters
     nml_pdd         = "pdd_chion"                    ! PDD parameters (chion's own group)
     nml_itm         = "itm_chion_ant"                          ! Namelist group holding the ITM parameters

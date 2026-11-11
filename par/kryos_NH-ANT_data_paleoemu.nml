@@ -1,14 +1,15 @@
 ! kryos par file: the SMB tuning run. PaleoMIST's ice imposed in North (NH-32KM) and Antarctica (ANT-32KM) with the ice
 ! backend data (H_ice and z_bed of the IceHistory files; z_bed is relative to the sea level of the time, so z_sl = 0), no
 ! solid Earth, 80 ka to 0, with the CESM-3Ma emulator (climate paleoemu: the global part on the merged ice of the globe,
-! a port per domain) driving the chion snowpack (itm, insolation on the forcing's orbit). The climate and chion's smb
+! a port per domain) driving the chion snowpack (bessi; itm with chion.model = "itm"; insolation on the forcing's orbit),
+! ice columns cold-started with 500 kg m-2 of firn (swe_init_ice). The climate and chion's smb
 ! and T_srf on the reconstructed geometry are the output: tools/levante/smb_basin_budget.jl takes them per basin.
 ! dtt 100 yr (chion steps one annual cycle per update; the ice is linear between the 2.5 kyr slices). CO2: the CESM-3Ma
 ! series (PaleoEmulator scripts/prep_kryos_co2.jl). Output: 2D every 2.5 kyr (the PaleoMIST slices), 1D every 100 yr.
 ! Build: paleoemu=1 (plastic, vilma and yelmo not needed). Inputs in kryos_data/paleoemu/ (its README): the emulator
 ! file, its reference climate on GLOBAL-0.5DEG, the CO2 table.
 !   runme -r -s -q 12h -w 01:00:00 --omp 32 -m 60G -o <run> -n par/kryos_NH-ANT_data_paleoemu.nml   (albedo; Levante: -q shared)
-! (itm: about 8 min from -50 ka; bessi, chion.model = "bessi": surface 16x itm per annual cycle, about 20 min on 32 threads)
+! (from -50 ka: bessi about 20 min on 32 threads; itm about 8 min)
 
 &kryos
     domains         = "North" "Antarctica"
@@ -264,7 +265,7 @@
 /
 
 &chion
-    model           = "itm"                          ! Snowpack model: "itm", "bessi" or "pdd"
+    model           = "bessi"                        ! Snowpack model: "itm", "bessi" or "pdd" (bessi: the tuning default)
     nml_bessi       = "bessi"                        ! Namelist group holding the BESSI parameters
     nml_pdd         = "pdd_chion"                    ! PDD parameters (chion's own group)
     nml_itm         = "itm_chion"                          ! Namelist group holding the ITM parameters
@@ -395,7 +396,7 @@
 /
 
 &chion_ant
-    model           = "itm"                          ! Snowpack model: "itm", "bessi" or "pdd"
+    model           = "bessi"                        ! Snowpack model: "itm", "bessi" or "pdd" (bessi: the tuning default)
     nml_bessi       = "bessi"                        ! Namelist group holding the BESSI parameters
     nml_pdd         = "pdd_chion"                    ! PDD parameters (chion's own group)
     nml_itm         = "itm_chion_ant"                          ! Namelist group holding the ITM parameters
