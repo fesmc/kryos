@@ -400,6 +400,7 @@ function main(args)
                               hi = parse(Float64, get(kv, "hi", "24")))
     end
     args[1] == "earth-field" && return ES.earth_field(args[2], args[3], parse.(Float64, args[4:end]))
+    args[1] == "earth-basis-plot" && return ES.earth_basis_plot(args[2], args[3])
     args[1] == "weights" && return weights(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1)
     args[1] == "scores" && return scores(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1)
     args[1] == "errmodel" && return errmodel(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1;

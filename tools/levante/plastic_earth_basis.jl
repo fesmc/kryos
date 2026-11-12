@@ -70,6 +70,8 @@ function earth_basis(out, panfile; kmax = 6, lo = 19.5, hi = 24.0)
     pcs = [reshape(A' * U[:, k], length(lon), length(lat), length(dep)) ./ Float32(sqrt(M - 1)) for k in 1:K]
     coef = sqrt(M - 1) .* U[:, 1:K]                             # the experts in the coefficients
     frac = λ ./ sum(λ)
+    wa = cosd.(lat) ./ (length(lon) * sum(cosd.(lat)))
+    prof = [sum(F[i, j, d] * wa[j] for i in eachindex(lon), j in eachindex(lat)) for (_, F) in fields, d in eachindex(dep)]   # area means
     isfile(out) && rm(out)
     NCDataset(out, "c") do ds
         defVar(ds, "lon", lon, ("lon",); attrib = ["units" => "degrees_east"])
@@ -81,6 +83,7 @@ function earth_basis(out, panfile; kmax = 6, lo = 19.5, hi = 24.0)
                "long_name" => "principal component: the pattern of one standard deviation over the fields"])
         defVar(ds, "variance_fraction", frac[1:K], ("component",))
         defVar(ds, "coef", Float64.(coef), ("field", "component"); attrib = ["long_name" => "the coefficients of the fields"])
+        defVar(ds, "profile", Float64.(prof), ("field", "depth"); attrib = ["units" => "log10(Pa s)", "long_name" => "area mean of each clamped field"])
         ds.attrib["fields"] = join(first.(fields), "; "); ds.attrib["clamp"] = "$lo $hi"
         ds.attrib["title"] = "Basis of 3-D Earths: mean and principal components of log10 viscosity of expert fields (plastic_ensemble.jl earth-basis)"
     end
@@ -108,4 +111,36 @@ function earth_field(basis, out, c)
         end
     end
     out
+end
+
+# the basis in a figure: the area-mean profile of each field and of the mean, and the components at three depths
+#   julia --project=tools/levante tools/levante/plastic_ensemble.jl earth-basis-plot <basis.nc> <out.png> [depths_km=100,250,600]
+function earth_basis_plot(basis, out; depths_km = [100.0, 250.0, 600.0])
+    @eval using CairoMakie
+    NCDataset(basis) do b
+        lon = Float64.(b["lon"][:]); lat = Float64.(b["lat"][:]); dep = Float64.(b["depth"][:]) ./ 1e3
+        names = split(b.attrib["fields"], "; "); P = Float64.(b["profile"][:, :]); K = size(b["pc"], 4); frac = b["variance_fraction"][:]
+        lo = [x > 180 ? x - 360 : x for x in lon]; o = sortperm(lo)
+        fig = Figure(size = (450 + 420 * length(depths_km), 330 * (K + 1)))
+        ax = Axis(fig[1:K+1, 1], xlabel = "log10 eta (area mean)", ylabel = "depth [km]", yreversed = true, title = "the fields")
+        for (m, nm) in enumerate(names)
+            lines!(ax, P[m, :], dep, label = String(nm), linewidth = startswith(nm, "B21") ? 1.2 : 3,
+                   color = startswith(nm, "B21") ? Makie.wong_colors()[1 + (m - 1) % 7] : (nm == "L24" ? :black : :red),
+                   linestyle = startswith(nm, "B21") ? :solid : :dash)
+        end
+        μp = vec(sum(P, dims = 1) ./ size(P, 1)); lines!(ax, μp, dep, color = :gray30, linewidth = 4, label = "mean")
+        axislegend(ax, position = :lb, labelsize = 11)
+        for (c, dk) in enumerate(depths_km)
+            kd = argmin(abs.(dep .- dk))
+            for row in 0:K
+                F = row == 0 ? Float64.(b["log10_visc_mean"][:, :, kd]) : Float64.(b["pc"][:, :, kd, row])
+                lim = row == 0 ? (19.5, 24.0) : (-1.0, 1.0) .* max(maximum(abs, F), 1e-3)
+                a = Axis(fig[row + 1, c + 1], title = row == 0 ? @sprintf("mean, %.0f km", dep[kd]) : @sprintf("pc %d (%.0f %%), %.0f km", row, 100frac[row], dep[kd]),
+                         aspect = DataAspect(), xticksvisible = false, xticklabelsvisible = false, yticksvisible = false, yticklabelsvisible = false)
+                heatmap!(a, lo[o], lat, F[o, :], colormap = row == 0 ? :viridis : cgrad(:RdBu, rev = true), colorrange = lim)
+            end
+        end
+        save(out, fig, px_per_unit = 1)
+    end
+    println("wrote ", out)
 end
