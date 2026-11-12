@@ -8,7 +8,8 @@
 #   julia --project=tools/levante plastic_ensemble.jl earth-shift <config.toml> <out.nc> UM=0.5 LM=0 <region>=1.0   one shift file
 # The folder, the members and the scale groups are those of plastic_esmda.jl (prepare, write_iteration, member_series). Config:
 # [scale], [prior] (sigma, ramp_ka, corr_time_kyr, theta_max), [run], [score] as plastic_esmda_v2.toml; [ensemble]: n (members
-# besides the prior mean, m000), seed, obs_groups, compare_max_age_ka (the window of the comparison with the references, 25);
+# besides the prior mean, m000), seed, obs_groups, compare_max_age_ka (the window of the judging and of the comparison with the
+# references, 25), bar (the references whose best I_g per group sets the cut, weights), implausibility, use_groups;
 # [[references]] (name and product | topo | run: the reconstructions the members are compared with, reference_series); [likelihood.<obs group>]: sigma_m [m], corr_dist_km, corr_time_kyr.
 # [earth] (optional): the Earth as parameters, sampled with tau_b: shifts of log10(eta) of VILMA2's 3-D field, global in the upper
 # and lower mantle and per region in the upper mantle (plastic_earth_shift.jl): sigma (prior sd [dex]), theta_max, boundary_km,
@@ -226,34 +227,51 @@ Per data group: sigma_m, L_x, L_t by maximum likelihood on a grid, from the resi
     println("wrote ", joinpath(C, "errmodel.toml"), ", errmodel.md")
 end
 
-# The weights of wave k: per member and data group log L, chi2/n and the implausibility I_g under the error model (error_model);
-# a member is plausible when max_g I_g <= [ensemble] implausibility (default 3). Weights w ∝ L over the plausible members (0
-# for the rest). Writes iter_kk/weights.csv, weights.md and plausible.txt (the folders of the plausible members, one per line).
+# The weights of wave k, on the judging window (score_window: the index points of age <= [ensemble] compare_max_age_ka, all when it
+# is not set), per member and data group log L, chi2/n and the implausibility I_g under the error model (error_model).
+# Plausibility against the published reconstructions ([ensemble] bar, names of [[references]]): the cut of group g is the larger
+# of [ensemble] implausibility (3) and the lowest I_g of the bar's references, so a member is plausible when it is in every group
+# that judges ([ensemble] use_groups, default all) at least as good as the best of the reconstructions whose misfit was accepted
+# (without bar: the plain cut). Weights w ∝ L over the plausible members (0 for the rest), tempered: per group the error covariance
+# is scaled by s_g = max(1, the lowest chi2/n of the members and the references), so that the best series fits its error model
+# (chi2/n = 1) and log L differences are those the data resolve (log L_t = log L + chi2 (1 - 1/s) / 2 - n log(s) / 2).
+# Writes iter_kk/weights.csv, weights.md and plausible.txt (the folders of the plausible members, one per line).
 function weights(C, k)
-    C = abspath(C); cfg = ES.config(C); ids, Θ, res, og, obs, A = wave_residuals(C, k, cfg)
-    em, src = error_model(cfg, C); cut = get(cfg["ensemble"], "implausibility", 3.0)
-    ug = String.(get(cfg["ensemble"], "use_groups", og))     # the groups that judge: the cut and the weights; the rest reported
+    C = abspath(C); cfg = ES.config(C); ids, Θ, res, og, obs, A = wave_residuals(C, k, cfg); en = cfg["ensemble"]
+    em, src = error_model(cfg, C); cut0 = get(en, "implausibility", 3.0)
+    ug = String.(get(en, "use_groups", og))     # the groups that judge: the cut and the weights; the rest reported
     all(in(og), ug) || error("use_groups $(ug) not all in obs_groups $(og)")
     sg = ES.scale_groups(cfg["scale"]); P = ES.params(cfg, sg)
-    ll = Dict(m => Dict(g => loglik_group(res[m].rg[g], em[g]...) for g in og) for m in keys(res))
-    I = Dict(m => Dict(g => implausibility(ll[m][g][2], ll[m][g][3]) for g in og) for m in keys(res))
+    W = score_window(obs, A, og, 1000.0 * get(en, "compare_max_age_ka", Inf))
     ok = sort(collect(keys(res)))
-    plaus = [m for m in ok if maximum(I[m][g] for g in ug) <= cut]
-    LL = Dict(m => sum(ll[m][g][1] for g in ug) for m in ok)
+    sc = Dict(m => score_series(res[m].S, W, em, og) for m in ok)                  # g => (log L, chi2, n, I)
+    refs = references(cfg, obs, A)
+    rsc = [(nm, s) for (nm, s) in ((nm, score_series(S, W, em, og)) for (nm, S) in refs) if s !== nothing]
+    # the bar: per group the lowest I_g of the bar's references, and which one
+    bar = String.(get(en, "bar", String[])); nob = setdiff(bar, first.(rsc))
+    isempty(nob) || error("bar references not scored on the window: ", join(nob, ", "))
+    best = Dict(g => (isempty(bar) ? (-Inf, "") : minimum((s[g][4], nm) for (nm, s) in rsc if nm in bar)) for g in og)
+    cut = Dict(g => max(cut0, best[g][1]) for g in og)
+    plaus = [m for m in ok if all(sc[m][g][4] <= cut[g] for g in ug)]
+    # tempering: the scale factor of each group's error covariance
+    sf = Dict(g => max(1.0, minimum(s[g][2] / s[g][3] for s in [[sc[m] for m in ok]; last.(rsc)])) for g in og)
+    LL = Dict(m => sum(sc[m][g][1] for g in ug) for m in ok)
+    LLt = Dict(m => sum(sc[m][g][1] + 0.5 * sc[m][g][2] * (1 - 1 / sf[g]) - 0.5 * sc[m][g][3] * log(sf[g]) for g in ug) for m in ok)
     w = Dict(m => 0.0 for m in ok)
     if !isempty(plaus)
-        mx = maximum(LL[m] for m in plaus); for m in plaus; w[m] = exp(LL[m] - mx); end
+        mx = maximum(LLt[m] for m in plaus); for m in plaus; w[m] = exp(LLt[m] - mx); end
         t = sum(values(w)); for m in plaus; w[m] /= t; end
     end
     ess = isempty(plaus) ? 0.0 : 1 / sum(w[m]^2 for m in plaus)
     It = ES.itdir(C, k)
+    I(m, g) = sc[m][g][4]
     open(joinpath(It, "weights.csv"), "w") do io
-        println(io, "member,ok,", join(["logL_$g" for g in og], ","), ",logL,", join(["chi2n_$g" for g in og], ","), ",",
+        println(io, "member,ok,", join(["logL_$g" for g in og], ","), ",logL,logL_tempered,", join(["chi2n_$g" for g in og], ","), ",",
                 join(["I_$g" for g in og], ","), ",plausible,esl_20ka,weight")
         for m in ids
-            haskey(res, m) || (println(io, m, ",0", repeat(",NaN", 3length(og) + 4)); continue)
-            println(io, m, ",1,", join([@sprintf("%.2f", ll[m][g][1]) for g in og], ","), ",", @sprintf("%.2f", LL[m]), ",",
-                    join([@sprintf("%.3f", ll[m][g][2] / ll[m][g][3]) for g in og], ","), ",", join([@sprintf("%.2f", I[m][g]) for g in og], ","),
+            haskey(res, m) || (println(io, m, ",0", repeat(",NaN", 3length(og) + 5)); continue)
+            println(io, m, ",1,", join([@sprintf("%.2f", sc[m][g][1]) for g in og], ","), ",", @sprintf("%.2f,%.2f", LL[m], LLt[m]), ",",
+                    join([@sprintf("%.3f", sc[m][g][2] / sc[m][g][3]) for g in og], ","), ",", join([@sprintf("%.2f", I(m, g)) for g in og], ","),
                     ",", m in plaus ? 1 : 0, ",", @sprintf("%.2f", res[m].esl), ",", @sprintf("%.6g", w[m]))
         end
     end
@@ -265,36 +283,42 @@ function weights(C, k)
     μ = th * wv; sd = sqrt.(max.(((th .- μ) .^ 2) * wv, 0))
     eslp = [res[m].esl for m in plaus]
     open(joinpath(It, "weights.md"), "w") do io
-        println(io, "Wave $k: $(length(ok)) of $(length(ids)) members ran; error model: $src; implausibility cut $cut; ",
-                "groups that judge (the cut and the weights): ", join(ug, ", "), length(ug) < length(og) ?
-                "; reported only: " * join(setdiff(og, ug), ", ") : "", ".\n")
-        println(io, "Plausible (max I_g <= $cut over the groups that judge): $(length(plaus)) members", isempty(plaus) ? "" :
+        println(io, "Wave $k: $(length(ok)) of $(length(ids)) members ran; error model: $src; judged on the index points of age <= ",
+                isfinite(W.tmax) ? @sprintf("%g ka", W.tmax / 1000) : "80 ka (all)", "; groups that judge (the cut and the weights): ",
+                join(ug, ", "), length(ug) < length(og) ? "; reported only: " * join(setdiff(og, ug), ", ") : "", ".\n")
+        println(io, "Cut per group (the larger of $cut0 and the best I_g of the bar: ", isempty(bar) ? "none" : join(bar, ", "),
+                "); scale factor s_g of the tempered weights:\n")
+        println(io, "| group | n | cut | set by | s_g |\n|---|---|---|---|---|")
+        for g in og
+            println(io, "| ", g, " | ", sc[ok[1]][g][3], " | ", @sprintf("%.2f", cut[g]), " | ", cut[g] > cut0 ? best[g][2] : "-",
+                    " | ", @sprintf("%.2f", sf[g]), " |")
+        end
+        println(io, "\nPlausible (I_g <= cut in every group that judges): $(length(plaus)) members", isempty(plaus) ? "" :
                 @sprintf(", ESL at 20 ka %.1f to %.1f m; effective sample size of their weights %.2f", minimum(eslp), maximum(eslp), ess), ".\n")
-        println(io, "Ruled out by group (I_g > $cut): ", join([@sprintf("%s %d", g, count(m -> I[m][g] > cut, ok)) for g in og], ", "), "\n")
-        println(io, "| member | plausible | weight | log L | ", join(["I $g" for g in og], " | "), " | ESL 20 ka [m] |\n|---|---|---|---|",
+        println(io, "Ruled out by group (I_g > cut): ", join([@sprintf("%s %d", g, count(m -> I(m, g) > cut[g], ok)) for g in og], ", "), "\n")
+        println(io, "| member | plausible | weight | log L | log L tempered | ", join(["I $g" for g in og], " | "), " | ESL 20 ka [m] |\n|---|---|---|---|---|",
                 repeat("---|", length(og) + 1))
-        for m in sort(ok, by = m -> (m in plaus ? 0 : 1, -LL[m]))
+        for m in sort(ok, by = m -> (m in plaus ? 0 : 1, -LLt[m]))
             println(io, "| m", lpad(m, 3, "0"), " | ", m in plaus ? "yes" : "no", " | ", @sprintf("%.3g", w[m]), " | ", @sprintf("%.1f", LL[m]),
-                    " | ", join([@sprintf("%.1f", I[m][g]) for g in og], " | "), " | ", @sprintf("%.1f", res[m].esl), " |")
+                    " | ", @sprintf("%.1f", LLt[m]), " | ", join([@sprintf("%.1f", I(m, g)) for g in og], " | "), " | ", @sprintf("%.1f", res[m].esl), " |")
         end
         if !isempty(plaus)
             println(io, "\nWeighted parameters of the plausible members (tau_b: log factor; Earth: dex; prior mean 0): mean (sd)\n")
             for (q, n) in enumerate(names); println(io, "- ", n, ": ", @sprintf("%+.2f (%.2f)", μ[q], sd[q])); end
         end
     end
-    compare_references(It, cfg, res, og, obs, A, em, ug, cut)
+    compare_references(It, cfg, res, og, obs, A, em, ug, cut, refs)
     println("wrote ", joinpath(It, "weights.md"), "; ", length(plaus), " plausible, ESS ", @sprintf("%.2f", ess))
 end
 
 # The members against the references (references), on the window of [ensemble] compare_max_age_ka (25 ka: GLAC1D's own GIA ends at
 # 26 ka) and on all points (the references that cover them): per series the log L of the groups that judge, I_g per group and the
-# groups passed (I_g <= cut). The references, the 5 members of the highest log L and the members' median. Appends to weights.md,
-# writes references.csv (every series).
-function compare_references(It, cfg, res, og, obs, A, em, ug, cut)
-    refs = references(cfg, obs, A)
+# groups passed (I_g <= cut[g], weights). The references, the 5 members of the highest log L and the members' median. Appends to
+# weights.md, writes references.csv (every series).
+function compare_references(It, cfg, res, og, obs, A, em, ug, cut, refs)
     tw = 1000.0 * get(cfg["ensemble"], "compare_max_age_ka", 25.0)
     wins = [(@sprintf("index points of age <= %g ka", tw / 1000), score_window(obs, A, og, tw)), ("all index points", score_window(obs, A, og, Inf))]
-    LL(s) = sum(s[g][1] for g in ug); np(s) = count(g -> s[g][4] <= cut, ug)
+    LL(s) = sum(s[g][1] for g in ug); np(s) = count(g -> s[g][4] <= cut[g], ug)
     io = open(joinpath(It, "weights.md"), "a"); csv = open(joinpath(It, "references.csv"), "w")
     println(csv, "window,series,reference,", join(["n_$g" for g in og], ","), ",", join(["I_$g" for g in og], ","), ",logL,passed")
     for (wn, (lbl, W)) in enumerate(wins)
@@ -306,7 +330,7 @@ function compare_references(It, cfg, res, og, obs, A, em, ug, cut)
         end
         best = first(sort(collect(keys(ms)), by = m -> -LL(ms[m])), 5)
         println(io, "\n## Against the references: ", lbl, "\n\nlog L and groups passed over the groups that judge (", join(ug, ", "),
-                "); I_g per group (passed at <= ", cut, "). References missing here: ",
+                "); I_g per group (passed at <= the cut of the group, above). References missing here: ",
                 isempty(setdiff(first.(refs), first.(rs))) ? "none" : join(setdiff(first.(refs), first.(rs)), ", "), ".\n")
         println(io, "| series | log L | ", join(["I $g" for g in og], " | "), " | passed |\n|---|---|", repeat("---|", length(og) + 1))
         row(nm, s) = println(io, "| ", nm, " | ", @sprintf("%.1f", LL(s)), " | ", join([@sprintf("%.1f", s[g][4]) for g in og], " | "), " | ",
@@ -316,7 +340,7 @@ function compare_references(It, cfg, res, og, obs, A, em, ug, cut)
         println(io, "| members' median | ", @sprintf("%.1f", median(LL(s) for s in values(ms))), " | ",
                 join([@sprintf("%.1f", median(s[g][4] for s in values(ms))) for g in og], " | "), " | |")
         println(io, "| points (members) | | ", join([string(first(values(ms))[g][3]) for g in og], " | "), " | |")
-        println(io, "\nMembers passing each group: ", join([@sprintf("%s %d", g, count(s -> s[g][4] <= cut, values(ms))) for g in og], ", "),
+        println(io, "\nMembers passing each group: ", join([@sprintf("%s %d", g, count(s -> s[g][4] <= cut[g], values(ms))) for g in og], ", "),
                 "; all groups that judge: ", count(s -> np(s) == length(ug), values(ms)), " of ", length(ms), ".")
     end
     close(io); close(csv)

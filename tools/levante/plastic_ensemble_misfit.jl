@@ -1,7 +1,7 @@
 # Where and when the members of a wave miss the index points of a data group, against the references of the config (is the misfit
 # the ice, which the members vary, or the Earth and the data, which they share?):
 #   julia --project=tools/levante tools/levante/plastic_ensemble_misfit.jl <ensemble folder> <out folder> [wave=1]
-#         [groups=Greenland,Fennoscandia/Barents,Laurentide] [members=36,28] [refs=PaleoMIST,PaleoMIST-3D,PaleoMIST-1D]
+#         [groups=Greenland,Fennoscandia/Barents,Laurentide] [members=36,28] [refs=PaleoMIST,PaleoMIST-3D,PaleoMIST-1D] [top=5]
 # References: [[references]] of the config (plastic_ensemble.jl reference_series), those of refs= (default: the first three found);
 # the time plot and the site maps need them over all ages (the references that end earlier, GLAC1D's own GIA, are left out there).
 # Members: those of the wave that ran; the selection shown: the plausible ones (iter_kk/plausible.txt), or members= (e.g. the
@@ -11,6 +11,8 @@
 #                      the members, and the sites that carry most of chi2 (d .* R^-1 d summed per site, mean over the selection)
 #   misfit_time.png    per group: d = model - obs against age, the median in 1 kyr bins per selected member and per reference
 #   misfit_sites.png   per group: the mean d per site, the selection's mean and each reference
+#   misfit.md (end), misfit_shared.png   the shared misfit: per site what the good series (the references and the top= members)
+#                      get wrong alike, and the selection's member part (the rest)
 using CairoMakie, LinearAlgebra, NCDatasets, Printf, Statistics
 
 module EN
@@ -138,25 +140,80 @@ BOX = Dict("Greenland" => ((-75.0, -10.0), (59.0, 84.0)), "Fennoscandia/Barents"
            "Laurentide" => ((-140.0, -50.0), (40.0, 82.0)), "Antarctica" => ((-180.0, 180.0), (-90.0, -60.0)))
 glon = [x > 180 ? x - 360 : x for x in lon]; p = sortperm(glon); q = sortperm(lat); glon = glon[p]; glat = lat[q]; zb = zb0[p, q]
 DMAP = cgrad(:RdBu, rev = true); DLIM = 40.0
+# one map panel of group g: values v [m] at the sites (lon, lat), marker sizes ms, today's coast (z_bed = 0)
+function sitemap!(fig, row, col, g, title, lon, lat, v, ms)
+    (x0, x1), (y0, y1) = get(BOX, g, ((-180.0, 180.0), (-90.0, 90.0))); c0 = cosd((y0 + y1) / 2)
+    ax = Axis(fig[row, col], title = title, aspect = DataAspect(), limits = ((x0 * c0, x1 * c0), (y0, y1)),
+              xticksvisible = false, xticklabelsvisible = false)
+    for l in Makie.Contours.lines(Makie.Contours.contour(glon, glat, zb, 0.0))
+        xs, ys = Makie.Contours.coordinates(l)
+        lines!(ax, [i > 1 && abs(xs[i] - xs[i-1]) > 5 ? Point2f(NaN, NaN) : Point2f(xs[i] * c0, ys[i]) for i in eachindex(xs)],
+               color = :gray40, linewidth = 0.8)
+    end
+    scatter!(ax, lon .* c0, lat, color = v, colormap = DMAP, colorrange = (-DLIM, DLIM), markersize = ms, strokecolor = :black, strokewidth = 0.6)
+end
+dcolorbar(fig, rows, col) = Colorbar(fig[rows, col], colormap = DMAP, limits = (-DLIM, DLIM), lowclip = DMAP[0.0], highclip = DMAP[1.0],
+                                     label = "mean model - obs per site [m]", height = Relative(0.6))
 fig = Figure(size = (900 * length(groups), 730 * (1 + length(rres))))
 for (col, g) in enumerate(groups)
-    (x0, x1), (y0, y1) = get(BOX, g, ((-180.0, 180.0), (-90.0, 90.0))); c0 = cosd((y0 + y1) / 2)
     st = sitetab[g]
     for (row, (lbl, D)) in enumerate([("$sellbl (mean)", Dict(nm => s.d for (nm, s) in st.S)); st.dr])
-        ax = Axis(fig[row, col], title = "$g: $lbl", aspect = DataAspect(), limits = ((x0 * c0, x1 * c0), (y0, y1)),
-                  xticksvisible = false, xticklabelsvisible = false)
-        for l in Makie.Contours.lines(Makie.Contours.contour(glon, glat, zb, 0.0))      # the coast of today (z_bed = 0)
-            xs, ys = Makie.Contours.coordinates(l)
-            lines!(ax, [i > 1 && abs(xs[i] - xs[i-1]) > 5 ? Point2f(NaN, NaN) : Point2f(xs[i] * c0, ys[i]) for i in eachindex(xs)],
-                   color = :gray40, linewidth = 0.8)
-        end
         ks = [nm for nm in keys(D) if haskey(st.S, nm)]
-        scatter!(ax, [st.S[nm].lon * c0 for nm in ks], [st.S[nm].lat for nm in ks], color = [mean(D[nm]) for nm in ks], colormap = DMAP,
-                 colorrange = (-DLIM, DLIM), markersize = [8 + 3sqrt(length(st.S[nm].d) / length(sel)) for nm in ks],
-                 strokecolor = :black, strokewidth = 0.6)
+        sitemap!(fig, row, col, g, "$g: $lbl", [st.S[nm].lon for nm in ks], [st.S[nm].lat for nm in ks], [mean(D[nm]) for nm in ks],
+                 [8 + 3sqrt(length(st.S[nm].d) / length(sel)) for nm in ks])
     end
 end
-Colorbar(fig[1:(1 + length(rres)), length(groups) + 1], colormap = DMAP, limits = (-DLIM, DLIM), lowclip = DMAP[0.0], highclip = DMAP[1.0],
-         label = "mean model - obs per site [m]", height = Relative(0.6))
+dcolorbar(fig, 1:(1 + length(rres)), length(groups) + 1)
 save(joinpath(out, "misfit_sites.png"), fig, px_per_unit = 1.2)
 println("wrote ", joinpath(out, "misfit_sites.png"))
+
+# --- the shared misfit -------------------------------------------------------------------------------------------------------------
+# What every good series gets wrong alike (structural: the data, the Earth, what no member and no reconstruction changes) against what
+# the members change. On the judging window (compare_max_age_ka): the good series are the references with records there (all of
+# them, the published ones too) and the `top` members (default 5) of the highest log L over the groups. Per site the mean d of each
+# good series; the shared misfit b = their median; the member part of the selection = its mean d - b. Per group the shared fraction
+# of the selection's misfit: sum over sites of n b^2 / sum of n dbar^2 (n the points of the site).
+W = EN.score_window(obs, A, og, 1000.0 * get(cfg["ensemble"], "compare_max_age_ka", 25.0))
+wrefs = [r for r in EN.references(cfg, obs, A) if !any(k -> all(isnan, view(r[2], W.kp, k)), W.ka)]
+ntop = parse(Int, get(opt, "top", "5"))
+wsc = Dict(m => EN.score_series(res[m].S, W, em, og) for m in keys(res))
+top = first(sort(collect(keys(wsc)), by = m -> -sum(wsc[m][g][1] for g in og)), ntop)
+wres(S) = EN.group_residuals(W.obs, W.idx, S[W.kp, W.ka], W.A)
+good = [[nm => wres(S) for (nm, S) in wrefs]; ["m" * lpad(m, 3, "0") => wres(res[m].S) for m in top]]
+selr = [wres(res[m].S) for m in sel]
+sitemean(r) = (D = Dict{String,Tuple{Float64,Float64,Vector{Float64},Vector{Float64}}}();
+               for (i, o) in enumerate(r.pts); e = get!(D, sitekey(o), (o.lon, o.lat, Float64[], Float64[])); push!(e[3], r.d[i]); push!(e[4], o.t); end; D)
+io = open(joinpath(out, "misfit.md"), "a")
+println(io, "\n# The shared misfit (index points of age <= ", W.tmax / 1000, " ka)\n\nGood series: ", join(first.(good), ", "),
+        ". Shared b = the median of their mean d per site; the selection's member part = its mean d - b. Shared fraction: ",
+        "sum n b^2 / sum n dbar^2 over the sites (n points, dbar the selection's mean d).\n")
+shared = Dict{String,Any}()
+for g in groups
+    G = [sitemean(r[g]) for (_, r) in good]; Ssel = [sitemean(r[g]) for r in selr]
+    sites = [s for s in keys(G[1]) if all(haskey(D, s) for D in G) && all(haskey(D, s) for D in Ssel)]
+    rows = map(sites) do s
+        v = [mean(D[s][3]) for D in G]; b = median(v); ds = mean(mean(D[s][3]) for D in Ssel)
+        (site = s, lon = G[1][s][1], lat = G[1][s][2], n = length(G[1][s][3]), t = G[1][s][4], b = b, lo = minimum(v), hi = maximum(v),
+         same = all(>(0), v) || all(<(0), v), d = ds, dm = ds - b)
+    end
+    shared[g] = rows
+    fs = sum(r.n * r.b^2 for r in rows) / sum(r.n * r.d^2 for r in rows)
+    println(io, "## ", g, @sprintf("\n\nShared fraction of the selection's misfit: %.0f %%. Sites by n b^2:\n", 100fs))
+    println(io, "| site | lon | lat | points | ages [kyr] | shared b [m] | range of the good series [m] | one sign | selection d [m] | member part [m] |")
+    println(io, "|---|---|---|---|---|---|---|---|---|---|")
+    for r in first(sort(rows, by = r -> -r.n * r.b^2), 15)
+        println(io, "| ", r.site, @sprintf(" | %.1f | %.1f | %d | %.1f-%.1f | %+.1f | %+.1f to %+.1f | %s | %+.1f | %+.1f |", r.lon, r.lat, r.n,
+                minimum(r.t) / 1000, maximum(r.t) / 1000, r.b, r.lo, r.hi, r.same ? "yes" : "no", r.d, r.dm))
+    end
+    println(io)
+end
+close(io)
+fig = Figure(size = (900 * length(groups), 1460))
+for (col, g) in enumerate(groups)
+    rows = shared[g]; ms = [8 + 3sqrt(r.n) for r in rows]
+    sitemap!(fig, 1, col, g, "$g: shared by the good series (median)", [r.lon for r in rows], [r.lat for r in rows], [r.b for r in rows], ms)
+    sitemap!(fig, 2, col, g, "$g: $sellbl minus shared", [r.lon for r in rows], [r.lat for r in rows], [r.dm for r in rows], ms)
+end
+dcolorbar(fig, 1:2, length(groups) + 1)
+save(joinpath(out, "misfit_shared.png"), fig, px_per_unit = 1.2)
+println("wrote ", joinpath(out, "misfit_shared.png"))
