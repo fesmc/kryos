@@ -6,9 +6,11 @@
 # and volume (r^2 dr). A component is stored as the pattern of one standard deviation over the fields, so a field of the basis is
 #   log10 eta = mean + sum_k c_k pc_k,   c_k ~ N(0, 1),
 # and the experts sit at c_k = coef(field, k). Fields of the basis: earth-field (a VILMA2 lon-lat-r file, visc_3d_structure = 0).
-#   julia --project=tools/levante tools/levante/plastic_ensemble.jl earth-basis <out.nc> <pan2022.nc> [kmax=6] [lo=19.5] [hi=24]
+#   julia --project=tools/levante tools/levante/plastic_ensemble.jl earth-basis <out.nc> <pan visc.nc> <pan litho.nc> [kmax=6] [lo=19.5] [hi=24]
 #   julia --project=tools/levante tools/levante/plastic_ensemble.jl earth-field <basis.nc> <out.nc> c1 c2 ...
-# Pan et al. (2022) is not released in FesmData yet: its file is vilma2's input/pan2022.nc (log10 eta on lon, lat, radius).
+# Pan et al. (2022) is not released in FesmData yet: its viscosity is vilma2's input/pan2022.nc (log10 eta on lon, lat, radius), its
+# lithosphere thickness isostasy_data's earth_structure/lithothickness/pan2022.nc (T_litho [km]). Pan's viscosity field starts below
+# the lithosphere (Seakon carries the lithosphere as a thickness): above T_litho the field is set to hi (elastic), as in the others.
 # Included by plastic_esmda.jl (after plastic_earth_shift.jl).
 using LinearAlgebra, NCDatasets, Printf
 
@@ -39,7 +41,7 @@ function regrid(slon, slat, sdep, F, tlon, tlat, tdep)
     G
 end
 
-function earth_basis(out, panfile; kmax = 6, lo = 19.5, hi = 24.0)
+function earth_basis(out, panfile, panlitho; kmax = 6, lo = 19.5, hi = 24.0)
     fes = ENV["FESMDATA"]
     bf = joinpath(fes, "Global", "GLOBAL-T170", "GLOBAL-T170_SolidEarth-Bagge2021.nc")
     lon, lat, dep, B, snames = NCDataset(bf) do ds
@@ -50,10 +52,18 @@ function earth_basis(out, panfile; kmax = 6, lo = 19.5, hi = 24.0)
     lf = joinpath(fes, "Global", "GLOBAL-0.5DEG", "GLOBAL-0.5DEG_SolidEarth-Lloyd2024.nc")
     push!(fields, ("L24", NCDataset(ds -> regrid(Float64.(ds["lon"][:]), Float64.(ds["lat"][:]), Float64.(ds["depth"][:]),
                                                   Float32.(nomissing(ds["log10_visc"][:, :, :], NaN)), lon, lat, dep), lf)))
-    push!(fields, ("P22", NCDataset(panfile) do ds
+    P = NCDataset(panfile) do ds
         regrid(Float64.(ds["lon"][:]), Float64.(ds["lat"][:]), R_VILMA_KM * 1e3 .- Float64.(ds["r"][:]),
                Float32.(nomissing(ds["eta"][:, :, :], NaN)), lon, lat, dep)
-    end))
+    end
+    T = NCDataset(panlitho) do ds                                           # [km] on Bagge's grid (one level)
+        tl = Float64.(ds["lon"][:]); keep = findall(<(360.0), tl .- tl[1])      # the last column repeats the first
+        regrid(tl[keep], Float64.(ds["lat"][:]), [0.0, 1.0], repeat(Float32.(ds["T_litho"][keep, :]), 1, 1, 2), lon, lat, [0.0])[:, :, 1]
+    end
+    for k in eachindex(dep), j in eachindex(lat), i in eachindex(lon)
+        dep[k] < 1e3 * T[i, j] && (P[i, j, k] = Float32(hi))
+    end
+    push!(fields, ("P22", P))
     for (nm, F) in fields
         any(!isfinite, F) && error("$nm: non-finite values")
         F .= clamp.(F, Float32(lo), Float32(hi))

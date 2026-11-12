@@ -7,7 +7,7 @@
 #   julia --project=tools/levante plastic_ensemble.jl scores <ensemble folder> [<wave>]     RMSE, RMS z, I_g, log L of every series
 #   julia --project=tools/levante plastic_ensemble.jl earth-regions <config.toml> <out.nc>   the region masks of [earth]
 #   julia --project=tools/levante plastic_ensemble.jl earth-shift <config.toml> <out.nc> UM=0.5 LM=0 <region>=1.0   one shift file
-#   julia --project=tools/levante plastic_ensemble.jl earth-basis <out.nc> <pan2022.nc> | earth-field <basis.nc> <out.nc> c1 ...   (plastic_earth_basis.jl)
+#   julia --project=tools/levante plastic_ensemble.jl earth-basis <out.nc> <pan visc.nc> <pan litho.nc> | earth-field <basis.nc> <out.nc> c1 ...   (plastic_earth_basis.jl)
 # The folder, the members and the scale groups are those of plastic_esmda.jl (prepare, write_iteration, member_series). Config:
 # [scale], [prior] (sigma, ramp_ka, corr_time_kyr, theta_max), [run], [score] as plastic_esmda_v2.toml; [ensemble]: n (members
 # besides the prior mean, m000), seed, obs_groups, compare_max_age_ka (the window of the judging and of the comparison with the
@@ -395,8 +395,8 @@ function main(args)
     args[1] == "earth-regions" && return earth_regions(args[2], args[3])
     args[1] == "earth-shift" && return earth_shift(args[2], args[3], args[4:end])
     if args[1] == "earth-basis"
-        kv = Dict(split(x, "=") for x in args[4:end])
-        return ES.earth_basis(args[2], args[3]; kmax = parse(Int, get(kv, "kmax", "6")), lo = parse(Float64, get(kv, "lo", "19.5")),
+        kv = Dict(split(x, "=") for x in args[5:end])
+        return ES.earth_basis(args[2], args[3], args[4]; kmax = parse(Int, get(kv, "kmax", "6")), lo = parse(Float64, get(kv, "lo", "19.5")),
                               hi = parse(Float64, get(kv, "hi", "24")))
     end
     args[1] == "earth-field" && return ES.earth_field(args[2], args[3], parse.(Float64, args[4:end]))
