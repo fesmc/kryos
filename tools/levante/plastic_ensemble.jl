@@ -4,6 +4,7 @@
 #   julia --project=tools/levante plastic_ensemble.jl init <config.toml> <ensemble folder>    wave 1: the members (iter_01/<m>)
 #   julia --project=tools/levante plastic_ensemble.jl weights <ensemble folder> [<wave>]     score the members, the weights
 #   julia --project=tools/levante plastic_ensemble.jl errmodel <ensemble folder> [<wave>] [<top>]   the error model from a wave
+#   julia --project=tools/levante plastic_ensemble.jl scores <ensemble folder> [<wave>]     RMSE, RMS z, I_g, log L of every series
 #   julia --project=tools/levante plastic_ensemble.jl earth-regions <config.toml> <out.nc>   the region masks of [earth]
 #   julia --project=tools/levante plastic_ensemble.jl earth-shift <config.toml> <out.nc> UM=0.5 LM=0 <region>=1.0   one shift file
 # The folder, the members and the scale groups are those of plastic_esmda.jl (prepare, write_iteration, member_series). Config:
@@ -346,6 +347,36 @@ function compare_references(It, cfg, res, og, obs, A, em, ug, cut, refs)
     close(io); close(csv)
 end
 
+# The scores of every series, references and members, for tables (docs/simulations.md): per window (the index points of age <=
+# compare_max_age_ka; all points) and data group, and over all groups: n, the RMSE of d [m], the RMS of z = d / sigma_i (the classic
+# score), chi2/n, I_g and log L under the error model. Writes iter_kk/scores.csv. A reference without records in a window is left out.
+#   julia --project=tools/levante plastic_ensemble.jl scores <ensemble folder> [<wave>]
+function scores(C, k)
+    C = abspath(C); cfg = ES.config(C); ids, Θ, res, og, obs, A = wave_residuals(C, k, cfg)
+    em, src = error_model(cfg, C); refs = references(cfg, obs, A)
+    tw = 1000.0 * get(cfg["ensemble"], "compare_max_age_ka", 25.0)
+    series = [[(nm, S, 1) for (nm, S) in refs]; [("m" * lpad(m, 3, "0"), res[m].S, 0) for m in sort(collect(keys(res)))]]
+    f = joinpath(ES.itdir(C, k), "scores.csv")
+    open(f, "w") do io
+        println(io, "window,series,reference,group,n,rmse_m,rmsz,chi2n,I,logL")
+        for (wn, W) in (("window", score_window(obs, A, og, tw)), ("all", score_window(obs, A, og, Inf)))
+            for (nm, S, isref) in series
+                Sw = S[W.kp, W.ka]; any(c -> all(isnan, view(Sw, :, c)), axes(Sw, 2)) && continue
+                rg = group_residuals(W.obs, W.idx, Sw, W.A)
+                tot = (n = 0, d2 = 0.0, z2 = 0.0, chi2 = 0.0, ll = 0.0)
+                for g in og
+                    r = rg[g]; ll, χ2, n = loglik_group(r, em[g]...); z = r.d ./ r.σ
+                    @printf(io, "%s,%s,%d,%s,%d,%.2f,%.3f,%.3f,%.2f,%.2f\n", wn, nm, isref, g, n, sqrt(mean(abs2, r.d)), sqrt(mean(abs2, z)),
+                            χ2 / n, implausibility(χ2, n), ll)
+                    tot = (n = tot.n + n, d2 = tot.d2 + sum(abs2, r.d), z2 = tot.z2 + sum(abs2, z), chi2 = tot.chi2 + χ2, ll = tot.ll + ll)
+                end
+                @printf(io, "%s,%s,%d,all,%d,%.2f,%.3f,%.3f,,%.2f\n", wn, nm, isref, tot.n, sqrt(tot.d2 / tot.n), sqrt(tot.z2 / tot.n), tot.chi2 / tot.n, tot.ll)
+            end
+        end
+    end
+    println("wrote ", f, " (error model: ", src, ")")
+end
+
 # the Earth parameters: the region masks of a config ([earth]), and a shift file of given values (a test, or a check of r)
 function earth_regions(cfgfile, out)
     ES.region_masks(ES.load_config(cfgfile), out)
@@ -363,6 +394,7 @@ function main(args)
     args[1] == "earth-regions" && return earth_regions(args[2], args[3])
     args[1] == "earth-shift" && return earth_shift(args[2], args[3], args[4:end])
     args[1] == "weights" && return weights(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1)
+    args[1] == "scores" && return scores(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1)
     args[1] == "errmodel" && return errmodel(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1;
                                              top = length(args) >= 4 ? parse(Int, args[4]) : 6)
     error("plastic_ensemble.jl init <config> <folder> | weights <folder> [<wave>] | errmodel <folder> [<wave>] [<top>] | " *
