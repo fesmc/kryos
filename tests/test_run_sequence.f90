@@ -1892,7 +1892,7 @@ contains
         call w(u, [character(len=400) :: &
             "&orbit", "  method = 'fixed_orbit'", "/", &
             "&surface_chion", "  sf_a = 0.273", "  sf_b = 273.6", "  sigma_pdd = 5.0", "  time_equil = 2.0", &
-            "  dt_days = 1", "  trans_sw = 0.6", "  wind_speed = 5.0", "  rel_hum = 0.8", "/", &
+            "  dt_days = 1", "  cloud = 0.28"  , "  wind_speed = 5.0", "  rel_hum = 0.8", "/", &
             "&chion", "  model = 'itm'", "  nml_itm = 'itm_chion'", "/", &
             "&itm_chion", "  H_snow_max = 5.0e3", "  Pmaxfrac = 0.6", "  trans_a = 0.46", "  trans_b = 6e-5", &
             "  trans_c = 0.01", "  itm_c = -45.0", "  itm_t = 10.0", "  itm_b = -2.0", "  itm_lat0 = 65.0", &

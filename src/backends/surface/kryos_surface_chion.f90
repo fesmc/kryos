@@ -12,10 +12,12 @@ module kryos_chion_host
     !   - daily top-of-atmosphere insolation (ITM, BESSI; fesmc/insol, on the orbit the
     !     host passes: the run's, from the forcing) from a per-day latitude table (insol_dlat)
     !     interpolated to the columns, as shortwave_down: as is
-    !     for ITM (which applies its own transmissivity), times a constant
-    !     transmissivity trans_sw for BESSI (surface shortwave), and as the
-    !     TOA itself (toa_shortwave) for BESSI's cloud-proxy longwave, so
-    !     chion does not divide by its own fixed-orbit 365-day TOA;
+    !     for ITM (which applies its own transmissivity); for BESSI (surface
+    !     shortwave) times the clear-sky transmissivity of chion's cloud proxy
+    !     at the surface elevation and one cloud fraction,
+    !     tau_clear(z)*(1 - cloud); and as the TOA itself (toa_shortwave) for
+    !     BESSI's cloud-proxy longwave, so chion does not divide by its own
+    !     fixed-orbit 365-day TOA;
     !   - the annual positive degree days (ITM only: its vegetation proxy for the
     !     critical snow depth and the snow-free land albedo), with chion's
     !     Calov-Greve integral on every pdd_dday-th day of the daily temperature,
@@ -47,8 +49,10 @@ module kryos_chion_host
     !
     ! Supported chion models: "itm", "bessi" and "pdd". BESSI's downwelling
     ! longwave is chion's own (longwave_scheme; default "cloud_proxy", whose
-    ! cloudiness 1 - SWdn/(TOA*tau_clear) is elevation-only here, SWdn/TOA =
-    ! trans_sw). PDD takes the air temperature and the snowfall/rainfall only.
+    ! cloudiness 1 - SWdn/(TOA*tau_clear(z)) is then the key cloud everywhere).
+    ! The cloud fraction is per domain: MAR v3.14 1981-2010 over Greenland's
+    ! ice gives SWdn/TOA = 0.61 + 0.05 z[km] in summer, cloud = 0.28.
+    ! PDD takes the air temperature and the snowfall/rainfall only.
     !
     ! Optionally (BESSI, surface_chion_seb_enable) the monthly means of the
     ! last annual cycle of BESSI's surface energy balance, albedo, surface
@@ -68,7 +72,8 @@ module kryos_chion_host
                            chion_restart_write, chion_restart_read, &
                            monthly_to_daily_class, monthly_to_daily_init, &
                            monthly_to_daily_controls, interp_monthly_to_day, &
-                           pdd_expected_positive_temperature, chion_tsrf_annual
+                           pdd_expected_positive_temperature, chion_tsrf_annual, &
+                           clear_sky_transmissivity
 
     implicit none
 
@@ -87,7 +92,7 @@ module kryos_chion_host
         real(wp)           :: sigma_pdd     ! [K] temperature standard deviation for the PDDs
         real(wp)           :: time_equil    ! [yr] cold-start snowpack spin-up
         integer            :: dt_days       ! [d] chion step; divides the 360-day year
-        real(wp)           :: trans_sw      ! [1] TOA -> surface shortwave transmissivity (BESSI)
+        real(wp)           :: cloud         ! [1] cloud fraction (BESSI): SWdn = TOA*tau_clear(z)*(1 - cloud)
         real(wp)           :: wind_speed    ! [m s-1] constant wind speed
         real(wp)           :: rel_hum       ! [1] constant relative humidity
         real(wp)           :: swe_init_ice = 0.0_wp   ! [kg m-2] cold start: the snowpack of ice columns (0: chion's own)
@@ -150,7 +155,7 @@ module kryos_chion_host
         integer                         :: nx, ny, ncol
         logical                         :: itm      ! model = "itm" (ITM-only forcing)
         logical                         :: insol    ! the model takes insolation (itm, bessi)
-        real(wp)                        :: sw_fac   ! shortwave_down = sw_fac * TOA insolation
+        logical                         :: bessi    ! model = "bessi" (surface shortwave from the cloud fraction)
     end type surface_chion_class
 
     public :: surface_chion_class
@@ -183,17 +188,17 @@ contains
 
         select case(trim(sc%chn%par%model))
             case("itm")
-                sc%itm    = .true.
-                sc%insol  = .true.
-                sc%sw_fac = 1.0_wp
+                sc%itm   = .true.
+                sc%bessi = .false.
+                sc%insol = .true.
             case("bessi")
-                sc%itm    = .false.
-                sc%insol  = .true.
-                sc%sw_fac = sc%par%trans_sw
+                sc%itm   = .false.
+                sc%bessi = .true.
+                sc%insol = .true.
             case("pdd")
-                sc%itm    = .false.
-                sc%insol  = .false.
-                sc%sw_fac = 0.0_wp
+                sc%itm   = .false.
+                sc%bessi = .false.
+                sc%insol = .false.
             case default
                 write(*,*) "surface_chion_init:: error: chion model must be itm, bessi or pdd &
                            &(the host supplies no forcing for others); got "//trim(sc%chn%par%model)
@@ -283,7 +288,7 @@ contains
         real(wp_acc), allocatable :: melt0(:), runoff0(:), refrz0(:), subl0(:)
         real(wp_acc), allocatable :: melt1(:), runoff1(:), refrz1(:), subl1(:)
         real(wp), allocatable :: melt_a(:), runoff_a(:), refrz_a(:), subl_a(:)
-        real(wp), allocatable :: fx(:,:), seb_sum(:,:,:)
+        real(wp), allocatable :: fx(:,:), seb_sum(:,:,:), sw_fac(:)
         integer,  allocatable :: idx(:)
         integer  :: na, i, icol, m, k, day, nday
         real(wp) :: dt, spd, T0, t_d, p_d, sf_d, S_d
@@ -322,14 +327,23 @@ contains
         p_ctl = transpose(ctl)
         deallocate(mon, ctl)
 
-        ! Fixed for the year: geometry, the air pressure from the surface
-        ! elevation and the annual-mean air temperature, the ice thickness
+        ! Fixed for the year: geometry, the shortwave transmissivity and the air
+        ! pressure from the surface elevation (the latter with the annual-mean air
+        ! temperature), the ice thickness
         ! (H_ice = 0 is a land column: no ice albedo, substrate or ablation)
         ! and (ITM) the annual positive degree days.
         col   = reshape(sum(t2m, dim=3)/real(nmon, wp), [sc%ncol])
         t_ann = col(idx)
         col = reshape(z_srf, [sc%ncol])
         sc%chn%forc%surface_height(idx) = col(idx)
+        ! shortwave_down = sw_fac*TOA: ITM applies its own transmissivity; BESSI the
+        ! cloud proxy's clear sky at the surface and the cloud fraction.
+        allocate(sw_fac(na))
+        if (sc%bessi) then
+            sw_fac = clear_sky_transmissivity(sc%chn%c, col(idx))*(1.0_wp - sc%par%cloud)
+        else
+            sw_fac = 1.0_wp
+        end if
         sc%chn%forc%air_pressure(idx)   = p_sl*exp(-sc%chn%c%grav*col(idx)/(R_dry*t_ann))
         col = reshape(H_ice, [sc%ncol])
         sc%chn%forc%H_ice(idx) = col(idx)
@@ -384,7 +398,7 @@ contains
                 sc%chn%forc%air_temperature(icol) = t_d
                 sc%chn%forc%snowfall_rate(icol)   = sf_d/spd             ! [mm/d] -> [kg m-2 s-1]
                 sc%chn%forc%rainfall_rate(icol)   = (p_d - sf_d)/spd
-                sc%chn%forc%shortwave_down(icol)  = sc%sw_fac*S_d
+                sc%chn%forc%shortwave_down(icol)  = sw_fac(i)*S_d
                 sc%chn%forc%toa_shortwave(icol)   = S_d
 
                 t_sum(i)  = t_sum(i)  + t_d*dt
@@ -585,7 +599,7 @@ contains
         call nml_read(filename, group, "sigma_pdd",   par%sigma_pdd)
         call nml_read(filename, group, "time_equil",  par%time_equil)
         call nml_read(filename, group, "dt_days",     par%dt_days)
-        call nml_read(filename, group, "trans_sw",    par%trans_sw)
+        call nml_read(filename, group, "cloud",       par%cloud)
         call nml_read(filename, group, "wind_speed",  par%wind_speed)
         call nml_read(filename, group, "rel_hum",     par%rel_hum)
         if (nml_has_param(filename, group, "swe_init_ice")) call nml_read(filename, group, "swe_init_ice", par%swe_init_ice)
