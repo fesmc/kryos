@@ -40,6 +40,9 @@ module kryos_chion_host
     !     sigma = min(max(tvar_sigma0 + tvar_sigma_slope*(T_mon - T0), tvar_sigma_min), tvar_sigma_max).
     ! ERA5 1981-2010 over the Greenland and Antarctic ice: sigma = 2.0 - 0.14 (T - T0) in [2, 6] K.
     !
+    ! The shortwave, the wind and the temperature variability are chion's
+    ! chion_forcing_host functions (calibrations in its header).
+    !
     ! Wind (BESSI's turbulent fluxes; the climate supplies none), constant through
     ! the year and set each annual cycle from the geometry:
     !     U = wind_speed + wind_lapse*max(z_srf,0)[km] + wind_slope*|grad z_srf|[m/km],
@@ -93,7 +96,8 @@ module kryos_chion_host
                            monthly_to_daily_class, monthly_to_daily_init, &
                            monthly_to_daily_controls, interp_monthly_to_day, &
                            pdd_expected_positive_temperature, chion_tsrf_annual, &
-                           clear_sky_transmissivity
+                           forcing_shortwave_cloud, forcing_wind_speed, forcing_tvar_sigma, &
+                           forcing_red_noise_monthly
 
     implicit none
 
@@ -253,7 +257,7 @@ contains
         allocate(sc%xi(sc%md%nday_year/sc%par%dt_days))
         sc%xi = 0.0_wp
         if (sc%par%tvar_sigma_max > 0.0_wp) &
-            sc%xi = red_noise_monthly(sc%md%nday_year, sc%par%dt_days, sc%par%tvar_tau, sc%par%tvar_seed)
+            sc%xi = forcing_red_noise_monthly(sc%md%nday_year, sc%par%dt_days, nday_mon, sc%par%tvar_tau, sc%par%tvar_seed)
 
         ! Column icol = i + (j-1)*nx: reshape order.
         sc%chn%forc%latitude_deg = reshape(lats, [sc%ncol])
@@ -360,8 +364,8 @@ contains
             mon(:,m) = col(idx)
         end do
         ! The daily temperature variability of each column and month, from its monthly mean.
-        sig = min(max(sc%par%tvar_sigma0 + sc%par%tvar_sigma_slope*(mon - T0), sc%par%tvar_sigma_min), &
-                  sc%par%tvar_sigma_max)
+        sig = forcing_tvar_sigma(mon, T0, sc%par%tvar_sigma0, sc%par%tvar_sigma_slope, sc%par%tvar_sigma_min, &
+                                 sc%par%tvar_sigma_max)
         call monthly_to_daily_controls(sc%md, mon, ctl)
         t_ctl = transpose(ctl)
         do m = 1, nmon
@@ -385,12 +389,13 @@ contains
         ! cloud proxy's clear sky at the surface and the cloud fraction.
         allocate(sw_fac(na))
         if (sc%bessi) then
-            sw_fac = clear_sky_transmissivity(sc%chn%c, col(idx))*(1.0_wp - sc%par%cloud)
+            sw_fac = forcing_shortwave_cloud(sc%chn%c, 1.0_wp, col(idx), sc%par%cloud)
         else
             sw_fac = 1.0_wp
         end if
         sc%chn%forc%air_pressure(idx)   = p_sl*exp(-sc%chn%c%grav*col(idx)/(R_dry*t_ann))
-        col = reshape(wind_speed_field(sc%par, z_srf, sc%dx), [sc%ncol])
+        col = reshape(forcing_wind_speed(z_srf, sc%dx, sc%par%wind_speed, sc%par%wind_lapse, sc%par%wind_slope, &
+                                         sc%par%wind_slope_length), [sc%ncol])
         sc%chn%forc%wind_speed(idx) = col(idx)
         col = reshape(H_ice, [sc%ncol])
         sc%chn%forc%H_ice(idx) = col(idx)
@@ -700,69 +705,6 @@ contains
         var = fill
         call scatter(var, val, idx, sc)
     end function unpack_col
-
-    function red_noise_monthly(nday, dt_days, tau, seed) result(xi)
-        ! One year of red noise, a value per step of dt_days: AR(1) with the lag-one correlation
-        ! exp(-dt_days/tau) driven by standard normals (Park-Miller uniforms, Box-Muller), then
-        ! its mean removed in every 30-day month and the whole scaled to unit variance.
-        integer,  intent(in) :: nday, dt_days, seed
-        real(wp), intent(in) :: tau        ! [d]
-        real(wp) :: xi(nday/dt_days)
-
-        integer, parameter :: i8 = selected_int_kind(18)
-        integer(i8) :: x
-        integer  :: n, k, m, nm
-        real(wp) :: r, u1, u2, g
-
-        n = nday/dt_days
-        x = int(mod(abs(seed), 2147483646), i8) + 1_i8
-        r = exp(-real(dt_days, wp)/max(tau, 1.0e-6_wp))
-        do k = 1, n
-            x  = mod(16807_i8*x, 2147483647_i8); u1 = real(x, wp)/2147483647.0_wp
-            x  = mod(16807_i8*x, 2147483647_i8); u2 = real(x, wp)/2147483647.0_wp
-            g  = sqrt(-2.0_wp*log(u1))*cos(8.0_wp*atan(1.0_wp)*u2)
-            if (k == 1) then
-                xi(k) = g
-            else
-                xi(k) = r*xi(k-1) + sqrt(1.0_wp - r*r)*g
-            end if
-        end do
-        nm = max(1, nday_mon/dt_days)
-        do m = 1, n, nm
-            xi(m:min(m+nm-1, n)) = xi(m:min(m+nm-1, n)) - sum(xi(m:min(m+nm-1, n)))/real(min(nm, n-m+1), wp)
-        end do
-        xi = xi/sqrt(max(sum(xi*xi)/real(n, wp), tiny(1.0_wp)))
-    end function red_noise_monthly
-
-    function wind_speed_field(par, z_srf, dx) result(u)
-        ! U = wind_speed + wind_lapse*max(z,0)[km] + wind_slope*|grad z|[m/km], at least 0; the
-        ! gradient a centred difference over 2n cells, n = max(1, nint(L/(2 dx))), one-sided
-        ! over the cells available at the edges.
-        type(surface_chion_param_class), intent(in) :: par
-        real(wp), intent(in) :: z_srf(:,:)          ! [m]
-        real(wp), intent(in) :: dx                  ! [m]
-        real(wp) :: u(size(z_srf,1), size(z_srf,2))
-
-        integer  :: i, j, n, nx, ny, i0, i1, j0, j1
-        real(wp) :: gx, gy
-
-        u = par%wind_speed + par%wind_lapse*max(z_srf, 0.0_wp)*1.0e-3_wp
-        if (par%wind_slope /= 0.0_wp) then
-            nx = size(z_srf,1); ny = size(z_srf,2)
-            n  = max(1, nint(par%wind_slope_length*1.0e3_wp/(2.0_wp*dx)))
-            do j = 1, ny
-                j0 = max(j-n, 1); j1 = min(j+n, ny)
-                do i = 1, nx
-                    i0 = max(i-n, 1); i1 = min(i+n, nx)
-                    gx = 0.0_wp; gy = 0.0_wp
-                    if (i1 > i0) gx = (z_srf(i1,j) - z_srf(i0,j))/(real(i1-i0, wp)*dx)
-                    if (j1 > j0) gy = (z_srf(i,j1) - z_srf(i,j0))/(real(j1-j0, wp)*dx)
-                    u(i,j) = u(i,j) + par%wind_slope*1.0e3_wp*sqrt(gx*gx + gy*gy)
-                end do
-            end do
-        end if
-        u = max(u, 0.0_wp)
-    end function wind_speed_field
 
     subroutine scatter(var, val, idx, sc)
         ! Overwrite the active columns of an (nx,ny) field.
