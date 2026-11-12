@@ -1,0 +1,55 @@
+#!/bin/bash
+# Many small gia_refcorr.sh cases in few jobs (the 1-D Earths of the Earth search, docs/dev/earth-search-design.md): each job is a
+# pool of NWORK workers on its own cores, each worker runs the next case of the list that is neither done nor claimed, until the
+# list is done or the job's time is nearly up. For when the number of jobs is limited and a case needs a fraction of a node.
+#   LIST=cases.txt NJOB=4 tools/levante/gia_refcorr_pool.sh        (submits NJOB jobs; resubmit the same list to go on)
+# The list: one case per line, "CASE PAR [VAR=value ...]" (the env of gia_refcorr.sh for that case: HIST, XHIST, R0, ...); # comments.
+# Env: LIST; NJOB (1); NWORK (8) workers per job, each on NCPU/NWORK cores (taskset) with as many OpenMP threads; NCPU (128),
+#   MEM (64G), TIME (12:00:00, partition KRYOS_PART); MARGIN [min] (60): a worker claims no case after TIME - MARGIN; KD and the
+#   rest of gia_refcorr.sh's env for every case (KEEP=last for many cases). Case output: $KD/refcorr/<CASE>/pool.out.
+# A case is done when its iter.log ends in "== done" (or "not converged"/"failed": then it is not retried; delete its folder to rerun).
+# A claim (<case>/claim, with the job id) of a job that no longer runs is taken over, so a resubmission resumes the cases of a job
+# that was cut off (gia_refcorr.sh restarts after the last finished iteration).
+set -uo pipefail
+_h=$(dirname "$(readlink -f "$0")"); [ -f "$_h/env.sh" ] || _h=$KRYOS/tools/levante; . "$_h/env.sh"
+LIST=$(readlink -f "${LIST:?}"); KD=${KD:-$KRYOS_WORK/kryos_data}
+NWORK=${NWORK:-8}; NCPU=${NCPU:-128}; TIME=${TIME:-12:00:00}; MARGIN=${MARGIN:-60}
+if [ "${KRYOS_JOB:-}" != 1 ]; then
+    mkdir -p $KD/refcorr
+    for j in $(seq 1 ${NJOB:-1}); do
+        sbatch --parsable -A $ACCOUNT $KRYOS_PART -t $TIME -c $NCPU --mem=${MEM:-64G} -J gia_refcorr_pool \
+            -o $KD/refcorr/pool-%j.out --export=ALL,KRYOS_JOB=1,LIST=$LIST,KD=$KD "$_h/gia_refcorr_pool.sh"
+    done
+    exit
+fi
+IFS=: read -r hh mm ss <<< "$TIME"; deadline=$(( $(date +%s) + 10#$hh * 3600 + 10#$mm * 60 - MARGIN * 60 ))
+# the cores of the job, NCPU/NWORK per worker
+cpus=(); for r in $(taskset -cp $$ | sed 's/.*: //' | tr ',' ' '); do
+    case $r in *-*) cpus+=($(seq ${r%-*} ${r#*-})) ;; *) cpus+=($r) ;; esac
+done
+per=$(( ${#cpus[@]} / NWORK )); [ $per -ge 1 ] || { echo "$NWORK workers on ${#cpus[@]} cores"; exit 1; }
+echo "== pool $SLURM_JOB_ID on $(hostname): $NWORK workers x $per cores, list $LIST, claims until $(date -d @$deadline -Is)"
+finished() { tail -1 $1/iter.log 2> /dev/null | grep -q "^== done\|^not converged\|failed"; }
+claim() {   # claim the case folder $1 (atomic mkdir); a claim of a job that no longer runs is taken over
+    local c=$1/claim j
+    mkdir -p $1; mkdir $c 2> /dev/null && { echo $SLURM_JOB_ID > $c/job; return 0; }
+    j=$(cat $c/job 2> /dev/null); [ -n "$j" ] && squeue -h -j $j 2> /dev/null | grep -q . && return 1
+    rm -rf $c; mkdir $c 2> /dev/null && { echo $SLURM_JOB_ID > $c/job; return 0; }
+    return 1
+}
+worker() {
+    local w=$1 set case par vars
+    set=$(IFS=,; echo "${cpus[*]:$(( w * per )):$per}")
+    while read -r case par vars; do
+        [ -z "$case" ] || [[ $case == \#* ]] && continue
+        [ $(date +%s) -lt $deadline ] || break
+        O=$KD/refcorr/$case; finished $O && continue; claim $O || continue
+        echo "worker $w: $case $(date -Is)"
+        env KRYOS_JOB=1 CASE=$case PAR=$par NCPU=$per NTHR=$per $vars taskset -c $set bash $_h/gia_refcorr.sh > $O/pool.out 2>&1
+        echo "worker $w: $case exit $? $(date -Is) ($(tail -1 $O/iter.log 2> /dev/null))"
+        rm -rf $O/claim
+    done < $LIST
+}
+for w in $(seq 0 $(( NWORK - 1 ))); do worker $w & sleep 2; done
+wait
+echo "== pool $SLURM_JOB_ID done $(date -Is)"
