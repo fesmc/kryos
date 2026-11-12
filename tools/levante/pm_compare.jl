@@ -236,9 +236,13 @@ function read_esl(fesmdata, spec)
     [(group = get(spec, "name", "ESL"), kind = :esl, site_name = @sprintf("ESL %g ka", a / 1000), lat = 0.0, lon = 0.0, t = a,
       value = v[i], sd = sd[i]) for (i, a) in enumerate(ages)]
 end
-# a run's ESL [m] at the ages: bsl_ive (ice-volume equivalent) of its record of each age (trun) minus that of its last record
+# whether a run has reached the present (its last record is that of 0 ka): the point data (present-day rates, ESL relative to the
+# present) of a run still going, or stopped, would be those of its last record instead
+run_done(r::Run) = abs(r.t[end] - trun(r, 0.0)) < 0.01
+# a run's ESL [m] at the ages: bsl_ive (ice-volume equivalent) of its record of each age (trun) minus that of its last record (0 ka);
+# NaN for a run that has not reached the present
 function esl_at(dir, ages)
-    r = read_run(dir); r === nothing && return fill(NaN, length(ages))
+    r = read_run(dir); (r === nothing || !run_done(r)) && return fill(NaN, length(ages))
     [(k = findfirst(x -> abs(x - trun(r, a)) < 0.01, r.t); k === nothing ? NaN : r.bsl_ive[k] - r.bsl_ive[end]) for a in ages]
 end
 

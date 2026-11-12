@@ -161,7 +161,8 @@ function gnss_model(dir, gd)
     isempty(gd.obs) && return nothing
     v = fill(NaN, length(gd.obs)); ig = findall(s -> s.kind == :gnss, gd.obs); ie = findall(s -> s.kind == :esl, gd.obs)
     if !isempty(ig)
-        R = PM.read_rate(dir); R === nothing || (v[ig] = PM.rate_at(R, [gd.obs[i].lon for i in ig], [gd.obs[i].lat for i in ig]))
+        r = PM.read_run(dir); R = (r === nothing || !PM.run_done(r)) ? nothing : PM.read_rate(dir)     # the present-day rate: a finished run
+        R === nothing || (v[ig] = PM.rate_at(R, [gd.obs[i].lon for i in ig], [gd.obs[i].lat for i in ig]))
     end
     isempty(ie) || (v[ie] = PM.esl_at(dir, [gd.obs[i].t for i in ie]))
     all(isnan, v) ? nothing : v
