@@ -23,11 +23,21 @@ module kryos_chion_host
     !     Calov-Greve integral on every pdd_dday-th day of the daily temperature,
     !     as smbpal does, fixed for the year;
     !   - the snowfall/rainfall split (smbpal's calc_snowfrac);
-    !   - constant wind speed and relative humidity, the air pressure from the
+    !   - the wind speed from the surface elevation and slope (below), a constant
+    !     relative humidity, the air pressure from the
     !     surface elevation (barometric, with the annual-mean air temperature, as
     !     Chion.jl's air_pressure_from_surface_height) and the solar longitude of
     !     the day (BESSI's energy balance; the climate supplies none of them).
     ! Monthly -> daily is chion_forcing_monthly (mean-preserving).
+    !
+    ! Wind (BESSI's turbulent fluxes; the climate supplies none), constant through
+    ! the year and set each annual cycle from the geometry:
+    !     U = wind_speed + wind_lapse*max(z_srf,0)[km] + wind_slope*|grad z_srf|[m/km],
+    ! the slope a centred difference over a fixed baseline of about
+    ! wind_slope_length (2n cells, n = max(1, nint(L/(2 dx)))), so that it does not
+    ! depend on the grid's resolution. A first-order stand-in for the katabatic
+    ! wind; the coefficients are per domain (ERA5 1981-2010 summer 10-m wind over
+    ! the ice: Greenland 2.5 + 1.27 z[km], Antarctica 5.5 + 0.2 z[km]).
     !
     ! Active columns: land or ice, not open ocean (H_ice > 0 or z_bed > z_sl),
     ! refreshed every annual cycle. A column switched on starts from chion's
@@ -93,7 +103,10 @@ module kryos_chion_host
         real(wp)           :: time_equil    ! [yr] cold-start snowpack spin-up
         integer            :: dt_days       ! [d] chion step; divides the 360-day year
         real(wp)           :: cloud         ! [1] cloud fraction (BESSI): SWdn = TOA*tau_clear(z)*(1 - cloud)
-        real(wp)           :: wind_speed    ! [m s-1] constant wind speed
+        real(wp)           :: wind_speed    ! [m s-1] wind speed at sea level on flat ground
+        real(wp)           :: wind_lapse        = 0.0_wp   ! [m s-1 km-1] its change with the surface elevation
+        real(wp)           :: wind_slope        = 0.0_wp   ! [m s-1 per m/km] its change with the surface slope
+        real(wp)           :: wind_slope_length = 50.0_wp  ! [km] the baseline of the slope
         real(wp)           :: rel_hum       ! [1] constant relative humidity
         real(wp)           :: swe_init_ice = 0.0_wp   ! [kg m-2] cold start: the snowpack of ice columns (0: chion's own)
     end type surface_chion_param_class
@@ -153,6 +166,7 @@ module kryos_chion_host
         type(surface_chion_ann_class)   :: ann
         type(surface_chion_seb_class)   :: seb
         integer                         :: nx, ny, ncol
+        real(wp)                        :: dx       ! [m] grid spacing (0: not a metric grid, no slope)
         logical                         :: itm      ! model = "itm" (ITM-only forcing)
         logical                         :: insol    ! the model takes insolation (itm, bessi)
         logical                         :: bessi    ! model = "bessi" (surface shortwave from the cloud fraction)
@@ -168,12 +182,13 @@ module kryos_chion_host
 
 contains
 
-    subroutine surface_chion_init(sc, filename, lats, group, chion_group, cnst)
+    subroutine surface_chion_init(sc, filename, lats, dx, group, chion_group, cnst)
         ! Parameters, chion (cold state) and the annual fields on an (nx,ny) grid.
         ! chion takes its shared physical constants from the domain's record.
         type(surface_chion_class), intent(inout) :: sc
         character(len=*),          intent(in)    :: filename
         real(wp),                  intent(in)    :: lats(:,:)      ! [deg N]
+        real(wp),                  intent(in)    :: dx             ! [m] grid spacing; 0 if not a metric grid
         character(len=*),          intent(in)    :: group          ! &surface_chion
         character(len=*),          intent(in)    :: chion_group    ! &chion
         type(phys_const_class),    intent(in)    :: cnst
@@ -183,6 +198,11 @@ contains
         sc%nx   = size(lats,1)
         sc%ny   = size(lats,2)
         sc%ncol = sc%nx*sc%ny
+        sc%dx   = dx
+        if (sc%par%wind_slope /= 0.0_wp .and. .not. sc%dx > 0.0_wp) then
+            write(*,*) "surface_chion_init:: error: wind_slope needs a grid in metres or km; dx = ", dx
+            stop 1
+        end if
 
         call chion_init(sc%chn, filename, sc%ncol, group=chion_group, cnst=cnst)
 
@@ -217,7 +237,7 @@ contains
         sc%chn%forc%latitude_deg = reshape(lats, [sc%ncol])
         if (sc%insol) call insol_table_init(sc%ins, sc%chn%forc%latitude_deg, sc%md%nday_year)
 
-        ! Constant for the run.
+        ! Constant for the run; the wind until the first annual cycle sets it from the geometry.
         sc%chn%forc%wind_speed            = sc%par%wind_speed
         sc%chn%forc%relative_humidity     = sc%par%rel_hum
         sc%chn%forc%has_relative_humidity = .true.
@@ -345,6 +365,8 @@ contains
             sw_fac = 1.0_wp
         end if
         sc%chn%forc%air_pressure(idx)   = p_sl*exp(-sc%chn%c%grav*col(idx)/(R_dry*t_ann))
+        col = reshape(wind_speed_field(sc%par, z_srf, sc%dx), [sc%ncol])
+        sc%chn%forc%wind_speed(idx) = col(idx)
         col = reshape(H_ice, [sc%ncol])
         sc%chn%forc%H_ice(idx) = col(idx)
 
@@ -602,6 +624,10 @@ contains
         call nml_read(filename, group, "cloud",       par%cloud)
         call nml_read(filename, group, "wind_speed",  par%wind_speed)
         call nml_read(filename, group, "rel_hum",     par%rel_hum)
+        if (nml_has_param(filename, group, "wind_lapse"))        call nml_read(filename, group, "wind_lapse", par%wind_lapse)
+        if (nml_has_param(filename, group, "wind_slope"))        call nml_read(filename, group, "wind_slope", par%wind_slope)
+        if (nml_has_param(filename, group, "wind_slope_length")) &
+            call nml_read(filename, group, "wind_slope_length", par%wind_slope_length)
         if (nml_has_param(filename, group, "swe_init_ice")) call nml_read(filename, group, "swe_init_ice", par%swe_init_ice)
     end subroutine surface_chion_par_load
 
@@ -640,6 +666,36 @@ contains
         var = fill
         call scatter(var, val, idx, sc)
     end function unpack_col
+
+    function wind_speed_field(par, z_srf, dx) result(u)
+        ! U = wind_speed + wind_lapse*max(z,0)[km] + wind_slope*|grad z|[m/km], at least 0; the
+        ! gradient a centred difference over 2n cells, n = max(1, nint(L/(2 dx))), one-sided
+        ! over the cells available at the edges.
+        type(surface_chion_param_class), intent(in) :: par
+        real(wp), intent(in) :: z_srf(:,:)          ! [m]
+        real(wp), intent(in) :: dx                  ! [m]
+        real(wp) :: u(size(z_srf,1), size(z_srf,2))
+
+        integer  :: i, j, n, nx, ny, i0, i1, j0, j1
+        real(wp) :: gx, gy
+
+        u = par%wind_speed + par%wind_lapse*max(z_srf, 0.0_wp)*1.0e-3_wp
+        if (par%wind_slope /= 0.0_wp) then
+            nx = size(z_srf,1); ny = size(z_srf,2)
+            n  = max(1, nint(par%wind_slope_length*1.0e3_wp/(2.0_wp*dx)))
+            do j = 1, ny
+                j0 = max(j-n, 1); j1 = min(j+n, ny)
+                do i = 1, nx
+                    i0 = max(i-n, 1); i1 = min(i+n, nx)
+                    gx = 0.0_wp; gy = 0.0_wp
+                    if (i1 > i0) gx = (z_srf(i1,j) - z_srf(i0,j))/(real(i1-i0, wp)*dx)
+                    if (j1 > j0) gy = (z_srf(i,j1) - z_srf(i,j0))/(real(j1-j0, wp)*dx)
+                    u(i,j) = u(i,j) + par%wind_slope*1.0e3_wp*sqrt(gx*gx + gy*gy)
+                end do
+            end do
+        end if
+        u = max(u, 0.0_wp)
+    end function wind_speed_field
 
     subroutine scatter(var, val, idx, sc)
         ! Overwrite the active columns of an (nx,ny) field.
@@ -820,7 +876,7 @@ contains
         class(chion_surface_t), intent(inout) :: self
         type(init_ctx_t),       intent(in)    :: ctx
 
-        real(dp) :: offset
+        real(dp) :: offset, dx
 
         call group_read(self, ctx)
         self%prec = cwp
@@ -828,7 +884,10 @@ contains
         self%ny   = ctx%grid%G%ny
         self%opt  = surface_opt_t(melt=.true., runoff=.true., refrz=.true., albedo=.false.)
 
-        call surface_chion_init(self%sc, trim(ctx%par_file), real(ctx%grid%lat, cwp), &
+        ! The grid spacing [m] for the slope of the wind; none on a lon-lat grid.
+        dx = 0.0_dp
+        if (trim(ctx%grid%cs%units) /= "degrees") dx = ctx%grid%G%dx*ctx%grid%cs%xy_conv
+        call surface_chion_init(self%sc, trim(ctx%par_file), real(ctx%grid%lat, cwp), real(dx, cwp), &
                                 group=trim(self%host_group), chion_group=trim(self%chion_group), &
                                 cnst=ctx%cnst)
         self%opt%orbit = self%sc%insol                       ! the forcing's orbit for the insolation
