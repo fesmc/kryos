@@ -35,8 +35,12 @@ const EFFECTS = [("B1_170", "B1", "lmax 170 - 256 (B1)"), ("B1_L80", "B1_170", "
                  ("B1_bm", "B1_L80", "radial profile: B1_bm - B1_L80"), ("B3", "B1_bm", "lateral: B3 - B1_bm"),
                  ("B3", "B1_170", "3-D - 1-D: B3 - B1 (l170)")]
 const GROUPS = ["Laurentide" => ["North_America_Arctic", "North_America_Atlantic"], "Greenland" => ["Greenland"],
-                "Fennoscandia/Barents" => ["Europe", "Eurasian_Arctic"], "Antarctica" => ["Antarctica"],
+                "Fennoscandia" => ["Europe"], "Barents" => ["Eurasian_Arctic"], "Antarctica" => ["Antarctica"],
                 "far field" => ["Caribbean", "East_Asia", "Southeast_Asia", "South_Asia", "Australia", "Pacific_Islands"]]
+# groups made of groups (the configs before the split of Fennoscandia/Barents, 2026-11-12: the Fennoscandian shield and the softer,
+# thinner Barents shelf want different Earths); in_group: an index point is in a group or in a union that holds its group
+const GROUP_UNIONS = Dict("Fennoscandia/Barents" => ["Fennoscandia", "Barents"])
+in_group(o, g) = o.group == g || o.group in get(GROUP_UNIONS, g, String[])
 # the marine-bed areas where B1 and PaleoMIST differ most: by sector or site of GAPSLIP (no data in the Weddell embayment itself)
 const FOCUS = ["Hudson Bay" => (:sector, ["Hudson_Bay"]), "Hudson Strait" => (:sector, ["Hudson_Strait"]),
                "Ross Sea (Scott Coast, Terra Nova Bay)" => (:site_name, ["Southern_Scott_Coast", "Terra_Nova_Bay"]),

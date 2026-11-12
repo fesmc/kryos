@@ -211,7 +211,7 @@ function prepare(cfgfile, C, og)
     obs = PM.read_indicators(cfg["score"]["fesmdata"])
     open(joinpath(C, "obs.csv"), "w") do io
         println(io, "group,n_index_points,n_marine_limiting,n_terrestrial_limiting")
-        for g in og; println(io, g, ",", join((count(o -> o.group == g && o.type == t, obs) for t in (0, -1, 1)), ",")); end
+        for g in og; println(io, g, ",", join((count(o -> PM.in_group(o, g) && o.type == t, obs) for t in (0, -1, 1)), ",")); end
     end
     cfg, sg, obs
 end
@@ -261,7 +261,7 @@ function init(cfgfile, C)
     logline(C, "```\n", join(groups_summary(sg), "\n"), "\n```\n")
     logline(C, "Index points assimilated (GAPSLIP 2.1 primary, 0-80 ka) and limiting data (diagnostics) by group:\n\n",
             "| group | IP | ML | TL |\n|---|---|---|---|")
-    for g in og; logline(C, "| ", g, " | ", join((count(o -> o.group == g && o.type == t, obs) for t in (0, -1, 1)), " | "), " |"); end
+    for g in og; logline(C, "| ", g, " | ", join((count(o -> PM.in_group(o, g) && o.type == t, obs) for t in (0, -1, 1)), " | "), " |"); end
     println("init: ", C, ", iteration 1 with members 0-", ne)
 end
 
@@ -357,7 +357,7 @@ function gross_error_cut(C, k, obs, A, res, σm, zcut)
     end
     og = unique(o.group for o in obs)
     logline(C, "\nGross-error cut at the prior mean member (|z| > ", zcut, " with sigma_m ", σm, " m): kept ", length(kept), " of ",
-            count(o -> o.type == 0, obs), " index points (", join(["$g $(count(i -> obs[i].group == g, kept)) of $(count(o -> o.group == g && o.type == 0, obs))" for g in og], ", "), ")")
+            count(o -> o.type == 0, obs), " index points (", join(["$g $(count(i -> PM.in_group(obs[i], g), kept)) of $(count(o -> PM.in_group(o, g) && o.type == 0, obs))" for g in og], ", "), ")")
     kept
 end
 
@@ -366,10 +366,10 @@ function update(C, k)
     cfg = config(C); es = cfg["esmda"]; α = Float64.(es["alpha"]); Na = length(α)
     sg = scale_groups(cfg["scale"]); P = params(cfg, sg)
     og = es["obs_groups"]; σm, Ls, Lt = obs_err(es)
-    obs = [o for o in PM.read_indicators(cfg["score"]["fesmdata"]) if o.group in og]
+    obs = [o for o in PM.read_indicators(cfg["score"]["fesmdata"]) if any(g -> PM.in_group(o, g), og)]
     A = sort(NCDataset(ds -> Float64.(ds["time"][:]),
                        joinpath(cfg["score"]["fesmdata"], "Global", "GLOBAL-0.5DEG", "GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc")))
-    sets = [("obs groups", collect(eachindex(obs))); [(g, findall(o -> o.group == g, obs)) for g in og]]
+    sets = [("obs groups", collect(eachindex(obs))); [(g, findall(o -> PM.in_group(o, g), obs)) for g in og]]
     ids, Θall = read_theta(C, k)
     run = parse.(Int, readlines(joinpath(itdir(C, k), "members.txt")))
 
@@ -424,7 +424,7 @@ function update(C, k)
     # report
     logline(C, "\n## iteration $k", analysis ? " (alpha = $(α[k]))" : " (evaluation)", "\n")
     logline(C, "members run ", length(run), ", succeeded ", length(res), isempty(failed) ? "" : "; failed: " * join(failed, "; "),
-            ". Assimilated index points ", length(ip), " (", join(["$g $(count(i -> obs[i].group == g, ip))" for g in og], ", "), ")",
+            ". Assimilated index points ", length(ip), " (", join(["$g $(count(i -> PM.in_group(obs[i], g), ip))" for g in og], ", "), ")",
             isempty(bad) ? "" : " ($(length(bad)) with sigma 0 left out)", " (sigma at the ensemble-mean RSL", σm > 0 ? "; model error $(σm) m" * (Ls > 0 ? ", correlated over $(Ls) km and $(Lt / 1000) kyr" : "") : "",
             "); scores over all index points. Run time per member ",
             isempty(res) ? "-" : @sprintf("%.0f-%.0f s", extrema(r.sec for r in values(res))...), ".\n")

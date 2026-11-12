@@ -116,8 +116,8 @@ implausibility(χ2, n) = (χ2 - n) / sqrt(2n)
 # the members of wave k that ran, their residuals per group and ESL at 20 ka
 function wave_residuals(C, k, cfg)
     og = cfg["ensemble"]["obs_groups"]
-    obs = [o for o in PM.read_indicators(cfg["score"]["fesmdata"]) if o.type == 0 && o.group in og]
-    idx = [(g, findall(o -> o.group == g, obs)) for g in og]
+    obs = [o for o in PM.read_indicators(cfg["score"]["fesmdata"]) if o.type == 0 && any(g -> PM.in_group(o, g), og)]
+    idx = [(g, findall(o -> PM.in_group(o, g), obs)) for g in og]
     A = sort(NCDataset(ds -> Float64.(ds["time"][:]),
                        joinpath(cfg["score"]["fesmdata"], "Global", "GLOBAL-0.5DEG", "GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc")))
     ids, Θ = ES.read_theta(C, k)
@@ -168,7 +168,7 @@ end
 # scored on the same window.
 function score_window(obs, A, og, tmax)
     kp = findall(o -> o.t <= tmax, obs); ka = findall(<=(tmax), A)
-    (tmax = tmax, kp = kp, ka = ka, A = A[ka], obs = obs[kp], idx = [(g, findall(o -> o.group == g, obs[kp])) for g in og])
+    (tmax = tmax, kp = kp, ka = ka, A = A[ka], obs = obs[kp], idx = [(g, findall(o -> PM.in_group(o, g), obs[kp])) for g in og])
 end
 # per data group (log L, chi2, n, I) of a series S (all points x all ages) on the window W; nothing when S misses a record there (the
 # points where S has gaps are dropped, as in group_residuals)
