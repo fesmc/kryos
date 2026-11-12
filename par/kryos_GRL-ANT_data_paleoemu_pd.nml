@@ -212,6 +212,7 @@
     clock         = "forcing"
     out_2D        = "out_2D"       ! surface_grl.nc: smb, T_srf, melt, runoff, refreezing, S, PDDs, ...
     out_1D        = "out_1D"
+    out_seb       = "out_2D"       ! surface_grl_seb.nc: the monthly surface energy balance (against MAR / RACMO)
     surface_chion = "surface_chion"
     chion         = "chion"
 /
@@ -229,6 +230,7 @@
     clock         = "forcing"
     out_2D        = "out_2D"       ! surface_ant.nc: smb, T_srf, melt, runoff, refreezing, S, PDDs, ...
     out_1D        = "out_1D"
+    out_seb       = "out_2D"       ! surface_ant_seb.nc: the monthly surface energy balance (against MAR / RACMO)
     surface_chion = "surface_chion"
     chion         = "chion_ant"     ! Antarctica's own ITM group (itm_chion_ant): the per-domain tuning
 /
