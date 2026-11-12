@@ -50,7 +50,6 @@ set       = ['ice_nor.taub_domain_file="{fesmdata}/North/NH-32KM/NH-32KM_IceHist
 threads   = 8                            # VILMA2 barely scales: 8 threads ~12.5 min, 64 ~8 min (2026-11-09)
 mem       = "10G"                        # the shared partition bills max(cpus, mem / 0.9 GB): ~12 cpus
 time      = "01:00:00"
-partition = "shared"
 throttle  = 29                           # members running at once (0: no limit); 29 + the queued analysis = 30 jobs max (Alex, 2026-11-09)
 
 [score]

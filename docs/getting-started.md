@@ -44,7 +44,7 @@ The dependencies are checkouts, or symlinks to checkouts, at the kryos root (the
 | `kryos` | [fesmc/kryos](https://github.com/fesmc/kryos) | `main` | everything |
 | `fesm-utils` | [fesmc/fesm-utils](https://github.com/fesmc/fesm-utils) | `phase0-kryos` | always (ncio, grids, coupler, htopo; LIS, FFTW, SHTns) |
 | `vilma2` | [fesmc/vilma2](https://github.com/fesmc/vilma2) | `main` | `vilma=1`; and `make check` in any build (two `input/` copies come from it) |
-| `PlasticIceSheet` | [fesmc/PlasticIceSheet](https://github.com/fesmc/PlasticIceSheet) | `main` | `plastic=1`; not in the manifest: clone it by hand |
+| `PlasticIceSheet` | [fesmc/PlasticIceSheet](https://github.com/fesmc/PlasticIceSheet) | `main` | `plastic=1` |
 | `yelmo` | [fesmc/yelmo](https://github.com/fesmc/yelmo) | `stable` | `yelmo=1`; and `make check` (the Yelmo copies in `input/`) |
 | `FastIsostasy` | [palma-ice/FastIsostasy](https://github.com/palma-ice/FastIsostasy) | `stable` | `fastisostasy=1` (default on) |
 | `chion` | [fesmc/chion](https://github.com/fesmc/chion) | `stable` | `chion=1` (default on) |
@@ -88,6 +88,13 @@ statements under `src/` (configme >= 0.16). `--only` leaves the dependencies' ow
 `make depend`, after adding a source file or a `use`. The dependency wiring is in
 [config/common.mk](https://github.com/fesmc/kryos/blob/main/config/common.mk).
 
+Each dependency's Makefile is written the same way, in its checkout, from its own template; e.g. PlasticIceSheet
+(no machine files in its repository: the flags of the machine come from configme):
+
+```bash
+cd ~/models/kryos/PlasticIceSheet && configme config PlasticIceSheet --only -m dkrz_levante -c ifx
+```
+
 ## Build
 
 `make` alone lists the targets and the current switches. `openmp=1` is the default; fesm-utils, VILMA2,
@@ -113,23 +120,17 @@ make deps-static vilma=1 yelmo=0
 ```
 
 `deps-static` runs `fesmutils-static` and the `<backend>-static` target of every backend switched on:
-here FastIsostasy, chion, insol (always) and VILMA2 (`make -C vilma2 vilma-static openmp=1`). With
-`plastic=1` it would also run `plastic-static`, but that passes only `config=` to PlasticIceSheet (not `openmp=`
-or `lis=`), so build PlasticIceSheet by hand:
+here FastIsostasy, chion, insol (on by default) and VILMA2 (`make -C vilma2 vilma-static openmp=1`). With
+`plastic=1` it also runs `plastic-static`: PlasticIceSheet with the same `openmp=` and `lis=1` against the LIS of
+kryos' fesm-utils (`make -C PlasticIceSheet static openmp=1 lis=1 FESMUTILSROOT=<kryos>/fesm-utils`). Its tests:
 
 ```bash
-cd ~/models/PlasticIceSheet
-L=$HOME/models/kryos/fesm-utils/lis/lis-omp     # the LIS kryos links (openmp=1)
-make static config=dkrz_levante_ifx openmp=1 lis=1 LISROOT=$L
-make check  config=dkrz_levante_ifx openmp=1 lis=1 LISROOT=$L
+make -C PlasticIceSheet check openmp=1 lis=1 FESMUTILSROOT=$PWD/fesm-utils
 ```
 
 - `make static` writes `libplastic/include/libplastic.a` and the `.mod` files; `make check` builds and runs the
   library's tests (`test_core`, `test_closures`, `test_surface`, `test_steady`, `test_inversion`).
 - Pass the same switches to `check` as to `static`: with `lis=1` the tests link `-llis`.
-- `lis=1` (ifx only): Lis for the linear solves of the steady SMB-driven solver. Without `LISROOT` the
-  `dkrz_levante_ifx` fragment points at a personal fesm-utils build; pass the LIS of your kryos checkout, the one
-  kryos puts on its link line (`LIB_PLASTIC` includes `LIB_LIS`).
 - `make clean` between compilers: the `.mod` files are compiler-specific.
 - API, options and tests: PlasticIceSheet
   [docs/fortran-port.md](https://github.com/fesmc/PlasticIceSheet/blob/main/docs/fortran-port.md).
@@ -216,6 +217,7 @@ below as Levante's / albedo's:
 | `FESMDATA`, `FESMDATA_SOURCES` | `/work/ba1442/fesmdata` / `/albedo/work/projects/p_forclima/fesmdata`, and `$FESMDATA-sources` | FesmData and its original data, read-only; `FESMDATA` is linked as `$KRYOS/fesmdata` |
 | `KRYOS_DATA` | `/work/ba1442/kryos_data` / `/albedo/work/projects/p_forclima/kryos_data` | kryos reference data, read-only: refcorr topographies, the released tau_b products (`plastic/`), the inputs of the climate backend paleoemu (`paleoemu/`), the shared remapping weights (`maps/`); linked as `$KRYOS/kryos_data`. albedo's is a copy of Levante's |
 | `KRYOS_PART`, `KRYOS_PART_LONG` | `-p shared` / `-p smp --qos=12h` and `--qos=48h` | the sbatch partition of the tools' small jobs (up to 12 h), and of their jobs of days |
+| `KRYOS_QUEUE` | `shared` / `12h` | the runme queue of the model runs of the ensembles and calibrations (`[run] partition` of a config overrides it) |
 | `VILMA2` | `$KRYOS/vilma2` | the vilma2 checkout of the standalone runs (`bin/vilma.x`, `input/`) |
 | `PM_DIR`, `PM_REF` | `$KRYOS_WORK/paleomist`, the reference runs | your standalone VILMA2 runs; the read-only reference runs the scores compare with |
 | `ACCOUNT` | the `account` of `.runme/config.toml`, else `ba1442` / `envi.p_forclima` | the Slurm account of the small Julia and analysis jobs of the tools (model runs take runme's) |
@@ -252,12 +254,19 @@ It checks the paths and the builds, and sets up the checkout:
 It is safe to rerun.
 
 **albedo.** [tools/albedo/stack.sh](https://github.com/fesmc/kryos/blob/main/tools/albedo/stack.sh) builds a stack from
-scratch: the kryos checkout and its dependencies at the refs of `.configme/manifest.toml` (fesm-utils, chion, insol,
-PaleoEmulator), configured with configme for `awi_albedo` and ifx, built with
-`yelmo=0 fastisostasy=0 vilma=0 plastic=0 paleoemu=1`, then `tools/levante/setup.sh`:
+scratch: the kryos checkout and the dependencies of the backends that `BUILD` turns on, at the refs of
+`.configme/manifest.toml`, configured with configme for `awi_albedo` and ifx, built, then `tools/levante/setup.sh`.
+The default is the plastic ice backend with VILMA2 (`yelmo=0 fastisostasy=0 vilma=1 plastic=1 openmp=1`):
 
 ```bash
-tools/albedo/stack.sh /albedo/work/user/$USER/kryos-work paleoemu-climate
+tools/albedo/stack.sh /albedo/work/user/$USER/kryos-plastic
+```
+
+The climate backend paleoemu needs `paleoemu=1` in `BUILD` (PaleoEmulator), e.g. the SMB tuning's stack:
+
+```bash
+BUILD="yelmo=0 fastisostasy=0 vilma=0 plastic=0 paleoemu=1 openmp=1" \
+    tools/albedo/stack.sh /albedo/work/user/$USER/kryos-work paleoemu-climate
 ```
 
 It needs a configme that knows kryos (`CONFIGME`, see the script). On albedo, git is a module (`module load git`;

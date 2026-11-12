@@ -13,4 +13,5 @@ deps = [
     "insol:stable",
     "vilma2:main",
     "PaleoEmulator:main",
+    "PlasticIceSheet:main",
 ]

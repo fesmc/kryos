@@ -354,8 +354,9 @@ Both job scripts:
 - **Config:** the strings of a config may use the placeholders `{kryos}`, `{fesmdata}`, `{kryos_data}`, `{maps}` and
   `{work}` (`KRYOS`, `FESMDATA`, `KRYOS_DATA`, `KRYOS_WORK` of `env.sh`; `{maps}` is the checkout's `maps/`).
   `[run] kryos_dir` (default the checkout of the tools), `set_nml` (its `set_nml.py`), `maps` (the checkout's
-  `maps/`) and `[score] fesmdata` (`FESMDATA`) have defaults, so the configs in the repository set none of them.
-  `[run] partition` is a runme queue alias (`shared`, `compute`); the account is that of `.runme/config.toml`. The
+  `maps/`), `partition` (`KRYOS_QUEUE`) and `[score] fesmdata` (`FESMDATA`) have defaults, so the configs in the
+  repository set none of them. `[run] partition` is a runme queue alias of the machine (Levante `shared`, `compute`;
+  albedo `12h`, `48h`); the account is that of `.runme/config.toml`. The
   init writes the expanded config into the folder, which then does not depend on the environment.
 - **Binary:** they need a `kryos.x` built with `plastic=1 vilma=1` in `[run] kryos_dir`
   (`libkryos/bin/kryos.x`), and runme >= 0.5.27 (`tools/levante/setup.sh`).

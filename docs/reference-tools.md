@@ -16,7 +16,7 @@ builds a kryos stack on albedo.
 
 | File | What |
 |---|---|
-| [env.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/env.sh) | The environment of every tool: `KRYOS`, `KRYOS_WORK`, `FESMDATA`, `FESMDATA_SOURCES`, `KRYOS_DATA`, `VILMA2`, `PM_DIR`, `PM_REF`, `ACCOUNT`, `KRYOS_PART`, `KRYOS_PART_LONG`, `KRYOS_RUNME`, `KRYOS_JULIA`, with the defaults of `KRYOS_MACHINE` (levante, albedo) (overrides in the environment or `~/.kryos.env`); function `kryos_jl` |
+| [env.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/env.sh) | The environment of every tool: `KRYOS`, `KRYOS_WORK`, `FESMDATA`, `FESMDATA_SOURCES`, `KRYOS_DATA`, `VILMA2`, `PM_DIR`, `PM_REF`, `ACCOUNT`, `KRYOS_PART`, `KRYOS_PART_LONG`, `KRYOS_QUEUE`, `KRYOS_RUNME`, `KRYOS_JULIA`, with the defaults of `KRYOS_MACHINE` (levante, albedo) (overrides in the environment or `~/.kryos.env`); function `kryos_jl` |
 | [setup.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/setup.sh) | The one-time setup: checks the paths and the builds; links `fesmdata` and `kryos_data` into the checkout and copies the shared grid files and remapping weights of `$KRYOS_DATA/maps` into its `maps/`; checks runme (>= 0.5.27) and creates `.runme/config.toml`; Julia (juliaup, 1.13) and the Julia project; creates `KRYOS_WORK`; safe to rerun |
 | [.runme/](https://github.com/fesmc/kryos/tree/main/.runme) | The checkout as a runme project: `info.json` (executables `kryos`, `taub_fit`, `closure_fit`; defaults `input/kryos_defaults.nml`; the links `input`, `fesmdata`, `kryos_data`, `maps`, `ice_data`, `isostasy_data`), the job templates `submit_slurm`, `submit_slurm_omp` (the job writes `status`, exit code and seconds), `config.default.toml` (`dkrz_levante`, account `ba1442`, 16 threads) |
 | [Project.toml](https://github.com/fesmc/kryos/blob/main/tools/levante/Project.toml), `Manifest.toml` | The Julia project of all tools: CairoMakie, NCDatasets, DelimitedFiles, Julia 1.13 |
@@ -54,8 +54,10 @@ builds a kryos stack on albedo.
 | [plastic_esmda.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_esmda.sh) | The jobs of an ES-MDA calibration: `start` (init, then iteration 1), `submit` (an iteration's member array and its analysis) |
 | [plastic_esmda.toml](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_esmda.toml) | Config of calibration v1: NH-32KM, 3 groups, independent model error |
 | [plastic_esmda_v2.toml](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_esmda_v2.toml) | Config of calibration v2: NH-32KM and ANT-16KM, Stage 1 factors, present day pinned, correlated observation error |
-| [plastic_ensemble.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_ensemble.jl) | Weighted ensemble: a Latin hypercube sample of the prior (`init`), and per-group correlated likelihood weights and ESS (`weights`) |
+| [plastic_ensemble.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_ensemble.jl) | Weighted ensemble: a Latin hypercube sample of the prior (`init`), and per-group correlated likelihood weights and ESS (`weights`); the Earth parameters (`earth-regions`, `earth-shift`) |
 | [plastic_ensemble.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_ensemble.sh) | The jobs of a weighted ensemble: `start` (init, then wave 1), `submit` (a wave's members and the weights after them) |
+| [plastic_ensemble_v2.toml](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_ensemble_v2.toml) | Config of ensemble v2: v1 plus the Earth ([earth]: global and regional log10-viscosity shifts of the 3-D Earth), the error model of ens-v1, all groups judging |
+| [plastic_earth_shift.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_earth_shift.jl) | Included by `plastic_esmda.jl`: the Earth parameters of an ensemble, the region masks (`plastic_ensemble.jl earth-regions`) and the viscosity shift file of a member (VILMA2 `visc_shift_file`; `earth-shift`) |
 | [plastic_ensemble_v1.toml](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_ensemble_v1.toml) | Config of ensemble v1, wave 1: NH-32KM, ANT-16KM and PAT-PAL-8KM on the 3-D Earth, 8 groups, per-group model error |
 | [tests/plastic_closure_fit.f90](https://github.com/fesmc/kryos/blob/main/tests/plastic_closure_fit.f90) | Stage 1b of the implied mass balance: the flow closure (`yield` or `coulomb_n` parameter lists) against the observed present-day speed; with `prior_file`, the joint inversion on one set; `plastic=1` |
 
@@ -85,11 +87,6 @@ builds a kryos stack on albedo.
 | [plastic_maps.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_maps.jl) | Maps of the offline check (`plastic_slices`): H - PaleoMIST H_ice at given ages |
 | [pm_maps.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_maps.jl) | Figures of the standalone VILMA2 PaleoMIST test from `pm_compare.jl` output |
 | [gia_refcorr_plot.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr_plot.jl) | The figure of a `gia_refcorr.sh` case: the converged r and the 0 ka bed misfit per iteration |
-| [smb_basin_budget.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/smb_basin_budget.jl) | The mass budget per drainage basin of a run on imposed ice (ice backend `data`): ∫(smb − ρ_i ∂H/∂t) per basin (≈ 0 land-terminating, ≥ 0 marine), AAR, balance flux and speed; the misfit terms of the SMB tuning |
-| [smb_fit.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/smb_fit.jl) | The fit of chion's parameters per domain from an ensemble on imposed ice (any parameters of params.txt; `_ant` groups Antarctica's): the LGM basin budgets (land ≈ 0, marine ≥ 0, `exclude=` regions) and the present-day misfit against MAR and RACMO; best member and a quadratic minimum |
-| [smb_ensemble.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/smb_ensemble.sh) | An SMB-tuning ensemble: `submit` the members (LGM snapshot -22 to -20 ka, or `TRANSIENT=1`, and the present day) as runme arrays; `post` the budgets and the fit (submits itself) |
-| [smb_margins.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/smb_margins.jl) | Where the NH ablation comes from: per region at 20 ka and 0 ka, ∫smb, the ablation band, its JJA temperature split into the climate and the lapse term, chion's terms |
-| [smb_pd_compare.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/smb_pd_compare.jl) | The present-day run against MAR (Greenland) and RACMO (Antarctica): integrals, ablation area, T_srf bias, SMB rmse, maps |
 
 ## Tests of the backend
 

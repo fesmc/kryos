@@ -97,9 +97,8 @@ LIB_VILMA = -L${VILMAROOT}/libvilma/include -lvilma
 VILMA_ARCHIVE = $(VILMAROOT)/libvilma/include/libvilma.a
 
 # PlasticIceSheet (ice = plastic): the Fortran library libplastic.a (module plastic_ice, dp), a
-# sibling checkout or symlink `PlasticIceSheet`. Build it with the same openmp= as kryos and with
-# lis=1 against the same LIS (its steady SMB-driven solve): make -C PlasticIceSheet static
-# config=dkrz_levante_ifx openmp=$(openmp) lis=1 LISROOT=$(LISROOT).
+# sibling checkout or symlink `PlasticIceSheet`, configured by configme. Built with the same openmp= as
+# kryos and with lis=1 against the LIS of kryos' fesm-utils (its steady SMB-driven solve): make plastic-static.
 PLASTICROOT = PlasticIceSheet
 INC_PLASTIC = -I${PLASTICROOT}/libplastic/include
 LIB_PLASTIC = -L${PLASTICROOT}/libplastic/include -lplastic ${LIB_LIS}

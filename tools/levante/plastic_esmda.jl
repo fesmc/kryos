@@ -26,6 +26,8 @@
 # scale_files.txt (runme's -i table: the scale file of every member), the member runs <m>/ staged by runme (par.nml, the run,
 # status: exit code and seconds), array.json (runme: the job array), scores.csv (per member and set), members.csv (per member:
 # ok, chi2, ESL at 20 ka, run time). Folders of before 2026-11-11 have the members in mNNN/ (read the same).
+# With [earth] (plastic_ensemble.jl only): earth_regions.nc in the folder, iter_kk/earth/mNNN.nc (the viscosity shift of every
+# member, plastic_earth_shift.jl), its key a column of scale_files.txt, its parameters after those of tau_b in theta.csv.
 # Every member writes the product (PRODUCT_VARS): the 2-D ice of each instance of scale_keys (<instance>.nc on its out_2D schedule,
 # 2.5 kyr) and its 0-D series, besides the VILMA2 stream (RSL, bed, ocean, load) of the par file; [run] set and final_set come after.
 # Member 0 is the mean member: the prior mean (0, Gowan's tau_b) in iteration 1, the ensemble mean after an update.
@@ -35,6 +37,7 @@ module PM
 include("pm_compare.jl")
 end
 include("plastic_taub_scale.jl")
+include("plastic_earth_shift.jl")
 
 const ESL_AGE = 20000.0
 # the exports every member writes per plastic instance: the 2-D ice (thickness, surface, bed and sea level as the ice saw them, ice
@@ -50,7 +53,7 @@ config(C) = TOML.parsefile(joinpath(C, "config.toml"))
 
 # A config as written: {kryos}, {fesmdata}, {kryos_data}, {maps}, {work} in any string replaced by the environment of
 # tools/levante/env.sh (KRYOS, FESMDATA, KRYOS_DATA, KRYOS_WORK; {maps} = the checkout's maps/), and the defaults of [run]
-# (kryos_dir: the checkout of this tool, set_nml: its set_nml.py, maps) and [score] (fesmdata). init writes it expanded into the
+# (kryos_dir: the checkout of this tool, set_nml: its set_nml.py, maps, partition: the runme queue KRYOS_QUEUE of env.sh) and [score] (fesmdata). init writes it expanded into the
 # folder (config.toml; the source as config.source.toml), so a folder does not depend on the environment afterwards.
 const KRYOS_ROOT = normpath(get(ENV, "KRYOS", joinpath(@__DIR__, "..", "..")))
 envpath(var, default) = get(ENV, var, default)
@@ -69,6 +72,7 @@ function load_config(file)
     get!(rn, "kryos_dir", KRYOS_ROOT)
     get!(rn, "set_nml", joinpath(@__DIR__, "set_nml.py"))
     get!(rn, "maps", expand_paths("{maps}"))
+    get!(rn, "partition", get(ENV, "KRYOS_QUEUE", "shared"))
     get!(get!(cfg, "score", Dict{String,Any}()), "fesmdata", expand_paths("{fesmdata}"))
     cfg
 end
@@ -131,12 +135,15 @@ end
 obs_err(es) = (get(es, "sigma_m", get(es, "sigma_add", 0.0)), get(es, "corr_dist_km", 0.0), 1000.0 * get(es, "corr_time_kyr", 0.0))
 
 # --- members ------------------------------------------------------------------------------------------------------------------------
-# theta (P x n) of the members ids; run: the ids to run
+# theta (P x n, then the Earth parameters of [earth] if any) of the members ids; run: the ids to run
 function write_iteration(C, k, cfg, sg, P, ids, Θ, run; final = false)
     It = itdir(C, k); mkpath(joinpath(It, "scale"))
     ids == collect(0:length(ids)-1) || error("members must be 0, 1, ... (runme's run ids): $(ids)")
+    E = haskey(cfg, "earth") ? earth_spec(cfg) : nothing
+    names = E === nothing ? pnames(P) : [pnames(P); E.names]
+    size(Θ, 1) == length(names) || error("theta has $(size(Θ, 1)) rows for the parameters $(names)")
     open(joinpath(It, "theta.csv"), "w") do io
-        println(io, "member,", join(pnames(P), ","))
+        println(io, "member,", join(names, ","))
         for (j, m) in enumerate(ids); println(io, m, ",", join([@sprintf("%.6f", x) for x in Θ[:, j]], ",")); end
     end
     keys = get(cfg["run"], "scale_keys", ["ice_nor.taub_scale_file"])
@@ -144,13 +151,21 @@ function write_iteration(C, k, cfg, sg, P, ids, Θ, run; final = false)
     for (j, m) in enumerate(ids)
         m in run && write_scale(sfile(m), sg, log_factor(sg, P, Θ[:, j]))
     end
+    # the Earth: a viscosity shift file per member (plastic_earth_shift.jl), the masks frozen in the folder
+    efile(m) = joinpath(It, "earth", @sprintf("m%03d.nc", m))
+    if E !== nothing
+        mkpath(joinpath(It, "earth")); lon, lat, W = read_masks(joinpath(C, "earth_regions.nc"), E.regions)
+        for (j, m) in enumerate(ids)
+            m in run && write_earth(efile(m), E, lon, lat, W, Θ[length(P)+1:end, j])
+        end
+    end
     # the par file of the iteration (the product, the final keys) and runme's table: one row per member, its scale file per key
     cp(joinpath(C, "par.nml"), joinpath(It, "par.nml"); force = true)
     set = product_set(keys); final && append!(set, String.(get(cfg["run"], "final_set", String[])))
     Base.run(`python3 $(cfg["run"]["set_nml"]) $(joinpath(It, "par.nml")) $set`)
     open(joinpath(It, "scale_files.txt"), "w") do io
-        println(io, join(keys, " "))
-        for m in ids; println(io, join(fill(sfile(m), length(keys)), " ")); end
+        println(io, join(E === nothing ? keys : [keys; E.key], " "))
+        for m in ids; println(io, join(E === nothing ? fill(sfile(m), length(keys)) : [fill(sfile(m), length(keys)); efile(m)], " ")); end
     end
     open(io -> foreach(m -> println(io, m), run), joinpath(It, "members.txt"), "w")
 end
@@ -175,6 +190,11 @@ function prepare(cfgfile, C, og)
     runme_project(C, K, rn["maps"], cfg["score"]["fesmdata"])
     cp(joinpath(K, rn["par"]), joinpath(C, "par.nml"))
     isempty(rn["set"]) || Base.run(`python3 $(rn["set_nml"]) $(joinpath(C, "par.nml")) $(rn["set"])`)
+    if haskey(cfg, "earth")                                  # the Earth parameters: the region masks frozen in the folder
+        cp(earth_spec(cfg).masks_file, joinpath(C, "earth_regions.nc"); follow_symlinks = true)
+        occursin(r"^\s*l_visc_3d\s*=\s*\.true\."mi, read(joinpath(C, "par.nml"), String)) ||
+            error("[earth] shifts the 3-D viscosity field: the par file needs l_visc_3d = .true. in &vilma")
+    end
     if !isempty(get(rn, "domain_factor_file", ""))          # Stage 1: frozen in the folder, set for every instance
         f = joinpath(C, "taub_domain_factor.nc"); cp(rn["domain_factor_file"], f; follow_symlinks = true)
         Base.run(`python3 $(rn["set_nml"]) $(joinpath(C, "par.nml")) $(["$(key)=\"$f\"" for key in rn["domain_factor_keys"]])`)
@@ -205,7 +225,7 @@ function runme_project(C, K, maps, fesmdata)
     open(joinpath(R, "info.json"), "w") do io
         print(io, """{
     "exe_default" : "kryos", "par_path_as_argument" : true, "exe_aliases" : {"kryos" : "kryos.x"}, "grp_aliases" : {},
-    "par_paths" : {}, "files" : [], "dir-special" : {}, "par_defaults" : ["input/kryos_defaults.nml"], "par_library" : [],
+    "par_paths" : {}, "files" : [], "dir-special" : {}, "par_defaults" : ["input/kryos_defaults.nml", "input/vilma_defaults.nml"], "par_library" : [],
     "links" : ["input", "fesmdata", "kryos_data", "maps"]
 }
 """)
@@ -217,6 +237,7 @@ end
 function init(cfgfile, C)
     C = abspath(C)
     og = TOML.parsefile(cfgfile)["esmda"]["obs_groups"]
+    haskey(TOML.parsefile(cfgfile), "earth") && error("[earth]: the Earth parameters are for the weighted ensemble (plastic_ensemble.jl)")
     cfg, sg, obs = prepare(cfgfile, C, og)
     rn = cfg["run"]
     es = cfg["esmda"]; ne = es["ne"]; P = params(cfg, sg)

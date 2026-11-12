@@ -1,0 +1,136 @@
+# Weighted ensemble v2: tau_b multipliers of the plastic ice and the Earth (shifts of log10 viscosity of the 3-D Earth, Bagge 2021,
+# globally and by region; plastic_earth_shift.jl), NH-32KM, ANT-16KM and PAT-PAL-8KM; all data groups judge. The error model
+# from ens-v1 wave 1 (errmodel.toml there). docs/dev/plastic-ensemble-design.md.
+#   tools/levante/plastic_ensemble.sh start tools/levante/plastic_ensemble_v2.toml <ensemble folder>
+[scale]                                  # the parameters: plastic_taub_scale.jl
+taub_files    = ["{fesmdata}/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST_taub.nc",
+                 "{fesmdata}/Antarctica/ANT-16KM/ANT-16KM_IceHistory-PaleoMIST_taub.nc",
+                 "{fesmdata}/PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_IceHistory-PaleoMIST_taub.nc"]
+regions_files = ["{fesmdata}/North/NH-32KM/NH-32KM_REGIONS.nc",
+                 "{fesmdata}/Antarctica/ANT-16KM/ANT-16KM_REGIONS.nc",
+                 "{fesmdata}/PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_REGIONS.nc"]
+nodes_ka      = [80, 60, 40, 25, 20, 15, 10, 5, 0]
+pinned_ka     = [0]                      # the present day is Stage 1's fit
+
+[[scale.groups]]
+name          = "Laurentide"             # North America without Greenland
+region        = 1
+greenland     = false
+tie           = [[25, 20], [15, 10]]     # fewer deglacial nodes (the v2 zigzag)
+corr_time_kyr = 10.0                     # MIS 3-4 not tied to the deglacial nodes
+
+[[scale.groups]]
+name   = "Greenland"
+region = 1
+greenland = true
+tie    = [[80, 60]]
+
+[[scale.groups]]
+name     = "Fennoscandia"                # Eurasia less the British Isles, the Russian Arctic and Svalbard
+region   = 2
+codes    = [10201, 10202, 10203]
+codes_in = false
+tie      = [[80, 60, 40]]
+
+[[scale.groups]]
+name   = "Barents-Kara"                  # Russian Arctic and Svalbard
+region = 2
+codes  = [10201, 10203]
+tie    = [[80, 60, 40]]
+
+[[scale.groups]]
+name   = "British-Irish"
+region = 2
+codes  = [10202]
+tie    = [[80, 60, 40, 25]]
+
+[[scale.groups]]
+name   = "West Antarctica"               # with the Antarctic Peninsula
+region = 3
+codes  = [20101, 20103]
+tie    = [[80, 60, 40, 25, 20]]
+
+[[scale.groups]]
+name     = "East Antarctica"
+region   = 3
+codes    = [20101, 20103]
+codes_in = false
+tie      = [[80, 60, 40, 25, 20]]
+
+[[scale.groups]]
+name   = "Patagonia"                     # no RSL data: prior only (its load reaches the far field)
+region = 4
+tie    = [[80, 60, 40, 25, 20]]
+
+[prior]                                  # log factors: N(0, C), sd ramped from 0 at 0 ka, exponential correlation in time per group
+sigma         = 0.3
+ramp_ka       = 10.0
+corr_time_kyr = 20.0
+theta_max     = 1.5
+
+[ensemble]
+n          = 49                          # members besides the prior mean (m000)
+seed       = 1
+obs_groups = ["Laurentide", "Greenland", "Fennoscandia/Barents", "Antarctica", "far field"]   # pm_compare.jl's GROUPS
+
+[likelihood."Laurentide"]                # model error per data group: ens-v1 wave 1 (plastic_ensemble.jl errmodel, top 6 members)
+sigma_m = 14.0
+corr_dist_km = 750.0
+corr_time_kyr = 40.0
+[likelihood."Greenland"]
+sigma_m = 40.0
+corr_dist_km = 25.0
+corr_time_kyr = 40.0
+[likelihood."Fennoscandia/Barents"]      # inflated by the 3-D Earth's misfit there (ens-v1): refit after this wave
+sigma_m = 26.0
+corr_dist_km = 500.0
+corr_time_kyr = 40.0
+[likelihood."Antarctica"]
+sigma_m = 10.0
+corr_dist_km = 250.0
+corr_time_kyr = 40.0
+[likelihood."far field"]
+sigma_m = 23.0
+corr_dist_km = 100.0
+corr_time_kyr = 20.0
+
+[earth]                                  # the Earth: shifts of log10(eta) of the 3-D field (VILMA2 visc_shift_file)
+sigma        = 0.5                       # prior sd [dex] of every shift, independent
+theta_max    = 1.5                       # [dex]
+boundary_km  = 670.0                     # the upper mantle (with the lithosphere) above, the lower mantle below
+regions_file = "{kryos_data}/plastic/earth_regions_v2.nc"   # plastic_ensemble.jl earth-regions of these [[earth.regions]]
+buffer_km    = 300.0                     # the masks: 1 within buffer_km of the region's tau_b domains, cos^2 to 0 over taper_km
+taper_km     = 500.0
+exclude_codes = [105]                    # Iceland (REGIONS region_2): no regional shift there (its domains are in the
+                                         # Laurentide tau_b group, and it lies within Greenland's buffer)
+[[earth.regions]]
+name   = "Laurentide"
+groups = ["Laurentide"]
+[[earth.regions]]
+name   = "Greenland"
+groups = ["Greenland"]
+[[earth.regions]]
+name   = "Fennoscandia/Barents"
+groups = ["Fennoscandia", "Barents-Kara", "British-Irish"]
+[[earth.regions]]
+name   = "West Antarctica"
+groups = ["West Antarctica"]
+[[earth.regions]]
+name   = "East Antarctica"
+groups = ["East Antarctica"]
+
+[run]                                    # each member: a kryos run of this par file with its multiplier file
+par        = "par/kryos_NH-ANT-PAT_plastic_vilma2.nml"
+set        = ['kryos.restart_out="none"', 'ice_nor.out_plastic="none"', 'ice_ant.out_plastic="none"', 'ice_pat.out_plastic="none"',
+              'geo_nor.out_2D="none"', 'geo_ant.out_2D="none"', 'geo_pat.out_2D="none"', 'geo_glob.out_2D="none"']
+                                         # the product (2-D ice, the VILMA2 stream) comes from plastic_esmda.jl's product_set
+scale_keys = ["ice_nor.taub_scale_file", "ice_ant.taub_scale_file", "ice_pat.taub_scale_file"]
+domain_factor_file = "{kryos_data}/plastic/taub_domain_factor_v3.nc"   # Stage 1 with PAT
+domain_factor_keys = ["ice_nor.taub_domain_factor_file", "ice_ant.taub_domain_factor_file", "ice_pat.taub_domain_factor_file"]
+threads    = 64                          # 3-D Earth: 3.5-4.2 h on 64 (sci-v2-prior, -post, sci-v3-base, 2026-11-09), 3.0-4.3 h
+                                         # (ens-v2 on Levante); VILMA2's toroidal flow (on by default) costs about 1.5 times
+mem        = "30G"
+time       = "11:00:00"                  # within albedo's 12h queue
+throttle   = 25                          # 25 members + the weights job + one other run: within 30 jobs
+
+[score]
