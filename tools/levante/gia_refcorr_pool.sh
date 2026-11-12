@@ -8,7 +8,7 @@
 #   MEM (64G), TIME (12:00:00, partition KRYOS_PART); MARGIN [min] (60): a worker claims no case after TIME - MARGIN; KD and the
 #   rest of gia_refcorr.sh's env for every case (KEEP=last for many cases). Case output: $KD/refcorr/<CASE>/pool.out.
 # A case is done when its iter.log ends in "== done" (or "not converged"/"failed": then it is not retried; delete its folder to rerun).
-# A claim (<case>/claim, with the job id) of a job that no longer runs is taken over, so a resubmission resumes the cases of a job
+# A claim (the link <case>/claim -> the job id) of a job that no longer runs is taken over, so a resubmission resumes the cases of a job
 # that was cut off (gia_refcorr.sh restarts after the last finished iteration).
 set -uo pipefail
 _h=$(dirname "$(readlink -f "$0")"); [ -f "$_h/env.sh" ] || _h=$KRYOS/tools/levante; . "$_h/env.sh"
@@ -33,12 +33,12 @@ done
 per=$(( ${#cpus[@]} / NWORK )); [ $per -ge 1 ] || { echo "$NWORK workers on ${#cpus[@]} cores"; exit 1; }
 echo "== pool $SLURM_JOB_ID on $(hostname): $NWORK workers x $per cores, list $LIST, claims until $(date -d @$deadline -Is)"
 finished() { tail -1 $1/iter.log 2> /dev/null | grep -q "^== done\|^not converged\|failed"; }
-claim() {   # claim the case folder $1 (atomic mkdir); a claim of a job that no longer runs is taken over
+claim() {   # claim the case folder $1: the link <case>/claim -> <job id> (atomic); a claim of a job that no longer runs is taken over
     local c=$1/claim j
-    mkdir -p $1; mkdir $c 2> /dev/null && { echo $SLURM_JOB_ID > $c/job; return 0; }
-    j=$(cat $c/job 2> /dev/null); [ -n "$j" ] && squeue -h -j $j 2> /dev/null | grep -q . && return 1
-    rm -rf $c; mkdir $c 2> /dev/null && { echo $SLURM_JOB_ID > $c/job; return 0; }
-    return 1
+    mkdir -p $1; ln -s $SLURM_JOB_ID $c 2> /dev/null && return 0
+    [ -L $c ] || return 1
+    j=$(readlink $c) && squeue -h -j $j 2> /dev/null | grep -q . && return 1
+    rm -f $c; ln -s $SLURM_JOB_ID $c 2> /dev/null
 }
 worker() {
     local w=$1 set case par vars
@@ -50,7 +50,7 @@ worker() {
         echo "worker $w: $case $(date -Is)"
         env KRYOS_JOB=1 CASE=$case PAR=$par NCPU=$per NTHR=$per $vars taskset -c $set bash $_h/gia_refcorr.sh > $O/pool.out 2>&1
         echo "worker $w: $case exit $? $(date -Is) ($(tail -1 $O/iter.log 2> /dev/null))"
-        rm -rf $O/claim
+        rm -f $O/claim
     done < $LIST
 }
 for w in $(seq 0 $(( NWORK - 1 ))); do worker $w & sleep 2; done
