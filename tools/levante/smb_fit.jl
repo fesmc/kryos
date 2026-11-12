@@ -13,31 +13,30 @@
 #                Greenland MAR v3.14 and Antarctica RACMO2.3p2, 1981-2010 like the PD run's reference climate
 #   ∫smb_PD    = the integrated smb of the PD run on the ice of both [Gt/yr]; A_abl its ablation area (smb < 0) as a share
 #                of that ice: the gridpoint rmse alone can prefer a too narrow ablation zone (wI, wA default 0)
-#   With fice=true (default) the PD run's smb is weighted by the RCM's ice-covered fraction f_ice of the cell where the
-#   RCM has values off the ice (MAR: the tundra): its value on the grid is then the mean over the cell (FesmData's
-#   remap), ice and ice-free, and the ice-free part's smb is about 0 (seasonal snow), so f_ice smb is its counterpart.
-#   Unweighted, Greenland's margin cells, partly ice-free, read as too much melt (up to 25 % at 600 m). RACMO2.3p2 has
-#   values on the ice only (grounded and floating; its f_ice is the grounded share), so Antarctica is not weighted.
-#   fice=false compares the PD run's smb as it is everywhere.
+#   The PD terms are weighted by the target's ice share of the cell where the target is the ice-only mean of the RCM's
+#   cells: Greenland, MAR v3.14 1 km binned to GRL-16KM over its ice only ($KRYOS_DATA/smb, tools/levante/mar_ice16.jl;
+#   FesmData's remap averages the tundra in, whose snowfall and seasonal melt are not the ice's), weights f_ice. RACMO2.3p2
+#   has values on the ice only (grounded and floating), so Antarctica is compared unweighted on FesmData's remap.
 # Basins in the regions of `exclude` (smb_basin_budget.jl's region names, e.g. Cordillera_and_Alaska,British_Isles: small
 # maritime ice sheets whose precipitation the emulator's 3.75 deg grid does not resolve) are left out of the LGM terms.
 #
 #   julia --project=tools/levante tools/levante/smb_fit.jl <ens dir> <out dir> [lgm=-23:-19] [sB=200] [sPD=200]
-#         [wPD=1] [wI=0] [sI=100] [wA=0] [sA=0.05] [exclude=Region,Region] [fice=true]
+#         [wPD=1] [wI=0] [sI=100] [wA=0] [sA=0.05] [exclude=Region,Region]
 # Writes <out>/fit.csv (per member and domain: its parameters, the terms and J), <out>/fit.png (J and its terms against
 # each parameter), and prints the best member per domain and the minimum of a quadratic fit of J over the domain's
 # parameters (scaled to [0, 1]) when it lies inside the box.
 using NCDatasets, CairoMakie, Printf, Statistics, DelimitedFiles, LinearAlgebra
 
 const FESMDATA = get(ENV, "FESMDATA", "/work/ba1442/fesmdata")
+const KRYOS_DATA = get(ENV, "KRYOS_DATA", "/work/ba1442/kryos_data")
 # the domains: suffix of the PaleoMIST run, suffix of the PD run, whether its groups end in _ant, the RCM of the PD run
-# and whether the RCM has values off the ice, so that its cell means are diluted by the ice-free part (fice)
+# and the target's variable of the ice share that weights the PD terms ("": none)
 const DOMAINS = [(pm="nor", pd="grl", ant=false,
-                  rcm="$FESMDATA/Greenland/GRL-16KM/GRL-16KM_SMB-MARv3.14-1981-2010-annual-mean.nc", rcm_name="MAR 1981-2010",
-                  fice=true),
+                  rcm="$KRYOS_DATA/smb/GRL-16KM_SMB-MARv3.14-ice-1981-2010-annual-mean.nc", rcm_name="MAR 1981-2010 (ice)",
+                  weight="f_ice"),
                  (pm="ant", pd="ant", ant=true,
                   rcm="$FESMDATA/Antarctica/ANT-32KM/ANT-32KM_SMB-RACMO2.3p2-1981-2010-annual-mean.nc", rcm_name="RACMO2.3p2 1981-2010",
-                  fice=false)]
+                  weight="")]
 
 """The columns of params.txt that are the domain's parameters (see the header)."""
 function domain_columns(ph, dom)
@@ -64,15 +63,16 @@ function lgm_terms(file, s, lgm, exclude)
     return (rms_land=rl, rms_marine=rm, smb_lgm=smb, B_land_lgm=Bl)
 end
 
-"""The PD terms of one member and domain: smb (times the RCM's f_ice with `fice`) against the RCM on the PD run's ice."""
-function pd_terms(dir, dom, fice)
+"""The PD terms of one member and domain: smb against the RCM target on the PD run's ice, weighted by the target's ice share."""
+function pd_terms(dir, dom)
     m = NCDataset(joinpath(dir, "surface_$(dom.pd).nc")); i = NCDataset(joinpath(dir, "ice_$(dom.pd).nc")); o = NCDataset(dom.rcm)
     x = Float64.(m["xc"][:]); A = ((x[2] - x[1]) * 1e3)^2
     smb, so, H = last2(m, "smb"), last2(o, "smb"), last2(i, "H_ice")
-    fice && dom.fice && (smb = smb .* replace(last2(o, "f_ice"), NaN => 0.0))
-    ok = (H .> 0) .& isfinite.(smb) .& isfinite.(so)
-    r = (rmse_pd=sqrt(mean((smb[ok] .- so[ok]) .^ 2)), smb_pd=sum(smb[ok]) * A * 1e-12, smb_rcm=sum(so[ok]) * A * 1e-12,
-         abl_pd=count(smb[ok] .< 0) / count(ok), abl_rcm=count(so[ok] .< 0) / count(ok))
+    w = isempty(dom.weight) ? ones(size(so)) : replace(last2(o, dom.weight), NaN => 0.0)
+    ok = (H .> 0) .& isfinite.(smb) .& isfinite.(so) .& (w .> 0)
+    W = w[ok]; s, t = smb[ok], so[ok]
+    r = (rmse_pd=sqrt(sum(W .* (s .- t) .^ 2) / sum(W)), smb_pd=sum(W .* s) * A * 1e-12, smb_rcm=sum(W .* t) * A * 1e-12,
+         abl_pd=sum(W .* (s .< 0)) / sum(W), abl_rcm=sum(W .* (t .< 0)) / sum(W))
     close(m); close(i); close(o)
     return r
 end
@@ -101,16 +101,15 @@ function quad_min(X, J)
 end
 
 function main(args)
-    length(args) >= 2 || (println("usage: smb_fit.jl <ens dir> <out dir> [lgm=-23:-19] [sB=200] [sPD=200] [wPD=1] [wI=0] [sI=100] [wA=0] [sA=0.05] [exclude=R,R] [fice=true]"); exit(1))
+    length(args) >= 2 || (println("usage: smb_fit.jl <ens dir> <out dir> [lgm=-23:-19] [sB=200] [sPD=200] [wPD=1] [wI=0] [sI=100] [wA=0] [sA=0.05] [exclude=R,R]"); exit(1))
     ens, out = args[1], args[2]; mkpath(out)
     kw = Dict(String(k) => String(v) for (k, v) in (split(a, "="; limit=2) for a in args[3:end]))
-    known = ("lgm", "sB", "sPD", "wPD", "wI", "sI", "wA", "sA", "exclude", "fice")
+    known = ("lgm", "sB", "sPD", "wPD", "wI", "sI", "wA", "sA", "exclude")
     issubset(keys(kw), known) || error("unknown option(s): ", setdiff(keys(kw), known))
     lgm = Tuple(parse.(Float64, split(get(kw, "lgm", "-23:-19"), ":")))
     sB, sPD, wPD, wI, sI, wA, sA = (parse(Float64, get(kw, k, d)) for (k, d) in
         (("sB", "200"), ("sPD", "200"), ("wPD", "1"), ("wI", "0"), ("sI", "100"), ("wA", "0"), ("sA", "0.05")))
     exclude = filter(!isempty, split(get(kw, "exclude", ""), ","))
-    fice = parse(Bool, get(kw, "fice", "true"))
     P = readdlm(joinpath(ens, "params.txt"); header=true); pv, ph = Float64.(P[1]), String.(vec(P[2]))
     io = open(joinpath(out, "fit.csv"), "w")
     println(io, "member,domain,", join(ph, ","), ",rms_land,rms_marine,smb_lgm_Gt,B_land_lgm_Gt,rmse_pd,smb_pd_Gt,smb_rcm_Gt,abl_pd,abl_rcm,J")
@@ -122,7 +121,7 @@ function main(args)
         for i in axes(pv, 1)
             mb = joinpath(ens, "pm", string(i - 1), "budget", "basins.csv")
             isfile(mb) || error("$mb missing: run smb_basin_budget.jl on member $(i - 1) first (smb_ensemble.sh post)")
-            l = lgm_terms(mb, dom.pm, lgm, exclude); p = pd_terms(joinpath(ens, "pd", string(i - 1)), dom, fice)
+            l = lgm_terms(mb, dom.pm, lgm, exclude); p = pd_terms(joinpath(ens, "pd", string(i - 1)), dom)
             J = (l.rms_land / sB)^2 + (l.rms_marine / sB)^2 + wPD * (p.rmse_pd / sPD)^2 +
                 wI * ((p.smb_pd - p.smb_rcm) / sI)^2 + wA * ((p.abl_pd - p.abl_rcm) / sA)^2
             push!(res, merge((member=i - 1,), l, p, (J=J,)))
