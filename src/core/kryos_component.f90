@@ -91,6 +91,7 @@ module kryos_component
         type(grid_ref_t)        :: ref          ! reference topography on this grid
         type(phys_const_class)  :: cnst
         real(dp)                :: time = 0.0_dp, time_rel = 0.0_dp, dtt = 0.0_dp   ! t0
+        real(dp)                :: time_ref = 0.0_dp   ! calendar year of model time zero (a datasrc's time_ref)
         real(dp)                :: sec_year = 0.0_dp   ! [s] year of the run calendar (fesm_clock year)
         type(axis_t), allocatable :: axes(:)    ! axes declared by the producers initialised so far
     end type init_ctx_t
@@ -205,7 +206,7 @@ contains
         ! Default writer (core-design section 6): the exports listed in out_vars
         ! (unset: all), unpublished ones skipped. Stream 2D: the rank-2 and rank-3
         ! exports on the native grid (xc, yc [km], time; rank 3 also its axis; an
-        ! instance that owns a global grid, grid_obj, writes lon, lat [degrees]),
+        ! instance that owns a global grid, grid_obj, writes lon, lat [degrees], rank 3 also its axis),
         ! file <instance>.nc. Stream 1D: the 0-D exports, file <instance>_ts.nc.
         ! Values are written as float with the precision of the component
         ! kind's table input/kryos-variables-<kind>.md (lossless under
@@ -255,15 +256,14 @@ contains
                 call outfile_dims_ts(file, t)
             else if (lonlat) then
                 call outfile_dims_lonlat(file, self%grid_obj%G%x, self%grid_obj%G%y, t)
+                call axes_write(self, file, hs)
             else
                 if (.not. (allocated(self%xkm) .and. allocated(self%ykm))) then
                     call fesm_error(proc, "instance "//trim(self%name)//" has no grid axes for "//trim(file), &
                                     "component_identity sets them from the init context; a global instance has none")
                 end if
                 call outfile_dims_2d(file, self%xkm, self%ykm, t)
-                do i = 1, size(hs)
-                    if (self%exports%f(hs(i))%rank == 3) call axis_write(self, file, self%exports%f(hs(i))%zdim)
-                end do
+                call axes_write(self, file, hs)
             end if
         end if
 
@@ -301,7 +301,12 @@ contains
                 case (3)
                     allocate(a3(f%nx, f%ny, f%nz))
                     call fields_get(self%exports, h, a3)
-                    call var_io_write(file, row, a3, n, ncid=ncid)
+                    if (lonlat) then
+                        call var_io_write(file, row, a3, n, ncid=ncid, &
+                                          dims=[character(len=32) :: "lon", "lat", trim(f%zdim), "time"])
+                    else
+                        call var_io_write(file, row, a3, n, ncid=ncid)
+                    end if
                     deallocate(a3)
                 end select
             end associate
@@ -342,6 +347,24 @@ contains
         row%prec_abs  = 0.0d0
         row%prec_rel  = 0.0d0
     end function scalar_row
+
+    subroutine axes_write(self, file, hs)
+        ! The third axes of the rank-3 exports hs, each once.
+        class(component_t), intent(in) :: self
+        character(len=*),   intent(in) :: file
+        integer,            intent(in) :: hs(:)
+        character(len=FIELD_NAME_LEN), allocatable :: done(:)
+        integer :: i
+        allocate(done(0))
+        do i = 1, size(hs)
+            associate (f => self%exports%f(hs(i)))
+                if (f%rank /= 3) cycle
+                if (any(done == f%zdim)) cycle
+                call axis_write(self, file, f%zdim)
+                done = [done, f%zdim]
+            end associate
+        end do
+    end subroutine axes_write
 
     subroutine axis_write(self, file, name)
         ! The third axis `name` of a rank-3 export, from the instance's axes.

@@ -8,6 +8,7 @@ module kryos_surface
     use fesm_log,        only: fesm_error
     use fesm_fields,     only: fields_init, fields_add, fields_lock, FIELD_INSTANT, FIELD_MEAN, &
                                FIELD_INTENSIVE, FIELD_EXTENSIVE
+    use kryos_forcing,   only: ORBIT_FIELDS, ORBIT_UNITS
     use kryos_component, only: component_t, PATH_LEN, init_ctx_t, step_time_t, census_t, constraints_t, &
                                component_identity, backend_admit, component_close, &
                                component_enter, component_leave, component_optional, component_axis
@@ -22,12 +23,14 @@ module kryos_surface
         ! both on for a column model (chion), off for a scheme of the elevation alone (smb_simple). tsl_ann
         ! (climate) and H_ice_ref (ice) are the extra imports of smb_simple, required when set.
         logical :: atm = .true., geom = .true., tsl_ann = .false., H_ice_ref = .false.
+        logical :: orbit = .false.                  ! the orbital elements of the forcing (insolation), required when set
     end type surface_opt_t
 
     type, abstract, extends(component_t), public :: surface_t
         type(surface_opt_t) :: opt
         integer :: hi_z_srf = 0, hi_H_ice = 0, hi_z_bed = 0, hi_z_sl = 0, hi_tas = 0, hi_pr = 0
         integer :: hi_tsl_ann = 0, hi_H_ice_ref = 0
+        integer :: hi_orbit(3) = 0                  ! orbit_ecc, orbit_obl, orbit_per (opt%orbit)
         integer :: h_smb = 0, h_T_srf = 0, h_melt = 0, h_runoff = 0, h_refrz = 0, h_albedo = 0
     end type surface_t
 
@@ -153,7 +156,7 @@ contains
         ! Contracts-design section 2.4.
         class(surface_t), intent(inout) :: c
         type(init_ctx_t), intent(in)    :: ctx
-        integer :: d2(2)
+        integer :: d2(2), k
         character(len=:), allocatable :: g
 
         d2 = [c%nx, c%ny]
@@ -177,6 +180,12 @@ contains
         end if
         if (c%opt%H_ice_ref) then
             call fields_add(c%imports, "H_ice_ref", "m", FIELD_INSTANT, FIELD_EXTENSIVE, c%hi_H_ice_ref, grid=g, dims=d2)
+        end if
+        if (c%opt%orbit) then
+            do k = 1, 3
+                call fields_add(c%imports, trim(ORBIT_FIELDS(k)), trim(ORBIT_UNITS(k)), FIELD_INSTANT, FIELD_INTENSIVE, &
+                                c%hi_orbit(k))
+            end do
         end if
         call fields_lock(c%imports)
 

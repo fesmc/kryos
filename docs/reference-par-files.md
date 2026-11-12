@@ -18,6 +18,9 @@ where geo is `vilma2` (`yelmo=0` is enough). See [Simulating our own ice](experi
 | Par file | Domains (hub) | Ice | Geo | What it sets up |
 |---|---|---|---|---|
 | [kryos_North_plastic.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_North_plastic.nml) | North (NH-32KM) | plastic | none | Smoke run on a fixed bed: today's bed (TOPO-GEBCO2026), `z_sl = 0`, no globe, no climate |
+| [kryos_North_plastic_paleoemu.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_North_plastic_paleoemu.nml) | North (NH-32KM) | plastic | none | The CESM-3Ma emulator (climate `paleoemu`, global part and port) driving chion, 21 to 20 ka; `[globe_ice]` the PaleoMIST history outside NH; build also `paleoemu=1` ([PaleoEmulator](backend-paleoemu.md)) |
+| [kryos_NH-ANT_data_paleoemu.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT_data_paleoemu.nml) | North (NH-32KM), Antarctica (ANT-32KM) | data | none | SMB tuning: PaleoMIST's ice imposed ([data](backend-data.md)), the emulator driving chion (bessi; itm by `chion.model`), 80 ka to 0; build `paleoemu=1` |
+| [kryos_GRL-ANT_data_paleoemu_pd.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_GRL-ANT_data_paleoemu_pd.nml) | Greenland (GRL-16KM), Antarctica (ANT-32KM) | data | none | The present-day anchor of the tuning: the reference topography, the emulator driving chion, compared with MAR and RACMO; build `paleoemu=1` |
 | [kryos_North_plastic_vilma2.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_North_plastic_vilma2.nml) | North (NH-32KM) | plastic | vilma2 | The global VILMA2 Earth of the science case (3-D Bagge viscosity), reference bed today's + r (`kryos_data/refcorr/PaleoMIST-sci`), the ice outside NH from the PaleoMIST history; Earth cadence 100 yr |
 | [kryos_North_plastic_vilma2_b1.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_North_plastic_vilma2_b1.nml) | North (NH-32KM) | plastic | vilma2 | B1's Earth and reference: Gowan's 1-D Earth (120 km lithosphere, 4e20 / 4e22 Pa s, 12 layers, lmax 170), the relaxed present-day reference (no r); the run scored against GAPSLIP beside B1 |
 | [kryos_NH-ANT_plastic_vilma2_b1.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT_plastic_vilma2_b1.nml) | North (NH-32KM), Antarctica (ANT-16KM) | plastic, plastic | vilma2 | As `_b1` with a second plastic instance on ANT-16KM (BedMachine Antarctica v4, its own geo port); the par file of calibration v2 |
@@ -122,7 +125,7 @@ A par file is a set of namelist groups. The run group `[kryos]` names the rest:
 - Backend library groups (`[yelmo]`, `[ytopo]`, ..., `[chion]`) take their defaults from the library's defaults file
   in `input/` (`yelmo_defaults.nml`, `chion_defaults.nml`). `[vilma]` takes its defaults from
   `input/vilma_defaults.nml`: the group sets overrides only, and its name is fixed (VILMA2 looks the defaults up under
-  it). The groups of code kryos hosts (`[smb_simple]`, the chion host's `[orbit]`, `[globe_ice]`) have their schema at
+  it). The groups of code kryos hosts (`[smb_simple]`, the run's `[orbit]` (`[forcing] orbit`), `[globe_ice]`) have their schema at
   the end of `kryos_defaults.nml`.
 - Data field groups (`[X_z_bed]`, ...) follow `input/datasrc_defaults.nml`; snapshot, term and coefficient groups
   `snapshots_defaults.nml` and `forcing_defaults.nml`.

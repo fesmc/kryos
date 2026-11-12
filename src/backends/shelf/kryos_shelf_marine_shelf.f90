@@ -152,7 +152,8 @@ contains
 
     subroutine marshelf_write_output_(self, file, t, stream, init)
         ! Stream 2D: bmb_shlf [m/yr], T_shlf, tf_shlf of mshlf%now (mshlf_write_step,
-        ! kryos_output.f90:279-294), same units; precisions from the table. Others: default.
+        ! kryos_output.f90:279-294), same units, and dT_shlf (the climate's dto_ann at the shelf base);
+        ! precisions from the table. Others: default.
         class(marshelf_shelf_t), intent(inout) :: self
         character(len=*),        intent(in)    :: file, stream
         real(dp),                intent(in)    :: t
@@ -171,6 +172,7 @@ contains
             call outfile_var2d(file, "bmb_shlf", now%bmb_shlf, n, ncid, "m/yr", "Shelf basal mass balance", table=TABLE)
             call outfile_var2d(file, "T_shlf",   now%T_shlf,   n, ncid, "K",    "Shelf temperature",        table=TABLE)
             call outfile_var2d(file, "tf_shlf",  now%tf_shlf,  n, ncid, "K",    "Thermal forcing",          table=TABLE)
+            call outfile_var2d(file, "dT_shlf",  now%dT_shlf,  n, ncid, "K",    "Shelf temperature anomaly", table=TABLE)
         end associate
         call nc_close(ncid)
     end subroutine marshelf_write_output_

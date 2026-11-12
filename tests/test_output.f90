@@ -423,10 +423,11 @@ contains
                     [character(len=16) :: "m", "m", "m", "m yr-1", "m", "m2", "m3", "m", "1", "m", "1", "m"], &
                     [2, 2, 2, 2, 0, 0, 0, 0, 2, 0, 0, 0])
         call expect("climate", [character(len=16) :: "tas", "pr", "z_srf_clim", "lapse", "beta_p", "to_ann", "so_ann", &
-                            "dto_ann", "to_shlf", "so_shlf", "dto_shlf", "dso_shlf", "smb", "T_srf", "Qd", "tsl_ann"], &
+                            "dto_ann", "to_shlf", "so_shlf", "dto_shlf", "dso_shlf", "smb", "T_srf", "Qd", "tsl_ann", &
+                            "dto_lev"], &
                     [character(len=16) :: "K", "kg m-2 yr-1", "m", "K m-1", "K-1", "K", "psu", "K", "K", "psu", "K", &
-                            "psu", "kg m-2 yr-1", "K", "m3 s-1", "K"], &
-                    [3, 3, 2, 3, 2, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2])
+                            "psu", "kg m-2 yr-1", "K", "m3 s-1", "K", "K"], &
+                    [3, 3, 2, 3, 2, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 3])
         call expect("surface", [character(len=16) :: "smb", "T_srf", "melt", "runoff", "refrz", "albedo"], &
                     [character(len=16) :: "kg m-2 yr-1", "K", "kg m-2 yr-1", "kg m-2 yr-1", "kg m-2 yr-1", "1"], &
                     [2, 2, 2, 2, 2, 2])

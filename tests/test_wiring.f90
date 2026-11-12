@@ -55,6 +55,7 @@ program test_wiring
     call tc_table()
     call tc_domain()
     call tc_gia()
+    call tc_climate_ocean()
     call tc_resolve_errors()
     call tc_diagnostics()
     call tc_identity()
@@ -247,7 +248,7 @@ contains
             if (t(i)%gather) n_gather = n_gather + 1
             if (t(i)%lag == LAG_INIT) n_init = n_init + 1
         end do
-        call check("61 rows", size(t) == 61)
+        call check("77 rows", size(t) == 77)
         call check("two gather rows (dV_bsl, M_ice)", n_gather == 2)
         call check("static rows: ref x2, z_srf_ref, Q_geo, H_sed, and the two T_GIA reference rows", n_init == 7)
         call check("six T_GIA rows, all into the global geo", &
@@ -260,6 +261,18 @@ contains
         call check("T_GIA reference rows: ice.H_ice_pd -> geo_g.host_Ig_ref, host_C_ref, LAG_INIT, srcs z_bed_ref footprint", &
                    has_row(t, "ice.H_ice_pd -> geo_g.host_Ig_ref", T_GIA, LAG_INIT, srcs=[character(len=FIELD_NAME_LEN) :: "z_bed_ref", "footprint"]) .and. &
                    has_row(t, "ice.H_ice_pd -> geo_g.host_C_ref", T_GIA, LAG_INIT, srcs=[character(len=FIELD_NAME_LEN) :: "z_bed_ref", "footprint"]))
+        call check("climate_g -> climate rows: tas, pr, z_srf_clim, lapse, beta_p, default method, lag 0", &
+                   has_row(t, "climate_g.tas -> climate.tas", T_NONE, 0, method="") .and. &
+                   has_row(t, "climate_g.pr -> climate.pr", T_NONE, 0, method="") .and. &
+                   has_row(t, "climate_g.z_srf_clim -> climate.z_srf_clim", T_NONE, 0, method="") .and. &
+                   has_row(t, "climate_g.lapse -> climate.lapse", T_NONE, 0, method="") .and. &
+                   has_row(t, "climate_g.beta_p -> climate.beta_p", T_NONE, 0, method=""))
+        call check("climate_g -> climate dto_lev: bilin, lag 0", &
+                   has_row(t, "climate_g.dto_lev -> climate.dto_lev", T_NONE, 0, method="bilin"))
+        call check("forcing -> climate_g, climate, surface: orbit_ecc, orbit_obl, orbit_per, lag 0", &
+                   has_row(t, "forcing.orbit_ecc -> climate_g.orbit_ecc", T_NONE, 0, method="") .and. &
+                   has_row(t, "forcing.orbit_per -> climate.orbit_per", T_NONE, 0, method="") .and. &
+                   has_row(t, "forcing.orbit_obl -> surface.orbit_obl", T_NONE, 0, method=""))
         call check("globe -> port rows: dz_bed, dz_ss bilin, dphi, lag 0", &
                    has_row(t, "geo_g.dz_bed -> geo.dz_bed", T_NONE, 0, method="bilin") .and. &
                    has_row(t, "geo_g.dz_ss -> geo.dz_ss", T_NONE, 0, method="bilin") .and. &
@@ -297,8 +310,8 @@ contains
         call build(nodes)
         call wire_resolve(w, nodes, cpl, stat=stat)
         call check("resolves", stat == 0)
-        call check("43 of 61 rows active (the phase 4 rows need a host-resolved global geo; the smb_simple rows no smb_simple surface)", &
-                   count(w%active) == 43 .and. size(w) == 61)
+        call check("43 of 67 rows active (the phase 4 rows need a host-resolved global geo, the climate_g rows a global "// &
+                   "climate, the orbit rows a forcing orbit; the smb_simple rows no smb_simple surface)", count(w%active) == 43 .and. size(w) == 77)
         call check("rule rows expanded: coef_alpha and dTo", &
                    any([(wire_label(w(i)) == "forcing.alpha -> climate.coef_alpha" .and. w(i)%active, i = 1, size(w))]) &
                    .and. any([(wire_label(w(i)) == "climate.dTo -> forcing.dTo" .and. w(i)%active, i = 1, size(w))]))
@@ -327,6 +340,55 @@ contains
                    w(row_of(w, "ice.z_bed -> hub.dz_bed"))%transform == T_SUB_REF)
 
     end subroutine tc_domain
+
+    ! =========================================================================
+    ! climate = paleoemu: the ocean temperature change on the global part's levels
+    ! =========================================================================
+
+    subroutine tc_climate_ocean()
+        ! The global part (climate_g, its own grid) exports dto_lev on its axis `level`; a port with
+        ! ocean profiles imports it on the same axis (domain_create seeds the global part's axes into
+        ! its ctx%axes): the row resolves, bilin. A port whose `level` differs stops; a port without
+        ! an ocean declares no dto_lev and the row stays inactive.
+        integer, parameter :: NL = 8
+        type(wire_t), allocatable :: w(:)
+        type(wire_node_t) :: nodes(2)
+        type(field_state_t), target :: g_i, g_e, p_i, p_i0, p_e
+        type(axis_t), target :: lev_g(1), lev_p(1)
+        integer :: h, stat, k
+
+        write(*,"(a)") "climate_g -> climate: dto_lev on the levels of the global part"
+        lev_g(1)%name = "level";  lev_g(1)%units = "m"
+        lev_g(1)%v = [4.9_dp, 92.0_dp, 248.0_dp, 437.0_dp, 593.85_dp, 815.39_dp, 1112.51_dp, 1474.80_dp]
+        lev_p(1) = lev_g(1)
+        call empty(g_i, "climate_glob:imports")
+        call fields_init(g_e, "climate_glob:exports")
+        call fields_add(g_e, "dto_lev", "K", I_, IT, h, grid=GC, dims=[NC, NC, NL], zdim="level")
+        call fields_lock(g_e)
+        call fields_init(p_i, "climate_port:imports")
+        call fields_add(p_i, "dto_lev", "K", I_, IT, h, grid=GF, dims=[NF, NF, NL], zdim="level")
+        call fields_lock(p_i)
+        call empty(p_e, "climate_port:exports")
+
+        nodes(1) = wire_node_states("climate_g", "climate_glob", g_i, g_e, dp, 10.0_dp, check=.false., axes=lev_g)
+        nodes(2) = wire_node_states("climate", "climate_port", p_i, p_e, dp, 10.0_dp, axes=lev_p)
+        call wire_resolve(w, nodes, cpl, stat=stat)
+        k = row_of(w, "climate_g.dto_lev -> climate.dto_lev")
+        call check("the port's dto_lev has its producer; one level axis on both sides", stat == 0 .and. w(k)%active)
+        call check("  bilin (the global grid -> the port's), a workspace of the port's levels", &
+                   w(k)%mres == "bilin" .and. size(w(k)%work, 3) == NL)
+
+        lev_p(1)%v(NL) = 1500.0_dp
+        call wire_resolve(w, nodes, cpl, stat=stat)
+        call check("a port whose level axis differs stops", stat /= 0)
+
+        call empty(p_i0, "climate_port0:imports")
+        nodes(2) = wire_node_states("climate", "climate_port", p_i0, p_e, dp, 10.0_dp)
+        call wire_resolve(w, nodes, cpl, stat=stat)
+        k = row_of(w, "climate_g.dto_lev -> climate.dto_lev")
+        call check("a port without an ocean: resolves, the row inactive", stat == 0 .and. .not. w(k)%active .and. &
+                   index(w(k)%reason, "has no import `dto_lev`") > 0)
+    end subroutine tc_climate_ocean
 
     ! =========================================================================
     ! geo = vilma2: the T_GIA rows and the rank-2 globe rows
@@ -390,7 +452,7 @@ contains
         call wire_resolve(w, nodes, cpl, stat=stat)
         call check("resolves; the port's imports have a producer each (dz_bed, dz_ss, dphi, bsl)", stat == 0)
         nrow = count(w%active)
-        call check("active: 4 globe -> port rows and 6 T_GIA rows", nrow == 10 .and. size(w) == 61)
+        call check("active: 4 globe -> port rows and 6 T_GIA rows", nrow == 10 .and. size(w) == 77)
         call check("globe -> port rank 2: bilin (Gauss -> geo grid), none for the scalars", &
                    w(row_of(w, "geo_g.dz_bed -> geo.dz_bed"))%mres == "bilin" .and. &
                    w(row_of(w, "geo_g.dz_ss -> geo.dz_ss"))%mres == "bilin" .and. &

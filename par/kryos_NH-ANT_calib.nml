@@ -85,6 +85,7 @@
     out_1D   = "out_1D"        ! yelmox output.write_yelmo
     out_vars = ""
     coefs    = "alpha" "dTo"   ! the union of the coefficients of the files
+    orbit    = "orbit"         ! the run's orbit ([orbit]): exported to the surfaces' insolation
 /
 
 &geo_glob
@@ -251,7 +252,6 @@
     out_vars      = ""
     surface_chion = "surface_chion_nor"
     chion         = "chion_nor"
-    orbit         = "orbit_nor"
 /
 
 &shelf_nor
@@ -401,12 +401,12 @@
     f_p         = 0.05                        ! [K-1] precipitation-temperature scaling (beta_p)
 /
 
-&orbit_nor
+&orbit
     method = "fixed_time"   ! forcing_time: at the forcing time; fixed_time: at time; fixed_orbit: ecc, obl, per
     time   = 0.0            ! [yr] model time of the orbit (fixed_time; relative to 1950, past < 0)
-    ecc    = 0.016702       ! [1]   eccentricity (fixed_orbit; these: the tables at 1950)
-    obl    = 23.4393        ! [deg] obliquity (fixed_orbit)
-    per    = 102.918        ! [deg] longitude of perihelion (fixed_orbit)
+    ecc    = 0.016725       ! [1]   eccentricity (fixed_orbit; these: the tables at 1950)
+    obl    = 23.4458        ! [deg] obliquity (fixed_orbit)
+    per    = 102.063        ! [deg] longitude of perihelion (fixed_orbit; Berger 1978)
     fldr   = "input"        ! folder of the orbital tables (LA2004.INSOLN.5Ma.txt, LA2004.INSOLP.1Ma.txt)
 /
 
@@ -416,9 +416,19 @@
     sigma_pdd  = 5.0     ! [K] Temperature standard deviation for the annual PDDs (itm)
     time_equil = 100.0   ! [yr] Cold-start snowpack spin-up (annual cycles)
     dt_days    = 1       ! [d] chion step (divides the 360-day year)
-    trans_sw   = 0.6     ! [1] TOA -> surface shortwave transmissivity (bessi)
-    wind_speed = 5.0     ! [m s-1] Constant wind speed (bessi)
-    rel_hum    = 0.8     ! [1] Constant relative humidity (bessi)
+    sw_trans0  = 0.590   ! [1] SWdn/TOA at sea level (bessi; MAR v3.14 1981-2010 Greenland summer, chion's TOA)
+    sw_trans_per_km = 0.049  ! [km-1] Its change with the surface elevation
+    wind_speed = 3.0     ! [m s-1] Wind speed at sea level on flat ground (bessi; PD Greenland vs MAR and LGM fit)
+    wind_lapse = 0.0     ! [m s-1 km-1] Its change with the surface elevation
+    wind_slope = 0.2      ! [m s-1 per m/km] Its change with the surface slope (katabatic; PD Greenland vs MAR ice and LGM fit)
+    wind_slope_length = 50.0  ! [km] Baseline of the slope
+    rel_hum    = 0.8     ! [1] Constant relative humidity (bessi; ERA5 JJA 0.72-0.81)
+    tvar_sigma0       = 2.0    ! [K] Daily temperature variability at T_mon = 0 C (ERA5 1981-2010, Greenland and Antarctic ice)
+    tvar_sigma_slope  = -0.14  ! [K K-1] Its change with the monthly mean temperature (Seguinot and Rogozhina 2014)
+    tvar_sigma_min    = 2.0    ! [K] Lower bound
+    tvar_sigma_max    = 6.0    ! [K] Upper bound (ERA5); 0: no variability
+    tvar_tau          = 4.0    ! [d] e-folding time of the red noise (ERA5: 4-6 d)
+    tvar_seed         = 1      ! Seed of the noise sequence
 /
 
 &chion_nor
@@ -458,12 +468,12 @@
     semix_z0m_snow                     = 0.001           ! [m]  Momentum roughness length, snow
     semix_z0m_ice                      = 0.01            ! [m]  Momentum roughness length, bare ice
     semix_zm_to_zh                     = 10.0            ! [1]  z0m/z0h
-    semix_sensible_exchange_factor     = 2.5             ! [1]  Sensible-heat exchange factor (MAR-calibrated)
-    semix_stable_coefficient           = 40.0            ! [1]  b in the stable damping 1/(1 + b*Ri) (MAR-calibrated)
+    semix_sensible_exchange_factor     = 1.5             ! [1]  Sensible-heat exchange factor (PD Greenland vs MAR ice and LGM fit)
+    semix_stable_coefficient           = 40.0            ! [1]  b in the stable damping 1/(1 + b*Ri) (PD Greenland vs MAR ice and LGM fit)
     semix_latent_exchange_factor       = 1.0             ! [1]  Latent-heat exchange factor
-    alpha_dry                          = 0.81            ! [1] Dry snow albedo (upper bound)
+    alpha_dry                          = 0.85            ! [1] Dry snow albedo (upper bound; both domains: PD Antarctica melt vs RACMO, Greenland LGM fit unchanged)
     alpha_wet                          = 0.70            ! [1] Wet snow albedo (lower bound)
-    alpha_ice                          = 0.40            ! [1] Bare ice albedo
+    alpha_ice                          = 0.55            ! [1] Bare ice albedo (PD Greenland vs MAR ice and LGM fit)
     max_lwc_albedo                     = 0.10            ! [1] LWC at which the albedo reaches alpha_wet
     albedo_scheme                      = "dynamic"       ! "constant" | "dynamic" | "prescribed" | "semix" | "aging"
     aging_cold_timescale_days          = 20.0            ! [d] Aging e-folding time, surface below T0 (albedo_scheme = "aging")
@@ -493,12 +503,19 @@
     sigma_orog_crit                    = 1000.0          ! [m]  Orographic roughness scale (Dang)
     eps_air                            = 0.80            ! [1] Emissivity of air (graybody longwave)
     longwave_scheme                    = "cloud_proxy"   ! Downwelling longwave if not prescribed: "graybody" | "cloud_proxy"
-    lw_emissivity_base                 = 0.624           ! [1]     Cloud proxy: emissivity at T0, clear sky
-    lw_emissivity_temperature_slope    = 0.0032          ! [K-1]   Cloud proxy: emissivity per K of T_air - T0
-    lw_emissivity_cloud_slope          = 0.613           ! [1]     Cloud proxy: emissivity per unit cloudiness
-    lw_clear_sky_transmissivity        = 0.85            ! [1]     Cloud proxy: clear-sky SW transmissivity at sea level
-    lw_clear_sky_transmissivity_per_km = 0.075           ! [km-1]  Cloud proxy: its increase with surface height
-    lw_night_cloud_fraction            = 0.389           ! [1]     Cloud proxy: cloudiness without a daily TOA
+    lw_clear_sky_transmissivity               = 0.718    ! [1]     Cloud proxy (Konzelmann 1994): clear-sky SW transmissivity at sea level, TOA 300 W m-2
+    lw_clear_sky_transmissivity_per_km        = 0.0298   ! [km-1]  Its increase with surface height
+    lw_clear_sky_transmissivity_insolation    = 0.0569   ! [1]     Its change per ln(TOA/300)
+    lw_cloud_transmission_coefficient         = 0.447    ! [1]     Cloud SW attenuation at sea level
+    lw_cloud_transmission_exponent            = 2.75     ! [1]     Cloud fraction = (attenuation deficit)^(1/exponent)
+    lw_cloud_transmission_decay_per_km        = 0.225    ! [km-1]  Decay of the cloud attenuation with surface height
+    lw_clear_sky_emissivity                   = 0.716    ! [1]     Clear-sky emissivity at T0
+    lw_clear_sky_emissivity_temperature_slope = 0.00239  ! [K-1]   Its change per K of T_air - T0
+    lw_overcast_emissivity                    = 0.952    ! [1]     Overcast emissivity at T0
+    lw_overcast_emissivity_temperature_slope  = 0.00362  ! [K-1]   Its change per K of T_air - T0
+    lw_cloud_emissivity_exponent              = 3.0      ! [1]     Weight of the overcast emissivity, n^exponent
+    lw_night_cloud_fraction                   = 0.85     ! [1]     Cloud fraction without a daily TOA
+    lw_emissivity_max                         = 1.0      ! [1]     Upper bound of the effective emissivity
     eps_snow                           = 0.98            ! [1] Emissivity of snow
     eps_ice                            = 0.98            ! [1] Emissivity of bare ice (seb_scheme = "semix" only)
     sigma_sb                           = 5.670373e-8     ! [W m-2 K-4] Stefan-Boltzmann constant
@@ -1117,7 +1134,6 @@
     out_vars      = ""
     surface_chion = "surface_chion_ant"
     chion         = "chion_ant"
-    orbit         = "orbit_ant"
 /
 
 &shelf_ant
@@ -1270,24 +1286,25 @@
     f_p         = 0.05                        ! [K-1] precipitation-temperature scaling (beta_p)
 /
 
-&orbit_ant
-    method = "fixed_time"   ! forcing_time: at the forcing time; fixed_time: at time; fixed_orbit: ecc, obl, per
-    time   = 0.0            ! [yr] model time of the orbit (fixed_time; relative to 1950, past < 0)
-    ecc    = 0.016702       ! [1]   eccentricity (fixed_orbit; these: the tables at 1950)
-    obl    = 23.4393        ! [deg] obliquity (fixed_orbit)
-    per    = 102.918        ! [deg] longitude of perihelion (fixed_orbit)
-    fldr   = "input"        ! folder of the orbital tables (LA2004.INSOLN.5Ma.txt, LA2004.INSOLP.1Ma.txt)
-/
-
 &surface_chion_ant
     sf_a       = 0.273   ! Snow fraction function (parameter a)
     sf_b       = 273.6   ! Snow fraction function (parameter b)
     sigma_pdd  = 5.0     ! [K] Temperature standard deviation for the annual PDDs (itm)
     time_equil = 100.0   ! [yr] Cold-start snowpack spin-up (annual cycles)
     dt_days    = 1       ! [d] chion step (divides the 360-day year)
-    trans_sw   = 0.6     ! [1] TOA -> surface shortwave transmissivity (bessi)
-    wind_speed = 5.0     ! [m s-1] Constant wind speed (bessi)
-    rel_hum    = 0.8     ! [1] Constant relative humidity (bessi)
+    sw_trans0  = 0.673   ! [1] SWdn/TOA at sea level (bessi; CERES 2001-2020 Antarctica summer, chion's TOA)
+    sw_trans_per_km = 0.041  ! [km-1] Its change with the surface elevation
+    wind_speed = 5.5     ! [m s-1] Wind speed at sea level on flat ground (bessi; ERA5 1981-2010 summer, the ice)
+    wind_lapse = 0.20    ! [m s-1 km-1] Its change with the surface elevation
+    wind_slope = 0.0     ! [m s-1 per m/km] Its change with the surface slope (katabatic)
+    wind_slope_length = 50.0  ! [km] Baseline of the slope
+    rel_hum    = 0.8     ! [1] Constant relative humidity (bessi; Antarctica: melt against RACMO with alpha_dry 0.85)
+    tvar_sigma0       = 2.0    ! [K] Daily temperature variability at T_mon = 0 C (ERA5 1981-2010, Greenland and Antarctic ice)
+    tvar_sigma_slope  = -0.14  ! [K K-1] Its change with the monthly mean temperature (Seguinot and Rogozhina 2014)
+    tvar_sigma_min    = 2.0    ! [K] Lower bound
+    tvar_sigma_max    = 0.0    ! [K] Upper bound; 0: no variability (Antarctica: ERA5's sigma, even halved, gives 2-4x RACMO's melt)
+    tvar_tau          = 4.0    ! [d] e-folding time of the red noise (ERA5: 4-6 d)
+    tvar_seed         = 1      ! Seed of the noise sequence
 /
 
 &chion_ant
@@ -1327,12 +1344,12 @@
     semix_z0m_snow                     = 0.001           ! [m]  Momentum roughness length, snow
     semix_z0m_ice                      = 0.01            ! [m]  Momentum roughness length, bare ice
     semix_zm_to_zh                     = 10.0            ! [1]  z0m/z0h
-    semix_sensible_exchange_factor     = 2.5             ! [1]  Sensible-heat exchange factor (MAR-calibrated)
-    semix_stable_coefficient           = 40.0            ! [1]  b in the stable damping 1/(1 + b*Ri) (MAR-calibrated)
+    semix_sensible_exchange_factor     = 1.5             ! [1]  Sensible-heat exchange factor (Greenland's set)
+    semix_stable_coefficient           = 40.0            ! [1]  b in the stable damping 1/(1 + b*Ri) (Greenland's set)
     semix_latent_exchange_factor       = 1.0             ! [1]  Latent-heat exchange factor
-    alpha_dry                          = 0.81            ! [1] Dry snow albedo (upper bound)
+    alpha_dry                          = 0.85            ! [1] Dry snow albedo (upper bound; both domains: PD Antarctica melt vs RACMO, Greenland LGM fit unchanged)
     alpha_wet                          = 0.70            ! [1] Wet snow albedo (lower bound)
-    alpha_ice                          = 0.40            ! [1] Bare ice albedo
+    alpha_ice                          = 0.55            ! [1] Bare ice albedo (Greenland's set)
     max_lwc_albedo                     = 0.10            ! [1] LWC at which the albedo reaches alpha_wet
     albedo_scheme                      = "dynamic"       ! "constant" | "dynamic" | "prescribed" | "semix" | "aging"
     aging_cold_timescale_days          = 20.0            ! [d] Aging e-folding time, surface below T0 (albedo_scheme = "aging")
@@ -1362,12 +1379,19 @@
     sigma_orog_crit                    = 1000.0          ! [m]  Orographic roughness scale (Dang)
     eps_air                            = 0.80            ! [1] Emissivity of air (graybody longwave)
     longwave_scheme                    = "cloud_proxy"   ! Downwelling longwave if not prescribed: "graybody" | "cloud_proxy"
-    lw_emissivity_base                 = 0.624           ! [1]     Cloud proxy: emissivity at T0, clear sky
-    lw_emissivity_temperature_slope    = 0.0032          ! [K-1]   Cloud proxy: emissivity per K of T_air - T0
-    lw_emissivity_cloud_slope          = 0.613           ! [1]     Cloud proxy: emissivity per unit cloudiness
-    lw_clear_sky_transmissivity        = 0.85            ! [1]     Cloud proxy: clear-sky SW transmissivity at sea level
-    lw_clear_sky_transmissivity_per_km = 0.075           ! [km-1]  Cloud proxy: its increase with surface height
-    lw_night_cloud_fraction            = 0.389           ! [1]     Cloud proxy: cloudiness without a daily TOA
+    lw_clear_sky_transmissivity               = 0.718    ! [1]     Cloud proxy (Konzelmann 1994): clear-sky SW transmissivity at sea level, TOA 300 W m-2
+    lw_clear_sky_transmissivity_per_km        = 0.0298   ! [km-1]  Its increase with surface height
+    lw_clear_sky_transmissivity_insolation    = 0.0569   ! [1]     Its change per ln(TOA/300)
+    lw_cloud_transmission_coefficient         = 0.447    ! [1]     Cloud SW attenuation at sea level
+    lw_cloud_transmission_exponent            = 2.75     ! [1]     Cloud fraction = (attenuation deficit)^(1/exponent)
+    lw_cloud_transmission_decay_per_km        = 0.225    ! [km-1]  Decay of the cloud attenuation with surface height
+    lw_clear_sky_emissivity                   = 0.716    ! [1]     Clear-sky emissivity at T0
+    lw_clear_sky_emissivity_temperature_slope = 0.00239  ! [K-1]   Its change per K of T_air - T0
+    lw_overcast_emissivity                    = 0.952    ! [1]     Overcast emissivity at T0
+    lw_overcast_emissivity_temperature_slope  = 0.00362  ! [K-1]   Its change per K of T_air - T0
+    lw_cloud_emissivity_exponent              = 3.0      ! [1]     Weight of the overcast emissivity, n^exponent
+    lw_night_cloud_fraction                   = 0.85     ! [1]     Cloud fraction without a daily TOA
+    lw_emissivity_max                         = 1.0      ! [1]     Upper bound of the effective emissivity
     eps_snow                           = 0.98            ! [1] Emissivity of snow
     eps_ice                            = 0.98            ! [1] Emissivity of bare ice (seb_scheme = "semix" only)
     sigma_sb                           = 5.670373e-8     ! [W m-2 K-4] Stefan-Boltzmann constant

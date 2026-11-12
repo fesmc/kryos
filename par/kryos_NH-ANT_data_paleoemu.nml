@@ -1,0 +1,727 @@
+! kryos par file: the SMB tuning run. PaleoMIST's ice imposed in North (NH-32KM) and Antarctica (ANT-32KM) with the ice
+! backend data (H_ice and z_bed of the IceHistory files; z_bed is relative to the sea level of the time, so z_sl = 0), no
+! solid Earth, 80 ka to 0, with the CESM-3Ma emulator (climate paleoemu: the global part on the merged ice of the globe,
+! a port per domain) driving the chion snowpack (bessi; itm with chion.model = "itm"; insolation on the forcing's orbit),
+! ice columns cold-started with 500 kg m-2 of firn (swe_init_ice). The climate and chion's smb
+! and T_srf on the reconstructed geometry are the output: tools/levante/smb_basin_budget.jl takes them per basin.
+! dtt 100 yr (chion steps one annual cycle per update; the ice is linear between the 2.5 kyr slices). CO2: the CESM-3Ma
+! series (PaleoEmulator scripts/prep_kryos_co2.jl). Output: 2D every 2.5 kyr (the PaleoMIST slices), 1D every 100 yr.
+! Shelf diagnostics (marine_shelf) on the imposed geometry, no ice model or GIA (the data ice ignores bmb_shlf):
+! the ports' ocean is the present day (North: ORAS5 1981-2010; Antarctica: ISMIP7, Zwally2012 basin means) plus the
+! emulator's dto_lev (0 at present day: the emulator's filters start from its training trajectory).
+! Build: paleoemu=1 (plastic, vilma and yelmo not needed). Inputs in kryos_data/paleoemu/ (its README): the emulator
+! file, its reference climate on GLOBAL-0.5DEG, the CO2 table.
+!   runme -r -s -q 12h -w 01:00:00 --omp 32 -m 60G -o <run> -n par/kryos_NH-ANT_data_paleoemu.nml   (albedo; Levante: -q shared)
+! (from -50 ka: bessi about 20 min on 32 threads; itm about 8 min)
+
+&kryos
+    domains         = "North" "Antarctica"
+    globe           = "globe"
+    clock           = "clock"
+    restart         = "None"
+    restart_out     = "out_rst"
+    out_dir         = "./"
+    map_fldr        = "maps"
+    phys_const      = "Earth"                ! rho_ice 910, rho_sw 1028: the flotation of the data ice
+    phys_const_file = "input/phys_const.nml"
+    write_lossless  = False
+    log_level       = "info"
+    timing          = True
+/
+
+&clock
+    time_init      = -80e3     ! [yr] the first PaleoMIST slice (80 ka)
+    time_end       = 0.0       ! [yr] present day
+    dtt            = 100.0     ! [yr] one chion annual cycle per 100 yr (PaleoMIST: 2.5 kyr slices)
+    method         = "rel"
+    time_ref       = 1950.0
+    calendar       = "365_day"
+    year           = "tropical"
+    ticks_per_year = 36000
+/
+
+&out_1D
+    method = "const"
+    dt     = 100.0
+/
+
+&out_2D
+    method = "const"
+    dt     = 2500.0            ! [yr] every PaleoMIST slice
+/
+
+&out_rst
+    method = "const"
+    dt     = 10e3
+/
+
+&globe
+    forcing = "forcing"
+    climate = "clim_glob"
+/
+
+&forcing
+    backend   = "tsgen"
+    dt        = 0.0
+    clock     = "forcing"
+    out_1D    = "out_1D"          ! forcing_ts.nc: coef_co2
+    coefs     = "co2"
+    orbit     = "orbit"           ! the run's orbit: the emulator and chion's insolation
+    out_insol = "out_2D"          ! forcing_insol.nc: the orbit, monthly TOA insolation on 1 degree latitudes
+/
+
+&coef_co2
+    method      = "series"
+    series_file = "kryos_data/paleoemu/co2_cesm3ma.dat"            ! CESM-3Ma (time [yr], co2 [ppm])
+    units       = "ppm"
+/
+
+&orbit
+    method = "forcing_time"       ! Laskar et al. (2004) at the forcing time
+    fldr   = "input"
+/
+
+&clim_glob
+    backend   = "paleoemu"
+    grid      = "GLOBAL-0.5DEG"   ! the background grid of [globe_ice]
+    dt        = 0.0               ! every step
+    clock     = "forcing"
+    out_2D    = "out_2D"          ! clim_glob.nc: tas, pr, z_srf_clim, lapse, dto_lev on lon, lat (level)
+    out_1D    = "none"
+    out_emu   = "out_2D"          ! clim_glob_emu.nc: the emulator on the CESM grid (inputs, dV, dz, anomalies, sd)
+    file      = "kryos_data/paleoemu/emulator_cesm3ma.nc"
+    reference = "kryos_data/paleoemu/paleoemu_reference_rcm_GLOBAL-0.5DEG.nc"
+    beta_p       = 0.0            ! [K-1] lapse rows: 0, the emulator's dlogpr already holds the ice sheets' response
+    beta_adj     = 0.05           ! [K-1] precipitation per K of the adjustments (scale_dtas, bias)
+    scale_dtas   = 1.0            ! the emulator's temperature anomaly times this (a colder/warmer climate, its pattern)
+    bias         = "kryos_data/paleoemu/bias/bias_pmip4_mean.nc"   ! the PMIP4 mean LGM bias (NH ice-volume weighted)
+    bias_scale   = 1.5            ! the reference: x1 to x2 bracket the LGM budgets (balanced Laurentide at x2)
+    scale_dto    = 1.0            ! the ocean: dto_lev = scale_dto dto + dto_nsd dto_sd (clim_glob.nc)
+    dto_nsd      = 0.0
+/
+
+&globe_ice
+    grid      = "GLOBAL-0.5DEG"         ! background grid (phase4-plan Q3)
+    z_bed_ref = "X_z_bed"               ! background bed X at ext_tref
+    H_ice_ref = "X_H_ice"               ! background ice X at ext_tref
+    ext       = "file"                  ! ice outside the footprints: X + the history's anomaly
+    ext_field = "X_dH_ice"
+    ext_tref  = 0.0                     ! [yr] model time of the history's present day (its last record, 0 ka)
+    target    = "GAUSS-L170"            ! the host terms' grid (no global geo here: the observer computes them unused)
+    out_2D    = "out_2D"                  ! schedule of globe_ice.nc (the hub output)
+/
+
+&X_z_bed
+    filename     = "fesmdata/Global/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"   ! PaleoMIST's 0 ka bed (read at ext_tref; B1's pm_ref)
+    name         = "z_bed"
+    mode         = "transient"
+    out_of_range = "error"
+/
+
+&X_H_ice
+    filename     = "fesmdata/Global/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"   ! PaleoMIST's 0 ka ice (read at ext_tref)
+    name         = "H_ice"
+    mode         = "transient"
+    out_of_range = "error"
+/
+
+&X_dH_ice
+    filename     = "fesmdata/Global/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"
+    name         = "H_ice"
+    mode         = "transient"
+    anomaly_ref  = "slice"
+    ref_time     = 0.0                  ! [yr] = ext_tref
+    out_of_range = "error"              ! the gather itself holds the history after ext_tref; a run before the first record stops
+/
+
+&North
+    grid_hub    = "NH-32KM"
+    topo        = "topo_nor"
+    regions     = "regions_nor"
+    basins      = "domain"
+    out_2D      = "none"
+    ice         = "ice_nor"
+    climate     = "climate_nor"
+    surface     = "surface_nor"
+    shelf       = "shelf_nor"
+/
+
+&ice_nor
+    backend  = "data"
+    grid     = ""                 ! the hub grid, NH-32KM
+    dt       = 0.0                ! every step
+    phase    = 0.0
+    clock    = "model"
+    out_2D   = "out_2D"
+    out_1D   = "out_1D"
+    out_vars = ""
+    H_ice    = "pm_H"
+    z_bed    = "pm_zb"
+    z_sl     = ""                 ! PaleoMIST's z_bed is relative to the sea level of the time
+/
+
+&topo_nor
+    path         = "fesmdata/{domain}/{grid_name}/{grid_name}_TOPO-GEBCO2026.nc"   ! today's topography (no correction r)
+    vars         = "z_bed" "z_srf" "H_ice"
+    remap        = "con"
+    z_bed_f_sd   = 0.0
+    remove_lakes = True
+    H_ice_min    = 1.0
+    grad_lim_zb  = 0.5
+/
+
+&regions_nor
+    path_regions = "fesmdata/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
+/
+
+&Antarctica
+    grid_hub    = "ANT-32KM"
+    topo        = "topo_ant"
+    regions     = "regions_ant"
+    basins      = "domain"
+    out_2D      = "none"
+    ice         = "ice_ant"
+    climate     = "climate_ant"
+    surface     = "surface_ant"
+    shelf       = "shelf_ant"
+/
+
+&ice_ant
+    backend  = "data"
+    grid     = ""                 ! the hub grid, ANT-32KM (the grid of chion)
+    dt       = 0.0                ! every step
+    phase    = 0.0
+    clock    = "model"
+    out_2D   = "out_2D"
+    out_1D   = "out_1D"
+    out_vars = ""
+    H_ice    = "pm_H"
+    z_bed    = "pm_zb"
+    z_sl     = ""                 ! PaleoMIST's z_bed is relative to the sea level of the time
+/
+
+&pm_H
+    filename     = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"   ! "years ago", 80 -> 0 ka
+    name         = "H_ice"
+    mode         = "transient"
+    out_of_range = "error"
+/
+
+&pm_zb
+    filename     = "fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc"
+    name         = "z_bed"
+    mode         = "transient"
+    out_of_range = "error"
+/
+
+&topo_ant
+    path         = "fesmdata/{domain}/{grid_name}/{grid_name}_TOPO-BedMachine-v4.nc"   ! today's topography (no correction r)
+    vars         = "z_bed" "z_srf" "H_ice"
+    remap        = "con"
+    z_bed_f_sd   = 0.0
+    remove_lakes = True
+    H_ice_min    = 1.0
+    grad_lim_zb  = 0.5
+/
+
+&regions_ant
+    path_regions = "fesmdata/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
+    path_basins  = "fesmdata/{domain}/{grid_name}/{grid_name}_BASINS-{set}.nc"
+    basin_sets   = "Zwally2012"
+/
+
+&climate_nor
+    backend  = "paleoemu"          ! the port of clim_glob (its cadence and clock)
+    grid     = "NH-32KM"            ! the ice grid
+    out_2D   = "out_2D"            ! climate_nor.nc: monthly tas (at z_srf_clim), pr, z_srf_clim, lapse; to_ann, so_ann, dto_ann
+    to_ref   = "oras5_1981_2010_to"   ! the present-day ocean (ORAS5 1981-2010, the annual mean): set A for the shelf
+    so_ref   = "oras5_1981_2010_so"
+/
+
+&surface_nor
+    backend       = "chion"
+    grid          = "NH-32KM"       ! the ice grid
+    dt            = 0.0
+    clock         = "forcing"
+    out_2D        = "out_2D"       ! surface_nor.nc: smb, T_srf, melt, runoff, refreezing, S, PDDs, ...
+    out_1D        = "out_1D"
+    surface_chion = "surface_chion"
+    chion         = "chion"
+/
+
+&shelf_nor
+    backend      = "marine_shelf"   ! shelf diagnostics on the imposed geometry (the data ice ignores bmb_shlf)
+    grid         = "NH-32KM"         ! the hub grid
+    dt           = 0.0
+    phase        = 0.0
+    clock        = "model"
+    out_2D       = "out_2D"         ! shelf_nor.nc: bmb_shlf [m/yr], T_shlf, tf_shlf, dT_shlf
+    out_1D       = "none"
+    out_vars     = ""
+    marine_shelf = "marine_shelf_nor"
+    corr         = "shelf_corr_nor"
+/
+
+&climate_ant
+    backend    = "paleoemu"          ! the port of clim_glob (its cadence and clock)
+    grid       = "ANT-32KM"            ! the ice grid
+    out_2D     = "out_2D"            ! climate_ant.nc: monthly tas (at z_srf_clim), pr, z_srf_clim, lapse; to_ann, so_ann, dto_ann
+    to_ref     = "ismip7_to"         ! the present-day ocean (ISMIP7): set A for the shelf
+    so_ref     = "ismip7_so"
+    dto_basins = "Zwally2012"        ! dto_ann: each basin's mean of dto_lev over its sample
+    dto_sample = "zone:shelf_break_buffer"   ! the sample: the ocean at the shelf break (none: the basin's ocean)
+/
+
+&surface_ant
+    backend       = "chion"
+    grid          = "ANT-32KM"       ! the ice grid
+    dt            = 0.0
+    clock         = "forcing"
+    out_2D        = "out_2D"       ! surface_ant.nc: smb, T_srf, melt, runoff, refreezing, S, PDDs, ...
+    out_1D        = "out_1D"
+    surface_chion = "surface_chion_ant"
+    chion         = "chion_ant"     ! Antarctica's own ITM group (itm_chion_ant): the per-domain tuning
+/
+
+&shelf_ant
+    backend      = "marine_shelf"   ! shelf diagnostics on the imposed geometry (the data ice ignores bmb_shlf)
+    grid         = "ANT-32KM"         ! the hub grid
+    dt           = 0.0
+    phase        = 0.0
+    clock        = "model"
+    out_2D       = "out_2D"         ! shelf_ant.nc: bmb_shlf [m/yr], T_shlf, tf_shlf, dT_shlf
+    out_1D       = "none"
+    out_vars     = ""
+    marine_shelf = "marine_shelf_ant"
+    corr         = "shelf_corr_ant"
+/
+
+&surface_chion
+    sf_a       = 0.273   ! Snow fraction function (parameter a)
+    sf_b       = 273.6   ! Snow fraction function (parameter b)
+    sigma_pdd  = 5.0     ! [K] Temperature standard deviation for the annual PDDs (itm)
+    time_equil = 100.0   ! [yr] Cold-start snowpack spin-up (annual cycles)
+    swe_init_ice = 500.0 ! [kg m-2] Cold start: snow and firn on ice columns, at the annual-mean air temperature
+    dt_days    = 1       ! [d] chion step (divides the 360-day year)
+    sw_trans0  = 0.590   ! [1] SWdn/TOA at sea level (bessi; MAR v3.14 1981-2010 Greenland summer, chion's TOA)
+    sw_trans_per_km = 0.049  ! [km-1] Its change with the surface elevation
+    wind_speed = 3.0     ! [m s-1] Wind speed at sea level on flat ground (bessi; PD Greenland vs MAR and LGM fit)
+    wind_lapse = 0.0     ! [m s-1 km-1] Its change with the surface elevation
+    wind_slope = 0.2      ! [m s-1 per m/km] Its change with the surface slope (katabatic; PD Greenland vs MAR ice and LGM fit)
+    wind_slope_length = 50.0  ! [km] Baseline of the slope
+    rel_hum    = 0.8     ! [1] Constant relative humidity (bessi; ERA5 JJA 0.72-0.81)
+    tvar_sigma0       = 2.0    ! [K] Daily temperature variability at T_mon = 0 C (ERA5 1981-2010, Greenland and Antarctic ice)
+    tvar_sigma_slope  = -0.14  ! [K K-1] Its change with the monthly mean temperature (Seguinot and Rogozhina 2014)
+    tvar_sigma_min    = 2.0    ! [K] Lower bound
+    tvar_sigma_max    = 6.0    ! [K] Upper bound (ERA5); 0: no variability
+    tvar_tau          = 4.0    ! [d] e-folding time of the red noise (ERA5: 4-6 d)
+    tvar_seed         = 1      ! Seed of the noise sequence
+/
+
+&surface_chion_ant
+    sf_a       = 0.273   ! Snow fraction function (parameter a)
+    sf_b       = 273.6   ! Snow fraction function (parameter b)
+    sigma_pdd  = 5.0     ! [K] Temperature standard deviation for the annual PDDs (itm)
+    time_equil = 100.0   ! [yr] Cold-start snowpack spin-up (annual cycles)
+    swe_init_ice = 500.0 ! [kg m-2] Cold start: snow and firn on ice columns, at the annual-mean air temperature
+    dt_days    = 1       ! [d] chion step (divides the 360-day year)
+    sw_trans0  = 0.673   ! [1] SWdn/TOA at sea level (bessi; CERES 2001-2020 Antarctica summer, chion's TOA)
+    sw_trans_per_km = 0.041  ! [km-1] Its change with the surface elevation
+    wind_speed = 5.5     ! [m s-1] Wind speed at sea level on flat ground (bessi; ERA5 1981-2010 summer, the ice)
+    wind_lapse = 0.20    ! [m s-1 km-1] Its change with the surface elevation
+    wind_slope = 0.0     ! [m s-1 per m/km] Its change with the surface slope (katabatic)
+    wind_slope_length = 50.0  ! [km] Baseline of the slope
+    rel_hum    = 0.8     ! [1] Constant relative humidity (bessi; Antarctica: melt against RACMO with alpha_dry 0.85)
+    tvar_sigma0       = 2.0    ! [K] Daily temperature variability at T_mon = 0 C (ERA5 1981-2010, Greenland and Antarctic ice)
+    tvar_sigma_slope  = -0.14  ! [K K-1] Its change with the monthly mean temperature (Seguinot and Rogozhina 2014)
+    tvar_sigma_min    = 2.0    ! [K] Lower bound
+    tvar_sigma_max    = 0.0    ! [K] Upper bound; 0: no variability (Antarctica: ERA5's sigma, even halved, gives 2-4x RACMO's melt)
+    tvar_tau          = 4.0    ! [d] e-folding time of the red noise (ERA5: 4-6 d)
+    tvar_seed         = 1      ! Seed of the noise sequence
+/
+
+&chion
+    model           = "bessi"                        ! Snowpack model: "itm", "bessi" or "pdd" (bessi: the tuning default)
+    nml_bessi       = "bessi"                        ! Namelist group holding the BESSI parameters
+    nml_pdd         = "pdd_chion"                    ! PDD parameters (chion's own group)
+    nml_itm         = "itm_chion"                          ! Namelist group holding the ITM parameters
+    nml_const       = "chion_const"                  ! Namelist group holding chion's own constants
+    phys_const_file = "input/chion_phys_const.nml"   ! Shared constants, standalone only
+    phys_const      = "Earth"                        ! Group within phys_const_file
+    restart         = "None"                         ! Restart file, or "None" for a cold start (WP14)
+/
+
+&bessi
+    Ntot             = 5                    ! [1] Layer capacity per column (the 4 near-surface layers + 1: firn depth not critical here; 22% faster than 15)
+    mass_max         = 500.0                ! [kg m-2] Surface-layer mass that triggers a split
+    mass_split       = 300.0                ! [kg m-2] Mass left in the layer below after a split
+    mass_min         = 100.0                ! [kg m-2] Surface-layer mass that triggers a merge
+    density_init     = 300.0                ! [kg m-3] Density assigned to an inactive layer slot
+    temperature_init = 273.0                ! [K] Temperature assigned to an inactive layer slot
+    density_init_firn = 350.0               ! [kg m-3] Density of an initial snowpack (chion_init_state swe)
+
+    ice_substrate_layers        = 5         ! [1] Thermal ice layers below the snow/firn column (0 = none)
+    ice_substrate_top_thickness = 0.05      ! [m] Top substrate layer; each layer below is twice as thick
+
+    near_surface_layer_max_thicknesses = 0.02, 0.05, 0.10, 0.30   ! [m] Maximum thickness of layers 1-4 (0 = no limit)
+
+    diurnal_shortwave_substeps            = True    ! [1] Resolve the diurnal cycle by substepping
+    diurnal_shortwave_threshold           = 0.0     ! [W m-2] Peak-minus-mean excess required to substep
+    diurnal_shortwave_max_substeps        = 8       ! [1] Substeps per day when enabled; 1..24
+    diurnal_shortwave_min_air_temperature = 265.15  ! [K] Below this, do not substep (Julia: -8 C)
+    diurnal_temperature_cycle             = True    ! [1] Impose a diurnal air-temperature cycle
+    diurnal_temperature_amplitude         = 1.0     ! [K] Half-amplitude of that cycle at reference height
+    diurnal_temperature_amplitude_gradient         = 0.0     ! [K km-1] Amplitude increase above reference height
+    diurnal_temperature_amplitude_reference_height = 0.0     ! [m] Reference height of that gradient
+    diurnal_temperature_amplitude_max              = 1.0     ! [K] Upper bound on the amplitude
+/
+
+&chion_const
+    rho_s                              = 315.0           ! [kg m-3] Fresh snow density (constant scheme)
+    rho_s_a                            = 109.0           ! [kg m-3] Intercept
+    rho_s_b                            = 6.0             ! [kg m-3 K-1] Temperature slope
+    rho_s_c                            = 26.0            ! [kg m-3 (m s-1)^-1/2] Wind slope
+    fresh_snow_density_scheme          = "constant"      ! "constant" | "parameterized"
+    Lv                                 = 2.501e6         ! [J kg-1] Latent heat of vaporization
+    cp_air                             = 1003.0          ! [J kg-1 K-1] Heat capacity of air
+    latent_heat_flux_ratio             = 1.0             ! [1] Scaling of the turbulent latent flux
+    seb_scheme                         = "semix"         ! Longwave only: "bessi" | "semix" (absorbed with eps_snow / eps_ice)
+    turbulent_flux_scheme              = "semix"         ! Sensible and latent heat: "bessi" | "semix" | "climberx"
+    D_sh                               = 10.0            ! [W m-2 K-1] Sensible heat exchange coefficient (bessi)
+    z0m_snow                           = 0.0024          ! [m]  Momentum roughness length, snow
+    z0m_ice                            = 0.002           ! [m]  Momentum roughness length, ice
+    zm_to_zh                           = 0.13533528      ! [1]  Heat/momentum roughness ratio, exp(-2)
+    z_sfl                              = 100.0           ! [m]  Surface layer height
+    karman                             = 0.4             ! [1]  von Karman constant
+    R_dry                              = 287.058         ! [J kg-1 K-1] Gas constant of dry air
+    l_neutral                          = .FALSE.         ! [1]  Force neutral stratification?
+    l_dew                              = .TRUE.          ! [1]  Allow dew/frost deposition?
+    climberx_qsat                      = "climberx"      ! Saturation humidity: "climberx" (q_sat_i) | "bessi"
+    semix_karman                       = 0.4             ! [1]  von Karman constant
+    semix_surface_height               = 10.0            ! [m]  Reference height of air temperature and wind
+    semix_z0m_snow                     = 0.001           ! [m]  Momentum roughness length, snow
+    semix_z0m_ice                      = 0.01            ! [m]  Momentum roughness length, bare ice
+    semix_zm_to_zh                     = 10.0            ! [1]  z0m/z0h
+    semix_sensible_exchange_factor     = 1.5             ! [1]  Sensible-heat exchange factor (PD Greenland vs MAR ice and LGM fit)
+    semix_stable_coefficient           = 40.0            ! [1]  b in the stable damping 1/(1 + b*Ri) (PD Greenland vs MAR ice and LGM fit)
+    semix_latent_exchange_factor       = 1.0             ! [1]  Latent-heat exchange factor
+    alpha_dry                          = 0.85            ! [1] Dry snow albedo (upper bound; both domains: PD Antarctica melt vs RACMO, Greenland LGM fit unchanged)
+    alpha_wet                          = 0.70            ! [1] Wet snow albedo (lower bound)
+    alpha_ice                          = 0.55            ! [1] Bare ice albedo (PD Greenland vs MAR ice and LGM fit)
+    max_lwc_albedo                     = 0.10            ! [1] LWC at which the albedo reaches alpha_wet
+    albedo_scheme                      = "dynamic"       ! "constant" | "dynamic" | "prescribed" | "semix" | "aging"
+    aging_cold_timescale_days          = 20.0            ! [d] Aging e-folding time, surface below T0 (albedo_scheme = "aging")
+    aging_melting_timescale_days       = 2.0             ! [d] Aging e-folding time, surface at T0
+    aging_snowfall_ref                 = 10.0            ! [kg m-2] e-folding snowfall of the aging albedo's rejuvenation
+    swe_crit_albedo                    = 10.0            ! [kg m-2] Column SWE of full snow cover (0 = off: any snow covers)
+    alpha_land                         = 0.2             ! [1] Background albedo of a land column (H_ice = 0)
+    c_fsnow                            = 10.0            ! [1] SEMIX snow cover tanh(h_snow/(c_fsnow*z0m_ice)) (CLIMBER-X)
+    c_fsnow_orog                       = 2e-4            ! [1] SEMIX orography h_snow/(h_snow + c_fsnow_orog*z_sur_std)
+    frac_vu                            = 0.45            ! [1]  Visible+UV fraction of incoming solar
+    alb_snow_vis_new                   = 0.99            ! [1]  Fresh-snow visible diffuse albedo
+    alb_snow_nir_new                   = 0.65            ! [1]  Fresh-snow near-IR diffuse albedo
+    snow_grain_fresh                   = 50.0            ! [um] Fresh snow grain size
+    snow_grain_old                     = 1000.0          ! [um] Aged snow grain size
+    d_alb_age_vis                      = 0.05            ! [1]  Visible aging albedo reduction
+    d_alb_age_nir                      = 0.25            ! [1]  Near-IR aging albedo reduction
+    f_age_t                            = 0.1             ! [K-1] Dry-snow temperature aging factor
+    dT_age                             = 0.0             ! [K]  Aging temperature offset
+    snow_0                             = 1.0             ! [kg m-2 d-1] Critical snowfall rate for grain aging
+    snow_1                             = 0.5             ! [1]  Snowfall-rate aging exponent
+    w_snow_dust                        = 10.0            ! [kg m-2] SWE melt that doubles dust concentration
+    dust_con_scale                     = 1.0             ! [1]  Dust concentration scaling
+    semix_snow_albedo                  = "dang"          ! "warren_wiscombe" | "dang" (CLIMBER-X default: Dang 2015)
+    dalb_snow_vis                      = 0.0             ! [1]  Visible snow albedo offset (Dang)
+    dalb_snow_nir                      = 0.0             ! [1]  Near-IR snow albedo offset (Dang)
+    k_sigma_orog                       = 0.0             ! [1]  Orographic albedo reduction scale (Dang)
+    sigma_orog_crit                    = 1000.0          ! [m]  Orographic roughness scale (Dang)
+    eps_air                            = 0.80            ! [1] Emissivity of air (graybody longwave)
+    longwave_scheme                    = "cloud_proxy"   ! Downwelling longwave if not prescribed: "graybody" | "cloud_proxy"
+    lw_clear_sky_transmissivity               = 0.718    ! [1]     Cloud proxy (Konzelmann 1994): clear-sky SW transmissivity at sea level, TOA 300 W m-2
+    lw_clear_sky_transmissivity_per_km        = 0.0298   ! [km-1]  Its increase with surface height
+    lw_clear_sky_transmissivity_insolation    = 0.0569   ! [1]     Its change per ln(TOA/300)
+    lw_cloud_transmission_coefficient         = 0.447    ! [1]     Cloud SW attenuation at sea level
+    lw_cloud_transmission_exponent            = 2.75     ! [1]     Cloud fraction = (attenuation deficit)^(1/exponent)
+    lw_cloud_transmission_decay_per_km        = 0.225    ! [km-1]  Decay of the cloud attenuation with surface height
+    lw_clear_sky_emissivity                   = 0.716    ! [1]     Clear-sky emissivity at T0
+    lw_clear_sky_emissivity_temperature_slope = 0.00239  ! [K-1]   Its change per K of T_air - T0
+    lw_overcast_emissivity                    = 0.952    ! [1]     Overcast emissivity at T0
+    lw_overcast_emissivity_temperature_slope  = 0.00362  ! [K-1]   Its change per K of T_air - T0
+    lw_cloud_emissivity_exponent              = 3.0      ! [1]     Weight of the overcast emissivity, n^exponent
+    lw_night_cloud_fraction                   = 0.85     ! [1]     Cloud fraction without a daily TOA
+    lw_emissivity_max                         = 1.0      ! [1]     Upper bound of the effective emissivity
+    eps_snow                           = 0.98            ! [1] Emissivity of snow
+    eps_ice                            = 0.98            ! [1] Emissivity of bare ice (seb_scheme = "semix" only)
+    sigma_sb                           = 5.670373e-8     ! [W m-2 K-4] Stefan-Boltzmann constant
+    low_density_densification          = "bessi"         ! "bessi" | "htessel" (selects the rho<550 branch only)
+/
+
+&chion_const_ant
+    ! Antarctica's chion constants: a copy of chion_const, tuned per domain (smb_fit.jl)
+    rho_s                              = 315.0           ! [kg m-3] Fresh snow density (constant scheme)
+    rho_s_a                            = 109.0           ! [kg m-3] Intercept
+    rho_s_b                            = 6.0             ! [kg m-3 K-1] Temperature slope
+    rho_s_c                            = 26.0            ! [kg m-3 (m s-1)^-1/2] Wind slope
+    fresh_snow_density_scheme          = "constant"      ! "constant" | "parameterized"
+    Lv                                 = 2.501e6         ! [J kg-1] Latent heat of vaporization
+    cp_air                             = 1003.0          ! [J kg-1 K-1] Heat capacity of air
+    latent_heat_flux_ratio             = 1.0             ! [1] Scaling of the turbulent latent flux
+    seb_scheme                         = "semix"         ! Longwave only: "bessi" | "semix" (absorbed with eps_snow / eps_ice)
+    turbulent_flux_scheme              = "semix"         ! Sensible and latent heat: "bessi" | "semix" | "climberx"
+    D_sh                               = 10.0            ! [W m-2 K-1] Sensible heat exchange coefficient (bessi)
+    z0m_snow                           = 0.0024          ! [m]  Momentum roughness length, snow
+    z0m_ice                            = 0.002           ! [m]  Momentum roughness length, ice
+    zm_to_zh                           = 0.13533528      ! [1]  Heat/momentum roughness ratio, exp(-2)
+    z_sfl                              = 100.0           ! [m]  Surface layer height
+    karman                             = 0.4             ! [1]  von Karman constant
+    R_dry                              = 287.058         ! [J kg-1 K-1] Gas constant of dry air
+    l_neutral                          = .FALSE.         ! [1]  Force neutral stratification?
+    l_dew                              = .TRUE.          ! [1]  Allow dew/frost deposition?
+    climberx_qsat                      = "climberx"      ! Saturation humidity: "climberx" (q_sat_i) | "bessi"
+    semix_karman                       = 0.4             ! [1]  von Karman constant
+    semix_surface_height               = 10.0            ! [m]  Reference height of air temperature and wind
+    semix_z0m_snow                     = 0.001           ! [m]  Momentum roughness length, snow
+    semix_z0m_ice                      = 0.01            ! [m]  Momentum roughness length, bare ice
+    semix_zm_to_zh                     = 10.0            ! [1]  z0m/z0h
+    semix_sensible_exchange_factor     = 1.5             ! [1]  Sensible-heat exchange factor (Greenland's set)
+    semix_stable_coefficient           = 40.0            ! [1]  b in the stable damping 1/(1 + b*Ri) (Greenland's set)
+    semix_latent_exchange_factor       = 1.0             ! [1]  Latent-heat exchange factor
+    alpha_dry                          = 0.85            ! [1] Dry snow albedo (upper bound; both domains: PD Antarctica melt vs RACMO, Greenland LGM fit unchanged)
+    alpha_wet                          = 0.70            ! [1] Wet snow albedo (lower bound)
+    alpha_ice                          = 0.55            ! [1] Bare ice albedo (Greenland's set)
+    max_lwc_albedo                     = 0.10            ! [1] LWC at which the albedo reaches alpha_wet
+    albedo_scheme                      = "dynamic"       ! "constant" | "dynamic" | "prescribed" | "semix" | "aging"
+    aging_cold_timescale_days          = 20.0            ! [d] Aging e-folding time, surface below T0 (albedo_scheme = "aging")
+    aging_melting_timescale_days       = 2.0             ! [d] Aging e-folding time, surface at T0
+    aging_snowfall_ref                 = 10.0            ! [kg m-2] e-folding snowfall of the aging albedo's rejuvenation
+    swe_crit_albedo                    = 10.0            ! [kg m-2] Column SWE of full snow cover (0 = off: any snow covers)
+    alpha_land                         = 0.2             ! [1] Background albedo of a land column (H_ice = 0)
+    c_fsnow                            = 10.0            ! [1] SEMIX snow cover tanh(h_snow/(c_fsnow*z0m_ice)) (CLIMBER-X)
+    c_fsnow_orog                       = 2e-4            ! [1] SEMIX orography h_snow/(h_snow + c_fsnow_orog*z_sur_std)
+    frac_vu                            = 0.45            ! [1]  Visible+UV fraction of incoming solar
+    alb_snow_vis_new                   = 0.99            ! [1]  Fresh-snow visible diffuse albedo
+    alb_snow_nir_new                   = 0.65            ! [1]  Fresh-snow near-IR diffuse albedo
+    snow_grain_fresh                   = 50.0            ! [um] Fresh snow grain size
+    snow_grain_old                     = 1000.0          ! [um] Aged snow grain size
+    d_alb_age_vis                      = 0.05            ! [1]  Visible aging albedo reduction
+    d_alb_age_nir                      = 0.25            ! [1]  Near-IR aging albedo reduction
+    f_age_t                            = 0.1             ! [K-1] Dry-snow temperature aging factor
+    dT_age                             = 0.0             ! [K]  Aging temperature offset
+    snow_0                             = 1.0             ! [kg m-2 d-1] Critical snowfall rate for grain aging
+    snow_1                             = 0.5             ! [1]  Snowfall-rate aging exponent
+    w_snow_dust                        = 10.0            ! [kg m-2] SWE melt that doubles dust concentration
+    dust_con_scale                     = 1.0             ! [1]  Dust concentration scaling
+    semix_snow_albedo                  = "dang"          ! "warren_wiscombe" | "dang" (CLIMBER-X default: Dang 2015)
+    dalb_snow_vis                      = 0.0             ! [1]  Visible snow albedo offset (Dang)
+    dalb_snow_nir                      = 0.0             ! [1]  Near-IR snow albedo offset (Dang)
+    k_sigma_orog                       = 0.0             ! [1]  Orographic albedo reduction scale (Dang)
+    sigma_orog_crit                    = 1000.0          ! [m]  Orographic roughness scale (Dang)
+    eps_air                            = 0.80            ! [1] Emissivity of air (graybody longwave)
+    longwave_scheme                    = "cloud_proxy"   ! Downwelling longwave if not prescribed: "graybody" | "cloud_proxy"
+    lw_clear_sky_transmissivity               = 0.718    ! [1]     Cloud proxy (Konzelmann 1994): clear-sky SW transmissivity at sea level, TOA 300 W m-2
+    lw_clear_sky_transmissivity_per_km        = 0.0298   ! [km-1]  Its increase with surface height
+    lw_clear_sky_transmissivity_insolation    = 0.0569   ! [1]     Its change per ln(TOA/300)
+    lw_cloud_transmission_coefficient         = 0.447    ! [1]     Cloud SW attenuation at sea level
+    lw_cloud_transmission_exponent            = 2.75     ! [1]     Cloud fraction = (attenuation deficit)^(1/exponent)
+    lw_cloud_transmission_decay_per_km        = 0.225    ! [km-1]  Decay of the cloud attenuation with surface height
+    lw_clear_sky_emissivity                   = 0.716    ! [1]     Clear-sky emissivity at T0
+    lw_clear_sky_emissivity_temperature_slope = 0.00239  ! [K-1]   Its change per K of T_air - T0
+    lw_overcast_emissivity                    = 0.952    ! [1]     Overcast emissivity at T0
+    lw_overcast_emissivity_temperature_slope  = 0.00362  ! [K-1]   Its change per K of T_air - T0
+    lw_cloud_emissivity_exponent              = 3.0      ! [1]     Weight of the overcast emissivity, n^exponent
+    lw_night_cloud_fraction                   = 0.85     ! [1]     Cloud fraction without a daily TOA
+    lw_emissivity_max                         = 1.0      ! [1]     Upper bound of the effective emissivity
+    eps_snow                           = 0.98            ! [1] Emissivity of snow
+    eps_ice                            = 0.98            ! [1] Emissivity of bare ice (seb_scheme = "semix" only)
+    sigma_sb                           = 5.670373e-8     ! [W m-2 K-4] Stefan-Boltzmann constant
+    low_density_densification          = "bessi"         ! "bessi" | "htessel" (selects the rho<550 branch only)
+/
+
+&itm_chion
+    trans_a            = 0.46     ! [1] Atmospheric transmissivity, intercept
+    trans_b            = 6e-5     ! [m-1] Transmissivity elevation slope
+    trans_c            = 0.01     ! [1] Unused by the active transmissivity form
+    itm_c              = -45.0    ! [W m-2] ITM offset
+    itm_t              = 10.0     ! [W m-2 K-1] ITM temperature coefficient
+    itm_b              = -2.0     ! [W m-2 deg-1] Latitude slope of itm_c
+    itm_lat0           = 65.0     ! [deg N] Reference latitude; |lat0| >= 90 disables
+    H_snow_max         = 5.0e3    ! Maximum allowed snowpack thickness [mm w.e.]
+    Pmaxfrac           = 0.6      ! Refreezing factor
+    H_snow_crit_desert = 10.0     ! [mm w.e.] Critical snow depth, PDDs <= 100
+    H_snow_crit_forest = 100.0    ! [mm w.e.] Critical snow depth, PDDs >= 1000
+    melt_crit          = 0.5      ! Critical melt rate to reduce snow albedo [mm/day]
+    alb_ocean          = 0.1      ! [1] Albedo of open ocean
+    alb_land           = 0.2      ! [1] Albedo of ice-free land
+    alb_forest         = 0.1      ! [1] Albedo of forest
+    alb_ice            = 0.31     ! [1] Albedo of bare ice
+    alb_snow_dry       = 0.8      ! [1] Albedo of dry snow
+    alb_snow_wet       = 0.65     ! [1] Albedo of wet snow
+    firn_fac           = 0.0266   ! [K (mm w.e. yr-1)-1] Firn warming per annual net refreezing
+/
+
+&chion_ant
+    model           = "bessi"                        ! Snowpack model: "itm", "bessi" or "pdd" (bessi: the tuning default)
+    nml_bessi       = "bessi"                        ! Namelist group holding the BESSI parameters
+    nml_pdd         = "pdd_chion"                    ! PDD parameters (chion's own group)
+    nml_itm         = "itm_chion_ant"                          ! Namelist group holding the ITM parameters
+    nml_const       = "chion_const_ant"              ! Antarctica's own constants (the per-domain tuning)
+    phys_const_file = "input/chion_phys_const.nml"   ! Shared constants, standalone only
+    phys_const      = "Earth"                        ! Group within phys_const_file
+    restart         = "None"                         ! Restart file, or "None" for a cold start (WP14)
+/
+
+&itm_chion_ant
+    ! Antarctica's ITM, a group of its own for the per-domain tuning (smb_itm_fit.jl); itm_c + itm_b (|lat| - |itm_lat0|)
+    trans_a            = 0.46     ! [1] Atmospheric transmissivity, intercept
+    trans_b            = 6e-5     ! [m-1] Transmissivity elevation slope
+    trans_c            = 0.01     ! [1] Unused by the active transmissivity form
+    itm_c              = -45.0    ! [W m-2] ITM offset
+    itm_t              = 10.0     ! [W m-2 K-1] ITM temperature coefficient
+    itm_b              = -2.0     ! [W m-2 deg-1] Slope of itm_c in |latitude|
+    itm_lat0           = 65.0     ! [deg] Reference |latitude|; |lat0| >= 90 disables
+    H_snow_max         = 5.0e3    ! Maximum allowed snowpack thickness [mm w.e.]
+    Pmaxfrac           = 0.6      ! Refreezing factor
+    H_snow_crit_desert = 10.0     ! [mm w.e.] Critical snow depth, PDDs <= 100
+    H_snow_crit_forest = 100.0    ! [mm w.e.] Critical snow depth, PDDs >= 1000
+    melt_crit          = 0.5      ! Critical melt rate to reduce snow albedo [mm/day]
+    alb_ocean          = 0.1      ! [1] Albedo of open ocean
+    alb_land           = 0.2      ! [1] Albedo of ice-free land
+    alb_forest         = 0.1      ! [1] Albedo of forest
+    alb_ice            = 0.31     ! [1] Albedo of bare ice
+    alb_snow_dry       = 0.8      ! [1] Albedo of dry snow
+    alb_snow_wet       = 0.65     ! [1] Albedo of wet snow
+    firn_fac           = 0.0266   ! [K (mm w.e. yr-1)-1] Firn warming per annual net refreezing
+/
+
+! The shelves (as par/kryos_NH-ANT.nml's): North anom (tf_method 2); Antarctica quad-nl
+! (tf_method 1) with the Zwally2012 tf corrections.
+
+&marine_shelf_nor
+    bmb_method      = "anom"     ! "pico", "anom", "lin", "quad", "quad-nl", "*-slope"
+    tf_method       = 2          ! 1: T_shlf-T_fp_shlf, 2: dT_shlf (needed by bmb_method="anom")
+    interp_depth    = "shlf"     ! "shlf", "bed", "const"
+    interp_method   = "interp"   ! "mean", "layer", "interp" ! Same method is used for salinity
+    find_ocean      = True       ! Find which points are connected to open ocean (ie, ignore subglacial lakes)
+    restart         = "None"     ! Load fields from a restart file?
+    extrap_shlf     = False      ! Extrapolate ocean front values into the shelf
+    mask_ocean      = "none"     ! mask_ocn_ref: ocean (else land)
+    mask_deep_ocean = "none"      ! none: imposed geometry (ice backend data) cannot respond to c_deep; it would melt the prescribed shelves over deep water
+    mask_pico_deep  = "none"     ! pico only (bmb_method="pico"): bmb averaged with c_deep there
+    bmb_max         = 0.0        ! [m/a] Maximum allowed bmb value (eg, for no refreezing, set bmb_max=0.0)
+    c_deep          = -1.0       ! [m/a] Melt rate in deep ocean, should be negative but not huge
+    depth_deep      = 2000.0     ! [m] Depth at which deep ocean is assumed
+    depth_const     = 2000.0     ! [m] Constant shelf depth for interp_depth=const
+    depth_min       = 1100.0     ! [m] interp_method=mean, min depth to include
+    depth_max       = 1500.0     ! [m] interp_method=mean, max depth to include
+    lambda1         = -0.0575    ! [degC PSU−1] Liquidus slope
+    lambda2         = 0.0832     ! [degC] Liquidus intercept
+    lambda3         = 7.59e-4    ! [degC m−1] Liquidus pressure coefficient
+    gamma_lin       = 630.0      ! [m/yr] Linear heat excange velocity. Favier et al., (2019) suggest 630.
+    gamma_quad      = 11100.0    ! [m/yr] Quadratic heat exchange velocity. Jourdain et al. (2020) suggest 11100.
+    gamma_quad_nl   = 14500.0    ! [m/yr] Quadratic non-local heat exchange velocity. Jourdain et al. (2020) suggest 14500.
+    gamma_prime     = 100.0      ! [-] Scalar when '*-slope' method is used
+    kappa_grz       = 10.0       ! [m/a K-1] Heat flux coefficient [kappa*dT]
+    c_grz           = 1.0        ! [-] bmb_ref scalar [c_grz*bmb_ref]
+    f_grz_shlf      = 10.0       ! [-] Ratio of grz melt to shelf melt
+    grz_length      = 32.0       ! [km] Length scale of assumed grounding zone
+    use_obs         = False      ! Load obs for bmb_ref
+    obs_path        = "ice_data/{domain}/{grid_name}/{grid_name}_BMELT-R13.nc"
+    obs_name        = "bm_eq_reese"
+    obs_scale       = 1.0        ! [-] bmb_ref = obs_scale*bmb_obs
+    obs_lim         = 100.0      ! [m/yr] Maximum magnitude of bmb_ref
+/
+
+&shelf_corr_nor
+    basins        = "domain"   ! basin ids: <set>, <set>.group, None or domain (one basin)
+    corr_method   = "none"     ! none, tf or bmb: corrections by region
+    corr_names    = ""
+    corr_values   = 0.0
+    tf_correction = False
+    tf_path       = "none"
+    tf_name       = "dT_nl"
+/
+
+&marine_shelf_ant
+    bmb_method      = "quad-nl"                                                          ! "pico", "anom", "lin", "quad", "quad-nl", "*-slope"
+    tf_method       = 1                                                                  ! 1: T_shlf-T_fp_shlf, 2: dT_shlf (needed by bmb_method="anom")
+    interp_depth    = "shlf"                                                             ! "shlf", "bed", "const"
+    interp_method   = "interp"                                                           ! "mean", "layer", "interp" ! Same method is used for salinity
+    find_ocean      = True                                                               ! Find which points are connected to open ocean (ie, ignore subglacial lakes)
+    restart         = "None"                                                             ! Load fields from a restart file?
+    extrap_shlf     = False                                                              ! Extrapolate ocean front values into the shelf
+    mask_ocean      = "zone:open_ocean"                                                  ! mask_ocn_ref: ocean (else land)
+    mask_deep_ocean = "none"   ! none: imposed geometry (ice backend data) cannot respond to c_deep; it would melt the prescribed shelves over deep water
+    mask_pico_deep  = "none"                                                             ! pico only (bmb_method="pico"): bmb averaged with c_deep there, e.g. "region:Antarctica & zone:shelf_break_buffer"
+    bmb_max         = 0.0                                                                ! [m/a] Maximum allowed bmb value (eg, for no refreezing, set bmb_max=0.0)
+    c_deep          = -10.0                                                              ! [m/a] Melt rate in deep ocean, should be negative but not huge
+    depth_deep      = 2000.0                                                             ! [m] Depth at which deep ocean is assumed
+    depth_const     = 2000.0                                                             ! [m] Constant shelf depth for interp_depth=const
+    depth_min       = 1100.0                                                             ! [m] interp_method=mean, min depth to include
+    depth_max       = 1500.0                                                             ! [m] interp_method=mean, max depth to include
+    lambda1         = -0.0575                                                            ! [degC PSU−1] Liquidus slope
+    lambda2         = 0.0832                                                             ! [degC] Liquidus intercept
+    lambda3         = 7.59e-4                                                            ! [degC m−1] Liquidus pressure coefficient
+    gamma_lin       = 630.0                                                              ! [m/yr] Linear heat excange velocity. Favier et al., (2019) suggest 630.
+    gamma_quad      = 11100.0                                                            ! [m/yr] Quadratic heat exchange velocity. Jourdain et al. (2020) suggest 11100.
+    gamma_quad_nl   = 14500.0                                                            ! [m/yr] Quadratic non-local heat exchange velocity. Jourdain et al. (2020) suggest 14500.
+    gamma_prime     = 100.0                                                              ! [-] Scalar when '*-slope' method is used
+    kappa_grz       = 10.0                                                               ! [m/a K-1] Heat flux coefficient [kappa*dT]
+    c_grz           = 1.0                                                                ! [-] bmb_ref scalar [c_grz*bmb_ref]
+    f_grz_shlf      = 10.0                                                               ! [-] Ratio of grz melt to shelf melt
+    grz_length      = 16.0                                                               ! [km] Length scale of assumed grounding zone
+    use_obs         = False                                                              ! Load obs for bmb_ref
+    obs_path        = "fesmdata/{domain}/{grid_name}/{grid_name}_BasalMelt-Rignot2013.nc"
+    obs_name        = "bmelt_eq_reese"
+    obs_scale       = 1.0                                                                ! [-] bmb_ref = obs_scale*bmb_obs
+    obs_lim         = 100.0                                                              ! [m/yr] Maximum magnitude of bmb_ref
+/
+
+&shelf_corr_ant
+    basins        = "Zwally2012"   ! basin ids: <set>, <set>.group, None or domain (one basin)
+    corr_method   = "tf"           ! none, tf or bmb: corrections by region
+    corr_names    = "b1" "b12" "b14" "b15"
+    corr_values   = 0.3 0.3 -1.5 0.0
+    corr_b1       = "Zwally2012:1"
+    corr_b12      = "Zwally2012:12"
+    corr_b14      = "Zwally2012:14"
+    corr_b15      = "Zwally2012:15"
+    tf_correction = False          ! no grid-specific tf file: mshlf runs from the remapped climate forcing
+    tf_path       = "ice_data/{domain}/{grid_name}/{grid_name}_OCEAN_ISMIP6_J20.nc"
+    tf_name       = "dT_nl"
+/
+
+&oras5_1981_2010_to
+    filename = "fesmdata/{domain}/{grid_name}/{grid_name}_Ocean-ORAS5-1981-2010.nc"
+    name     = "to"
+    units    = "degC" "K"
+    scaling  = 1.0 273.15
+    time     = 0 0 0 0 12
+    fill     = "nearest"
+/
+
+&oras5_1981_2010_so
+    filename = "fesmdata/{domain}/{grid_name}/{grid_name}_Ocean-ORAS5-1981-2010.nc"
+    name     = "so"
+    units    = "PSU" "PSU"
+    scaling  = 1.0 0.0
+    time     = 0 0 0 0 12
+    fill     = "nearest"
+/
+
+&ismip7_to
+    filename = "fesmdata/{domain}/{grid_name}/{grid_name}_Ocean-ISMIP7.nc"
+    name     = "to"
+    units    = "degC" "K"
+    scaling  = 1.0 273.15
+    time     = 0 0 0 0 1
+    fill     = "nearest"
+/
+
+&ismip7_so
+    filename = "fesmdata/{domain}/{grid_name}/{grid_name}_Ocean-ISMIP7.nc"
+    name     = "so"
+    units    = "PSU" "PSU"
+    scaling  = 1.0 0.0
+    time     = 0 0 0 0 1
+    fill     = "nearest"
+/

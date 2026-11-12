@@ -150,6 +150,9 @@ $(VILMA_ARCHIVE):
 $(PLASTIC_ARCHIVE):
 	@$(call dep_missing,PlasticIceSheet,make -C $(PLASTICROOT) static openmp=$(openmp) lis=1 FESMUTILSROOT=$(abspath $(FESMUTILSROOT)))
 
+$(PALEOEMU_ARCHIVE):
+	@$(call dep_missing,PaleoEmulator,make paleoemu-static)
+
 $(SHTNS_ARCHIVE):
 	@$(call dep_missing,SHTns of fesm-utils (one-time),make -C $(FESMUTILSROOT) shtns openmp=$(openmp))
 
@@ -182,6 +185,10 @@ vilma-static: fesmutils-static
 # PlasticIceSheet (configured by configme like the others): dp, no dependencies but the Lis of kryos' fesm-utils
 plastic-static: fesmutils-static
 	$(MAKE) -C $(PLASTICROOT) static openmp=$(openmp) lis=1 FESMUTILSROOT=$(abspath $(FESMUTILSROOT))
+
+# PaleoEmulator: serial, with kryos' compiler and fesm-utils (its ncio)
+paleoemu-static: fesmutils-static
+	$(MAKE) -C $(PALEOEMUROOT)/fortran FC="$(FC)" FESMUTILS=$(abspath $(FESMUTILSLIBDIR))
 
 deps-static: fesmutils-static $(backend_static)
 
@@ -257,7 +264,7 @@ input-check:
 	@sh config/sync_input.sh check input/sync.txt $(input_roots)
 
 .PHONY : build-info usage kryos-static kryos check check-long clean cleanall depend deps-check deps-static \
-         fesmutils-static yelmo-static isostasy-static chion-static insol-static vilma-static plastic-static \
+         fesmutils-static yelmo-static isostasy-static chion-static insol-static vilma-static plastic-static paleoemu-static \
          sync-input input-check
 usage:
 	@echo ""
@@ -277,8 +284,8 @@ usage:
 	@echo ""
 	@echo " Options: debug=1|2, openmp=0|1 (default 1), pic=1"
 	@echo " Backends (1 = link the library, 0 = stub that stops at init):"
-	@echo "   yelmo=$(yelmo) fastisostasy=$(fastisostasy) chion=$(chion) insol=$(insol)"
-	@echo "   cism=$(cism) pism=$(pism) vilma=$(vilma) plastic=$(plastic) rembo=$(rembo)"
+	@echo "   yelmo=$(yelmo) fastisostasy=$(fastisostasy) chion=$(chion)"
+	@echo "   cism=$(cism) pism=$(pism) vilma=$(vilma) plastic=$(plastic) paleoemu=$(paleoemu) rembo=$(rembo)"
 	@echo ""
 
 clean:

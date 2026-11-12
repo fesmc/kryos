@@ -19,8 +19,8 @@ viscosity structure, and scored against the GAPSLIP 2.1 sea-level index points.
 - [Getting started](getting-started.md): the code and its dependencies on Levante, building, the data, a first run.
 - [Architecture](architecture.qmd) and [Global hub and regional domains](global-hub.qmd): how a run is put
   together and how the regional ice reaches the global Earth and back.
-- Backends: [PlasticIceSheet](backend-plastic.md), [VILMA2](backend-vilma2.md),
-  [smb_simple](backend-smb-simple.md).
+- Backends: [PlasticIceSheet](backend-plastic.md), [data](backend-data.md), [VILMA2](backend-vilma2.md),
+  [PaleoEmulator](backend-paleoemu.md), [smb_simple](backend-smb-simple.md).
 
 ## Experiments
 

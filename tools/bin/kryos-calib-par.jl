@@ -71,7 +71,7 @@ function run(L, dom, case)
         L = setkey(L, "clock", "time_init", pd ? "0.0" : "30e3"; note="calib-cf: lgm restarts from the end of the pd run")
         L = setkey(L, "clock", "time_end", pd ? "30e3" : "60e3"; note="calib-cf: 30 kyr per case")
     end
-    L = setkey(L, "clock", "time_const", "0.0"; note="frozen forcing (the orbit is set in [orbit_$sfx])")
+    L = setkey(L, "clock", "time_const", "0.0"; note="frozen forcing (the orbit is set in [orbit])")
     L = setkey(L, "out_1D", "dt", "10.0"); L = setkey(L, "out_2D", "dt", "500.0")
     L = setkey(L, "out_2Dsm", "dt", "500.0"); L = setkey(L, "out_rst", "dt", "10e3")
     if pd
@@ -82,7 +82,7 @@ function run(L, dom, case)
         L = setkey(L, "barysealevel", "sl_path", "\"input/sl_const_lgm120.dat\"")
     end
     for k in ("f_min", "f_max"); L = setkey(L, "coef_alpha", k, pd ? "0.0" : "1.0"); end
-    L = setkey(L, "orbit_$sfx", "method", "\"fixed_time\""); L = setkey(L, "orbit_$sfx", "time", pd ? "0.0" : "-21e3")
+    L = setkey(L, "orbit", "method", "\"fixed_time\""); L = setkey(L, "orbit", "time", pd ? "0.0" : "-21e3")
     if ant
         L = setkey(L, "Antarctica", "experiments", "\"\"")
         L = setkey(L, "climate_ant", "terms", "\"lgm\" \"ocean\"")

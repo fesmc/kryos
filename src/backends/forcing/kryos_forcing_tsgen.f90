@@ -14,6 +14,13 @@ module kryos_forcing_tsgen
     ! by a producer (the climate) through forcing_set, copied here from their
     ! import at each update. Every coefficient is exported INSTANT at t1, in
     ! sp widened (yelmox coef_class%f is sp), so the exchange is exact (P1).
+    !
+    ! The orbit (instance key `orbit`, a group [orbit] read by kryos_orbit): the
+    ! orbital elements at the forcing time (or fixed), exported as orbit_ecc,
+    ! orbit_obl, orbit_per for every component that takes the orbit (the
+    ! climate, the surface's insolation), so the run has one orbit. The stream
+    ! `insol` (out_insol, <instance>_insol.nc) holds them with the monthly mean
+    ! top-of-atmosphere insolation on 1° latitudes, a diagnostic.
 
     use precision,       only: sp, dp, wp
     use fesm_log,        only: LOG_INFO, log_msg, fesm_error, to_str
@@ -21,8 +28,10 @@ module kryos_forcing_tsgen
     use nml,             only: nml_read, nml_validate, nml_has_param
     use ncio,            only: nc_create, nc_write_dim, nc_write, nc_read, nc_open, nc_close, nc_time_index
     use tsgen,           only: tsgen_class, tsgen_init, tsgen_update, tsgen_restart_write, tsgen_restart_read
+    use insolation,      only: insol_class, insol_init, calc_insol_ave, insol_wp => wp
     use kryos_component, only: init_ctx_t, step_time_t, constraints_t, NAME_LEN, PATH_LEN, PASS_INIT
     use kryos_forcing,   only: forcing_t
+    use kryos_orbit,     only: orbit_ctl_class, orbit_pars_class, orbit_ctl_load, orbit_pars_now
 
     implicit none
 
@@ -41,6 +50,12 @@ module kryos_forcing_tsgen
         real(wp),          allocatable :: every_df(:)   ! restart_every_df of each (0: off)
         real(wp),          allocatable :: f_mark(:)     ! its value at the last forcing-increment mark
         character(len=32), allocatable :: from(:)       ! derived: its producer kind (air_anomaly, obm_*)
+        character(len=NAME_LEN) :: orbit_group = ""      ! the orbit group ("" none)
+        type(orbit_ctl_class)   :: orb_ctl
+        type(insol_class)       :: orb_is                ! the orbital tables (orbit_pars_now)
+        type(orbit_pars_class)  :: orb                   ! the elements of the last update
+        type(insol_class)       :: diag_is               ! 1° latitudes without tables (the stream insol)
+        integer                 :: day_year = 365        ! the run's calendar (the stream insol)
     contains
         procedure :: init          => tsgen_init_
         procedure :: init_state    => tsgen_init_state_
@@ -135,7 +150,40 @@ contains
             end if
         end do
         self%f_mark = self%f                           ! coefs_init: the mark of a coefficient is its initial value
+
+        if (nml_has_param(ctx%par_file, ctx%instance, "orbit")) &
+            call nml_read(ctx%par_file, ctx%instance, "orbit", self%orbit_group)
+        if (len_trim(self%orbit_group) > 0) call orbit_init_(self, ctx)
     end subroutine tsgen_init_
+
+    subroutine orbit_init_(self, ctx)
+        ! The orbit group, the tables, the elements at the initial forcing time; the 1° latitude state of the
+        ! diagnostic stream on the run's calendar (360, 365 or 366 days).
+        class(tsgen_forcing_t), intent(inout) :: self
+        type(init_ctx_t),       intent(in)    :: ctx
+        real(dp) :: lats(180)
+        integer  :: j
+
+        self%opt%orbit = .true.
+        call orbit_ctl_load(self%orb_ctl, trim(ctx%par_file), trim(self%orbit_group))
+        call insol_init(self%orb_is, fldr=trim(self%orb_ctl%fldr))
+        self%orb = orbit_pars_now(self%orb_ctl, self%orb_is, ctx%time_rel)
+        self%day_year = nint(ctx%sec_year/86400.0_dp)
+        if (self%day_year == 365 .and. ctx%sec_year > 365.5_dp*86400.0_dp) self%day_year = 366
+        lats = [(-89.5_dp + real(j - 1, dp), j = 1, 180)]
+        call insol_init(self%diag_is, lats, day_year=self%day_year, tables=.false.)
+        call log_msg(LOG_INFO, "kryos_forcing_tsgen", "orbit ["//trim(self%orbit_group)//"] "//trim(self%orb_ctl%method)// &
+                     ": ecc "//to_str(self%orb%ecc)//", obl "//to_str(self%orb%obl)//" deg, per "//to_str(self%orb%per)// &
+                     " deg at the forcing time "//to_str(ctx%time_rel)//" yr", "instance "//trim(self%name))
+    end subroutine orbit_init_
+
+    subroutine orbit_put(self, t1)
+        class(tsgen_forcing_t), intent(inout) :: self
+        real(dp),               intent(in)    :: t1
+        call fields_put(self%exports, self%h_orbit(1), self%orb%ecc, t1=t1)
+        call fields_put(self%exports, self%h_orbit(2), self%orb%obl, t1=t1)
+        call fields_put(self%exports, self%h_orbit(3), self%orb%per, t1=t1)
+    end subroutine orbit_put
 
     subroutine tsgen_init_state_(self, st, pass)
         ! PASS_INIT: every coefficient at the initial forcing time (derived: 0,
@@ -152,6 +200,10 @@ contains
             call fields_put(self%exports, self%h_coef(k), self%f(k), t1=st%t1)
             if (self%coef_derived(k)) call fields_put(self%imports, self%hi_derived(k), self%f(k), t1=st%t1)
         end do
+        if (self%opt%orbit) then
+            self%orb = orbit_pars_now(self%orb_ctl, self%orb_is, st%t_eval)
+            call orbit_put(self, st%t1)
+        end if
     end subroutine tsgen_init_state_
 
     subroutine tsgen_update_(self, st)
@@ -177,6 +229,10 @@ contains
             end if
             call fields_put(self%exports, self%h_coef(k), self%f(k), t1=st%t1)
         end do
+        if (self%opt%orbit) then
+            self%orb = orbit_pars_now(self%orb_ctl, self%orb_is, st%t_eval)
+            call orbit_put(self, st%t1)
+        end if
     end subroutine tsgen_update_
 
     subroutine tsgen_restart_write_(self, dir, t)
@@ -262,6 +318,10 @@ contains
         real(wp) :: f
         character(len=72) :: vnm
 
+        if (trim(stream) == "insol") then
+            call insol_write(self, file, t, init)
+            return
+        end if
         if (trim(stream) /= "1D") return
         if (init) then
             call nc_create(file)
@@ -296,6 +356,52 @@ contains
 
         call nc_close(ncid)
     end subroutine tsgen_write_output_
+
+    subroutine insol_write(self, file, t, init)
+        ! Stream insol: the orbital elements and the monthly mean top-of-atmosphere insolation [W m-2] on 1°
+        ! latitudes (a diagnostic; it depends on latitude only), months of the run's calendar.
+        class(tsgen_forcing_t), intent(inout) :: self
+        character(len=*),       intent(in)    :: file
+        real(dp),               intent(in)    :: t
+        logical,                intent(in)    :: init
+
+        integer, parameter :: ML365(12) = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        integer  :: ml(12), d0, m, ncid, n
+        real(insol_wp) :: S(180), Sm(180, 12)
+        real(dp) :: lats(180)
+
+        if (.not. self%opt%orbit) return
+        select case (self%day_year)
+        case (360);  ml = 30
+        case (366);  ml = ML365;  ml(2) = 29
+        case default; ml = ML365
+        end select
+        d0 = 0
+        do m = 1, 12
+            call calc_insol_ave(self%diag_is, S, [d0 + 1, d0 + ml(m)], self%orb)
+            Sm(:, m) = S
+            d0 = d0 + ml(m)
+        end do
+        if (init) then
+            lats = [(-89.5_dp + real(m - 1, dp), m = 1, 180)]
+            call nc_create(file)
+            call nc_write_dim(file, "lat", x=lats, units="degrees_north")
+            call nc_write_dim(file, "month", x=1.0_dp, dx=1.0_dp, nx=12, units="month")
+            call nc_write_dim(file, "time", x=t, dx=1.0_dp, nx=1, units="year", unlimited=.true.)
+        end if
+        call nc_open(file, ncid, writable=.true.)
+        n = nc_time_index(file, "time", t, ncid)
+        call nc_write(file, "time", t, dim1="time", start=[n], count=[1], ncid=ncid)
+        call nc_write(file, "orbit_ecc", self%orb%ecc, dim1="time", start=[n], count=[1], ncid=ncid, units="1", &
+                      long_name="eccentricity")
+        call nc_write(file, "orbit_obl", self%orb%obl, dim1="time", start=[n], count=[1], ncid=ncid, units="degrees", &
+                      long_name="obliquity")
+        call nc_write(file, "orbit_per", self%orb%per, dim1="time", start=[n], count=[1], ncid=ncid, units="degrees", &
+                      long_name="longitude of perihelion (Berger 1978)")
+        call nc_write(file, "S", Sm, dim1="lat", dim2="month", dim3="time", start=[1, 1, n], count=[180, 12, 1], &
+                      ncid=ncid, units="W m-2", long_name="monthly mean top-of-atmosphere insolation")
+        call nc_close(ncid)
+    end subroutine insol_write
 
     logical function tsgen_kill_(self) result(kill)
         ! coefs_kill: the tsgen kill switch of any coefficient (the response

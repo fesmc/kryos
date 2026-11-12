@@ -20,6 +20,11 @@ module kryos_globe_ice
     !     globe_ice_reference_begin / _add (per domain) / _end        section 5.1
     !     globe_ice_gather_begin(gi, cpl, t) / _add (per domain) / _end    section 4.1, every geo step
     !
+    ! A global climate (paleoemu) takes the ice geometry on the background grid:
+    !
+    !     globe_ice_geometry(gi, cpl, H, z_bed, z_srf, ref)   the reference or the last gather
+    !     globe_ice_external(gi, cpl, t, H, z_bed, z_srf)     the background alone at t (before a gather)
+    !
     ! Outputs are components of globe_ice_t (the caller copies them into the
     ! imports of the global geo): on the target grid host_w, host_Ig, host_C,
     ! host_F, H_ice_ext (step), z_bed_ref, H_ice_ref, host_Ig_ref, host_C_ref
@@ -99,6 +104,8 @@ module kryos_globe_ice
         real(dp), allocatable :: I_ref(:,:), I_last(:,:) ! grounded ice H_tot f_g [m] of the reference, of the last gather
         real(dp), allocatable :: H_ref(:,:)              ! total ice of the reference m H_pd + (1 - m) X [m]
         real(dp), allocatable :: H_last(:,:)             ! total ice m H + (1 - m) ext of the last gather [m]
+        real(dp), allocatable :: zb_last(:,:), zs_last(:,:)  ! bed and surface of the last gather [m]
+        real(dp), allocatable :: zs_ref(:,:)             ! surface of the reference [m] (sea level 0)
         logical  :: has_prio = .false.                   ! overlapping domains: priority given (owner weights)
         integer  :: priority = 0                         ! higher wins the cells two domains share
         real(dp), allocatable :: owner(:,:)              ! owner weights [0,1] on the ice grid (has_prio), else absent: 1
@@ -150,7 +157,7 @@ module kryos_globe_ice
         type(gi_diag_t) :: diag
         type(gi_domain_t), allocatable :: dom(:)
         integer, allocatable :: ord(:)                   ! dom indices in order of the ice grid names
-        type(coupler_merge_t) :: acc_I, acc_C, acc_F, acc_zs, acc_hs, acc_hub
+        type(coupler_merge_t) :: acc_I, acc_C, acc_F, acc_zs, acc_hs, acc_hub, acc_gb, acc_gs
         character(len=GI_NAME_LEN) :: out_2D = "none"    ! schedule group of globe_ice.nc (the caller's)
         real(dp), allocatable :: lon(:), lat(:)          ! axes of the background grid
         logical :: bg_lonlat = .false.
@@ -160,6 +167,7 @@ module kryos_globe_ice
     public :: globe_ice_reference_begin, globe_ice_reference_add, globe_ice_reference_end
     public :: globe_ice_gather_begin, globe_ice_gather_add, globe_ice_gather_end
     public :: globe_ice_hub_merge, globe_ice_write, host_clip, HOST_CLIP_TOL
+    public :: globe_ice_geometry, globe_ice_external
 
 contains
 
@@ -674,6 +682,7 @@ contains
             call merge_add(gi%acc_hs, cpl, dm, H_tot)
             dm%I_ref = I
             dm%H_ref = H_tot
+            dm%zs_ref = surface(gi, H_tot, dm%z_bed_ref, zero, f_g)
             dm%V_ref = owned_integral(cpl, dm, I)
             dm%ref_added = .true.
         end associate
@@ -756,7 +765,6 @@ contains
         real(dp),            intent(in)    :: t_load
 
         character(len=*), parameter :: proc = "kryos_globe_ice::globe_ice_gather_begin"
-        real(dp), allocatable :: dH(:,:), raw(:,:)
         integer :: k
 
         call require_ready(gi, proc)
@@ -766,18 +774,7 @@ contains
         end if
         gi%t_load = t_load
 
-        gi%diag%clip_Gt = 0.0_dp
-        if (gi%has_ds_ext) then
-            allocate(dH(gi%nxb, gi%nyb), raw(gi%nxb, gi%nyb))
-            call datasrc_update(gi%ds_ext, min(t_load, gi%ext_tref))
-            call datasrc_get(gi%ds_ext, "ext_field", dH)
-            call check_bg(dH, "the history anomaly", proc)
-            raw = gi%H_X + dH
-            gi%H_ext = max(0.0_dp, raw)
-            gi%diag%clip_Gt = coupler_integral(cpl, trim(gi%bg), gi%H_ext - raw)*gi%rho_ice*KG_TO_GT
-        else
-            gi%H_ext = gi%H_X
-        end if
+        call external_ice(gi, cpl, t_load, gi%H_ext, gi%diag%clip_Gt, proc)
         call ext_to_tgt(cpl, trim(gi%bg), trim(gi%tgt), gi%H_ext, gi%H_ice_ext)
 
         call coupler_merge_begin(gi%acc_I, cpl, trim(gi%tgt), "extensive")
@@ -837,6 +834,8 @@ contains
             call merge_add(gi%acc_F, cpl, dm, F)
             dm%I_last = I
             dm%H_last = H_tot
+            dm%zb_last = z_bed
+            dm%zs_last = surface(gi, H_tot, z_bed, z_sl, f_g)
             dm%V_src = owned_integral(cpl, dm, I)
             dm%added = .true.
         end associate
@@ -970,6 +969,119 @@ contains
         call hub_closure(gi, cpl, H_hub, f, "H_last", rel, "the merged ice at t = "//to_str(gi%t_load), proc)
         gi%diag%hub_ice = rel
     end subroutine globe_ice_hub_merge
+
+    subroutine external_ice(gi, cpl, t, H_ext, clip_Gt, proc)
+        ! The external ice at t on the background grid, H_ext = max(0, X + dH_hist) with the history at
+        ! min(t, ext_tref) ("ref": X), and the mass clipped at zero thickness [Gt].
+        type(globe_ice_t),   intent(inout) :: gi
+        type(coupler_class), intent(inout) :: cpl
+        real(dp),            intent(in)    :: t
+        real(dp), allocatable, intent(inout) :: H_ext(:,:)
+        real(dp),            intent(out)   :: clip_Gt
+        character(len=*),    intent(in)    :: proc
+
+        real(dp), allocatable :: dH(:,:), raw(:,:)
+
+        clip_Gt = 0.0_dp
+        if (gi%has_ds_ext) then
+            allocate(dH(gi%nxb, gi%nyb))
+            call datasrc_update(gi%ds_ext, min(t, gi%ext_tref))
+            call datasrc_get(gi%ds_ext, "ext_field", dH)
+            call check_bg(dH, "the history anomaly", proc)
+            raw = gi%H_X + dH
+            H_ext = max(0.0_dp, raw)
+            clip_Gt = coupler_integral(cpl, trim(gi%bg), H_ext - raw)*gi%rho_ice*KG_TO_GT
+        else
+            H_ext = gi%H_X
+        end if
+    end subroutine external_ice
+
+    subroutine globe_ice_geometry(gi, cpl, H, z_bed, z_srf, ref)
+        ! The ice geometry on the background grid for a global climate: the domains' total ice, bed and
+        ! surface merged into the background (the ice extensive, the bed and the surface intensive; owner
+        ! weights), of the reference (ref; background X, the domains' H_ref and z_bed_ref, sea level 0) or of
+        ! the last gather (background H_ext; the domains' ice, bed and sea level of that gather). The surface
+        ! is z_bed + H where grounded and the floating surface z_sl + (1 - rho_ice/rho_sw) H elsewhere, with
+        ! the grounded fraction of the gather (the background: the hydrostatic rule, sea level 0).
+        type(globe_ice_t),     intent(inout) :: gi
+        type(coupler_class),   intent(inout) :: cpl
+        real(dp), allocatable, intent(out)   :: H(:,:), z_bed(:,:), z_srf(:,:)
+        logical,               intent(in)    :: ref
+
+        character(len=*), parameter :: proc = "kryos_globe_ice::globe_ice_geometry"
+        real(dp), allocatable :: f(:,:), H_bg(:,:)
+        integer :: k
+
+        call require_ready(gi, proc)
+        if (ref) then
+            if (.not. gi%have_ref) call fesm_error(proc, "no reference yet", "run the reference first")
+            H_bg = gi%H_X
+        else
+            do k = 1, size(gi%dom)
+                if (.not. allocated(gi%dom(k)%zs_last)) then
+                    call fesm_error(proc, "no gather yet for domain `"//trim(gi%dom(k)%name)//"`", "gather first")
+                end if
+            end do
+            H_bg = gi%H_ext
+        end if
+        allocate(f(gi%nxb, gi%nyb))
+        call coupler_merge_begin(gi%acc_hub, cpl, trim(gi%bg), "extensive")
+        call coupler_merge_begin(gi%acc_gb,  cpl, trim(gi%bg), "intensive")
+        call coupler_merge_begin(gi%acc_gs,  cpl, trim(gi%bg), "intensive")
+        do k = 1, size(gi%dom)
+            associate (dm => gi%dom(k))
+                if (ref) then
+                    call merge_add(gi%acc_hub, cpl, dm, dm%H_ref)
+                    call merge_add(gi%acc_gb,  cpl, dm, dm%z_bed_ref)
+                    call merge_add(gi%acc_gs,  cpl, dm, dm%zs_ref)
+                else
+                    call merge_add(gi%acc_hub, cpl, dm, dm%H_last)
+                    call merge_add(gi%acc_gb,  cpl, dm, dm%zb_last)
+                    call merge_add(gi%acc_gs,  cpl, dm, dm%zs_last)
+                end if
+            end associate
+        end do
+        call coupler_merge_end(gi%acc_hub, cpl, H_bg, H, frac_tot=f, overlap_tol=gi%overlap_tol)
+        call coupler_merge_end(gi%acc_gb,  cpl, gi%z_bed_X, z_bed, frac_tot=f, overlap_tol=gi%overlap_tol)
+        call coupler_merge_end(gi%acc_gs,  cpl, bg_surface(gi, H_bg, gi%z_bed_X), z_srf, frac_tot=f, &
+                               overlap_tol=gi%overlap_tol)
+    end subroutine globe_ice_geometry
+
+    subroutine globe_ice_external(gi, cpl, t, H, z_bed, z_srf)
+        ! The background alone at t on the background grid (no domain merged): the external ice H_ext(t), the
+        ! bed of X and the hydrostatic surface. The geometry of a global climate before the first gather
+        ! (the cold start, when the domains' ice is not yet known).
+        type(globe_ice_t),     intent(inout) :: gi
+        type(coupler_class),   intent(inout) :: cpl
+        real(dp),              intent(in)    :: t
+        real(dp), allocatable, intent(out)   :: H(:,:), z_bed(:,:), z_srf(:,:)
+
+        character(len=*), parameter :: proc = "kryos_globe_ice::globe_ice_external"
+        real(dp) :: clip_Gt
+
+        call require_ready(gi, proc)
+        if (.not. gi%have_ref) call fesm_error(proc, "no reference yet", "run the reference first")
+        call external_ice(gi, cpl, t, H, clip_Gt, proc)
+        z_bed = gi%z_bed_X
+        z_srf = bg_surface(gi, H, gi%z_bed_X)
+    end subroutine globe_ice_external
+
+    function surface(gi, H, z_bed, z_sl, f_g) result(zs)
+        ! z_bed + H where grounded, z_sl + (1 - rho_ice/rho_sw) H where floating, weighted by f_g.
+        type(globe_ice_t), intent(in) :: gi
+        real(dp),          intent(in) :: H(:,:), z_bed(:,:), z_sl(:,:), f_g(:,:)
+        real(dp) :: zs(size(H, 1), size(H, 2))
+        zs = f_g*(z_bed + H) + (1.0_dp - f_g)*(z_sl + (1.0_dp - gi%rho_ice/gi%rho_sw)*H)
+    end function surface
+
+    function bg_surface(gi, H, z_bed) result(zs)
+        ! The surface of the background: the hydrostatic rule at sea level 0.
+        type(globe_ice_t), intent(in) :: gi
+        real(dp),          intent(in) :: H(:,:), z_bed(:,:)
+        real(dp) :: zs(size(H, 1), size(H, 2)), zero(size(H, 1), size(H, 2))
+        zero = 0.0_dp
+        zs = surface(gi, H, z_bed, zero, merge(1.0_dp, 0.0_dp, gi%rho_ice*H/gi%rho_sw + z_bed >= 0.0_dp))
+    end function bg_surface
 
     subroutine hub_closure(gi, cpl, H_hub, f, which, rel, label, proc)
         ! The volume of the hub's ice on the background grid against the background outside the domains

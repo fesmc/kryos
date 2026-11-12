@@ -488,8 +488,13 @@ displacements are long-wavelength and survive
    produces `u`, `N` and `bsl` from one solve, so two components would have
    to share one backend state. Rejected: one flat component (a regional
    instance cannot own a global scalar; today's driver-owned `bsl_class`), and
-   separate `isostasy` and `sealevel` components. `geo` is the only two-level
-   component in the design.
+   separate `isostasy` and `sealevel` components. `geo` was the first two-level
+   component; `climate` is the second (2026-11-11, backend `paleoemu`: one
+   global emulator on the merged ice of the globe, a stateless port per
+   domain; [PaleoEmulator](backend-paleoemu.md)). The two-level form of a
+   component is its `opt%host` (the global part, on its own grid, imports the
+   core fills from `globe_ice`) and `opt%port` (the regional part, fed by the
+   rows `<kind>_g -> <kind>`).
 6. **Shelf melt**: decided (2026-10-24), always a separate `shelf`
    component; every ice backend takes `bmb_shlf` as an external field (Yelmo
    `bnd%bmb_shlf`, CISM `whichbmlt_float = 4`, PISM external ocean model), and

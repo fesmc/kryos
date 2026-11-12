@@ -54,6 +54,7 @@
 &globe
     forcing = ""                               ! the forcing instance
     geo     = ""                               ! the global part of geo
+    climate = ""                               ! the global part of a two-level climate (paleoemu)
 /
 
 &domain
@@ -149,7 +150,9 @@
 /
 
 &forcing_tsgen
-    coefs = ""                                 ! [coef_<name>] groups
+    coefs     = ""                             ! [coef_<name>] groups
+    orbit     = ""                             ! the orbit group ([orbit]): exports orbit_ecc, orbit_obl, orbit_per; "" none
+    out_insol = "none"                         ! schedule of <instance>_insol.nc (the orbit, monthly TOA insolation on 1° latitudes)
 /
 
 &geo_fastisostasy
@@ -178,6 +181,13 @@
     out_yelmo       = "none"                   ! schedule of <instance>_yelmo.nc (YELMO_VARS_2D)
     out_yelmo_sm    = "none"                   ! schedule of <instance>_yelmo_sm.nc (small 2D set)
     out_yelmo_ts    = "none"                   ! schedule of <instance>_yelmo_ts[_<region>].nc
+/
+
+&ice_data
+    ! The ice geometry read, not solved: field groups (input/datasrc_defaults.nml) on the instance grid.
+    H_ice = ""                                 ! the ice thickness [m]; "" = the domain's reference topography
+    z_bed = ""                                 ! the bed [m]; "" = the domain's reference topography
+    z_sl  = ""                                 ! the sea surface [m]; "" = 0
 /
 
 &ice_plastic
@@ -279,10 +289,43 @@
     terms     = ""
 /
 
+&climate_paleoemu
+    ! The global part (scope global, [globe] climate): the keys labelled global; the regional ports (each domain's
+    ! climate): the keys labelled port.
+    file      = ""                             ! global: the emulator file (PaleoEmulator scripts/06_emulator.jl)
+    reference = ""                             ! global: the pre-industrial reference climate on `grid` (tas_ref, pr_ref,
+                                               ! z_srf_ref; PaleoEmulator scripts/prep_kryos_reference.jl)
+    beta_p    = 0.0                            ! [K-1] global: precipitation change per kelvin of lapse cooling (lapse rows); 0: the
+                                               ! emulator's dlogpr already holds the ice sheets' response (only dtas is at the
+                                               ! reference surface)
+    beta_adj  = 0.05                           ! [K-1] global: precipitation change per kelvin of the adjustments (scale_dtas, bias)
+    scale_dtas = 1.0                           ! global: the emulator's temperature anomaly dtas times this
+    bias       = ""                            ! global: the bias correction file ("" none; PaleoEmulator scripts/prep_bias_pmip4.jl,
+                                               ! kryos_data/paleoemu/bias), weighted by the NH ice volume
+    bias_scale = 1.0                           ! global: the bias correction times this
+    scale_dto  = 1.0                           ! global: the ocean temperature change dto_lev = scale_dto dto + dto_nsd dto_sd
+    dto_nsd    = 0.0                           ! global: (the emulator's annual ocean T change and its standard deviation)
+    filter_start = "training"                  ! global: the emulator's slow filters (CO2, ice volume) at a cold start:
+                                               ! "training" = the run's inputs + the lag of CESM-3Ma's trajectory at that
+                                               ! time (its deglacial memory at 0 ka: anomalies ~0 at present day;
+                                               ! equilibrium outside 0-3 Ma), "equilibrium" = the run's inputs
+    out_emu   = "none"                         ! global: schedule of <instance>_emu.nc (the emulator on the CESM grid)
+    to_ref    = ""                             ! port: the present-day ocean temperature on the port's grid, a var_defs group
+                                               ! (as a snapshot's `to`, e.g. ismip7_to); "" = no ocean (no set A)
+    so_ref    = ""                             ! port: the present-day salinity, a var_defs group (with to_ref; e.g. ismip7_so)
+    dto_basins = ""                            ! port: basin set of the domain's regions (e.g. "Zwally2012"; extended over the
+                                               ! domain by nearest neighbour): dto_ann is each basin's mean over its sampled
+                                               ! cells (a basin without any: over its ocean cells of the reference topography,
+                                               ! z_bed < 0 and not grounded); "" = the cells' own values
+    dto_sample = "zone:shelf_break_buffer"     ! port: the cells each basin's mean samples (a regions selection; default the
+                                               ! ocean at the shelf break: the zone between continental shelf and open ocean)
+/
+
 &surface_chion
     surface_chion = "surface_chion"            ! host group
     chion         = "chion"
-    orbit         = "orbit"
+    out_seb       = "none"                     ! schedule of <instance>_seb.nc: BESSI's monthly surface energy balance
+                                               ! (swd, swn, lwd, lwn, shf, lhf, prh [W m-2], alb, tsrf, melt) of the last annual cycle
 /
 
 &surface_smb_simple
@@ -307,13 +350,13 @@
 ! ===== Backend physics groups kryos owns (no library defaults file) =====
 
 &orbit
-    ! The orbital elements of the insolation of the chion host (yelmox
-    ! input/yelmox_defaults.nml [orbit]; fesmc/insol, Laskar et al. 2004 tables).
+    ! The orbit of the run, resolved by the forcing ([forcing_tsgen] orbit) and exported to every component that
+    ! takes it (the climate, the surface's insolation); fesmc/insol, Laskar et al. 2004 tables.
     method = "fixed_time"   ! forcing_time: at the forcing time time_rel; fixed_time: at time; fixed_orbit: ecc, obl, per
     time   = 0.0            ! [yr] model time of the orbit (fixed_time; relative to 1950, past < 0)
-    ecc    = 0.016702       ! [1]   eccentricity (fixed_orbit; these: the tables at 1950)
-    obl    = 23.4393        ! [deg] obliquity (fixed_orbit)
-    per    = 102.918        ! [deg] longitude of perihelion (fixed_orbit)
+    ecc    = 0.016725       ! [1]   eccentricity (fixed_orbit; these: the tables at 1950)
+    obl    = 23.4458        ! [deg] obliquity (fixed_orbit)
+    per    = 102.063        ! [deg] longitude of perihelion (fixed_orbit; Berger 1978)
     fldr   = "input"        ! folder of the orbital tables (LA2004.INSOLN.5Ma.txt, LA2004.INSOLP.1Ma.txt)
 /
 

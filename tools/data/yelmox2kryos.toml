@@ -326,7 +326,7 @@ sediments  = "data"
 [fixed_backend.surface.chion]
 "{surface}.surface_chion" = "surface_chion"
 "{surface}.chion"        = "chion"
-"{surface}.orbit"        = "orbit"
+"{forcing}.orbit"        = "orbit"     # the run's orbit ([orbit]): the forcing exports it to the insolation
 [fixed_backend.surface.smb_simple]
 "{surface}.smb_simple"   = "smb_simple"
 

@@ -22,3 +22,4 @@ writes a 0-D export without a row lossless. See kryos-variables-ice.md for the c
 | 14 | T_srf      | xc, yc        | K           | Surface temperature                            | 1e-3  |
 | 15 | Qd         | xc, yc        | m3 s-1      | Subglacial discharge per cell                  | 1e-4r |
 | 16 | tsl_ann    | xc, yc        | K           | Sea-level air temperature (annual)             | 1e-3  |
+| 17 | dto_lev    | xc, yc, level | K           | Ocean temperature change on the global levels  | 1e-3  |

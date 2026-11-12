@@ -140,6 +140,11 @@ contains
         call add(t, "ice", "z_sl", "hub", "z_sl", "bilin")
         call add(t, "ice", "z_bed", "hub", "dz_bed", "bilin", transform=T_SUB_REF, aux="z_bed")
         call add(t, "ice", "H_ice", "hub", "dH_ice", "bilin", transform=T_SUB_REF, aux="H_ice")
+        ! climate = paleoemu (two-level): the global part's atmosphere into the regional ports, remapped (the
+        ! lapse rows climate -> surface re-elevate it); its ice geometry is the core's (globe_ice)
+        call add_set(t, "climate_g", "tas pr z_srf_clim lapse beta_p", "climate", "")
+        ! and its ocean temperature change on its levels, for a port with ocean profiles (level by level)
+        call add(t, "climate_g", "dto_lev", "climate", "dto_lev", "bilin")
         ! hub -> climate, surface, shelf
         call add_set(t, "hub", "z_srf H_ice z_bed f_grnd z_sl", "climate", "auto")
         call add(t, "hub", "z_srf_ref", "climate", "z_srf_ref", "auto", lag=LAG_INIT)
@@ -163,6 +168,11 @@ contains
         call add(t, "ice", "M_ice", "forcing", "M_ice", lag=1, gather=.true.)
         call add(t, "climate", RULE_DERIVED, "forcing", RULE_DERIVED, lag=1)
         call add(t, "forcing", RULE_COEF, "climate", RULE_COEF)
+        call add(t, "forcing", RULE_COEF, "climate_g", RULE_COEF)
+        ! the orbit of the run (the forcing's [orbit]) into every component that takes it
+        call add_set(t, "forcing", "orbit_ecc orbit_obl orbit_per", "climate_g", "")
+        call add_set(t, "forcing", "orbit_ecc orbit_obl orbit_per", "climate", "")
+        call add_set(t, "forcing", "orbit_ecc orbit_obl orbit_per", "surface", "")
     end function wiring_table
 
     subroutine add(t, src_kind, src_field, dst_kind, dst_field, method, lag, transform, aux, gather, srcs)

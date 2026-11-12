@@ -72,7 +72,7 @@ INC_CHION = -I${CHIONROOT}/libchion/include
 LIB_CHION = -L${CHIONROOT}/libchion/include -lchion
 CHION_ARCHIVE = $(CHIONROOT)/libchion/include/libchion.a
 
-# insol: serial, no dependencies.
+# insol: serial, no dependencies; always linked (the forcing resolves the orbit, kryos_orbit).
 INSOLROOT = insol
 INC_INSOL = -I${INSOLROOT}/libinsol/include
 LIB_INSOL = -L${INSOLROOT}/libinsol/include -linsol
@@ -104,6 +104,15 @@ INC_PLASTIC = -I${PLASTICROOT}/libplastic/include
 LIB_PLASTIC = -L${PLASTICROOT}/libplastic/include -lplastic ${LIB_LIS}
 PLASTIC_ARCHIVE = $(PLASTICROOT)/libplastic/include/libplastic.a
 
+# PaleoEmulator (climate = paleoemu): the Fortran module paleoemu (fortran/ of
+# the PaleoEmulator repository, a sibling checkout or symlink `PaleoEmulator`),
+# libpaleoemu.a with paleoemu.mod. Serial, uses ncio of fesm-utils: build it
+# with the compiler and the fesm-utils of kryos (make paleoemu-static).
+PALEOEMUROOT = PaleoEmulator
+INC_PALEOEMU = -I${PALEOEMUROOT}/fortran/build
+LIB_PALEOEMU = -L${PALEOEMUROOT}/fortran/build -lpaleoemu
+PALEOEMU_ARCHIVE = $(PALEOEMUROOT)/fortran/build/libpaleoemu.a
+
 SHTNS_NAME = shtns
 SHTNS_DIR  = shtns-serial
 ifeq ($(openmp), 1)
@@ -122,15 +131,15 @@ SHTNS_ARCHIVE = ${FESMUTILSROOT}/SHTns/$(SHTNS_DIR)/lib/lib$(SHTNS_NAME).a
 yelmo        ?= 1
 fastisostasy ?= 1
 chion        ?= 1
-insol        ?= 1
 cism         ?= 0
 pism         ?= 0
 vilma        ?= 0
 plastic      ?= 0
+paleoemu     ?= 0
 rembo        ?= 0
 
 # The switch settings, recorded in the object-dir stamp (config/Makefile).
-backend_config = yelmo$(yelmo)-fastisostasy$(fastisostasy)-chion$(chion)-insol$(insol)-cism$(cism)-pism$(pism)-vilma$(vilma)-plastic$(plastic)-rembo$(rembo)
+backend_config = yelmo$(yelmo)-fastisostasy$(fastisostasy)-chion$(chion)-cism$(cism)-pism$(pism)-vilma$(vilma)-plastic$(plastic)-paleoemu$(paleoemu)-rembo$(rembo)
 
 INC_BACKENDS   =
 LIB_BACKENDS   =
@@ -181,10 +190,6 @@ else
 endif
 
 ifeq ($(chion), 1)
-    # The chion host (kryos_surface_chion.f90) takes its daily insolation from insol.
-    ifneq ($(insol), 1)
-        $(error chion=1 needs insol=1: the chion host uses libinsol)
-    endif
     kryos_surface_chion_obj = $(objdir)/kryos_surface_chion.o
     INC_BACKENDS   += $(INC_CHION)
     LIB_BACKENDS   += $(LIB_CHION)
@@ -197,14 +202,13 @@ else
     test_skip += $(testdir)/test_run_sequence.f90
 endif
 
-ifeq ($(insol), 1)
-    INC_BACKENDS   += $(INC_INSOL)
-    LIB_BACKENDS   += $(LIB_INSOL)
-    dep_archives   += $(INSOL_ARCHIVE)
-    backend_roots  += $(INSOLROOT)
-    build_info_libs += insol:$(INSOLROOT)
-    backend_static += insol-static
-endif
+# insol: a dependency of the core (the forcing's orbit), not a switch
+INC_BACKENDS   += $(INC_INSOL)
+LIB_BACKENDS   += $(LIB_INSOL)
+dep_archives   += $(INSOL_ARCHIVE)
+backend_roots  += $(INSOLROOT)
+build_info_libs += insol:$(INSOLROOT)
+backend_static += insol-static
 
 ifeq ($(vilma), 1)
     kryos_geo_vilma2_obj = $(objdir)/kryos_geo_vilma2.o
@@ -233,6 +237,20 @@ ifeq ($(plastic), 1)
 else
     kryos_ice_plastic_obj = $(objdir)/kryos_ice_plastic_stub.o
     test_skip += $(testdir)/test_ice_plastic.f90
+endif
+
+ifeq ($(paleoemu), 1)
+    kryos_climate_paleoemu_obj = $(objdir)/kryos_climate_paleoemu.o
+    INC_BACKENDS   += $(INC_PALEOEMU)
+    LIB_BACKENDS   += $(LIB_PALEOEMU)
+    dep_archives   += $(PALEOEMU_ARCHIVE)
+    backend_roots  += $(PALEOEMUROOT)
+    build_info_libs += paleoemu:$(PALEOEMUROOT)
+    backend_static += paleoemu-static
+    test_skip += $(testdir)/test_climate_paleoemu_stub.f90
+else
+    kryos_climate_paleoemu_obj = $(objdir)/kryos_climate_paleoemu_stub.o
+    test_skip += $(testdir)/test_climate_paleoemu.f90
 endif
 
 # Backends whose adapters arrive in later phases (design section 14).

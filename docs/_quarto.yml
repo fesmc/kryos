@@ -34,8 +34,12 @@ website:
         menu:
           - text: "PlasticIceSheet (ice)"
             href: backend-plastic.md
+          - text: "data (ice)"
+            href: backend-data.md
           - text: "VILMA2 (solid Earth)"
             href: backend-vilma2.md
+          - text: "PaleoEmulator (climate)"
+            href: backend-paleoemu.md
           - text: "smb_simple (surface)"
             href: backend-smb-simple.md
       - text: "Experiments"

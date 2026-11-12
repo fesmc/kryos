@@ -115,7 +115,7 @@ For backend `foo` of component `ice`:
   `libkryos/include` and fesm-utils, so a bare module name that exists in
   two libraries (`precision` in fesm-utils and FastIsostasy) resolves to
   fesm-utils. kryos' own modules are all prefixed `kryos_`.
-- The marine_shelf and pico code of yelmox is compiled in kryos (`src/backends/shelf/marine_shelf/`, modules `kryos_mshlf*`); it needs no switch. The chion host and orbit modules are inside `kryos_surface_chion.f90`.
+- The marine_shelf and pico code of yelmox is compiled in kryos (`src/backends/shelf/marine_shelf/`, modules `kryos_mshlf*`); it needs no switch. The chion host module is inside `kryos_surface_chion.f90`; the orbit control (`kryos_orbit`, shared with the climate paleoemu) is `src/backends/kryos_orbit.f90`, an empty stub with insol=0.
 - The yelmo adapter compiles against `yelmo.mod` and holds a `yelmo_class`,
   but the placeholder calls nothing in libyelmo, so no libyelmo member is
   linked yet.

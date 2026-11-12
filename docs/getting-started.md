@@ -48,7 +48,7 @@ The dependencies are checkouts, or symlinks to checkouts, at the kryos root (the
 | `yelmo` | [fesmc/yelmo](https://github.com/fesmc/yelmo) | `stable` | `yelmo=1`; and `make check` (the Yelmo copies in `input/`) |
 | `FastIsostasy` | [palma-ice/FastIsostasy](https://github.com/palma-ice/FastIsostasy) | `stable` | `fastisostasy=1` (default on) |
 | `chion` | [fesmc/chion](https://github.com/fesmc/chion) | `stable` | `chion=1` (default on) |
-| `insol` | [fesmc/insol](https://github.com/fesmc/insol) | `stable` | `insol=1` (default on; chion needs it) |
+| `insol` | [fesmc/insol](https://github.com/fesmc/insol) | `stable` | always (the forcing's orbit, chion's insolation) |
 
 FastHydrology, elsa and tracer live inside the yelmo checkout.
 
@@ -185,7 +185,7 @@ Switches:
 | `vilma` | 0 | geo backend `vilma2` (the global Earth and its regional ports): `vilma2/libvilma/include/libvilma.a`, SHTns of fesm-utils; off: stub, `test_geo_vilma2` and `test_gia_sequence` not built |
 | `yelmo` | 1 | ice backend `yelmo` (+ FastHydrology, elsa, tracer, LIS, FFTW); off: stub, the Yelmo experiments are stubs too |
 | `fastisostasy` | 1 | geo backend `fastisostasy`; off: stub |
-| `chion`, `insol` | 1 | surface backend `chion` (needs `insol=1`); off: stub |
+| `chion` | 1 | surface backend `chion`; off: stub (insol is always linked: the forcing's orbit) |
 | `cism`, `pism`, `rembo` | 0 | stop: the adapters do not exist yet |
 
 Build notes:
@@ -260,6 +260,13 @@ The default is the plastic ice backend with VILMA2 (`yelmo=0 fastisostasy=0 vilm
 
 ```bash
 tools/albedo/stack.sh /albedo/work/user/$USER/kryos-plastic
+```
+
+The climate backend paleoemu needs `paleoemu=1` in `BUILD` (PaleoEmulator), e.g. the SMB tuning's stack:
+
+```bash
+BUILD="yelmo=0 fastisostasy=0 vilma=0 plastic=0 paleoemu=1 openmp=1" \
+    tools/albedo/stack.sh /albedo/work/user/$USER/kryos-work paleoemu-climate
 ```
 
 It needs a configme that knows kryos (`CONFIGME`, see the script). On albedo, git is a module (`module load git`;
@@ -523,7 +530,7 @@ forcing instance.
 ## Next
 
 - How a run is put together: [Architecture](architecture.qmd), [Global hub and regional domains](global-hub.qmd).
-- The backends: [PlasticIceSheet](backend-plastic.md), [VILMA2](backend-vilma2.md),
+- The backends: [PlasticIceSheet](backend-plastic.md), [data](backend-data.md), [VILMA2](backend-vilma2.md),
   [smb_simple](backend-smb-simple.md).
 - The experiments: [Reproducing Gowan et al. (2021)](experiment-gowan.md),
   [Simulating our own ice](experiment-plastic.md), [Calibration and ensembles](experiment-calibration.md).

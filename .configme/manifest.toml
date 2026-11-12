@@ -2,14 +2,16 @@
 # Pins: stable (== main) for every dependency (vilma2: main, the host-resolved
 # terms and output precision of its README are on it), except fesm-utils at
 # phase0-kryos (the fesm-utils additions kryos needs, design section 12, not
-# yet merged to dev); a tagged release pins the dependency tags.
+# yet merged to dev) and chion at main (ahead of its stable); a tagged release
+# pins the dependency tags.
 package = "kryos"
 deps = [
     "fesm-utils:phase0-kryos",
     "yelmo:stable",
     "FastIsostasy:stable",
-    "chion:stable",
+    "chion:main",            # the ITM |lat| offset, the BESSI bare-surface fix and chion_init_state(swe, t_init): not yet on stable
     "insol:stable",
     "vilma2:main",
+    "PaleoEmulator:main",
     "PlasticIceSheet:main",
 ]

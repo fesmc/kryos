@@ -410,7 +410,7 @@ contains
             "&out_1D", "  method = 'const'", "  dt = 10.0", "/", &
             "&out_rst", "  method = 'const'", "  dt = "//ftoa(T_MID), "/", &
             "&globe", "  forcing = 'forcing'", "  geo = 'geo_glob'", "/", &
-            "&forcing", "  backend = 'tsgen'", "  clock = 'forcing'", coefs, "  out_1D = 'out_1D'", "/", &
+            "&forcing", "  backend = 'tsgen'", "  orbit = 'orbit'", "  clock = 'forcing'", coefs, "  out_1D = 'out_1D'", "/", &
             "&geo_glob", "  backend = 'fastisostasy'", "  clock = 'forcing'", "  bsl = 'barysealevel'", &
             "  out_1D = 'out_1D'", "/", &
             "&"//nm, "  grid_hub = '"//grid//"'", "  topo = 'topo'", "  regions = 'regions'", &
@@ -427,7 +427,7 @@ contains
             "&climate_"//sx, "  backend = 'snapshots'", "  clock = 'forcing'", "  dt = 20.0", &
             "  snapshots = 'snapshots'", "  reference = 'pd'", terms, "  out_2D = 'out_2D'", "/", &
             "&surface_"//sx, "  backend = 'chion'", "  clock = 'forcing'", "  surface_chion = 'surface_chion'", &
-            "  chion = 'chion'", "  orbit = 'orbit'", "  out_2D = 'out_2D'", "/", &
+            "  chion = 'chion'", "  out_2D = 'out_2D'", "/", &
             "&shelf_"//sx, "  backend = 'marine_shelf'", "  marine_shelf = 'marine_shelf'", "  corr = 'shelf_corr'", &
             "  out_2D = 'out_2D'", "/", &
             "&ghf_"//sx, "  backend = 'data'", "  dt = -1.0", "  Q_geo = 'ghf_const'", "  out_2D = 'out_2D'", "/", &
@@ -496,7 +496,7 @@ contains
         call w(u, [character(len=400) :: &
             "&orbit", "  method = 'fixed_orbit'", "/", &
             "&surface_chion", "  sf_a = 0.273", "  sf_b = 273.6", "  sigma_pdd = 5.0", "  time_equil = 2.0", &
-            "  dt_days = 1", "  trans_sw = 0.6", "  wind_speed = 5.0", "  rel_hum = 0.8", "/", &
+            "  dt_days = 1", "  sw_trans0 = 0.59", "  sw_trans_per_km = 0.049", "  wind_speed = 5.0", "  rel_hum = 0.8", "/", &
             "&chion", "  model = 'itm'", "  nml_itm = 'itm_chion'", "/", &
             "&itm_chion", "  H_snow_max = 5.0e3", "  Pmaxfrac = 0.6", "  trans_a = 0.46", "  trans_b = 6e-5", &
             "  trans_c = 0.01", "  itm_c = -45.0", "  itm_t = 10.0", "  itm_b = -2.0", "  itm_lat0 = 65.0", &

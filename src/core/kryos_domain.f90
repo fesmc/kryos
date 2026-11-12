@@ -41,7 +41,7 @@ module kryos_domain
                                fields_has, fields_handle, fields_describe, FIELD_INSTANT, FIELD_INTENSIVE, &
                                FIELD_EXTENSIVE
     use fesm_clock,      only: clock_t, clock_dtt, clock_time, clock_time_rel, cadence_t_last, cadence_due, &
-                               cadence_dt_years, cadence_mark
+                               cadence_dt_years, cadence_mark, clock_to_years
     use coords,          only: grid_class, grid_cdo_read_desc
     use regions,         only: regions_class, regions_init_nml
     use nml,             only: nml_has_group
@@ -117,6 +117,12 @@ module kryos_domain
         integer :: h_z_bed = 0, h_H_ice = 0, h_z_srf = 0, h_f_ice = 0, h_f_grnd = 0, h_z_sl = 0
         integer :: h_z_srf_ref = 0
     end type hub_handles_t
+
+    type, public :: port_cadence_t                      ! the cadence of a global part, for its regional ports
+        integer           :: comp = 0                   ! C_GEO | C_CLIMATE
+        real(dp)          :: dt = 0.0_dp, phase = 0.0_dp ! the global instance's dt and phase keys
+        character(len=8)  :: clock = "model"
+    end type port_cadence_t
 
     type, public :: domain_t
         character(len=NAME_LEN) :: name = ""            ! its par-file group, e.g. "Greenland" (= the FesmData domain)
@@ -349,7 +355,7 @@ contains
                               grid_name=trim(dom%grid_hub), grid=grid, verbose=.false.)
     end subroutine domain_regions_load
 
-    subroutine domain_create(dom, cfg, clk, cnst, census, port_dt, port_phase, port_clock)
+    subroutine domain_create(dom, cfg, clk, cnst, census, ports, axes_g)
         ! The instances of the domain (core-design 3.1 step 4), in INIT_ORDER:
         ! each present component's init_ctx_t (instance_ctx), its factory
         ! (admission against the run's census), <comp>_init, its cadence on
@@ -357,24 +363,28 @@ contains
         ! and its field states. The axes an instance declares (the climate's
         ! month and depth) reach the instances made after it in ctx%axes.
         ! Call after domain_init and before domain_wire and clock_start.
-        ! port_dt, port_phase, port_clock: the dt and phase keys and the clock of the global geo
-        ! (kryos_globe); a geo instance that is the regional port of a host-resolved global part
-        ! (opt%port) steps on that cadence whatever its own keys say (kryos_gia_check stops on a dt
-        ! that differs).
+        ! ports: the dt and phase keys and the clock of the global parts (kryos_globe: a host-resolved
+        ! geo, a global climate), one per component; an instance that is the regional port of such a
+        ! global part (opt%port) steps on its cadence whatever its own keys say (kryos_gia_check stops
+        ! on a geo port's dt that differs).
+        ! axes_g: the axes of the global parts (a global climate's, e.g. paleoemu's ocean `level`), which
+        ! every instance of the domain sees in ctx%axes from the start: a port declares its imports of
+        ! the global part's rank-3 fields on the same axis (the rows climate_g -> climate).
         type(domain_t),  target, intent(inout) :: dom
         type(config_t),          intent(in)    :: cfg
         type(clock_t),           intent(inout) :: clk
         type(phys_const_class),  intent(in)    :: cnst
         type(census_t),          intent(inout) :: census
-        real(dp),                intent(in), optional :: port_dt, port_phase
-        character(len=*),        intent(in), optional :: port_clock
+        type(port_cadence_t),    intent(in), optional :: ports(:)
+        type(axis_t),            intent(in), optional :: axes_g(:)
 
         type(init_ctx_t) :: ctx
         type(axis_t), allocatable :: axes(:)
         class(component_t), pointer :: c
-        integer :: j, k, i
+        integer :: j, k, i, p
 
         allocate(axes(0))
+        if (present(axes_g)) axes = axes_g
         do j = 1, NCOMP
             k = INIT_ORDER(j)
             if (len_trim(dom%inst(k)) == 0) cycle
@@ -383,13 +393,11 @@ contains
             call create_init(dom, k, ctx, census)
 
             c => domain_component(dom, k)
-            if (k == C_GEO .and. present(port_dt) .and. present(port_phase) .and. present(port_clock)) then
-                if (dom%geo%c%opt%port) then
-                    call config_cadence(cfg, dom%inst(k), trim(COMP_NAME(k)), dom%backend(k), clk, c%cadence, &
-                                        dom%clock(k), dt_in=port_dt, phase_in=port_phase, clock_in=port_clock)
-                else
-                    call config_cadence(cfg, dom%inst(k), trim(COMP_NAME(k)), dom%backend(k), clk, c%cadence, dom%clock(k))
-                end if
+            p = 0
+            if (present(ports) .and. is_port(dom, k)) p = findloc(ports%comp, k, dim=1)
+            if (p > 0) then
+                call config_cadence(cfg, dom%inst(k), trim(COMP_NAME(k)), dom%backend(k), clk, c%cadence, &
+                                    dom%clock(k), dt_in=ports(p)%dt, phase_in=ports(p)%phase, clock_in=ports(p)%clock)
             else
                 call config_cadence(cfg, dom%inst(k), trim(COMP_NAME(k)), dom%backend(k), clk, c%cadence, dom%clock(k))
             end if
@@ -401,6 +409,17 @@ contains
             call instance_describe(dom, k, clk)
         end do
     end subroutine domain_create
+
+    logical function is_port(dom, k)
+        ! Component k of the domain is the regional port of a global part (opt%port of geo or climate).
+        type(domain_t), intent(in) :: dom
+        integer,        intent(in) :: k
+        is_port = .false.
+        select case (k)
+        case (C_GEO);     if (allocated(dom%geo%c))     is_port = dom%geo%c%opt%port
+        case (C_CLIMATE); if (allocated(dom%climate%c)) is_port = dom%climate%c%opt%port
+        end select
+    end function is_port
 
     subroutine instance_ctx(dom, k, cfg, clk, cnst, axes, ctx)
         ! The init_ctx_t of component k (core-design 2, 3.6 item 5): the
@@ -438,6 +457,7 @@ contains
         ctx%cnst     = cnst
         ctx%time     = clock_time(clk)
         ctx%time_rel = clock_time_rel(clk)
+        ctx%time_ref = clock_to_years(clk, clk%n_ref)
         ctx%dtt      = clock_dtt(clk)
         ctx%sec_year = clk%sec_year
         ctx%axes     = axes
