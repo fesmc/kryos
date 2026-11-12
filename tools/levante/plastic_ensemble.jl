@@ -12,7 +12,8 @@
 # The folder, the members and the scale groups are those of plastic_esmda.jl (prepare, write_iteration, member_series). Config:
 # [scale], [prior] (sigma, ramp_ka, corr_time_kyr, theta_max), [run], [score] as plastic_esmda_v2.toml; [ensemble]: n (members
 # besides the prior mean, m000), seed, obs_groups, compare_max_age_ka (the window of the judging and of the comparison with the
-# references, 25), bar (the references whose best I_g per group sets the cut, weights), implausibility, use_groups;
+# references, 25), bar (the references whose best I_g per group sets the cut, weights), fixed_cut (groups that keep the plain cut),
+# implausibility, use_groups;
 # [[references]] (name and product | topo | run: the reconstructions the members are compared with, reference_series); [likelihood.<obs group>]: sigma_m [m], corr_dist_km, corr_time_kyr.
 # [esl] (optional): the ESL group, global sea level relative to the present against an independent curve: name ("ESL"), product
 # (FesmData Records/SeaLevel/SeaLevel-<product>.nc, e.g. Spratt2016), var (sl_short), ages_ka (25 to 10 every 2.5), judge (true),
@@ -395,7 +396,11 @@ function weights(C, k)
     # the bar: per group the lowest I_g of the bar's references that have a score there, and which one
     bar = String.(get(en, "bar", String[])); nob = setdiff(bar, first.(rsc))
     isempty(nob) || error("bar references not scored on the window: ", join(nob, ", "))
-    best = Dict(g => (b = [(s[g][4], nm) for (nm, s) in rsc if nm in bar && haskey(s, g)]; isempty(b) ? (-Inf, "") : minimum(b)) for g in og)
+    # [ensemble] fixed_cut: the groups that keep the plain cut whatever the bar (an independent constraint the published
+    # reconstructions were not built against, e.g. ESL)
+    fixed = String.(get(en, "fixed_cut", String[]))
+    best = Dict(g => (b = [(s[g][4], nm) for (nm, s) in rsc if nm in bar && haskey(s, g) && !(g in fixed)]; isempty(b) ? (-Inf, "") : minimum(b))
+                for g in og)
     cut = Dict(g => max(cut0, best[g][1]) for g in og)
     plaus = [m for m in ok if all(sc[m][g][4] <= cut[g] for g in ug)]
     # tempering: the scale factor of each group's error covariance (the groups with a score)
