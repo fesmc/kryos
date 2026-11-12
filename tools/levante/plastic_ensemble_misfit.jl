@@ -1,7 +1,7 @@
 # Where and when the members of a wave miss the index points of a data group, against the references of the config (is the misfit
 # the ice, which the members vary, or the Earth and the data, which they share?):
 #   julia --project=tools/levante tools/levante/plastic_ensemble_misfit.jl <ensemble folder> <out folder> [wave=1]
-#         [groups=Greenland,Fennoscandia/Barents,Laurentide] [members=36,28] [refs=PaleoMIST,PaleoMIST-3D,PaleoMIST-1D] [top=5]
+#         [groups=Greenland,Fennoscandia,Barents,Laurentide] [members=36,28] [refs=PaleoMIST,PaleoMIST-3D,PaleoMIST-1D] [top=5]
 # References: [[references]] of the config (plastic_ensemble.jl reference_series), those of refs= (default: the first three found);
 # the time plot and the site maps need them over all ages (the references that end earlier, GLAC1D's own GIA, are left out there).
 # Members: those of the wave that ran; the selection shown: the plausible ones (iter_kk/plausible.txt), or members= (e.g. the
@@ -24,7 +24,7 @@ const PM = ES.PM
 C, out = abspath(ARGS[1]), ARGS[2]
 opt = Dict(split(a, "=", limit = 2) for a in ARGS[3:end] if occursin("=", a))
 k = length(ARGS) >= 3 && !occursin("=", ARGS[3]) ? parse(Int, ARGS[3]) : 1
-groups = split(get(opt, "groups", "Greenland,Fennoscandia/Barents,Laurentide"), ",")
+groups = split(get(opt, "groups", "Greenland,Fennoscandia,Barents,Laurentide"), ",")
 mkpath(out)
 
 cfg = ES.config(C)
@@ -39,7 +39,7 @@ println("members: ", length(res), ", plausible: ", length(plaus), ", shown: ", s
 
 # the references at the same index points, over all ages (refs=, default the first three)
 fes = cfg["score"]["fesmdata"]
-idx = [(g, findall(o -> o.group == g, obs)) for g in og]
+idx = [(g, findall(o -> PM.in_group(o, g), obs)) for g in og]
 refs = [r for r in EN.references(cfg, obs, A) if !any(k -> all(isnan, view(r[2], :, k)), axes(r[2], 2))]
 haskey(opt, "refs") && (refs = [r for nm in split(opt["refs"], ",") for r in refs if r[1] == nm])
 refs = first(refs, 3); isempty(refs) && error("no reference over all ages")
@@ -137,6 +137,7 @@ println("wrote ", joinpath(out, "misfit_time.png"))
 
 # --- mean d per site -------------------------------------------------------------------------------------------------------------
 BOX = Dict("Greenland" => ((-75.0, -10.0), (59.0, 84.0)), "Fennoscandia/Barents" => ((-12.0, 65.0), (52.0, 82.0)),
+           "Fennoscandia" => ((-12.0, 40.0), (50.0, 72.0)), "Barents" => ((5.0, 110.0), (66.0, 82.0)),
            "Laurentide" => ((-140.0, -50.0), (40.0, 82.0)), "Antarctica" => ((-180.0, 180.0), (-90.0, -60.0)))
 glon = [x > 180 ? x - 360 : x for x in lon]; p = sortperm(glon); q = sortperm(lat); glon = glon[p]; glat = lat[q]; zb = zb0[p, q]
 DMAP = cgrad(:RdBu, rev = true); DLIM = 40.0
