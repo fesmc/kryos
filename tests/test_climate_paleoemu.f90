@@ -26,7 +26,8 @@ program test_climate_paleoemu
     !     levels), so_ann = so_ref; dto_lev = 0 gives to_ann = to_ref;
     !   * with dto_basins: the basins extended over the domain by nearest neighbour; in each basin the mean
     !     over its sample (default zone:shelf_break_buffer, offshore of the basins) of the regions on the
-    !     port's grid; a basin without a sample keeps its cells' values.
+    !     port's grid; a basin without a sample the mean over its ocean cells of the reference topography
+    !     (z_bed < 0, not grounded); a basin without ocean either keeps its cells' values.
     ! Needs the emulator file in $PALEOEMU_FILE (PaleoEmulator scripts/06_emulator.jl); skipped without.
     ! With paleoemu=0 the test is not built (test_skip in config/common.mk).
 
@@ -581,17 +582,21 @@ contains
     end subroutine port_ocean_test
 
     subroutine port_basins_test(pc0)
-        ! Basins tb: 1 in x <= 5, 2 in x > 5, none in rows y = 7, 8 (offshore, extended from row 6); the
-        ! shelf-break buffer (zone 1) in cells (2:3, 7:8), offshore of basin 1: basin 1 (with its extension)
-        ! takes their mean, basin 2 keeps its values.
+        ! Basins tb: 1 in x <= 5, 2 in x = 6..9, 3 in x = 10, none in rows y = 7, 8 (offshore, extended from
+        ! row 6); the shelf-break buffer (zone 1) in cells (2:3, 7:8), offshore of basin 1: basin 1 (with its
+        ! extension) takes their mean. Basins 2 and 3 have no sample: the reference topography's ocean in
+        ! x = 8, 9 (open, z_bed -500 m) and the floating cell (7, 2) (z_bed -800 m, H 200 m), not the grounded
+        ! marine cell (6, 1) (z_bed -100 m, H 500 m) nor land (z_bed 100 m): basin 2 takes their mean; basin 3
+        ! (land only) keeps its values.
         type(init_ctx_t), intent(in) :: pc0
         type(init_ctx_t) :: pc
         type(census_t)   :: cs
         type(climate_slot_t) :: po
         integer  :: tb(10, 8), zone(10, 8), i, l
-        real(dp) :: dl(10, 8, 8), a3(10, 8, 12), a2(10, 8), b(10, 8, 5), m(8)
+        real(dp) :: dl(10, 8, 8), a3(10, 8, 12), a2(10, 8), b(10, 8, 5), m(8), m2(8)
+        logical  :: oc(10, 8)
 
-        tb = 1;  tb(6:, :) = 2;  tb(:, 7:8) = 0
+        tb = 1;  tb(6:9, :) = 2;  tb(10, :) = 3;  tb(:, 7:8) = 0
         zone = 2;  zone(2:3, 7:8) = 1
         pc = pc0
         pc%instance = "clim_port_bas"
@@ -600,6 +605,12 @@ contains
         call regions_add_layer(pc%reg, "tb", tb)
         call regions_add_layer(pc%reg, "zone", zone, codes=[0, 1, 2, 3], &
                                names=[character(len=24) :: "open_ocean", "shelf_break_buffer", "continental_shelf", "land"])
+        allocate(pc%ref%z_bed(10, 8), pc%ref%H_ice(10, 8))
+        pc%ref%z_bed = 100.0_dp;  pc%ref%H_ice = 0.0_dp
+        pc%ref%z_bed(8:9, :) = -500.0_dp
+        pc%ref%z_bed(7, 2) = -800.0_dp;  pc%ref%H_ice(7, 2) = 200.0_dp
+        pc%ref%z_bed(6, 1) = -100.0_dp;  pc%ref%H_ice(6, 1) = 500.0_dp
+        oc = .false.;  oc(8:9, :) = .true.;  oc(7, 2) = .true.
         call climate_create(po, pc, cs)
         call climate_init(po, pc)
         do l = 1, 8
@@ -616,6 +627,7 @@ contains
         call fields_get(po%c%exports, po%c%h_dto_ann, b)
         do l = 1, 8
             m(l) = sum(dl(2:3, 7:8, l))/4.0_dp
+            m2(l) = sum(dl(:, :, l), mask=oc)/real(count(oc), dp)
         end do
         select type (c => po%c)
         type is (paleoemu_port_t)
@@ -623,9 +635,14 @@ contains
                        all(abs(b(1, 1, :) - matmul(c%W, m)) < 1.0e-12_dp) .and. &
                        all(abs(b(2, 8, :) - matmul(c%W, m)) < 1.0e-12_dp), &
                        "basins: basin 1 the mean of its offshore shelf-break cells, in all its (extended) cells")
-            call check(all(abs(b(7, 3, :) - matmul(c%W, dl(7, 3, :))) < 1.0e-12_dp) .and. &
-                       all(abs(b(8, 8, :) - matmul(c%W, dl(8, 8, :))) < 1.0e-12_dp), &
-                       "basins: basin 2 (no sample) keeps its values, its extension too")
+            call check(c%nsample(2) == count(oc) .and. all(abs(b(6, 1, :) - matmul(c%W, m2)) < 1.0e-12_dp) .and. &
+                       all(abs(b(7, 3, :) - matmul(c%W, m2)) < 1.0e-12_dp) .and. &
+                       all(abs(b(8, 8, :) - matmul(c%W, m2)) < 1.0e-12_dp), &
+                       "basins: basin 2 (no sample) the mean of its ocean cells (open and floating, not grounded), "// &
+                       "in all its cells")
+            call check(c%nsample(3) == 0 .and. all(abs(b(10, 3, :) - matmul(c%W, dl(10, 3, :))) < 1.0e-12_dp) .and. &
+                       all(abs(b(10, 8, :) - matmul(c%W, dl(10, 8, :))) < 1.0e-12_dp), &
+                       "basins: basin 3 (no sample, no ocean) keeps its values, its extension too")
         end select
     end subroutine port_basins_test
 

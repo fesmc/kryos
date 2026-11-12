@@ -58,7 +58,10 @@ module kryos_climate_paleoemu
     !                       between the continental shelf and the open ocean) in
     !                       all of its cells: a basin-wide change from the ocean
     !                       the shelf exchanges with, not the emulator's filled
-    !                       values on the shelf itself.
+    !                       values on the shelf itself. A basin without a sampled
+    !                       cell samples its ocean cells instead (the reference
+    !                       topography of the init context: bed below sea level,
+    !                       not grounded).
     !
     ! The factory picks by scope. The emulator works in dp; nothing is narrowed.
     ! Precipitation: the emulator's mm d-1, exported as kg m-2 yr-1 (days of the
@@ -130,7 +133,7 @@ module kryos_climate_paleoemu
         character(len=NAME_LEN) :: dto_basins = ""               ! basin set of the basin means ("" none)
         character(len=512)      :: dto_sample = "zone:shelf_break_buffer"   ! the cells each basin's mean samples
         integer, allocatable :: basin(:,:)                      ! [x, y] basin id, extended over the domain
-        logical, allocatable :: sample(:,:)                     ! [x, y] sampled cells
+        logical, allocatable :: sample(:,:)                     ! [x, y] sampled cells (with the fallback's)
         integer, allocatable :: nsample(:)                      ! [basin] sampled cells of each basin
     contains
         procedure :: init          => port_init_
@@ -701,11 +704,15 @@ contains
         ! a cell outside every basin (the ocean beyond the continental shelf, where the basin sets end)
         ! takes the id of its nearest basin cell (fill_nearest), so that the sample at the shelf break and
         ! the shelves the ice may advance onto belong to a basin. The sampled cells (regions_select of
-        ! dto_sample); each basin's count of them.
+        ! dto_sample); a basin with none samples its ocean cells instead (the fallback: the port imports no
+        ! geometry, so the reference topography of the init context, ctx%ref: bed below sea level and not
+        ! grounded, rho_ice H < -rho_sw z_bed); each basin's count of them. A basin without ocean either
+        ! keeps its cells' values.
         class(paleoemu_port_t), intent(inout) :: self
         type(init_ctx_t),       intent(in)    :: ctx
 
-        character(len=:), allocatable :: txt
+        character(len=:), allocatable :: txt, txt_fb
+        logical, allocatable :: ocean(:,:)
         integer :: b
 
         self%basin  = regions_basin_ids(ctx%reg, trim(self%dto_basins))
@@ -716,16 +723,41 @@ contains
         call fill_nearest(self%basin, 0)
         self%sample = regions_select(ctx%reg, trim(self%dto_sample))
         allocate(self%nsample(max(maxval(self%basin), 0)))
-        txt = ""
+        txt = "";  txt_fb = ""
         do b = 1, size(self%nsample)
             self%nsample(b) = count(self%basin == b .and. self%sample)
-            if (count(self%basin == b) > 0 .and. self%nsample(b) == 0) txt = txt//" "//to_str(b)
+            if (count(self%basin == b) == 0 .or. self%nsample(b) > 0) cycle
+            if (.not. allocated(ocean)) ocean = ref_ocean(self, ctx)
+            self%nsample(b) = count(self%basin == b .and. ocean)
+            if (self%nsample(b) > 0) then
+                self%sample = self%sample .or. (self%basin == b .and. ocean)
+                txt_fb = txt_fb//" "//to_str(b)//" ("//to_str(self%nsample(b))//")"
+            else
+                txt = txt//" "//to_str(b)
+            end if
         end do
         call log_msg(LOG_INFO, "kryos_climate_paleoemu", "port ocean: dto_ann the basin means of "// &
                      trim(self%dto_basins)//" ("//to_str(size(self%nsample))//" basins) over `"//trim(self%dto_sample)// &
-                     "` ("//to_str(sum(self%nsample))//" cells); basins without a sample keep their cells' values:"// &
-                     merge(txt, " none", len(txt) > 0), "instance "//trim(self%name))
+                     "` ("//to_str(sum(self%nsample))//" cells); basins without a sample, over their ocean cells of the "// &
+                     "reference topography (cells):"//merge(txt_fb, " none", len(txt_fb) > 0)// &
+                     "; basins without ocean either keep their cells' values:"//merge(txt, " none", len(txt) > 0), &
+                     "instance "//trim(self%name))
     end subroutine basins_init
+
+    function ref_ocean(self, ctx) result(ocean)
+        ! The ocean of the reference topography on the port's grid (ctx%ref, sea level 0): bed below sea level
+        ! and not grounded, rho_ice H_ice < -rho_sw z_bed (H_ice = 0 included).
+        class(paleoemu_port_t), intent(in) :: self
+        type(init_ctx_t),       intent(in) :: ctx
+        logical, allocatable :: ocean(:,:)
+
+        if (.not. (allocated(ctx%ref%z_bed) .and. allocated(ctx%ref%H_ice))) then
+            call fesm_error("kryos_climate_paleoemu::init", "the fallback of an unsampled basin needs the reference "// &
+                            "topography", "instance "//trim(self%name)//" on grid "//trim(ctx%grid_name)// &
+                            ": ctx%ref (z_bed, H_ice) is not set")
+        end if
+        ocean = ctx%ref%z_bed < 0.0_dp .and. ctx%cnst%rho_ice*ctx%ref%H_ice < -ctx%cnst%rho_sw*ctx%ref%z_bed
+    end function ref_ocean
 
     subroutine ocean_read(self, ctx, group, x, z)
         ! One ocean field of the var_defs group `group` on the port's grid: its annual mean (a monthly
@@ -828,8 +860,8 @@ contains
     end subroutine ocean_profiles
 
     subroutine basin_means(self, dl)
-        ! dl [x, y, level] replaced in each basin by the mean over its sampled cells, level by level (W is
-        ! linear: the same as the mean of dto_ann); basins without a sample keep their values.
+        ! dl [x, y, level] replaced in each basin by the mean over its sampled cells (the fallback's included),
+        ! level by level (W is linear: the same as the mean of dto_ann); basins without any keep their values.
         class(paleoemu_port_t), intent(in)    :: self
         real(dp),               intent(inout) :: dl(:,:,:)
 
