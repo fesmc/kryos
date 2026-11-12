@@ -8,7 +8,8 @@
 #   julia --project=tools/levante plastic_ensemble.jl earth-shift <config.toml> <out.nc> UM=0.5 LM=0 <region>=1.0   one shift file
 # The folder, the members and the scale groups are those of plastic_esmda.jl (prepare, write_iteration, member_series). Config:
 # [scale], [prior] (sigma, ramp_ka, corr_time_kyr, theta_max), [run], [score] as plastic_esmda_v2.toml; [ensemble]: n (members
-# besides the prior mean, m000), seed, obs_groups; [likelihood.<obs group>]: sigma_m [m], corr_dist_km, corr_time_kyr.
+# besides the prior mean, m000), seed, obs_groups, compare_max_age_ka (the window of the comparison with the references, 25);
+# [[references]] (name and product | topo | run: the reconstructions the members are compared with, reference_series); [likelihood.<obs group>]: sigma_m [m], corr_dist_km, corr_time_kyr.
 # [earth] (optional): the Earth as parameters, sampled with tau_b: shifts of log10(eta) of VILMA2's 3-D field, global in the upper
 # and lower mantle and per region in the upper mantle (plastic_earth_shift.jl): sigma (prior sd [dex]), theta_max, boundary_km,
 # regions_file (the masks, earth-regions), [[earth.regions]] (name, groups: scale groups), exclude_codes (REGIONS areas without a regional shift),
@@ -120,9 +121,57 @@ function wave_residuals(C, k, cfg)
     for m in ids
         r, why = ES.member_series(ES.mdir(C, k, m), obs, A)
         r === nothing && (println("member $m: $why"); continue)
-        res[m] = (esl = r.esl, rg = group_residuals(obs, idx, r.S, A))
+        res[m] = (esl = r.esl, rg = group_residuals(obs, idx, r.S, A), S = r.S)
     end
-    ids, Θ, res, og
+    ids, Θ, res, og, obs, A
+end
+
+# --- the references --------------------------------------------------------------------------------------------------------------
+# The reconstructions the members are compared with ([[references]] of the config): per entry a name and one of
+#   product  a FesmData IceHistory file (under [score] fesmdata) with dz_sl, its own GIA (PaleoMIST: SELEN, Gowan's 1-D Earth)
+#   topo     a FesmData IceHistory file with the topography relative to the sea level of the time (GLAC1D: its own GIA, PM.rsl_topo)
+#   run      a standalone VILMA2 run under a reconstruction's ice: a gia_refcorr.sh case (its converged iteration, r.nc -> r_<n>.nc:
+#            it<n>) or a folder with vilma_out.nc ($VAR in the path from the environment)
+# The RSL at the index points (npoints x nages), NaN at the ages the reference does not have; nothing (and why) when it is missing.
+expandenv(p) = replace(p, r"\$\{?(\w+)\}?" => m -> ENV[strip(m, ['$', '{', '}'])])
+function reference_series(ref, fes, obs, A)
+    plon = [o.lon for o in obs]; plat = [o.lat for o in obs]
+    if haskey(ref, "run")
+        d = expandenv(ref["run"]); rc = joinpath(d, "r.nc")
+        islink(rc) && (d = joinpath(d, "it" * match(r"r_(\d+)\.nc", readlink(rc))[1]))
+        r = PM.read_run(d); r === nothing && return nothing, "no run in $d"
+        all(a -> any(x -> abs(x - PM.trun(r, a)) < 0.01, r.t), A) || return nothing, "$d: records missing"
+        return PM.series_run(r, plon, plat, A; rec = a -> PM.trun(r, a)), ""
+    end
+    f = joinpath(fes, haskey(ref, "product") ? ref["product"] : ref["topo"]); isfile(f) || return nothing, "no $f"
+    lon, lat, ages, sl = haskey(ref, "product") ? NCDataset(ds -> (Float64.(ds["lon"][:]), Float64.(ds["lat"][:]), Float64.(ds["time"][:]),
+                                                                   Float64.(nomissing(ds["dz_sl"][:, :, :], NaN))), f) : PM.rsl_topo(f)
+    S = fill(NaN, length(obs), length(A)); k = findall(in(ages), A)
+    S[:, k] = PM.series_pm(lon, lat, ages, sl, plon, plat, A[k])
+    S, ""
+end
+function references(cfg, obs, A)
+    out = Pair{String,Matrix{Float64}}[]
+    for ref in get(cfg, "references", [])
+        S, why = reference_series(ref, cfg["score"]["fesmdata"], obs, A)
+        S === nothing ? println("reference ", ref["name"], ": ", why) : push!(out, ref["name"] => S)
+    end
+    out
+end
+
+# A scoring window: the index points of age <= tmax [yr] and the records of age <= tmax (the references that end there: GLAC1D's own
+# GIA at 26 ka, so tmax = 25 ka, its last record of the 2.5 kyr ages of the scores). The series of all, members and references, are
+# scored on the same window.
+function score_window(obs, A, og, tmax)
+    kp = findall(o -> o.t <= tmax, obs); ka = findall(<=(tmax), A)
+    (tmax = tmax, kp = kp, ka = ka, A = A[ka], obs = obs[kp], idx = [(g, findall(o -> o.group == g, obs[kp])) for g in og])
+end
+# per data group (log L, chi2, n, I) of a series S (all points x all ages) on the window W; nothing when S misses a record there (the
+# points where S has gaps are dropped, as in group_residuals)
+function score_series(S, W, em, og)
+    Sw = S[W.kp, W.ka]; any(k -> all(isnan, view(Sw, :, k)), axes(Sw, 2)) && return nothing
+    rg = group_residuals(W.obs, W.idx, Sw, W.A)
+    Dict(g => (v = loglik_group(rg[g], em[g]...); (v..., implausibility(v[2], v[3]))) for g in og)
 end
 
 # The error model from a wave: per data group, sigma_m, L_x, L_t by maximum likelihood over a grid, from the residuals of the
@@ -181,7 +230,7 @@ end
 # a member is plausible when max_g I_g <= [ensemble] implausibility (default 3). Weights w ∝ L over the plausible members (0
 # for the rest). Writes iter_kk/weights.csv, weights.md and plausible.txt (the folders of the plausible members, one per line).
 function weights(C, k)
-    C = abspath(C); cfg = ES.config(C); ids, Θ, res, og = wave_residuals(C, k, cfg)
+    C = abspath(C); cfg = ES.config(C); ids, Θ, res, og, obs, A = wave_residuals(C, k, cfg)
     em, src = error_model(cfg, C); cut = get(cfg["ensemble"], "implausibility", 3.0)
     ug = String.(get(cfg["ensemble"], "use_groups", og))     # the groups that judge: the cut and the weights; the rest reported
     all(in(og), ug) || error("use_groups $(ug) not all in obs_groups $(og)")
@@ -233,7 +282,44 @@ function weights(C, k)
             for (q, n) in enumerate(names); println(io, "- ", n, ": ", @sprintf("%+.2f (%.2f)", μ[q], sd[q])); end
         end
     end
+    compare_references(It, cfg, res, og, obs, A, em, ug, cut)
     println("wrote ", joinpath(It, "weights.md"), "; ", length(plaus), " plausible, ESS ", @sprintf("%.2f", ess))
+end
+
+# The members against the references (references), on the window of [ensemble] compare_max_age_ka (25 ka: GLAC1D's own GIA ends at
+# 26 ka) and on all points (the references that cover them): per series the log L of the groups that judge, I_g per group and the
+# groups passed (I_g <= cut). The references, the 5 members of the highest log L and the members' median. Appends to weights.md,
+# writes references.csv (every series).
+function compare_references(It, cfg, res, og, obs, A, em, ug, cut)
+    refs = references(cfg, obs, A)
+    tw = 1000.0 * get(cfg["ensemble"], "compare_max_age_ka", 25.0)
+    wins = [(@sprintf("index points of age <= %g ka", tw / 1000), score_window(obs, A, og, tw)), ("all index points", score_window(obs, A, og, Inf))]
+    LL(s) = sum(s[g][1] for g in ug); np(s) = count(g -> s[g][4] <= cut, ug)
+    io = open(joinpath(It, "weights.md"), "a"); csv = open(joinpath(It, "references.csv"), "w")
+    println(csv, "window,series,reference,", join(["n_$g" for g in og], ","), ",", join(["I_$g" for g in og], ","), ",logL,passed")
+    for (wn, (lbl, W)) in enumerate(wins)
+        rs = [(nm, s) for (nm, s) in ((nm, score_series(S, W, em, og)) for (nm, S) in refs) if s !== nothing]
+        ms = Dict(m => score_series(res[m].S, W, em, og) for m in keys(res))
+        for (nm, s, isref) in [[(nm, s, true) for (nm, s) in rs]; [("m" * lpad(m, 3, "0"), ms[m], false) for m in sort(collect(keys(ms)))]]
+            println(csv, wn == 1 ? "window" : "all", ",", nm, ",", isref ? 1 : 0, ",", join([s[g][3] for g in og], ","), ",",
+                    join([@sprintf("%.2f", s[g][4]) for g in og], ","), ",", @sprintf("%.2f", LL(s)), ",", np(s))
+        end
+        best = first(sort(collect(keys(ms)), by = m -> -LL(ms[m])), 5)
+        println(io, "\n## Against the references: ", lbl, "\n\nlog L and groups passed over the groups that judge (", join(ug, ", "),
+                "); I_g per group (passed at <= ", cut, "). References missing here: ",
+                isempty(setdiff(first.(refs), first.(rs))) ? "none" : join(setdiff(first.(refs), first.(rs)), ", "), ".\n")
+        println(io, "| series | log L | ", join(["I $g" for g in og], " | "), " | passed |\n|---|---|", repeat("---|", length(og) + 1))
+        row(nm, s) = println(io, "| ", nm, " | ", @sprintf("%.1f", LL(s)), " | ", join([@sprintf("%.1f", s[g][4]) for g in og], " | "), " | ",
+                             np(s), "/", length(ug), " |")
+        for (nm, s) in rs; row("**" * nm * "**", s); end
+        for m in best; row("m" * lpad(m, 3, "0"), ms[m]); end
+        println(io, "| members' median | ", @sprintf("%.1f", median(LL(s) for s in values(ms))), " | ",
+                join([@sprintf("%.1f", median(s[g][4] for s in values(ms))) for g in og], " | "), " | |")
+        println(io, "| points (members) | | ", join([string(first(values(ms))[g][3]) for g in og], " | "), " | |")
+        println(io, "\nMembers passing each group: ", join([@sprintf("%s %d", g, count(s -> s[g][4] <= cut, values(ms))) for g in og], ", "),
+                "; all groups that judge: ", count(s -> np(s) == length(ug), values(ms)), " of ", length(ms), ".")
+    end
+    close(io); close(csv)
 end
 
 # the Earth parameters: the region masks of a config ([earth]), and a shift file of given values (a test, or a check of r)
