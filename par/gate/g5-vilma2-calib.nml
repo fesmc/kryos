@@ -463,12 +463,12 @@
     semix_z0m_snow                     = 0.001           ! [m]  Momentum roughness length, snow
     semix_z0m_ice                      = 0.01            ! [m]  Momentum roughness length, bare ice
     semix_zm_to_zh                     = 10.0            ! [1]  z0m/z0h
-    semix_sensible_exchange_factor     = 2.5             ! [1]  Sensible-heat exchange factor (MAR-calibrated)
-    semix_stable_coefficient           = 40.0            ! [1]  b in the stable damping 1/(1 + b*Ri) (MAR-calibrated)
+    semix_sensible_exchange_factor     = 1.5             ! [1]  Sensible-heat exchange factor (PD Greenland vs MAR)
+    semix_stable_coefficient           = 10.0            ! [1]  b in the stable damping 1/(1 + b*Ri) (PD Greenland vs MAR)
     semix_latent_exchange_factor       = 1.0             ! [1]  Latent-heat exchange factor
-    alpha_dry                          = 0.81            ! [1] Dry snow albedo (upper bound)
+    alpha_dry                          = 0.83            ! [1] Dry snow albedo (upper bound; PD Greenland vs MAR, net SW)
     alpha_wet                          = 0.70            ! [1] Wet snow albedo (lower bound)
-    alpha_ice                          = 0.40            ! [1] Bare ice albedo
+    alpha_ice                          = 0.50            ! [1] Bare ice albedo (PD Greenland vs MAR, net SW)
     max_lwc_albedo                     = 0.10            ! [1] LWC at which the albedo reaches alpha_wet
     albedo_scheme                      = "dynamic"       ! "constant" | "dynamic" | "prescribed" | "semix" | "aging"
     aging_cold_timescale_days          = 20.0            ! [d] Aging e-folding time, surface below T0 (albedo_scheme = "aging")
