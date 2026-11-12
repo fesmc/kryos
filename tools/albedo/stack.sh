@@ -76,6 +76,8 @@ for e in "${pkgs[@]}"; do
     [ "$target" = - ] || make $target $BUILD >> build.log 2>&1 || { echo "$target failed:"; tail -30 build.log; exit 1; }
 done
 make kryos $BUILD -j8 >> build.log 2>&1 || { tail -30 build.log; exit 1; }
+# VILMA2's standalone driver (vilma2/bin/vilma.x): the runs of tools/levante/gia_refcorr.sh (present-day correction, references)
+if on vilma; then make -C vilma2 vilma openmp=$omp >> build.log 2>&1 || { tail -30 build.log; exit 1; }; fi
 ls -l libkryos/bin/kryos.x
 echo "== $(date -Is) tools/levante/setup.sh"
 tools/levante/setup.sh || true

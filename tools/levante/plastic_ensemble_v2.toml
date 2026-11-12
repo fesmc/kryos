@@ -72,6 +72,7 @@ theta_max     = 1.5
 n          = 49                          # members besides the prior mean (m000)
 seed       = 1
 obs_groups = ["Laurentide", "Greenland", "Fennoscandia/Barents", "Antarctica", "far field"]   # pm_compare.jl's GROUPS
+compare_max_age_ka = 25.0                # the comparison with the references: GLAC1D's own GIA ends at 26 ka
 
 [likelihood."Laurentide"]                # model error per data group: ens-v1 wave 1 (plastic_ensemble.jl errmodel, top 6 members)
 sigma_m = 14.0
@@ -134,3 +135,30 @@ time       = "11:00:00"                  # within albedo's 12h queue
 throttle   = 25                          # 25 members + the weights job + one other run: within 30 jobs
 
 [score]
+
+# The reconstructions the members are compared with (plastic_ensemble.jl reference_series): each with its own GIA, and its ice under
+# VILMA2 (toroidal flow) with the members' 3-D Earth (prior mean) and with Gowan's 1-D Earth (gia_refcorr.sh cases, rho_ice 910)
+[[references]]
+name    = "PaleoMIST"
+product = "Global/GLOBAL-0.5DEG/GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc"
+[[references]]
+name = "GLAC1D"
+topo = "Global/GLOBAL-0.5DEG/GLOBAL-0.5DEG_IceHistory-GLAC1D.nc"
+[[references]]
+name = "PaleoMIST-3D"
+run  = "$KRYOS_WORK/kryos_data/refcorr/PaleoMIST-3D"
+[[references]]
+name = "PaleoMIST-1D"
+run  = "$KRYOS_WORK/kryos_data/refcorr/PaleoMIST-1D"
+[[references]]
+name = "GLAC1D-3D"
+run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D-3D"
+[[references]]
+name = "GLAC1D-1D"
+run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D-1D"
+[[references]]
+name = "GLAC1D_nn9927-3D"
+run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D_nn9927-3D"
+[[references]]
+name = "GLAC1D_nn9927-1D"
+run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D_nn9927-1D"

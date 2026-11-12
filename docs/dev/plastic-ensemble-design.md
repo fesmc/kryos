@@ -93,6 +93,28 @@ B3 (plastic_ensemble_misfit.jl). PaleoMIST itself misfits west Greenland. So the
 - The present-day reference correction r (refcorr) stays that of the unperturbed Earth; its error is measured on
   PaleoMIST-sci with all shifts at +0.5 and -0.5 dex against a rerun without shift (`gia_refcorr.sh`, 2026-11-11).
 
+## Against the references
+
+The aim is not a perfect fit but a demonstrable improvement over the two published reconstructions, PaleoMIST (Gowan et al.
+2021: 1-D Earth, sparse coupling, hand-tuned steps) and GLAC1D (Tarasov et al. 2012, Briggs et al. 2014: a calibrated
+ice-sheet model), with an understanding of what drives the improvement (ice, Earth) and what would improve it further.
+So `weights` scores the references with the members (same index points, error model and groups; `[[references]]` of the
+config, `plastic_ensemble.jl reference_series`):
+
+| reference | ice | Earth | source |
+|---|---|---|---|
+| PaleoMIST | PaleoMIST | its own (SELEN, Gowan's 1-D) | `IceHistory-PaleoMIST` `dz_sl` |
+| GLAC1D | GLAC1D (PMIP4) | its own | `IceHistory-GLAC1D` topography relative to the sea level of the time, 26-0 ka (`pm_compare.jl rsl_topo`) |
+| PaleoMIST-3D, -1D | PaleoMIST | VILMA2 (toroidal flow), the members' 3-D Earth (prior mean) / Gowan's 1-D | `gia_refcorr.sh` |
+| GLAC1D-3D, -1D | `IceHistory-GLAC1D_80k` (nn9894) | as above | `gia_refcorr.sh` |
+| GLAC1D_nn9927-3D, -1D | `IceHistory-GLAC1D_nn9927_80k` | as above | `gia_refcorr.sh` |
+
+The GLAC1D histories from 80 ka are FesmData products: North America with Greenland (nn9894 or nn9927) and Antarctica
+(nn4041) from 80 ka, elsewhere PMIP4 GLAC1D from 26 ka and PaleoMIST before. The comparison is on the index points of
+age <= 25 ka (`[ensemble] compare_max_age_ka`: GLAC1D's own GIA ends at 26 ka, the scores use the 2.5 kyr records) and
+on all points (the references that cover them). Published reference against the same ice on our Earth separates the
+Earth; the 3-D references against the members separate the ice.
+
 ## Cost
 
 A coupled 3-D run took 3.5-4.2 h on 64 cores (about 240 core-h): N = 100 is about 24,000 core-h per wave, 30 at a time

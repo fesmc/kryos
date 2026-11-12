@@ -123,14 +123,31 @@ function series_pm(lon, lat, ages, sl, plon, plat, A)
     end
     S
 end
-function series_run(r::Run, plon, plat, A)
+# rec: the record time of age a (trec: the B state of a step history; trun: the record at the age itself where the run has no B
+# state, as gia_refcorr's runs of a linear history)
+function series_run(r::Run, plon, plat, A; rec = trec)
     W = [(xweight(r.lon, x), yweight(r.lat, y)) for (x, y) in zip(plon, plat)]
     S = zeros(length(plon), length(A))
     for (k, a) in enumerate(A)
-        F = relp(r, :rsl, trec(a))
+        F = relp(r, :rsl, rec(a))
         for (i, (wx, wy)) in enumerate(W); S[i, k] = interp(F, wx, wy); end
     end
     S
+end
+
+# RSL relative to present from a topography relative to the sea level of the time (FesmData IceHistory-GLAC1D: z_topo, the surface of
+# land and grounded ice, the sea floor and the base of floating ice; z_srf, the surface; H_ice), the reconstruction's own GIA: the
+# bed z_b = z_srf - H_ice under grounded ice (z_topo = z_srf), z_topo elsewhere, and RSL(t) = z_b(0 ka) - z_b(t). Returns lon, lat,
+# ages and the RSL (lon, lat, age), as the dz_sl of PaleoMIST (series_pm).
+function rsl_topo(file)
+    NCDataset(file) do ds
+        ages = Float64.(ds["time"][:]); k0 = findfirst(==(0.0), ages)
+        k0 === nothing && error("$(file): no 0 ka record")
+        g(v) = Float64.(nomissing(ds[v][:, :, :], NaN))
+        zt = g("z_topo"); zs = g("z_srf"); H = g("H_ice")
+        zb = @. ifelse((H > 0) & (abs(zs - zt) < 1.0), zs - H, zt)
+        Float64.(ds["lon"][:]), Float64.(ds["lat"][:]), ages, zb[:, :, k0:k0] .- zb
+    end
 end
 
 # linear in time: the value and the slope at t; the range over [t0, t1]
