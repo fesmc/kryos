@@ -12,6 +12,8 @@
 #   julia --project=tools/levante plastic_ensemble.jl earth-search-sample <1-D par.nml> <outdir> [n=200] [seed=1]   wave A of the
 #       Earth search: 1-D Earths of the 5 radial parameters (plastic_earth_basis.jl; docs/dev/earth-search-design.md)
 #   julia --project=tools/levante plastic_ensemble.jl earth-search-par <1-D par.nml> <out par.nml> L um tz lm1 lm2   one of them
+#   julia --project=tools/levante plastic_ensemble.jl earth-search-sample3d <sample.csv> <basis.nc> <regions.nc> <3-D par> <1-D par> <outdir> [n=50] [seed=1]
+#       wave B: 3-D Earths of 13 parameters, the radial ones from the space wave A did not rule out
 # The folder, the members and the scale groups are those of plastic_esmda.jl (prepare, write_iteration, member_series). Config:
 # [scale], [prior] (sigma, ramp_ka, corr_time_kyr, theta_max), [run], [score] as plastic_esmda_v2.toml; [ensemble]: n (members
 # besides the prior mean, m000), seed, obs_groups, compare_max_age_ka (the window of the judging and of the comparison with the
@@ -590,6 +592,11 @@ function main(args)
     if args[1] == "earth-search-sample"
         kv = Dict(split(x, "=") for x in args[4:end])
         return ES.earth_search_sample(args[2], args[3]; n = parse(Int, get(kv, "n", "200")), seed = parse(Int, get(kv, "seed", "1")))
+    end
+    if args[1] == "earth-search-sample3d"
+        kv = Dict(split(x, "=") for x in args[8:end])
+        return ES.earth_search_sample3d(args[2:7]...; n = parse(Int, get(kv, "n", "50")), seed = parse(Int, get(kv, "seed", "1")),
+                                        cut = parse(Float64, get(kv, "cut", "3")))
     end
     args[1] == "earth-search-par" && return println("wrote ", ES.earth1d_par(args[2], args[3], parse.(Float64, args[4:8])))
     args[1] == "weights" && return weights(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1)
