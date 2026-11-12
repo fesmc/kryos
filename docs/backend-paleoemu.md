@@ -195,7 +195,11 @@ evaluates the emulator once, when the reference is set (PASS_BOUNDARY, PASS_REST
 a copy of its state (the run's filters untouched) at present-day inputs: time 0, the
 emulator's own orbit table at 0 ka (the forcing's elements are not available at init),
 CO2 `dto_anchor_co2` (default 280 ppm), the reference ice, its filters in equilibrium.
-Its `dto` is `dto0`, subtracted at every update: `dto_lev` is 0 at present day.
+Its `dto` is `dto0`, subtracted at every update: `dto_lev` is 0 at those inputs. A run
+at 0 ka differs from them by its own inputs (the CO2 series, 280.4 ppm at 0 ka; the
+forcing's orbit; its filters' memory of the ice before 0): in the present-day run
+(`par/kryos_GRL-ANT_data_paleoemu_pd.nml`, from −100 yr) `dto_lev` stays within 0.025 K
+of 0, against up to 0.7 K (Antarctic basin means at 500 m) without the anchor.
 `dto_anchor = False` restores the emulator's own reference. The atmosphere (`dtas`,
 `dlogpr`) is not anchored.
 
