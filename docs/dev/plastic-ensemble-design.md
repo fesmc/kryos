@@ -77,16 +77,18 @@ config; implemented 2026-11-12):
   `uplift_rate_elastic`, the elastic response to present-day ice change; attribute `elastic_correction`), read from
   `[score] gnss_dir` (default `<fesmdata>/Records/GPS`). Only elastic-corrected rates are used: the GIA estimate
   `uplift_rate - uplift_rate_elastic` (`rate = "gia"`) or the authors' corrected rate (`rate = "corrected"`).
-- **Groups** (`plastic_ensemble_v2.toml`):
+- **Groups** (`plastic_ensemble_v2.toml`; every `[[gnss]]` group is a data group after `obs_groups`, entries of one
+  name form one group, a station counted once):
 
-| group | product | rate | stations |
-|---|---|---|---|
-| GNSS Fennoscandia | BIFROST2015 (Kierulf et al. 2021) | gia | all |
-| GNSS Greenland | GNET (Berg et al. 2024) | gia, sd combined with the elastic sd | all |
-| GNSS Antarctica | MartinEspanol2016 (Martín-Español et al. 2016) | corrected | all |
-| GNSS Laurentide | Schumacher2018 (Schumacher et al. 2018) | corrected | 115-50 W, 40-84 N, without Greenland (two boxes) |
+| group | product | rate | stations | judges | sigma_m start |
+|---|---|---|---|---|---|
+| GNSS Fennoscandia | BIFROST2015 (Kierulf et al. 2021) | gia | all | yes | 1.0 |
+| GNSS Hudson Bay | Schumacher2018 (Schumacher et al. 2018), then MIDAS (Blewitt et al. 2016) | corrected; observed (little present-day ice there) | 100-65 W, 50-70 N; MIDAS series of at least 5 years | yes | 1.0 |
+| GNSS Greenland | GNET (Berg et al. 2024) | gia, sd combined with the elastic sd | all | no (`judge = false`: reported) | 2.5 |
+| GNSS Antarctica | MartinEspanol2016 (Martín-Español et al. 2016) | corrected | all | no (reported) | 2.5 |
 
-  MIDAS (global, not corrected) is in FesmData but not used.
+  Greenland and Antarctica are reported only: Little Ice Age loading, a transient (non-Maxwell) viscosity and the
+  elastic correction make their rates unreliable as a GIA constraint.
 - **Model:** `dz_bed_rate` of the run's last VILMA2 record (`geo_glob_vilma.nc` of a kryos run, `vilma_out.nc` of a
   standalone run), bilinear at the station, in mm/yr. It is the rate of the bed over VILMA2's last update: 100 yr in
   a kryos run (`geo_glob` cadence), 100 yr in a `gia_refcorr.sh` case (its forcing has a slice 100 yr before present).
@@ -95,9 +97,9 @@ config; implemented 2026-11-12):
 - **Likelihood:** as the RSL groups, R = diag(sigma_i^2) + sigma_m,g^2 C, C = exp(-dist / L_x), no time term; sigma_i
   the station's sd; `[likelihood."GNSS <region>"]` sigma_m [mm/yr] (start 1.0) and corr_dist_km (start 300), fitted by
   `errmodel` like the RSL groups.
-- **Judging:** the GNSS groups are in `obs_groups` (and `use_groups`). A GNSS group judges only when every member that
-  ran has a score in it (ens-v2's members have none); where no bar reference has a score (pub-PMIST, pub-GLAC1D have
-  none) the group keeps the plain cut.
+- **Judging:** the GNSS groups with `judge` (default true) are in the default `use_groups`. A GNSS group judges only
+  when every member that ran has a score in it (ens-v2's members have none); where no bar reference has a score
+  (pub-PMIST, pub-GLAC1D have none) the group keeps the plain cut.
 - **Frame:** the model rate is in VILMA2's frame (centre of mass, `deg1_frame = "cm"`), the data in ITRF2008/IGS14
   (close to the centre of figure; Schumacher 2018 in CM). The difference is a few tenths of a mm/yr; not corrected.
 
