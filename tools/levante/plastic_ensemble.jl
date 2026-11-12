@@ -14,6 +14,10 @@
 # besides the prior mean, m000), seed, obs_groups, compare_max_age_ka (the window of the judging and of the comparison with the
 # references, 25), bar (the references whose best I_g per group sets the cut, weights), implausibility, use_groups;
 # [[references]] (name and product | topo | run: the reconstructions the members are compared with, reference_series); [likelihood.<obs group>]: sigma_m [m], corr_dist_km, corr_time_kyr.
+# [esl] (optional): the ESL group, global sea level relative to the present against an independent curve: name ("ESL"), product
+# (FesmData Records/SeaLevel/SeaLevel-<product>.nc, e.g. Spratt2016), var (sl_short), ages_ka (25 to 10 every 2.5), judge (true),
+# reference_curves (SeaLevel products shown in weights.md, not scored, e.g. Lambeck2014); a reference's esl = "<product>" gives a
+# published reconstruction its ESL (pub-PMIST: PaleoMIST). Model ESL: bsl_ive of the run's records (pm_compare.jl esl_at).
 # [[gnss]] (optional): GNSS data groups, the present-day uplift rate at GNSS stations: name (the group), product
 # (FesmData Records/GPS/GPS-<product>.nc under [score] gnss_dir, default <fesmdata>/Records/GPS), rate (gia | corrected | observed),
 # box, exclude, min_years (pm_compare.jl read_gnss), judge (default true; false: reported only, not in the default use_groups);
@@ -105,17 +109,23 @@ end
 const RSL_GROUPS = [first.(PM.GROUPS); collect(keys(PM.GROUP_UNIONS))]   # the RSL groups, and their unions (older configs)
 # The data groups of a config: [ensemble] obs_groups and the GNSS groups of [[gnss]] (in the order of their entries); and those that
 # judge by default (use_groups absent): all but the GNSS groups of judge = false.
-data_groups(cfg) = unique([String.(cfg["ensemble"]["obs_groups"]); [String(sp["name"]) for sp in get(cfg, "gnss", Any[])]])
-judging_groups(cfg) = [g for g in data_groups(cfg) if !any(sp -> sp["name"] == g && !get(sp, "judge", true), get(cfg, "gnss", Any[]))]
-# The GNSS data of a config: the stations of its GNSS groups (obs: pm_compare.jl read_gnss) and per group their indices
-# (idx); every group of obs_groups must be an RSL group or a [[gnss]] entry. A group of several entries (products) takes their
+esl_name(cfg) = haskey(cfg, "esl") ? String(get(cfg["esl"], "name", "ESL")) : nothing
+data_groups(cfg) = unique([String.(cfg["ensemble"]["obs_groups"]); [String(sp["name"]) for sp in get(cfg, "gnss", Any[])];
+                           esl_name(cfg) === nothing ? String[] : [esl_name(cfg)]])
+judging_groups(cfg) = [g for g in data_groups(cfg) if !any(sp -> sp["name"] == g && !get(sp, "judge", true), get(cfg, "gnss", Any[])) &&
+                                                     !(g == esl_name(cfg) && !get(cfg["esl"], "judge", true))]
+# the kind of a data group: :rsl (index points), :gnss ([[gnss]]) or :esl ([esl])
+group_kind(cfg, g) = g in RSL_GROUPS ? :rsl : g == esl_name(cfg) ? :esl : :gnss
+# The point data of a config, the data groups that are not RSL index points: the stations of its GNSS groups (pm_compare.jl
+# read_gnss) and the ages of its ESL group (read_esl), as points (group, kind, site_name, lat, lon, t, value, sd), and per group their
+# indices (idx); every group of obs_groups must be an RSL group, a [[gnss]] entry or the [esl] group. A group of several entries (products) takes their
 # stations in the order of the entries, without those of a later entry that an earlier one has (the same site name, or within
 # MERGE_KM): a station counts once.
 const MERGE_KM = 1.0
 function gnss_data(cfg)
     og = data_groups(cfg); specs = get(cfg, "gnss", Any[])
-    bad = [g for g in og if !(g in RSL_GROUPS) && !any(sp -> sp["name"] == g, specs)]
-    isempty(bad) || error("obs_groups: neither an RSL group (pm_compare.jl GROUPS) nor a [[gnss]] entry: ", join(bad, ", "))
+    bad = [g for g in og if !(g in RSL_GROUPS) && !any(sp -> sp["name"] == g, specs) && g != esl_name(cfg)]
+    isempty(bad) || error("obs_groups: neither an RSL group (pm_compare.jl GROUPS) nor a [[gnss]] entry nor [esl]: ", join(bad, ", "))
     dir = get(cfg["score"], "gnss_dir", joinpath(cfg["score"]["fesmdata"], "Records", "GPS"))
     sts = NamedTuple[]
     for sp in specs
@@ -124,6 +134,7 @@ function gnss_data(cfg)
         append!(sts, [st for st in PM.read_gnss(dir, sp)
                       if !any(s -> s.site_name == st.site_name || ES.gcdist(s, st) < MERGE_KM, have)])
     end
+    esl_name(cfg) in og && append!(sts, PM.read_esl(cfg["score"]["fesmdata"], cfg["esl"]))
     idx = [(g, findall(s -> s.group == g, sts)) for g in og if !(g in RSL_GROUPS)]
     none = [g for (g, ii) in idx if isempty(ii)]
     isempty(none) || error("[[gnss]]: no station selected in ", join(none, ", "))
@@ -133,26 +144,35 @@ end
 function write_gnss(C, gd, cfg)
     open(joinpath(C, "gnss.csv"), "w") do io
         println(io, "group,site,lat,lon,rate,sd")
-        for s in gd.obs; println(io, join((s.group, s.site_name, s.lat, s.lon, @sprintf("%.3f", s.rate), @sprintf("%.3f", s.sd)), ",")); end
+        for s in gd.obs; s.kind == :gnss && println(io, join((s.group, s.site_name, s.lat, s.lon, @sprintf("%.3f", s.value), @sprintf("%.3f", s.sd)), ",")); end
     end
     open(joinpath(C, "ensemble.md"), "a") do io
         println(io, "\n\nGNSS groups (", gd.dir, "; the stations in gnss.csv):\n")
         for (g, ii) in gd.idx
+            gd.obs[ii[1]].kind == :gnss || continue
             println(io, "- ", g, ": ", join(["GPS-" * x["product"] * " (rate " * get(x, "rate", "corrected") * ")"
                                              for x in cfg["gnss"] if x["name"] == g], " + "), ", ", length(ii), " stations")
         end
     end
 end
-# the model's rates [mm/yr] at the stations of gd for the run folder dir (pm_compare.jl read_rate); nothing without dz_bed_rate
-gnss_model(dir, gd) = isempty(gd.obs) ? nothing : (R = PM.read_rate(dir); R === nothing ? nothing :
-                                                     PM.rate_at(R, [s.lon for s in gd.obs], [s.lat for s in gd.obs]))
+# the model's values at the points of gd for the run folder dir: the rates [mm/yr] at the GNSS stations (pm_compare.jl read_rate;
+# NaN without dz_bed_rate) and ESL [m] at the ages of the ESL group (esl_at); nothing when it has none
+function gnss_model(dir, gd)
+    isempty(gd.obs) && return nothing
+    v = fill(NaN, length(gd.obs)); ig = findall(s -> s.kind == :gnss, gd.obs); ie = findall(s -> s.kind == :esl, gd.obs)
+    if !isempty(ig)
+        R = PM.read_rate(dir); R === nothing || (v[ig] = PM.rate_at(R, [gd.obs[i].lon for i in ig], [gd.obs[i].lat for i in ig]))
+    end
+    isempty(ie) || (v[ie] = PM.esl_at(dir, [gd.obs[i].t for i in ie]))
+    all(isnan, v) ? nothing : v
+end
 # the misfit per GNSS group of the model rates G (nothing: no group): d = model - obs, sigma_i the station's sd
 function gnss_residuals(gd, G)
     out = Dict{String,Any}()
     G === nothing && return out
     for (g, ii) in gd.idx
         k = [i for i in ii if isfinite(G[i])]
-        isempty(k) || (out[g] = (pts = gd.obs[k], d = G[k] .- [gd.obs[i].rate for i in k], σ = [gd.obs[i].sd for i in k]))
+        isempty(k) || (out[g] = (pts = gd.obs[k], d = G[k] .- [gd.obs[i].value for i in k], σ = [gd.obs[i].sd for i in k]))
     end
     out
 end
@@ -244,10 +264,19 @@ function references(cfg, obs, A)
     end
     out
 end
+# the ESL of a published reconstruction at the points of the ESL group: from the reference's esl = "<SeaLevel product>" (pm_compare.jl
+# sealevel_at; SeaLevel-PaleoMIST for pub-PMIST); nothing without one
+function esl_reference(cfg, ref, gd)
+    (haskey(ref, "esl") && any(s -> s.kind == :esl, gd.obs)) || return nothing
+    v = fill(NaN, length(gd.obs)); ie = findall(s -> s.kind == :esl, gd.obs)
+    v[ie] = PM.sealevel_at(cfg["score"]["fesmdata"], ref["esl"], [gd.obs[i].t for i in ie])[1]
+    v
+end
 # the model rates at the GNSS stations of every reference (gnss_model): nothing for a published reconstruction (product, topo) and a
 # run without dz_bed_rate
 function reference_rates(cfg, gd)
-    G = Dict{String,Any}(ref["name"] => (haskey(ref, "run") ? gnss_model(ref_dir(ref), gd) : nothing) for ref in get(cfg, "references", []))
+    G = Dict{String,Any}(ref["name"] => (haskey(ref, "run") ? gnss_model(ref_dir(ref), gd) : esl_reference(cfg, ref, gd))
+                         for ref in get(cfg, "references", []))
     isempty(gd.idx) || println("GNSS: references with dz_bed_rate: ", join(sort([n for (n, g) in G if g !== nothing]), ", "))
     G
 end
@@ -280,12 +309,13 @@ const GRID_SIGMA = [3.0, 5.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 23.0, 26.
 const GRID_LX = [10.0, 25.0, 50.0, 100.0, 175.0, 250.0, 350.0, 500.0, 750.0, 1000.0, 1500.0, 2500.0]   # [km]
 const GRID_LT = [1.0, 2.0, 5.0, 10.0, 20.0, 40.0, 80.0, 160.0]                            # [kyr]
 const GRID_SIGMA_GNSS = [0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.0, 10.0]                # [mm/yr]
+const GRID_SIGMA_ESL = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 15.0, 20.0, 30.0]                       # [m]
 function errmodel(C, k; top = 6)
     C = abspath(C); cfg = ES.config(C); ids, _, res, og = wave_residuals(C, k, cfg)
     em, src = error_model(cfg, C); ok = sort(collect(keys(res)))
     lk = Dict{String,Any}(); rows = []
     for g in og
-        gn = !(g in RSL_GROUPS); okg = [m for m in ok if haskey(res[m].rg, g)]
+        okg = [m for m in ok if haskey(res[m].rg, g)]
         if isempty(okg)
             println(g, ": no member has a score (no dz_bed_rate); not fitted")
             haskey(em, g) && (lk[g] = Dict{String,Any}("sigma_m" => em[g][1], "corr_dist_km" => em[g][2]);
@@ -297,17 +327,18 @@ function errmodel(C, k; top = 6)
         # the distances [km] and age differences [yr] of each member's points, once
         DT = Dict(m => (p = res[m].rg[g].pts; (D = [ES.gcdist(a, b) for a in p, b in p], T = [abs(a.t - b.t) for a in p, b in p]))
                   for m in best)
-        gs, glt = gn ? (GRID_SIGMA_GNSS, [Inf]) : (GRID_SIGMA, GRID_LT)
+        kd = group_kind(cfg, g)
+        gs, glx, glt = kd == :gnss ? (GRID_SIGMA_GNSS, GRID_LX, [Inf]) : kd == :esl ? (GRID_SIGMA_ESL, [1.0], GRID_LT) : (GRID_SIGMA, GRID_LX, GRID_LT)
         fit = (-Inf, 0.0, 0.0, 0.0)
-        for σm in gs, Lx in GRID_LX, Lt in glt
+        for σm in gs, Lx in glx, Lt in glt
             L = sum(loglik_group(res[m].rg[g], σm, Lx, 1000Lt; DT = DT[m])[1] for m in best)
             L > fit[1] && (fit = (L, σm, Lx, Lt))
         end
         _, σm, Lx, Lt = fit
-        edge = σm in (first(gs), last(gs)) || Lx in (first(GRID_LX), last(GRID_LX)) || (!gn && Lt in (first(GRID_LT), last(GRID_LT)))
+        edge = σm in (first(gs), last(gs)) || (length(glx) > 1 && Lx in (first(glx), last(glx))) || (length(glt) > 1 && Lt in (first(glt), last(glt)))
         χn(m, p...) = (v = loglik_group(res[m].rg[g], p...); v[2] / v[3])
-        lk[g] = gn ? Dict("sigma_m" => σm, "corr_dist_km" => Lx) : Dict("sigma_m" => σm, "corr_dist_km" => Lx, "corr_time_kyr" => Lt)
-        println(g, ": sigma_m ", σm, gn ? " mm/yr" : " m", ", L_x ", Lx, " km", gn ? "" : ", L_t $(Lt) kyr", " (members ", best, ")")
+        lk[g] = kd == :gnss ? Dict("sigma_m" => σm, "corr_dist_km" => Lx) : Dict("sigma_m" => σm, "corr_dist_km" => Lx, "corr_time_kyr" => Lt)
+        println(g, ": sigma_m ", σm, kd == :gnss ? " mm/yr" : " m", ", L_x ", Lx, " km", kd == :gnss ? "" : ", L_t $(Lt) kyr", " (members ", best, ")")
         push!(rows, (g = g, old = em[g], new = (σm, Lx, Lt), edge = edge, n = res[best[1]].rg[g].d |> length, best = best,
                      χold = mean(χn(m, em[g]...) for m in best), χnew = mean(χn(m, σm, Lx, 1000Lt) for m in best)))
     end
@@ -328,7 +359,7 @@ Per data group: sigma_m, L_x, L_t by maximum likelihood on a grid, from the resi
 |---|---|---|---|---|---|---|")
         for r in rows
             println(io, "| ", r.g, " | ", r.n, " | ", @sprintf("%g → %g", r.old[1], r.new[1]), " | ", @sprintf("%g → %g", r.old[2], r.new[2]),
-                    " | ", r.g in RSL_GROUPS ? @sprintf("%g → %g", r.old[3] / 1000, r.new[3]) : "-", " | ", @sprintf("%.2f → %.2f", r.χold, r.χnew), " | ",
+                    " | ", isfinite(r.old[3]) || isfinite(r.new[3]) ? @sprintf("%g → %g", r.old[3] / 1000, r.new[3]) : "-", " | ", @sprintf("%.2f → %.2f", r.χold, r.χnew), " | ",
                     join(["m" * lpad(m, 3, "0") for m in r.best], " "), r.edge ? " (on the edge of the grid)" : "", " |")
         end
     end
@@ -432,6 +463,7 @@ end
 # a score in a group (no dz_bed_rate: no GNSS score) shows "-" there (references.csv: n 0, I NaN), and its log L and passed are over
 # the groups that judge it has a score in. Appends to weights.md, writes references.csv (every series).
 function compare_references(It, cfg, res, og, obs, A, em, ug, cut, refs; gd = nothing, rG = Dict{String,Any}())
+    best1 = Int[]
     tw = 1000.0 * get(cfg["ensemble"], "compare_max_age_ka", 25.0)
     wins = [(@sprintf("index points of age <= %g ka", tw / 1000), score_window(obs, A, og, tw)), ("all index points", score_window(obs, A, og, Inf))]
     LL(s) = sum(s[g][1] for g in ug if haskey(s, g)); np(s) = count(g -> haskey(s, g) && s[g][4] <= cut[g], ug)
@@ -445,7 +477,7 @@ function compare_references(It, cfg, res, og, obs, A, em, ug, cut, refs; gd = no
             println(csv, wn == 1 ? "window" : "all", ",", nm, ",", isref ? 1 : 0, ",", join([sv(s, g, 3) for g in og], ","), ",",
                     join([@sprintf("%.2f", sv(s, g, 4)) for g in og], ","), ",", @sprintf("%.2f", LL(s)), ",", np(s))
         end
-        best = first(sort(collect(keys(ms)), by = m -> -LL(ms[m])), 5)
+        best = first(sort(collect(keys(ms)), by = m -> -LL(ms[m])), 5); wn == 1 && (best1 = best)
         lack = any(s -> any(g -> !haskey(s, g), og), [last.(rs); collect(values(ms))])
         println(io, "\n## Against the references: ", lbl, "\n\nlog L and groups passed over the groups that judge (", join(ug, ", "),
                 "); I_g per group (passed at <= the cut of the group, above). References missing here: ",
@@ -463,6 +495,25 @@ function compare_references(It, cfg, res, og, obs, A, em, ug, cut, refs; gd = no
         println(io, "| points (members) | | ", join([npts(g) for g in og], " | "), " | |")
         println(io, "\nMembers passing each group: ", join([@sprintf("%s %d", g, count(s -> haskey(s, g) && s[g][4] <= cut[g], values(ms))) for g in og], ", "),
                 "; all groups that judge: ", count(s -> np(s) == length(ug), values(ms)), " of ", length(ms), ".")
+    end
+    # ESL: the data, the reference curves of [esl] reference_curves (SeaLevel products, not scored: Lambeck et al. 2014 uses far-field
+    # RSL that the far-field group already has), the references and the 5 members of the highest log L on the window
+    ie = gd === nothing ? Int[] : findall(s -> s.kind == :esl, gd.obs)
+    if !isempty(ie)
+        ages = [gd.obs[i].t for i in ie]; f0(v) = join([isfinite(x) ? @sprintf("%.0f", x) : "-" for x in v], " | ")
+        println(io, "\n## ESL [m], relative to the present: the data (", cfg["esl"]["product"], ", 1 sigma), reference curves (not scored), ",
+                "the references and the 5 best members\n")
+        println(io, "| series | ", join([@sprintf("%g ka", a / 1000) for a in ages], " | "), " |\n|---|", repeat("---|", length(ages)))
+        println(io, "| **data** | ", join([@sprintf("%.0f ± %.0f", gd.obs[i].value, gd.obs[i].sd) for i in ie], " | "), " |")
+        for c in get(cfg["esl"], "reference_curves", String[])
+            println(io, "| ", c, " (curve) | ", f0(PM.sealevel_at(cfg["score"]["fesmdata"], c, ages)[1]), " |")
+        end
+        for (nm, G) in sort(collect(rG), by = first)
+            (G === nothing || all(isnan, G[ie])) || println(io, "| **", nm, "** | ", f0(G[ie]), " |")
+        end
+        for m in best1
+            G = get(res[m], :G, nothing); G === nothing || println(io, "| m", lpad(m, 3, "0"), " | ", f0(G[ie]), " |")
+        end
     end
     close(io); close(csv)
 end
@@ -484,7 +535,7 @@ function scores(C, k)
         for (wn, W) in (("window", score_window(obs, A, og, tw)), ("all", score_window(obs, A, og, Inf)))
             for (nm, S, isref, G) in series
                 Sw = S[W.kp, W.ka]; any(c -> all(isnan, view(Sw, :, c)), axes(Sw, 2)) && continue
-                for (rg, tname) in ((group_residuals(W.obs, W.idx, Sw, W.A), "all"), (gnss_residuals(gd, G), "all GNSS"))
+                for (rg, tname) in ((group_residuals(W.obs, W.idx, Sw, W.A), "all"), (gnss_residuals(gd, G), "all points"))
                     tot = (n = 0, d2 = 0.0, z2 = 0.0, chi2 = 0.0, ll = 0.0)
                     for g in og
                         haskey(rg, g) || continue

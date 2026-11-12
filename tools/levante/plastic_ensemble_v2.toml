@@ -163,6 +163,18 @@ throttle   = 25                          # 25 members + the weights job + one ot
 # rate at the stations against dz_bed_rate of the member's last VILMA2 record. rate: gia = uplift_rate - uplift_rate_elastic
 # (products that keep the elastic part), corrected = the authors' elastic-corrected uplift_rate, observed = as measured. box:
 # [lon_min, lon_max, lat_min, lat_max]; entries of one name: one group, a station once; judge = false: reported only.
+[esl]                                    # global sea level against an independent (δ18O-based) curve: plastic_ensemble.jl [esl]
+name             = "ESL"
+product          = "Spratt2016"          # Spratt and Lisiecki 2016 stack (1 sigma), relative to its own present (+8.5 m there)
+var              = "sl_short"
+ages_ka          = [25.0, 22.5, 20.0, 17.5, 15.0, 12.5, 10.0]
+reference_curves = ["Lambeck2014", "Waelbroeck2002", "Bintanja2008"]   # shown, not scored (Lambeck: far-field RSL, ours too)
+
+[likelihood."ESL"]                       # starting values: refit by errmodel
+sigma_m       = 5.0
+corr_dist_km  = 1.0
+corr_time_kyr = 10.0
+
 [[gnss]]
 name    = "GNSS Fennoscandia"
 product = "BIFROST2015"                  # Kierulf et al. 2021, ITRF2008
@@ -194,6 +206,7 @@ judge   = false
 # cases, rho_ice 910)
 [[references]]
 name    = "pub-PMIST"
+esl     = "PaleoMIST"                   # its ESL: SeaLevel-PaleoMIST (the gridded ice)
 product = "Global/GLOBAL-0.5DEG/GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc"
 [[references]]
 name = "pub-GLAC1D"
