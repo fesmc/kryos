@@ -14,6 +14,9 @@
 # besides the prior mean, m000), seed, obs_groups, compare_max_age_ka (the window of the judging and of the comparison with the
 # references, 25), bar (the references whose best I_g per group sets the cut, weights), implausibility, use_groups;
 # [[references]] (name and product | topo | run: the reconstructions the members are compared with, reference_series); [likelihood.<obs group>]: sigma_m [m], corr_dist_km, corr_time_kyr.
+# [[gnss]] (optional): GNSS data groups, the present-day uplift rate at GNSS stations: name (a group of obs_groups), product
+# (FesmData Records/GPS/GPS-<product>.nc under [score] gnss_dir, default <fesmdata>/Records/GPS), rate (gia | corrected | observed),
+# box, exclude (pm_compare.jl read_gnss); [likelihood."<name>"]: sigma_m [mm/yr], corr_dist_km (no time term).
 # [earth] (optional): the Earth as parameters, sampled with tau_b: shifts of log10(eta) of VILMA2's 3-D field, global in the upper
 # and lower mantle and per region in the upper mantle (plastic_earth_shift.jl): sigma (prior sd [dex]), theta_max, boundary_km,
 # regions_file (the masks, earth-regions), [[earth.regions]] (name, groups: scale groups), exclude_codes (REGIONS areas without a regional shift),
@@ -30,6 +33,12 @@
 # plausible when max_g I_g <= [ensemble] implausibility (3) over [ensemble] use_groups (default all); the weights (of those
 # groups) are over the plausible members only. Writes
 # iter_kk/weights.csv (per member and group log L, chi2/n, I_g; plausible, ESL at 20 ka, weight), weights.md and plausible.txt.
+# GNSS groups ([[gnss]]): d = model - obs at the stations of the group, the model dz_bed_rate of the run's last VILMA2 record [m/yr]
+# (pm_compare.jl read_rate: the rate over VILMA2's last update, 100 yr in a kryos run) bilinear at the station, in mm/yr; R as above
+# with sigma_i the station's sd and C_ij = exp(-dist_ij / L_x) (no time term). A series (member or reference) without dz_bed_rate (a
+# published reconstruction, a run of VILMA2 before it) has no GNSS score: it is left out of the GNSS groups, the tables show "-",
+# and a GNSS group judges only when every member that ran has a score in it. Frame: the model rate is VILMA2's (deg1_frame, centre of
+# mass), the data ITRF/IGS (Schumacher 2018: CM): they differ by a few tenths of a mm/yr, not corrected.
 using LinearAlgebra, Printf, Random, Statistics, TOML, NCDatasets
 
 module ES
@@ -65,7 +74,8 @@ end
 function init(cfgfile, C)
     C = abspath(C)
     en = TOML.parsefile(cfgfile)["ensemble"]
-    cfg, sg, obs = ES.prepare(cfgfile, C, en["obs_groups"])
+    cfg, sg, obs = ES.prepare(cfgfile, C, [g for g in en["obs_groups"] if g in RSL_GROUPS])
+    gd = gnss_data(cfg)
     P = ES.params(cfg, sg); pr = cfg["prior"]; nP = length(P)
     E = haskey(cfg, "earth") ? ES.earth_spec(cfg) : nothing; nE = E === nothing ? 0 : length(E.names)
     Cθ = ES.prior_cov(P, pr, cfg["scale"]["groups"])
@@ -84,7 +94,52 @@ function init(cfgfile, C)
                 nE == 0 ? "" : "\n\nEarth (log10 viscosity shifts [dex], prior sd $(E.sigma), |shift| <= $(E.theta_max); " *
                 "upper mantle above $(E.boundary_km) km, regions weighted by $(E.masks_file)): " * join(E.names, ", "))
     end
+    isempty(gd.idx) || write_gnss(C, gd, cfg)
     println("init: ", C, ", wave 1 with members 0-", en["n"])
+end
+
+# --- GNSS -------------------------------------------------------------------------------------------------------------------------
+# The data groups are of two kinds: RSL (the index points of pm_compare.jl's GROUPS) and GNSS ([[gnss]] of the config, by name).
+const RSL_GROUPS = first.(PM.GROUPS)
+# The GNSS data of a config: the stations of its GNSS groups in obs_groups (obs: pm_compare.jl read_gnss) and per group their indices
+# (idx); every group of obs_groups must be an RSL group or a [[gnss]] entry.
+function gnss_data(cfg)
+    og = cfg["ensemble"]["obs_groups"]; specs = get(cfg, "gnss", Any[])
+    bad = [g for g in og if !(g in RSL_GROUPS) && !any(sp -> sp["name"] == g, specs)]
+    isempty(bad) || error("obs_groups: neither an RSL group (pm_compare.jl GROUPS) nor a [[gnss]] entry: ", join(bad, ", "))
+    dir = get(cfg["score"], "gnss_dir", joinpath(cfg["score"]["fesmdata"], "Records", "GPS"))
+    sts = [st for sp in specs if sp["name"] in og for st in PM.read_gnss(dir, sp)]
+    idx = [(g, findall(s -> s.group == g, sts)) for g in og if !(g in RSL_GROUPS)]
+    none = [g for (g, ii) in idx if isempty(ii)]
+    isempty(none) || error("[[gnss]]: no station selected in ", join(none, ", "))
+    (obs = sts, idx = idx, dir = dir)
+end
+# the GNSS stations of an ensemble: <folder>/gnss.csv (group, site, lat, lon, rate, sd [mm/yr]), and per group a line in ensemble.md
+function write_gnss(C, gd, cfg)
+    open(joinpath(C, "gnss.csv"), "w") do io
+        println(io, "group,site,lat,lon,rate,sd")
+        for s in gd.obs; println(io, join((s.group, s.site_name, s.lat, s.lon, @sprintf("%.3f", s.rate), @sprintf("%.3f", s.sd)), ",")); end
+    end
+    sp = Dict(x["name"] => x for x in cfg["gnss"])
+    open(joinpath(C, "ensemble.md"), "a") do io
+        println(io, "\n\nGNSS groups (", gd.dir, "; the stations in gnss.csv):\n")
+        for (g, ii) in gd.idx
+            println(io, "- ", g, ": GPS-", sp[g]["product"], ", rate ", get(sp[g], "rate", "corrected"), ", ", length(ii), " stations")
+        end
+    end
+end
+# the model's rates [mm/yr] at the stations of gd for the run folder dir (pm_compare.jl read_rate); nothing without dz_bed_rate
+gnss_model(dir, gd) = isempty(gd.obs) ? nothing : (R = PM.read_rate(dir); R === nothing ? nothing :
+                                                     PM.rate_at(R, [s.lon for s in gd.obs], [s.lat for s in gd.obs]))
+# the misfit per GNSS group of the model rates G (nothing: no group): d = model - obs, sigma_i the station's sd
+function gnss_residuals(gd, G)
+    out = Dict{String,Any}()
+    G === nothing && return out
+    for (g, ii) in gd.idx
+        k = [i for i in ii if isfinite(G[i])]
+        isempty(k) || (out[g] = (pts = gd.obs[k], d = G[k] .- [gd.obs[i].rate for i in k], σ = [gd.obs[i].sd for i in k]))
+    end
+    out
 end
 
 # --- likelihood ---------------------------------------------------------------------------------------------------------------------
@@ -104,20 +159,25 @@ function loglik_group(r, σm, Lx, Lt; DT = nothing)
     F = cholesky(Symmetric(R)); x = F.L \ r.d; χ2 = sum(abs2, x)
     (-0.5 * (χ2 + logdet(F)), χ2, length(r.d))
 end
-# the error model per data group: <ensemble folder>/errmodel.toml (plastic_ensemble.jl errmodel) when it exists, else the config's
+# the error model per data group: <ensemble folder>/errmodel.toml (plastic_ensemble.jl errmodel) when it exists, else the config's;
+# the config's too for a group the file does not have (a GNSS group added after the fit). No corr_time_kyr: no time term (GNSS).
 function error_model(cfg, C)
     f = joinpath(C, "errmodel.toml")
     lk = isfile(f) ? TOML.parsefile(f)["likelihood"] : cfg["likelihood"]
-    Dict(g => (p["sigma_m"], p["corr_dist_km"], 1000.0 * p["corr_time_kyr"]) for (g, p) in lk), (isfile(f) ? f : "config")
+    add = isfile(f) ? sort([g for g in keys(get(cfg, "likelihood", Dict())) if !haskey(lk, g)]) : String[]
+    for g in add; lk[g] = cfg["likelihood"][g]; end
+    Dict(g => (p["sigma_m"], p["corr_dist_km"], 1000.0 * get(p, "corr_time_kyr", Inf)) for (g, p) in lk),
+    (isfile(f) ? f : "config") * (isempty(add) ? "" : "; " * join(add, ", ") * ": config")
 end
 # the implausibility of a group's misfit: (chi2 - n) / sqrt(2 n), the standardized chi2 (N(0, 1) for large n when R is right)
 implausibility(χ2, n) = (χ2 - n) / sqrt(2n)
 
-# the members of wave k that ran, their residuals per group and ESL at 20 ka
+# the members of wave k that ran, their residuals per group (RSL from S; GNSS from G, the model rates at the stations, nothing without
+# dz_bed_rate) and ESL at 20 ka; gd the GNSS data (gnss_data)
 function wave_residuals(C, k, cfg)
-    og = cfg["ensemble"]["obs_groups"]
+    og = cfg["ensemble"]["obs_groups"]; gd = gnss_data(cfg)
     obs = [o for o in PM.read_indicators(cfg["score"]["fesmdata"]) if o.type == 0 && o.group in og]
-    idx = [(g, findall(o -> o.group == g, obs)) for g in og]
+    idx = [(g, findall(o -> o.group == g, obs)) for g in og if g in RSL_GROUPS]
     A = sort(NCDataset(ds -> Float64.(ds["time"][:]),
                        joinpath(cfg["score"]["fesmdata"], "Global", "GLOBAL-0.5DEG", "GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc")))
     ids, Θ = ES.read_theta(C, k)
@@ -125,9 +185,11 @@ function wave_residuals(C, k, cfg)
     for m in ids
         r, why = ES.member_series(ES.mdir(C, k, m), obs, A)
         r === nothing && (println("member $m: $why"); continue)
-        res[m] = (esl = r.esl, rg = group_residuals(obs, idx, r.S, A), S = r.S)
+        G = gnss_model(ES.mdir(C, k, m), gd)
+        res[m] = (esl = r.esl, rg = merge(group_residuals(obs, idx, r.S, A), gnss_residuals(gd, G)), S = r.S, G = G)
     end
-    ids, Θ, res, og, obs, A
+    isempty(gd.idx) || println("GNSS: ", count(m -> res[m].G !== nothing, keys(res)), " of ", length(res), " members with dz_bed_rate")
+    ids, Θ, res, og, obs, A, gd
 end
 
 # --- the references --------------------------------------------------------------------------------------------------------------
@@ -138,11 +200,16 @@ end
 #            it<n>) or a folder with vilma_out.nc ($VAR in the path from the environment)
 # The RSL at the index points (npoints x nages), NaN at the ages the reference does not have; nothing (and why) when it is missing.
 expandenv(p) = replace(p, r"\$\{?(\w+)\}?" => m -> ENV[strip(m, ['$', '{', '}'])])
+# the folder of a run reference: a gia_refcorr.sh case's converged iteration, or the folder itself
+function ref_dir(ref)
+    d = expandenv(ref["run"]); rc = joinpath(d, "r.nc")
+    islink(rc) && (d = joinpath(d, "it" * match(r"r_(\d+)\.nc", readlink(rc))[1]))
+    d
+end
 function reference_series(ref, fes, obs, A)
     plon = [o.lon for o in obs]; plat = [o.lat for o in obs]
     if haskey(ref, "run")
-        d = expandenv(ref["run"]); rc = joinpath(d, "r.nc")
-        islink(rc) && (d = joinpath(d, "it" * match(r"r_(\d+)\.nc", readlink(rc))[1]))
+        d = ref_dir(ref)
         r = PM.read_run(d); r === nothing && return nothing, "no run in $d"
         all(a -> any(x -> abs(x - PM.trun(r, a)) < 0.01, r.t), A) || return nothing, "$d: records missing"
         return PM.series_run(r, plon, plat, A; rec = a -> PM.trun(r, a)), ""
@@ -162,48 +229,70 @@ function references(cfg, obs, A)
     end
     out
 end
+# the model rates at the GNSS stations of every reference (gnss_model): nothing for a published reconstruction (product, topo) and a
+# run without dz_bed_rate
+function reference_rates(cfg, gd)
+    G = Dict{String,Any}(ref["name"] => (haskey(ref, "run") ? gnss_model(ref_dir(ref), gd) : nothing) for ref in get(cfg, "references", []))
+    isempty(gd.idx) || println("GNSS: references with dz_bed_rate: ", join(sort([n for (n, g) in G if g !== nothing]), ", "))
+    G
+end
 
 # A scoring window: the index points of age <= tmax [yr] and the records of age <= tmax (the references that end there: GLAC1D's own
 # GIA at 26 ka, so tmax = 25 ka, its last record of the 2.5 kyr ages of the scores). The series of all, members and references, are
 # scored on the same window.
 function score_window(obs, A, og, tmax)
     kp = findall(o -> o.t <= tmax, obs); ka = findall(<=(tmax), A)
-    (tmax = tmax, kp = kp, ka = ka, A = A[ka], obs = obs[kp], idx = [(g, findall(o -> o.group == g, obs[kp])) for g in og])
+    (tmax = tmax, kp = kp, ka = ka, A = A[ka], obs = obs[kp], idx = [(g, findall(o -> o.group == g, obs[kp])) for g in og if g in RSL_GROUPS])
 end
 # per data group (log L, chi2, n, I) of a series S (all points x all ages) on the window W; nothing when S misses a record there (the
-# points where S has gaps are dropped, as in group_residuals)
-function score_series(S, W, em, og)
+# points where S has gaps are dropped, as in group_residuals). The GNSS groups (present day, in every window) from the series' model
+# rates G at the stations of gd: none when G is nothing (no dz_bed_rate), so a series may lack the GNSS groups.
+function score_series(S, W, em, og; G = nothing, gd = nothing)
     Sw = S[W.kp, W.ka]; any(k -> all(isnan, view(Sw, :, k)), axes(Sw, 2)) && return nothing
     rg = group_residuals(W.obs, W.idx, Sw, W.A)
-    Dict(g => (v = loglik_group(rg[g], em[g]...); (v..., implausibility(v[2], v[3]))) for g in og)
+    gd === nothing || merge!(rg, gnss_residuals(gd, G))
+    Dict(g => (v = loglik_group(rg[g], em[g]...); (v..., implausibility(v[2], v[3]))) for g in og if haskey(rg, g))
 end
+# a value of a series' score s in group g (i: 1 log L, 2 chi2, 3 n, 4 I), NaN (n: 0) when it has no score there
+sv(s, g, i) = haskey(s, g) ? s[g][i] : (i == 3 ? 0 : NaN)
+fmtg(s, g, i, f = "%.1f") = haskey(s, g) ? Printf.format(Printf.Format(f), s[g][i]) : "-"
 
 # The error model from a wave: per data group, sigma_m, L_x, L_t by maximum likelihood over a grid, from the residuals of the
 # `top` members that fit that group best under the current error model (the members the data do not rule out; the rest would
-# inflate the error by their own misfit). Writes <folder>/errmodel.toml (read by weights from then on) and errmodel.md.
+# inflate the error by their own misfit). A GNSS group: sigma_m [mm/yr] and L_x only (no time term), from the members with a score
+# there (none: not fitted, the previous error model kept). Writes <folder>/errmodel.toml (read by weights from then on) and errmodel.md.
 const GRID_SIGMA = [3.0, 5.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 23.0, 26.0, 30.0, 35.0, 40.0, 50.0, 65.0, 80.0]   # [m]
 const GRID_LX = [10.0, 25.0, 50.0, 100.0, 175.0, 250.0, 350.0, 500.0, 750.0, 1000.0, 1500.0, 2500.0]   # [km]
 const GRID_LT = [1.0, 2.0, 5.0, 10.0, 20.0, 40.0, 80.0, 160.0]                            # [kyr]
+const GRID_SIGMA_GNSS = [0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.0, 10.0]                # [mm/yr]
 function errmodel(C, k; top = 6)
     C = abspath(C); cfg = ES.config(C); ids, _, res, og = wave_residuals(C, k, cfg)
     em, src = error_model(cfg, C); ok = sort(collect(keys(res)))
     lk = Dict{String,Any}(); rows = []
     for g in og
-        ll0 = Dict(m => loglik_group(res[m].rg[g], em[g]...) for m in ok)
-        best = sort(ok, by = m -> -ll0[m][1])[1:min(top, length(ok))]
+        gn = !(g in RSL_GROUPS); okg = [m for m in ok if haskey(res[m].rg, g)]
+        if isempty(okg)
+            println(g, ": no member has a score (no dz_bed_rate); not fitted")
+            haskey(em, g) && (lk[g] = Dict{String,Any}("sigma_m" => em[g][1], "corr_dist_km" => em[g][2]);
+                              isfinite(em[g][3]) && (lk[g]["corr_time_kyr"] = em[g][3] / 1000))
+            continue
+        end
+        ll0 = Dict(m => loglik_group(res[m].rg[g], em[g]...) for m in okg)
+        best = sort(okg, by = m -> -ll0[m][1])[1:min(top, length(okg))]
         # the distances [km] and age differences [yr] of each member's points, once
         DT = Dict(m => (p = res[m].rg[g].pts; (D = [ES.gcdist(a, b) for a in p, b in p], T = [abs(a.t - b.t) for a in p, b in p]))
                   for m in best)
+        gs, glt = gn ? (GRID_SIGMA_GNSS, [Inf]) : (GRID_SIGMA, GRID_LT)
         fit = (-Inf, 0.0, 0.0, 0.0)
-        for σm in GRID_SIGMA, Lx in GRID_LX, Lt in GRID_LT
+        for σm in gs, Lx in GRID_LX, Lt in glt
             L = sum(loglik_group(res[m].rg[g], σm, Lx, 1000Lt; DT = DT[m])[1] for m in best)
             L > fit[1] && (fit = (L, σm, Lx, Lt))
         end
         _, σm, Lx, Lt = fit
-        edge = σm in (first(GRID_SIGMA), last(GRID_SIGMA)) || Lx in (first(GRID_LX), last(GRID_LX)) || Lt in (first(GRID_LT), last(GRID_LT))
+        edge = σm in (first(gs), last(gs)) || Lx in (first(GRID_LX), last(GRID_LX)) || (!gn && Lt in (first(GRID_LT), last(GRID_LT)))
         χn(m, p...) = (v = loglik_group(res[m].rg[g], p...); v[2] / v[3])
-        lk[g] = Dict("sigma_m" => σm, "corr_dist_km" => Lx, "corr_time_kyr" => Lt)
-        println(g, ": sigma_m ", σm, " m, L_x ", Lx, " km, L_t ", Lt, " kyr (members ", best, ")")
+        lk[g] = gn ? Dict("sigma_m" => σm, "corr_dist_km" => Lx) : Dict("sigma_m" => σm, "corr_dist_km" => Lx, "corr_time_kyr" => Lt)
+        println(g, ": sigma_m ", σm, gn ? " mm/yr" : " m", ", L_x ", Lx, " km", gn ? "" : ", L_t $(Lt) kyr", " (members ", best, ")")
         push!(rows, (g = g, old = em[g], new = (σm, Lx, Lt), edge = edge, n = res[best[1]].rg[g].d |> length, best = best,
                      χold = mean(χn(m, em[g]...) for m in best), χnew = mean(χn(m, σm, Lx, 1000Lt) for m in best)))
     end
@@ -217,13 +306,14 @@ function errmodel(C, k; top = 6)
 
 Per data group: sigma_m, L_x, L_t by maximum likelihood on a grid, from the residuals ",
                 "of the $top members that fit the group best under the previous error model ($src). chi2/n: the mean over those members ",
-                "(1 when the error model matches their misfit).
+                "(1 when the error model matches their misfit).", any(r -> !(r.g in RSL_GROUPS), rows) ?
+                " GNSS groups: sigma_m in mm/yr, no L_t." : "", "
 ")
         println(io, "| group | n | sigma_m [m] | L_x [km] | L_t [kyr] | chi2/n | members |
 |---|---|---|---|---|---|---|")
         for r in rows
             println(io, "| ", r.g, " | ", r.n, " | ", @sprintf("%g → %g", r.old[1], r.new[1]), " | ", @sprintf("%g → %g", r.old[2], r.new[2]),
-                    " | ", @sprintf("%g → %g", r.old[3] / 1000, r.new[3]), " | ", @sprintf("%.2f → %.2f", r.χold, r.χnew), " | ",
+                    " | ", r.g in RSL_GROUPS ? @sprintf("%g → %g", r.old[3] / 1000, r.new[3]) : "-", " | ", @sprintf("%.2f → %.2f", r.χold, r.χnew), " | ",
                     join(["m" * lpad(m, 3, "0") for m in r.best], " "), r.edge ? " (on the edge of the grid)" : "", " |")
         end
     end
@@ -238,26 +328,31 @@ end
 # (without bar: the plain cut). Weights w ∝ L over the plausible members (0 for the rest), tempered: per group the error covariance
 # is scaled by s_g = max(1, the lowest chi2/n of the members and the references), so that the best series fits its error model
 # (chi2/n = 1) and log L differences are those the data resolve (log L_t = log L + chi2 (1 - 1/s) / 2 - n log(s) / 2).
-# Writes iter_kk/weights.csv, weights.md and plausible.txt (the folders of the plausible members, one per line).
+# GNSS groups: a group that judges loses its judging role when a member that ran has no score there (no dz_bed_rate); a group where no
+# bar reference has a score keeps the plain cut. Writes iter_kk/weights.csv, weights.md and plausible.txt (the folders of the
+# plausible members, one per line).
 function weights(C, k)
-    C = abspath(C); cfg = ES.config(C); ids, Θ, res, og, obs, A = wave_residuals(C, k, cfg); en = cfg["ensemble"]
+    C = abspath(C); cfg = ES.config(C); ids, Θ, res, og, obs, A, gd = wave_residuals(C, k, cfg); en = cfg["ensemble"]
     em, src = error_model(cfg, C); cut0 = get(en, "implausibility", 3.0)
-    ug = String.(get(en, "use_groups", og))     # the groups that judge: the cut and the weights; the rest reported
-    all(in(og), ug) || error("use_groups $(ug) not all in obs_groups $(og)")
+    ug0 = String.(get(en, "use_groups", og))     # the groups that judge: the cut and the weights; the rest reported
+    all(in(og), ug0) || error("use_groups $(ug0) not all in obs_groups $(og)")
     sg = ES.scale_groups(cfg["scale"]); P = ES.params(cfg, sg)
     W = score_window(obs, A, og, 1000.0 * get(en, "compare_max_age_ka", Inf))
     ok = sort(collect(keys(res)))
-    sc = Dict(m => score_series(res[m].S, W, em, og) for m in ok)                  # g => (log L, chi2, n, I)
-    refs = references(cfg, obs, A)
-    rsc = [(nm, s) for (nm, s) in ((nm, score_series(S, W, em, og)) for (nm, S) in refs) if s !== nothing]
-    # the bar: per group the lowest I_g of the bar's references, and which one
+    sc = Dict(m => score_series(res[m].S, W, em, og; G = res[m].G, gd = gd) for m in ok)   # g => (log L, chi2, n, I)
+    nos = [g for g in ug0 if !all(m -> haskey(sc[m], g), ok)]      # judging groups without a score in every member
+    ug = [g for g in ug0 if !(g in nos)]
+    refs = references(cfg, obs, A); rG = reference_rates(cfg, gd)
+    rsc = [(nm, s) for (nm, s) in ((nm, score_series(S, W, em, og; G = rG[nm], gd = gd)) for (nm, S) in refs) if s !== nothing]
+    # the bar: per group the lowest I_g of the bar's references that have a score there, and which one
     bar = String.(get(en, "bar", String[])); nob = setdiff(bar, first.(rsc))
     isempty(nob) || error("bar references not scored on the window: ", join(nob, ", "))
-    best = Dict(g => (isempty(bar) ? (-Inf, "") : minimum((s[g][4], nm) for (nm, s) in rsc if nm in bar)) for g in og)
+    best = Dict(g => (b = [(s[g][4], nm) for (nm, s) in rsc if nm in bar && haskey(s, g)]; isempty(b) ? (-Inf, "") : minimum(b)) for g in og)
     cut = Dict(g => max(cut0, best[g][1]) for g in og)
     plaus = [m for m in ok if all(sc[m][g][4] <= cut[g] for g in ug)]
-    # tempering: the scale factor of each group's error covariance
-    sf = Dict(g => max(1.0, minimum(s[g][2] / s[g][3] for s in [[sc[m] for m in ok]; last.(rsc)])) for g in og)
+    # tempering: the scale factor of each group's error covariance (the groups with a score)
+    sf = Dict(g => max(1.0, minimum(s[g][2] / s[g][3] for s in [[sc[m] for m in ok]; last.(rsc)] if haskey(s, g)))
+              for g in og if any(m -> haskey(sc[m], g), ok) || any(r -> haskey(r[2], g), rsc))
     LL = Dict(m => sum(sc[m][g][1] for g in ug) for m in ok)
     LLt = Dict(m => sum(sc[m][g][1] + 0.5 * sc[m][g][2] * (1 - 1 / sf[g]) - 0.5 * sc[m][g][3] * log(sf[g]) for g in ug) for m in ok)
     w = Dict(m => 0.0 for m in ok)
@@ -267,14 +362,14 @@ function weights(C, k)
     end
     ess = isempty(plaus) ? 0.0 : 1 / sum(w[m]^2 for m in plaus)
     It = ES.itdir(C, k)
-    I(m, g) = sc[m][g][4]
+    I(m, g) = sv(sc[m], g, 4)
     open(joinpath(It, "weights.csv"), "w") do io
         println(io, "member,ok,", join(["logL_$g" for g in og], ","), ",logL,logL_tempered,", join(["chi2n_$g" for g in og], ","), ",",
                 join(["I_$g" for g in og], ","), ",plausible,esl_20ka,weight")
         for m in ids
             haskey(res, m) || (println(io, m, ",0", repeat(",NaN", 3length(og) + 5)); continue)
-            println(io, m, ",1,", join([@sprintf("%.2f", sc[m][g][1]) for g in og], ","), ",", @sprintf("%.2f,%.2f", LL[m], LLt[m]), ",",
-                    join([@sprintf("%.3f", sc[m][g][2] / sc[m][g][3]) for g in og], ","), ",", join([@sprintf("%.2f", I(m, g)) for g in og], ","),
+            println(io, m, ",1,", join([@sprintf("%.2f", sv(sc[m], g, 1)) for g in og], ","), ",", @sprintf("%.2f,%.2f", LL[m], LLt[m]), ",",
+                    join([@sprintf("%.3f", sv(sc[m], g, 2) / sv(sc[m], g, 3)) for g in og], ","), ",", join([@sprintf("%.2f", I(m, g)) for g in og], ","),
                     ",", m in plaus ? 1 : 0, ",", @sprintf("%.2f", res[m].esl), ",", @sprintf("%.6g", w[m]))
         end
     end
@@ -288,62 +383,70 @@ function weights(C, k)
     open(joinpath(It, "weights.md"), "w") do io
         println(io, "Wave $k: $(length(ok)) of $(length(ids)) members ran; error model: $src; judged on the index points of age <= ",
                 isfinite(W.tmax) ? @sprintf("%g ka", W.tmax / 1000) : "80 ka (all)", "; groups that judge (the cut and the weights): ",
-                join(ug, ", "), length(ug) < length(og) ? "; reported only: " * join(setdiff(og, ug), ", ") : "", ".\n")
+                join(ug, ", "), length(ug0) < length(og) ? "; reported only: " * join(setdiff(og, ug0), ", ") : "",
+                isempty(nos) ? "" : "; not judging, without a score in every member (no dz_bed_rate: no GNSS score): " * join(nos, ", "), ".\n")
         println(io, "Cut per group (the larger of $cut0 and the best I_g of the bar: ", isempty(bar) ? "none" : join(bar, ", "),
                 "); scale factor s_g of the tempered weights:\n")
         println(io, "| group | n | cut | set by | s_g |\n|---|---|---|---|---|")
         for g in og
-            println(io, "| ", g, " | ", sc[ok[1]][g][3], " | ", @sprintf("%.2f", cut[g]), " | ", cut[g] > cut0 ? best[g][2] : "-",
-                    " | ", @sprintf("%.2f", sf[g]), " |")
+            m1 = findfirst(m -> haskey(sc[m], g), ok)
+            println(io, "| ", g, " | ", m1 === nothing ? "-" : sc[ok[m1]][g][3], " | ", @sprintf("%.2f", cut[g]), " | ", cut[g] > cut0 ? best[g][2] : "-",
+                    " | ", haskey(sf, g) ? @sprintf("%.2f", sf[g]) : "-", " |")
         end
         println(io, "\nPlausible (I_g <= cut in every group that judges): $(length(plaus)) members", isempty(plaus) ? "" :
                 @sprintf(", ESL at 20 ka %.1f to %.1f m; effective sample size of their weights %.2f", minimum(eslp), maximum(eslp), ess), ".\n")
-        println(io, "Ruled out by group (I_g > cut): ", join([@sprintf("%s %d", g, count(m -> I(m, g) > cut[g], ok)) for g in og], ", "), "\n")
+        println(io, "Ruled out by group (I_g > cut): ", join([@sprintf("%s %d", g, count(m -> haskey(sc[m], g) && I(m, g) > cut[g], ok)) for g in og], ", "), "\n")
         println(io, "| member | plausible | weight | log L | log L tempered | ", join(["I $g" for g in og], " | "), " | ESL 20 ka [m] |\n|---|---|---|---|---|",
                 repeat("---|", length(og) + 1))
         for m in sort(ok, by = m -> (m in plaus ? 0 : 1, -LLt[m]))
             println(io, "| m", lpad(m, 3, "0"), " | ", m in plaus ? "yes" : "no", " | ", @sprintf("%.3g", w[m]), " | ", @sprintf("%.1f", LL[m]),
-                    " | ", @sprintf("%.1f", LLt[m]), " | ", join([@sprintf("%.1f", I(m, g)) for g in og], " | "), " | ", @sprintf("%.1f", res[m].esl), " |")
+                    " | ", @sprintf("%.1f", LLt[m]), " | ", join([fmtg(sc[m], g, 4) for g in og], " | "), " | ", @sprintf("%.1f", res[m].esl), " |")
         end
         if !isempty(plaus)
             println(io, "\nWeighted parameters of the plausible members (tau_b: log factor; Earth: dex; prior mean 0): mean (sd)\n")
             for (q, n) in enumerate(names); println(io, "- ", n, ": ", @sprintf("%+.2f (%.2f)", μ[q], sd[q])); end
         end
     end
-    compare_references(It, cfg, res, og, obs, A, em, ug, cut, refs)
+    compare_references(It, cfg, res, og, obs, A, em, ug, cut, refs; gd = gd, rG = rG)
     println("wrote ", joinpath(It, "weights.md"), "; ", length(plaus), " plausible, ESS ", @sprintf("%.2f", ess))
 end
 
 # The members against the references (references), on the window of [ensemble] compare_max_age_ka (25 ka: GLAC1D's own GIA ends at
 # 26 ka) and on all points (the references that cover them): per series the log L of the groups that judge, I_g per group and the
-# groups passed (I_g <= cut[g], weights). The references, the 5 members of the highest log L and the members' median. Appends to
-# weights.md, writes references.csv (every series).
-function compare_references(It, cfg, res, og, obs, A, em, ug, cut, refs)
+# groups passed (I_g <= cut[g], weights). The references, the 5 members of the highest log L and the members' median. A series without
+# a score in a group (no dz_bed_rate: no GNSS score) shows "-" there (references.csv: n 0, I NaN), and its log L and passed are over
+# the groups that judge it has a score in. Appends to weights.md, writes references.csv (every series).
+function compare_references(It, cfg, res, og, obs, A, em, ug, cut, refs; gd = nothing, rG = Dict{String,Any}())
     tw = 1000.0 * get(cfg["ensemble"], "compare_max_age_ka", 25.0)
     wins = [(@sprintf("index points of age <= %g ka", tw / 1000), score_window(obs, A, og, tw)), ("all index points", score_window(obs, A, og, Inf))]
-    LL(s) = sum(s[g][1] for g in ug); np(s) = count(g -> s[g][4] <= cut[g], ug)
+    LL(s) = sum(s[g][1] for g in ug if haskey(s, g)); np(s) = count(g -> haskey(s, g) && s[g][4] <= cut[g], ug)
+    nj(s) = count(g -> haskey(s, g), ug)
     io = open(joinpath(It, "weights.md"), "a"); csv = open(joinpath(It, "references.csv"), "w")
     println(csv, "window,series,reference,", join(["n_$g" for g in og], ","), ",", join(["I_$g" for g in og], ","), ",logL,passed")
     for (wn, (lbl, W)) in enumerate(wins)
-        rs = [(nm, s) for (nm, s) in ((nm, score_series(S, W, em, og)) for (nm, S) in refs) if s !== nothing]
-        ms = Dict(m => score_series(res[m].S, W, em, og) for m in keys(res))
+        rs = [(nm, s) for (nm, s) in ((nm, score_series(S, W, em, og; G = get(rG, nm, nothing), gd = gd)) for (nm, S) in refs) if s !== nothing]
+        ms = Dict(m => score_series(res[m].S, W, em, og; G = get(res[m], :G, nothing), gd = gd) for m in keys(res))
         for (nm, s, isref) in [[(nm, s, true) for (nm, s) in rs]; [("m" * lpad(m, 3, "0"), ms[m], false) for m in sort(collect(keys(ms)))]]
-            println(csv, wn == 1 ? "window" : "all", ",", nm, ",", isref ? 1 : 0, ",", join([s[g][3] for g in og], ","), ",",
-                    join([@sprintf("%.2f", s[g][4]) for g in og], ","), ",", @sprintf("%.2f", LL(s)), ",", np(s))
+            println(csv, wn == 1 ? "window" : "all", ",", nm, ",", isref ? 1 : 0, ",", join([sv(s, g, 3) for g in og], ","), ",",
+                    join([@sprintf("%.2f", sv(s, g, 4)) for g in og], ","), ",", @sprintf("%.2f", LL(s)), ",", np(s))
         end
         best = first(sort(collect(keys(ms)), by = m -> -LL(ms[m])), 5)
+        lack = any(s -> any(g -> !haskey(s, g), og), [last.(rs); collect(values(ms))])
         println(io, "\n## Against the references: ", lbl, "\n\nlog L and groups passed over the groups that judge (", join(ug, ", "),
                 "); I_g per group (passed at <= the cut of the group, above). References missing here: ",
-                isempty(setdiff(first.(refs), first.(rs))) ? "none" : join(setdiff(first.(refs), first.(rs)), ", "), ".\n")
+                isempty(setdiff(first.(refs), first.(rs))) ? "none" : join(setdiff(first.(refs), first.(rs)), ", "), ".",
+                lack ? " -: no score in the group (no dz_bed_rate: no GNSS score); log L and passed are over the groups the series has." : "", "\n")
         println(io, "| series | log L | ", join(["I $g" for g in og], " | "), " | passed |\n|---|---|", repeat("---|", length(og) + 1))
-        row(nm, s) = println(io, "| ", nm, " | ", @sprintf("%.1f", LL(s)), " | ", join([@sprintf("%.1f", s[g][4]) for g in og], " | "), " | ",
-                             np(s), "/", length(ug), " |")
+        row(nm, s) = println(io, "| ", nm, " | ", @sprintf("%.1f", LL(s)), " | ", join([fmtg(s, g, 4) for g in og], " | "), " | ",
+                             np(s), "/", nj(s), " |")
         for (nm, s) in rs; row("**" * nm * "**", s); end
         for m in best; row("m" * lpad(m, 3, "0"), ms[m]); end
+        med(g) = (v = [s[g][4] for s in values(ms) if haskey(s, g)]; isempty(v) ? "-" : @sprintf("%.1f", median(v)))
+        npts(g) = (v = [s[g][3] for s in values(ms) if haskey(s, g)]; isempty(v) ? "-" : string(first(v)))
         println(io, "| members' median | ", @sprintf("%.1f", median(LL(s) for s in values(ms))), " | ",
-                join([@sprintf("%.1f", median(s[g][4] for s in values(ms))) for g in og], " | "), " | |")
-        println(io, "| points (members) | | ", join([string(first(values(ms))[g][3]) for g in og], " | "), " | |")
-        println(io, "\nMembers passing each group: ", join([@sprintf("%s %d", g, count(s -> s[g][4] <= cut[g], values(ms))) for g in og], ", "),
+                join([med(g) for g in og], " | "), " | |")
+        println(io, "| points (members) | | ", join([npts(g) for g in og], " | "), " | |")
+        println(io, "\nMembers passing each group: ", join([@sprintf("%s %d", g, count(s -> haskey(s, g) && s[g][4] <= cut[g], values(ms))) for g in og], ", "),
                 "; all groups that judge: ", count(s -> np(s) == length(ug), values(ms)), " of ", length(ms), ".")
     end
     close(io); close(csv)
@@ -352,27 +455,32 @@ end
 # The scores of every series, references and members, for tables (docs/simulations.md): per window (the index points of age <=
 # compare_max_age_ka; all points) and data group, and over all groups: n, the RMSE of d [m], the RMS of z = d / sigma_i (the classic
 # score), chi2/n, I_g and log L under the error model. Writes iter_kk/scores.csv. A reference without records in a window is left out.
+# GNSS groups (the same in both windows): their rows after the RSL groups' row "all" (the RSL groups only), rmse_m then in mm/yr, and
+# their own total "all GNSS"; a series without dz_bed_rate has no GNSS rows.
 #   julia --project=tools/levante plastic_ensemble.jl scores <ensemble folder> [<wave>]
 function scores(C, k)
-    C = abspath(C); cfg = ES.config(C); ids, Θ, res, og, obs, A = wave_residuals(C, k, cfg)
-    em, src = error_model(cfg, C); refs = references(cfg, obs, A)
+    C = abspath(C); cfg = ES.config(C); ids, Θ, res, og, obs, A, gd = wave_residuals(C, k, cfg)
+    em, src = error_model(cfg, C); refs = references(cfg, obs, A); rG = reference_rates(cfg, gd)
     tw = 1000.0 * get(cfg["ensemble"], "compare_max_age_ka", 25.0)
-    series = [[(nm, S, 1) for (nm, S) in refs]; [("m" * lpad(m, 3, "0"), res[m].S, 0) for m in sort(collect(keys(res)))]]
+    series = [[(nm, S, 1, rG[nm]) for (nm, S) in refs]; [("m" * lpad(m, 3, "0"), res[m].S, 0, res[m].G) for m in sort(collect(keys(res)))]]
     f = joinpath(ES.itdir(C, k), "scores.csv")
     open(f, "w") do io
         println(io, "window,series,reference,group,n,rmse_m,rmsz,chi2n,I,logL")
         for (wn, W) in (("window", score_window(obs, A, og, tw)), ("all", score_window(obs, A, og, Inf)))
-            for (nm, S, isref) in series
+            for (nm, S, isref, G) in series
                 Sw = S[W.kp, W.ka]; any(c -> all(isnan, view(Sw, :, c)), axes(Sw, 2)) && continue
-                rg = group_residuals(W.obs, W.idx, Sw, W.A)
-                tot = (n = 0, d2 = 0.0, z2 = 0.0, chi2 = 0.0, ll = 0.0)
-                for g in og
-                    r = rg[g]; ll, χ2, n = loglik_group(r, em[g]...); z = r.d ./ r.σ
-                    @printf(io, "%s,%s,%d,%s,%d,%.2f,%.3f,%.3f,%.2f,%.2f\n", wn, nm, isref, g, n, sqrt(mean(abs2, r.d)), sqrt(mean(abs2, z)),
-                            χ2 / n, implausibility(χ2, n), ll)
-                    tot = (n = tot.n + n, d2 = tot.d2 + sum(abs2, r.d), z2 = tot.z2 + sum(abs2, z), chi2 = tot.chi2 + χ2, ll = tot.ll + ll)
+                for (rg, tname) in ((group_residuals(W.obs, W.idx, Sw, W.A), "all"), (gnss_residuals(gd, G), "all GNSS"))
+                    tot = (n = 0, d2 = 0.0, z2 = 0.0, chi2 = 0.0, ll = 0.0)
+                    for g in og
+                        haskey(rg, g) || continue
+                        r = rg[g]; ll, χ2, n = loglik_group(r, em[g]...); z = r.d ./ r.σ
+                        @printf(io, "%s,%s,%d,%s,%d,%.2f,%.3f,%.3f,%.2f,%.2f\n", wn, nm, isref, g, n, sqrt(mean(abs2, r.d)), sqrt(mean(abs2, z)),
+                                χ2 / n, implausibility(χ2, n), ll)
+                        tot = (n = tot.n + n, d2 = tot.d2 + sum(abs2, r.d), z2 = tot.z2 + sum(abs2, z), chi2 = tot.chi2 + χ2, ll = tot.ll + ll)
+                    end
+                    tot.n > 0 && @printf(io, "%s,%s,%d,%s,%d,%.2f,%.3f,%.3f,,%.2f\n", wn, nm, isref, tname, tot.n, sqrt(tot.d2 / tot.n),
+                                         sqrt(tot.z2 / tot.n), tot.chi2 / tot.n, tot.ll)
                 end
-                @printf(io, "%s,%s,%d,all,%d,%.2f,%.3f,%.3f,,%.2f\n", wn, nm, isref, tot.n, sqrt(tot.d2 / tot.n), sqrt(tot.z2 / tot.n), tot.chi2 / tot.n, tot.ll)
             end
         end
     end
