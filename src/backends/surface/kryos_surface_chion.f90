@@ -30,6 +30,16 @@ module kryos_chion_host
     !     the day (BESSI's energy balance; the climate supplies none of them).
     ! Monthly -> daily is chion_forcing_monthly (mean-preserving).
     !
+    ! Daily temperature variability (optional, tvar_sigma_max > 0): the smooth daily
+    ! air temperature plus sigma*xi. xi is a red-noise sequence (AR(1), e-folding
+    ! tvar_tau days) of unit variance and zero mean in every month, the same for all
+    ! columns and every annual cycle (seed tvar_seed; a portable Park-Miller generator),
+    ! so the monthly means are unchanged and the spin-up equilibrates. sigma follows
+    ! the column's monthly mean temperature, lower over melting surfaces (Seguinot and
+    ! Rogozhina, 2014, J. Glaciol. 60, 603):
+    !     sigma = min(max(tvar_sigma0 + tvar_sigma_slope*(T_mon - T0), tvar_sigma_min), tvar_sigma_max).
+    ! ERA5 1981-2010 over the Greenland and Antarctic ice: sigma = 2.0 - 0.14 (T - T0) in [2, 6] K.
+    !
     ! Wind (BESSI's turbulent fluxes; the climate supplies none), constant through
     ! the year and set each annual cycle from the geometry:
     !     U = wind_speed + wind_lapse*max(z_srf,0)[km] + wind_slope*|grad z_srf|[m/km],
@@ -109,6 +119,12 @@ module kryos_chion_host
         real(wp)           :: wind_slope_length = 50.0_wp  ! [km] the baseline of the slope
         real(wp)           :: rel_hum       ! [1] constant relative humidity
         real(wp)           :: swe_init_ice = 0.0_wp   ! [kg m-2] cold start: the snowpack of ice columns (0: chion's own)
+        real(wp)           :: tvar_sigma0      = 0.0_wp   ! [K] daily temperature variability at T_mon = T0
+        real(wp)           :: tvar_sigma_slope = 0.0_wp   ! [K K-1] its change with the monthly mean temperature
+        real(wp)           :: tvar_sigma_min   = 0.0_wp   ! [K] its lower bound
+        real(wp)           :: tvar_sigma_max   = 0.0_wp   ! [K] its upper bound (0: no variability)
+        real(wp)           :: tvar_tau         = 3.0_wp   ! [d] e-folding time of the red noise
+        integer            :: tvar_seed        = 1        ! seed of the noise sequence
     end type surface_chion_param_class
 
     type surface_chion_ann_class
@@ -167,6 +183,7 @@ module kryos_chion_host
         type(surface_chion_seb_class)   :: seb
         integer                         :: nx, ny, ncol
         real(wp)                        :: dx       ! [m] grid spacing (0: not a metric grid, no slope)
+        real(wp), allocatable           :: xi(:)    ! [1] the daily temperature noise, one value per step of the year
         logical                         :: itm      ! model = "itm" (ITM-only forcing)
         logical                         :: insol    ! the model takes insolation (itm, bessi)
         logical                         :: bessi    ! model = "bessi" (surface shortwave from the cloud fraction)
@@ -232,6 +249,11 @@ contains
                        sc%par%dt_days, sc%md%nday_year
             stop 1
         end if
+
+        allocate(sc%xi(sc%md%nday_year/sc%par%dt_days))
+        sc%xi = 0.0_wp
+        if (sc%par%tvar_sigma_max > 0.0_wp) &
+            sc%xi = red_noise_monthly(sc%md%nday_year, sc%par%dt_days, sc%par%tvar_tau, sc%par%tvar_seed)
 
         ! Column icol = i + (j-1)*nx: reshape order.
         sc%chn%forc%latitude_deg = reshape(lats, [sc%ncol])
@@ -308,7 +330,7 @@ contains
         real(wp_acc), allocatable :: melt0(:), runoff0(:), refrz0(:), subl0(:)
         real(wp_acc), allocatable :: melt1(:), runoff1(:), refrz1(:), subl1(:)
         real(wp), allocatable :: melt_a(:), runoff_a(:), refrz_a(:), subl_a(:)
-        real(wp), allocatable :: fx(:,:), seb_sum(:,:,:), sw_fac(:)
+        real(wp), allocatable :: fx(:,:), seb_sum(:,:,:), sw_fac(:), sig(:,:)
         integer,  allocatable :: idx(:)
         integer  :: na, i, icol, m, k, day, nday
         real(wp) :: dt, spd, T0, t_d, p_d, sf_d, S_d
@@ -337,6 +359,9 @@ contains
             col = reshape(t2m(:,:,m), [sc%ncol])
             mon(:,m) = col(idx)
         end do
+        ! The daily temperature variability of each column and month, from its monthly mean.
+        sig = min(max(sc%par%tvar_sigma0 + sc%par%tvar_sigma_slope*(mon - T0), sc%par%tvar_sigma_min), &
+                  sc%par%tvar_sigma_max)
         call monthly_to_daily_controls(sc%md, mon, ctl)
         t_ctl = transpose(ctl)
         do m = 1, nmon
@@ -404,10 +429,13 @@ contains
             sc%chn%forc%day_of_year         = real(day, wp)
             sc%chn%forc%solar_longitude_deg = solar_longitude_deg(day, nday)
 
+            m = (day - 1)/nday_mon + 1
+            k = (day - 1)/sc%par%dt_days + 1
             !$omp parallel do default(shared) private(i,icol,t_d,p_d,sf_d,S_d)
             do i = 1, na
                 icol = idx(i)
                 call interp_monthly_to_day(sc%md, t_ctl(:,i), day, t_d)
+                t_d = t_d + sig(i,m)*sc%xi(k)
                 call interp_monthly_to_day(sc%md, p_ctl(:,i), day, p_d)
                 ! The mean-preserving controls can undershoot zero for a peaked field.
                 p_d  = max(p_d, 0.0_wp)
@@ -448,7 +476,6 @@ contains
                 fx(:,8)  = alb_c
                 fx(:,9)  = tsrf_c
                 fx(:,10) = fx(:,10)*spd                                ! [kg m-2 s-1] -> [mm w.e./d]
-                m = (day - 1)/nday_mon + 1
                 !$omp parallel do default(shared) private(i)
                 do i = 1, na
                     seb_sum(i,m,:) = seb_sum(i,m,:) + fx(idx(i),:)*dt
@@ -628,6 +655,13 @@ contains
         if (nml_has_param(filename, group, "wind_slope"))        call nml_read(filename, group, "wind_slope", par%wind_slope)
         if (nml_has_param(filename, group, "wind_slope_length")) &
             call nml_read(filename, group, "wind_slope_length", par%wind_slope_length)
+        if (nml_has_param(filename, group, "tvar_sigma0"))      call nml_read(filename, group, "tvar_sigma0", par%tvar_sigma0)
+        if (nml_has_param(filename, group, "tvar_sigma_slope")) &
+            call nml_read(filename, group, "tvar_sigma_slope", par%tvar_sigma_slope)
+        if (nml_has_param(filename, group, "tvar_sigma_min"))   call nml_read(filename, group, "tvar_sigma_min", par%tvar_sigma_min)
+        if (nml_has_param(filename, group, "tvar_sigma_max"))   call nml_read(filename, group, "tvar_sigma_max", par%tvar_sigma_max)
+        if (nml_has_param(filename, group, "tvar_tau"))         call nml_read(filename, group, "tvar_tau", par%tvar_tau)
+        if (nml_has_param(filename, group, "tvar_seed"))        call nml_read(filename, group, "tvar_seed", par%tvar_seed)
         if (nml_has_param(filename, group, "swe_init_ice")) call nml_read(filename, group, "swe_init_ice", par%swe_init_ice)
     end subroutine surface_chion_par_load
 
@@ -666,6 +700,39 @@ contains
         var = fill
         call scatter(var, val, idx, sc)
     end function unpack_col
+
+    function red_noise_monthly(nday, dt_days, tau, seed) result(xi)
+        ! One year of red noise, a value per step of dt_days: AR(1) with the lag-one correlation
+        ! exp(-dt_days/tau) driven by standard normals (Park-Miller uniforms, Box-Muller), then
+        ! its mean removed in every 30-day month and the whole scaled to unit variance.
+        integer,  intent(in) :: nday, dt_days, seed
+        real(wp), intent(in) :: tau        ! [d]
+        real(wp) :: xi(nday/dt_days)
+
+        integer, parameter :: i8 = selected_int_kind(18)
+        integer(i8) :: x
+        integer  :: n, k, m, nm
+        real(wp) :: r, u1, u2, g
+
+        n = nday/dt_days
+        x = int(mod(abs(seed), 2147483646), i8) + 1_i8
+        r = exp(-real(dt_days, wp)/max(tau, 1.0e-6_wp))
+        do k = 1, n
+            x  = mod(16807_i8*x, 2147483647_i8); u1 = real(x, wp)/2147483647.0_wp
+            x  = mod(16807_i8*x, 2147483647_i8); u2 = real(x, wp)/2147483647.0_wp
+            g  = sqrt(-2.0_wp*log(u1))*cos(8.0_wp*atan(1.0_wp)*u2)
+            if (k == 1) then
+                xi(k) = g
+            else
+                xi(k) = r*xi(k-1) + sqrt(1.0_wp - r*r)*g
+            end if
+        end do
+        nm = max(1, nday_mon/dt_days)
+        do m = 1, n, nm
+            xi(m:min(m+nm-1, n)) = xi(m:min(m+nm-1, n)) - sum(xi(m:min(m+nm-1, n)))/real(min(nm, n-m+1), wp)
+        end do
+        xi = xi/sqrt(max(sum(xi*xi)/real(n, wp), tiny(1.0_wp)))
+    end function red_noise_monthly
 
     function wind_speed_field(par, z_srf, dx) result(u)
         ! U = wind_speed + wind_lapse*max(z,0)[km] + wind_slope*|grad z|[m/km], at least 0; the
