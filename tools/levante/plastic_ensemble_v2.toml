@@ -138,8 +138,7 @@ throttle   = 25                          # 25 members + the weights job + one ot
 [score]
 
 # The reconstructions the members are compared with (plastic_ensemble.jl reference_series): each with its own GIA, and its ice under
-# VILMA2 (toroidal flow) with the members' 3-D Earth (prior mean), its radial mean (Bagge1D) and Gowan's 1-D Earth (gia_refcorr.sh
-# cases, rho_ice 910)
+# VILMA2 (toroidal flow) with the members' 3-D Earth (prior mean) and with Gowan's 1-D Earth (gia_refcorr.sh cases, rho_ice 910)
 [[references]]
 name    = "PaleoMIST"
 product = "Global/GLOBAL-0.5DEG/GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc"
@@ -153,17 +152,11 @@ run  = "$KRYOS_WORK/kryos_data/refcorr/PaleoMIST-3D"
 name = "PaleoMIST-1D"
 run  = "$KRYOS_WORK/kryos_data/refcorr/PaleoMIST-1D"
 [[references]]
-name = "PaleoMIST-Bagge1D"                # the radial mean of the 3-D Earth (plastic_ensemble.jl earth-radial)
-run  = "$KRYOS_WORK/kryos_data/refcorr/PaleoMIST-Bagge1D"
-[[references]]
 name = "GLAC1D-3D"
 run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D-3D"
 [[references]]
 name = "GLAC1D-1D"
 run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D-1D"
-[[references]]
-name = "GLAC1D-Bagge1D"
-run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D-Bagge1D"
 [[references]]
 name = "GLAC1D_nn9927-3D"
 run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D_nn9927-3D"
