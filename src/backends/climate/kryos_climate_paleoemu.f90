@@ -42,6 +42,14 @@ module kryos_climate_paleoemu
     !                       interpolated linearly in depth onto the reference's
     !                       depths (constant above the top and below the bottom
     !                       level), to_ann = to_ref + dto_ann, so_ann = so_ref.
+    !                       With basins (key dto_basins, a basin set of the
+    !                       domain's regions) dto_ann is the mean of each basin's
+    !                       sample (key dto_sample, a regions selection: by
+    !                       default the ocean cells of the shelf-break buffer,
+    !                       FesmData's zone between the continental shelf and the
+    !                       open ocean) in all of its cells: a basin-wide change
+    !                       from the ocean the shelf exchanges with, not the
+    !                       emulator's filled values on the shelf itself.
     !
     ! The factory picks by scope. The emulator works in dp; nothing is narrowed.
     ! Precipitation: the emulator's mm d-1, exported as kg m-2 yr-1 (days of the
@@ -56,6 +64,7 @@ module kryos_climate_paleoemu
     use nml,             only: nml_read, nml_has_param
     use varslice,        only: varslice_class, varslice_init_nml, varslice_update, varslice_end
     use kryos_snap_nml,  only: group_file
+    use regions,         only: regions_basin_ids, regions_select
     use ncio,            only: nc_read, nc_read_attr, nc_size, nc_create, nc_write_dim, nc_write
     use kryos_component, only: init_ctx_t, step_time_t, constraints_t, axis_t, axis_find, NAME_LEN, PATH_LEN, &
                                PASS_INIT, PASS_BOUNDARY, PASS_RESTART, component_write_output
@@ -106,6 +115,11 @@ module kryos_climate_paleoemu
         character(len=NAME_LEN) :: to_ref = "", so_ref = ""     ! var_defs groups of the present-day ocean ("" none)
         real(dp), allocatable :: to0(:,:,:), so0(:,:,:)         ! [x, y, depth] the reference ocean [K], [psu]
         real(dp), allocatable :: W(:,:)                         ! [depth, level] linear-in-depth weights
+        character(len=NAME_LEN) :: dto_basins = ""               ! basin set of the basin means ("" none)
+        character(len=512)      :: dto_sample = "zone:shelf_break_buffer"   ! the cells each basin's mean samples
+        integer, allocatable :: basin(:,:)                      ! [x, y] basin id (0: none)
+        logical, allocatable :: sample(:,:)                     ! [x, y] sampled cells
+        integer, allocatable :: nsample(:)                      ! [basin] sampled cells of each basin
     contains
         procedure :: init          => port_init_
         procedure :: init_state    => port_init_state_
@@ -559,11 +573,24 @@ contains
                             "instance "//trim(self%name)//": both name the present-day ocean (var_defs groups), "// &
                             "or both are empty (no ocean)")
         end if
-        if (len_trim(self%to_ref) == 0) return
+        if (len_trim(self%to_ref) == 0) then
+            if (nml_has_param(ctx%par_file, ctx%instance, "dto_basins")) then
+                call nml_read(ctx%par_file, ctx%instance, "dto_basins", self%dto_basins)
+                if (len_trim(self%dto_basins) > 0) &
+                    call fesm_error("kryos_climate_paleoemu::init", "key `dto_basins` needs the port's ocean", &
+                                    "instance "//trim(self%name)//": set to_ref and so_ref")
+            end if
+            return
+        end if
 
         call ocean_ref_load(self, ctx)
         self%caps%has_ocn = .true.
         self%opt%ocn_lev  = .true.
+        if (nml_has_param(ctx%par_file, ctx%instance, "dto_basins")) &
+            call nml_read(ctx%par_file, ctx%instance, "dto_basins", self%dto_basins)
+        if (nml_has_param(ctx%par_file, ctx%instance, "dto_sample")) &
+            call nml_read(ctx%par_file, ctx%instance, "dto_sample", self%dto_sample)
+        if (len_trim(self%dto_basins) > 0) call basins_init(self, ctx)
         call log_msg(LOG_INFO, "kryos_climate_paleoemu", "port ocean: present day "//trim(self%to_ref)//", "// &
                      trim(self%so_ref)//" on "//to_str(size(self%to0, 3))//" depths "//to_str(self%axes(1)%v(1))//"-"// &
                      to_str(self%axes(1)%v(size(self%axes(1)%v)))//" m; + dto_lev of "//to_str(size(self%W, 2))// &
@@ -618,6 +645,29 @@ contains
             end if
         end do
     end subroutine ocean_ref_load
+
+    subroutine basins_init(self, ctx)
+        ! The basins of dto_basins on the port's grid (regions_basin_ids: the ids of the set over the whole
+        ! domain) and the sampled cells (regions_select of dto_sample); each basin's count of them.
+        class(paleoemu_port_t), intent(inout) :: self
+        type(init_ctx_t),       intent(in)    :: ctx
+
+        character(len=:), allocatable :: txt
+        integer :: b
+
+        self%basin  = regions_basin_ids(ctx%reg, trim(self%dto_basins))
+        self%sample = regions_select(ctx%reg, trim(self%dto_sample))
+        allocate(self%nsample(max(maxval(self%basin), 0)))
+        txt = ""
+        do b = 1, size(self%nsample)
+            self%nsample(b) = count(self%basin == b .and. self%sample)
+            if (count(self%basin == b) > 0 .and. self%nsample(b) == 0) txt = txt//" "//to_str(b)
+        end do
+        call log_msg(LOG_INFO, "kryos_climate_paleoemu", "port ocean: dto_ann the basin means of "// &
+                     trim(self%dto_basins)//" ("//to_str(size(self%nsample))//" basins) over `"//trim(self%dto_sample)// &
+                     "` ("//to_str(sum(self%nsample))//" cells); basins without a sample keep their cells' values:"// &
+                     merge(txt, " none", len(txt) > 0), "instance "//trim(self%name))
+    end subroutine basins_init
 
     subroutine ocean_read(self, ctx, group, x, z)
         ! One ocean field of the var_defs group `group` on the port's grid: its annual mean (a monthly
@@ -708,6 +758,7 @@ contains
         allocate(dl(self%nx, self%ny, size(self%W, 2)), dz(self%nx, self%ny, size(self%W, 1)))
         call require_published(self, self%hi_dto_lev, "dto_lev", what)
         call fields_get(self%imports, self%hi_dto_lev, dl, t0=t0, t1=t1)
+        if (allocated(self%basin)) call basin_means(self, dl)
         do j = 1, self%ny
             do i = 1, self%nx
                 dz(i, j, :) = matmul(self%W, dl(i, j, :))
@@ -717,6 +768,25 @@ contains
         call fields_put(self%exports, self%h_to_ann, self%to0 + dz, t1=t1, t0=t0)
         call fields_put(self%exports, self%h_so_ann, self%so0, t1=t1, t0=t0)
     end subroutine ocean_profiles
+
+    subroutine basin_means(self, dl)
+        ! dl [x, y, level] replaced in each basin by the mean over its sampled cells, level by level (W is
+        ! linear: the same as the mean of dto_ann); basins without a sample and cells without a basin keep
+        ! their values.
+        class(paleoemu_port_t), intent(in)    :: self
+        real(dp),               intent(inout) :: dl(:,:,:)
+
+        real(dp) :: m
+        integer  :: b, k
+
+        do b = 1, size(self%nsample)
+            if (self%nsample(b) == 0) cycle
+            do k = 1, size(dl, 3)
+                m = sum(dl(:, :, k), mask=self%basin == b .and. self%sample)/real(self%nsample(b), dp)
+                where (self%basin == b) dl(:, :, k) = m
+            end do
+        end do
+    end subroutine basin_means
 
     subroutine port_restart_write_(self, dir, t)
         ! Stateless: constraints restart = .false., so the core never calls this.

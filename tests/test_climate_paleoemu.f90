@@ -18,7 +18,9 @@ program test_climate_paleoemu
     !   * the port with a present-day ocean (to_ref, so_ref: groups read from a file on its grid) declares
     !     dto_lev on the global part's axis `level` (from ctx%axes, as domain_create passes it) and exports
     !     set A on the file's depths: to_ann = to_ref + W dto_lev (W linear in depth, constant beyond the
-    !     levels), so_ann = so_ref; dto_lev = 0 gives to_ann = to_ref.
+    !     levels), so_ann = so_ref; dto_lev = 0 gives to_ann = to_ref;
+    !   * with dto_basins: in each basin the mean over its sample (default zone:shelf_break_buffer) of the
+    !     regions on the port's grid; a basin without a sample keeps its cells' values.
     ! Needs the emulator file in $PALEOEMU_FILE (PaleoEmulator scripts/06_emulator.jl); skipped without.
     ! With paleoemu=0 the test is not built (test_skip in config/common.mk).
 
@@ -32,6 +34,7 @@ program test_climate_paleoemu
     use kryos_climate_paleoemu, only: paleoemu_climate_t, paleoemu_port_t, ocean_fill
     use kryos_component, only: axis_find, axes_equal
     use insolation,      only: insol_class, insol_init, orbit_pars_class, orbit_pars_at
+    use regions,         only: regions_init, regions_add_layer
     use paleoemu,        only: paleoemu_class, paleoemu_target_class, paleoemu_init, paleoemu_set_reference, &
                                paleoemu_update, paleoemu_target_init, paleoemu_downscale, &
                                paleoemu_bias_init, paleoemu_bias_weight, paleoemu_target_bilinear
@@ -201,6 +204,8 @@ contains
                        ' reference = "'//REF//'"', ' scale_dtas = 1.5', ' bias = "'//BIAS//'"', ' bias_scale = 0.5', &
                        ' beta_adj = 0.05', ' scale_dto = 1.5', ' dto_nsd = 1.0', "/", &
                        "&clim_port_ocn", ' backend = "paleoemu"', ' to_ref = "test_to"', ' so_ref = "test_so"', "/", &
+                       "&clim_port_bas", ' backend = "paleoemu"', ' to_ref = "test_to"', ' so_ref = "test_so"', &
+                       ' dto_basins = "tb"', "/", &
                        "&test_to", ' filename = "'//OCN//'"', ' name = "to"', ' units = "degC" "K"', &
                        ' scaling = 1.0 273.15', ' time = 0 0 0 0 1', "/", &
                        "&test_so", ' filename = "'//OCN//'"', ' name = "so"', ' units = "PSU" "PSU"', &
@@ -504,7 +509,55 @@ contains
         type is (paleoemu_port_t)
             call check(all(b == c%to0), "  dto_lev = 0: to_ann = to_ref")
         end select
+        call port_basins_test(pc)
     end subroutine port_ocean_test
+
+    subroutine port_basins_test(pc0)
+        ! Basins tb: 1 in x <= 5, 2 in x > 5, none in row y = 8; the shelf-break buffer (zone 1) in
+        ! cells (2:3, 2:4) of basin 1 only: basin 1 takes their mean, basin 2 and row 8 keep their values.
+        type(init_ctx_t), intent(in) :: pc0
+        type(init_ctx_t) :: pc
+        type(census_t)   :: cs
+        type(climate_slot_t) :: po
+        integer  :: tb(10, 8), zone(10, 8), i, l
+        real(dp) :: dl(10, 8, 8), a3(10, 8, 12), a2(10, 8), b(10, 8, 5), m(8)
+
+        tb = 1;  tb(6:, :) = 2;  tb(:, 8) = 0
+        zone = 2;  zone(2:3, 2:4) = 1
+        pc = pc0
+        pc%instance = "clim_port_bas"
+        pc%axes = glob%c%axes
+        call regions_init(pc%reg, nx=10, ny=8)
+        call regions_add_layer(pc%reg, "tb", tb)
+        call regions_add_layer(pc%reg, "zone", zone, codes=[0, 1, 2, 3], &
+                               names=[character(len=24) :: "open_ocean", "shelf_break_buffer", "continental_shelf", "land"])
+        call climate_create(po, pc, cs)
+        call climate_init(po, pc)
+        do l = 1, 8
+            dl(:, :, l) = 0.5_dp*l + 0.01_dp*spread([(real(i, dp), i = 1, 10)], 2, 8) + 0.003_dp*spread([(real(i, dp), i = 1, 8)], 1, 10)
+        end do
+        a3 = 270.0_dp;  a2 = 0.0_dp
+        call fields_put(po%c%imports, po%c%hi_tas, a3, t1=5.0_dp, t0=4.0_dp)
+        call fields_put(po%c%imports, po%c%hi_pr, a3, t1=5.0_dp, t0=4.0_dp)
+        call fields_put(po%c%imports, po%c%hi_lapse, a3, t1=5.0_dp, t0=4.0_dp)
+        call fields_put(po%c%imports, po%c%hi_z_srf_clim, a2, t1=5.0_dp, t0=4.0_dp)
+        call fields_put(po%c%imports, po%c%hi_beta_p, a2, t1=5.0_dp, t0=4.0_dp)
+        call fields_put(po%c%imports, po%c%hi_dto_lev, dl, t1=5.0_dp, t0=4.0_dp)
+        call climate_update(po, st(4.0_dp, 5.0_dp))
+        call fields_get(po%c%exports, po%c%h_dto_ann, b)
+        do l = 1, 8
+            m(l) = sum(dl(2:3, 2:4, l))/6.0_dp
+        end do
+        select type (c => po%c)
+        type is (paleoemu_port_t)
+            call check(all(abs(b(3, 5, :) - matmul(c%W, m)) < 1.0e-12_dp) .and. &
+                       all(abs(b(1, 1, :) - matmul(c%W, m)) < 1.0e-12_dp), &
+                       "basins: basin 1 the mean of its shelf-break cells, in all its cells")
+            call check(all(abs(b(7, 3, :) - matmul(c%W, dl(7, 3, :))) < 1.0e-12_dp) .and. &
+                       all(abs(b(2, 8, :) - matmul(c%W, dl(2, 8, :))) < 1.0e-12_dp), &
+                       "basins: basin 2 (no sample) and the cells of no basin keep their values")
+        end select
+    end subroutine port_basins_test
 
     function field3(g, name) result(a)
         type(climate_slot_t), intent(in) :: g
