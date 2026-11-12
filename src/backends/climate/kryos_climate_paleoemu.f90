@@ -11,7 +11,13 @@ module kryos_climate_paleoemu
     !                       orbit from the forcing (orbit_ecc, orbit_obl,
     !                       orbit_per: the run's orbit, also the surface's
     !                       insolation; without them the emulator's own table at
-    !                       the evaluation time). Each update binds the geometry to the
+    !                       the evaluation time). The emulator's slow filters of CO2
+    !                       and ice volume start at the first update (a cold start)
+    !                       as key filter_start says: "training" (default) from the
+    !                       run's inputs plus the lag CESM-3Ma's trajectory had then
+    !                       (its deglacial memory at 0 ka; equilibrium outside 0-3
+    !                       Ma), "equilibrium" at the run's inputs (PaleoEmulator's
+    !                       paleoemu_init). Each update binds the geometry to the
     !                       emulator's ice grid, steps the emulator and applies its
     !                       anomalies to the pre-industrial reference climate on
     !                       the grid (key `reference`): tas at the reference surface
@@ -97,6 +103,7 @@ module kryos_climate_paleoemu
         real(dp) :: bias_scale = 1.0_dp                    ! the bias correction times this (and the ice-volume weight)
         real(dp) :: scale_dto = 1.0_dp                     ! the ocean: scale_dto dto + dto_nsd dto_sd
         real(dp) :: dto_nsd   = 0.0_dp
+        character(len=16) :: filter_start = "training"     ! the emulator's filters at a cold start: training, equilibrium
         real(dp) :: day_year = 365.0_dp                    ! days of the run's year (pr: mm d-1 -> kg m-2 yr-1)
         type(paleoemu_class)        :: emu
         type(paleoemu_target_class) :: tgt                 ! the instance grid with its reference climate
@@ -176,6 +183,12 @@ contains
             call nml_read(ctx%par_file, ctx%instance, "scale_dto", self%scale_dto)
         if (nml_has_param(ctx%par_file, ctx%instance, "dto_nsd")) &
             call nml_read(ctx%par_file, ctx%instance, "dto_nsd", self%dto_nsd)
+        if (nml_has_param(ctx%par_file, ctx%instance, "filter_start")) &
+            call nml_read(ctx%par_file, ctx%instance, "filter_start", self%filter_start)
+        if (trim(self%filter_start) /= "training" .and. trim(self%filter_start) /= "equilibrium") then
+            call fesm_error(proc, "filter_start must be training or equilibrium", &
+                            "instance "//trim(self%name)//": filter_start = "//trim(self%filter_start))
+        end if
         grid_name = ""
         if (nml_has_param(ctx%par_file, ctx%instance, "grid")) call nml_read(ctx%par_file, ctx%instance, "grid", grid_name)
         if (len_trim(self%file) == 0 .or. len_trim(self%reference) == 0 .or. len_trim(grid_name) == 0) then
@@ -194,7 +207,7 @@ contains
         self%nx   = self%grid_obj%G%nx
         self%ny   = self%grid_obj%G%ny
 
-        call paleoemu_init(self%emu, trim(self%file))
+        call paleoemu_init(self%emu, trim(self%file), filter_start=trim(self%filter_start))
         if (len_trim(self%bias) > 0) call paleoemu_bias_init(self%emu, trim(self%bias))
         call reference_load(self)
         call bins_init(self)
@@ -211,7 +224,7 @@ contains
                      to_str(self%beta_p)//", beta_adj "//to_str(self%beta_adj)//", scale_dtas "//to_str(self%scale_dtas)//", bias "//trim(bias_txt)// &
                      ", ocean: "//to_str(self%emu%nlev)//" levels "//to_str(self%emu%ocean_depth(1))//"-"// &
                      to_str(self%emu%ocean_depth(self%emu%nlev))//" m, scale_dto "//to_str(self%scale_dto)//", dto_nsd "// &
-                     to_str(self%dto_nsd), "instance "//trim(self%name))
+                     to_str(self%dto_nsd)//", filter_start "//trim(self%filter_start), "instance "//trim(self%name))
     end subroutine global_init_
 
     subroutine level_axis(self)
@@ -316,8 +329,8 @@ contains
 
     subroutine global_init_state_(self, st, pass)
         ! PASS_INIT: the reference climate (no anomaly). PASS_BOUNDARY (cold start): the reference ice from
-        ! the core, the first update (its filters in equilibrium) on the geometry the core put (the background
-        ! at t0). PASS_RESTART: the reference again, then the filter state of the bundle; the exports stand.
+        ! the core, the first update (its filters started as filter_start says) on the geometry the core put
+        ! (the background at t0). PASS_RESTART: the reference again, then the filter state of the bundle; the exports stand.
         class(paleoemu_climate_t), intent(inout) :: self
         type(step_time_t),         intent(in)    :: st
         integer,                   intent(in)    :: pass

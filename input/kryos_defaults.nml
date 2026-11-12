@@ -305,6 +305,10 @@
     bias_scale = 1.0                           ! global: the bias correction times this
     scale_dto  = 1.0                           ! global: the ocean temperature change dto_lev = scale_dto dto + dto_nsd dto_sd
     dto_nsd    = 0.0                           ! global: (the emulator's annual ocean T change and its standard deviation)
+    filter_start = "training"                  ! global: the emulator's slow filters (CO2, ice volume) at a cold start:
+                                               ! "training" = the run's inputs + the lag of CESM-3Ma's trajectory at that
+                                               ! time (its deglacial memory at 0 ka: anomalies ~0 at present day;
+                                               ! equilibrium outside 0-3 Ma), "equilibrium" = the run's inputs
     out_emu   = "none"                         ! global: schedule of <instance>_emu.nc (the emulator on the CESM grid)
     to_ref    = ""                             ! port: the present-day ocean temperature on the port's grid, a var_defs group
                                                ! (as a snapshot's `to`, e.g. ismip7_to); "" = no ocean (no set A)

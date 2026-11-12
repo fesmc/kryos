@@ -15,7 +15,8 @@ program test_climate_paleoemu
     !     (the ocean cells unchanged) and interpolated per level (paleoemu_target_bilinear), on the axis `level`;
     !   * present day: a cold start at 0 ka with the reference ice and CESM-3Ma's CO2 then (train_co2, 280.4
     !     ppm; the emulator's filters start from its training trajectory, with CESM-3Ma's deglacial memory):
-    !     dto_lev ~ 0;
+    !     dto_lev ~ 0; with filter_start = "equilibrium" (no memory) dto_lev is the emulator's offset, as paleoemu
+    !     directly with the same filter start;
     !   * output: the default writer's stream 2D holds dto_lev on lon, lat and the axis level (the global part)
     !     and to_ann, dto_ann on xc, yc and the axis depth (the port), to their table precision;
     !   * restart round trip: write, a new instance at the reference, read, PASS_RESTART, continue: bitwise;
@@ -62,8 +63,8 @@ program test_climate_paleoemu
     type(paleoemu_class) :: emu
     type(paleoemu_target_class) :: tgt
     type(insol_class)     :: ois
-    type(climate_slot_t)  :: glob3, glob4, glob5
-    type(census_t)        :: census3, census4, census5
+    type(climate_slot_t)  :: glob3, glob4, glob5, glob6
+    type(census_t)        :: census3, census4, census5, census6
     integer,  allocatable :: bin(:,:)
     real(dp), allocatable :: Hr(:,:), zbr(:,:), zsr(:,:), lon(:,:), lat(:,:), tas_ref(:,:,:), pr_ref(:,:,:), zs_ref(:,:)
     real(dp) :: t
@@ -182,11 +183,19 @@ program test_climate_paleoemu
     ctx%instance = "clim_glob"
     call climate_create(glob5, ctx, census5)
     call climate_init(glob5, ctx)
-    call drive_pd(glob5)
+    call drive_pd(glob5, "training")
     call check(maxval(abs(fieldl(glob5))) < 1.0e-4_dp, "present day: dto_lev ~ 0 (max |dto_lev| "// &
                trim(r2s(maxval(abs(fieldl(glob5)))))//" K)")
     call compare_ocean(glob5, "present day", 1.0_dp, 0.0_dp)
     call climate_end(glob5)
+    ctx%instance = "clim_eq"
+    call climate_create(glob6, ctx, census6)
+    call climate_init(glob6, ctx)
+    call drive_pd(glob6, "equilibrium")
+    call compare_ocean(glob6, "present day, filter_start equilibrium", 1.0_dp, 0.0_dp)
+    call check(maxval(abs(fieldl(glob6))) > 0.1_dp, "filter_start equilibrium: dto_lev at present day is the emulator's "// &
+               "offset (max |dto_lev| "//trim(r2s(maxval(abs(fieldl(glob6)))))//" K)")
+    call climate_end(glob6)
 
     ! ---- the port --------------------------------------------------------------------------------
     call port_test()
@@ -236,11 +245,12 @@ contains
                    maxval(abs(y - e)) <= 1.0e-3_dp, "  to_ann, dto_ann on xc, yc, depth as exported (to 1e-3 K)")
     end subroutine output_port
 
-    subroutine drive_pd(g)
+    subroutine drive_pd(g, mode)
         ! Present-day inputs at 0 ka (PASS_BOUNDARY: the filters' first update): the reference ice, CESM-3Ma's
         ! CO2 at 0 ka (the emulator file's train_co2), no orbit imports (the emulator's own table); the direct
-        ! emulator the same.
+        ! emulator the same, with the filter start mode.
         type(climate_slot_t), intent(inout) :: g
+        character(len=*),     intent(in)    :: mode
         real(dp), allocatable :: age(:), co2(:)
         real(dp) :: co2_0
         allocate(age(nc_size(trim(efile), "train_time")), co2(nc_size(trim(efile), "train_time")))
@@ -251,7 +261,7 @@ contains
         call put_geometry(g, Hr, zbr, zsr, ref=.false., t1=0.0_dp)
         call fields_put(g%c%imports, g%c%hi_coef(1), co2_0, t1=0.0_dp)
         call climate_init_state(g, st(0.0_dp, 0.0_dp), PASS_BOUNDARY)
-        call paleoemu_init(emu, trim(efile))
+        call paleoemu_init(emu, trim(efile), filter_start=mode)
         call paleoemu_set_reference(emu, Hr, zbr, zsr)
         call paleoemu_update(emu, 0.0_dp, co2_0, Hr, zbr, zsr)
     end subroutine drive_pd
@@ -276,6 +286,8 @@ contains
                        "&clim_scl", ' backend = "paleoemu"', ' grid = "'//GRID//'"', ' file = "'//trim(efile)//'"', &
                        ' reference = "'//REF//'"', ' scale_dtas = 1.5', ' bias = "'//BIAS//'"', ' bias_scale = 0.5', &
                        ' beta_adj = 0.05', ' scale_dto = 1.5', ' dto_nsd = 1.0', "/", &
+                       "&clim_eq", ' backend = "paleoemu"', ' grid = "'//GRID//'"', ' file = "'//trim(efile)//'"', &
+                       ' reference = "'//REF//'"', ' filter_start = "equilibrium"', "/", &
                        "&clim_port_ocn", ' backend = "paleoemu"', ' to_ref = "test_to"', ' so_ref = "test_so"', "/", &
                        "&clim_port_bas", ' backend = "paleoemu"', ' to_ref = "test_to"', ' so_ref = "test_so"', &
                        ' dto_basins = "tb"', "/", &
