@@ -112,7 +112,7 @@ Two Earths are in use; both are `earth = "PREM"` at `lmax = 170` with rotation.
   onto the Gauss grid, linear in radius onto the FE nodes, clamped to
   `visc_log10_min`, `visc_log10_max`) replaces the radial viscosity of every Maxwell
   layer; the elastic lithosphere (80 km) and the fluid core are kept. A layer whose
-  lateral spread is below `visc3d_tol` runs 1-D on its lateral mean.
+  lateral spread is below `visc_3d_tol` runs 1-D on its lateral mean.
 
 The `&vilma` groups of the two par files, `par/kryos_NH-ANT_plastic_vilma2_b1.nml`
 (1-D) and `par/kryos_NH-ANT_plastic_vilma2.nml` (3-D):
@@ -120,7 +120,7 @@ The `&vilma` groups of the two par files, `par/kryos_NH-ANT_plastic_vilma2_b1.nm
 ```fortran
 &vilma                          ! 1-D: Gowan et al. (2021), as B1
     lmax              = 170
-    rotation          = .true.
+    l_rotation          = .true.
     earth             = "PREM"
     n_layer           = 12
     r_top             = 6371.0e3, 6291.0e3, 6251.0e3, 6151.0e3, 5971.0e3, 5771.0e3, 5701.0e3, 5600.0e3, 4943.0e3, 4287.0e3, 3630.0e3, 3480.0e3
@@ -198,7 +198,7 @@ no time cap: it relaxes to the same `equil_rate_tol`, in passes of 200 yr growin
 
 ## Rotation
 
-`rotation = .true.` (the default) adds the rotational feedback (true polar wander) to
+`l_rotation = .true.` (the default) adds the rotational feedback (true polar wander) to
 the sea-level equation: `rotation_k_s` (≤ 0: the model's own fluid limit) and
 `rotation_c_minus_a` (C − A [kg m²]). Gowan et al. (2021) included rotation as well;
 `.false.` is for the non-rotating benchmarks.

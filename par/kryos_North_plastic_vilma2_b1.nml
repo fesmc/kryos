@@ -71,7 +71,7 @@
 &vilma
     ! Gowan et al. (2021) as B1 (tools/levante/pm_run.sh EARTH=1d, LMAX=170): overrides of input/vilma_defaults.nml.
     lmax              = 170
-    rotation          = .true.
+    l_rotation          = .true.
     earth             = "PREM"
     n_layer           = 12
     r_top             = 6371.0e3, 6291.0e3, 6251.0e3, 6151.0e3, 5971.0e3, 5771.0e3, 5701.0e3, 5600.0e3, 4943.0e3, 4287.0e3, 3630.0e3, 3480.0e3

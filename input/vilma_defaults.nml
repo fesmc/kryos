@@ -14,8 +14,8 @@
     ! A host model (CLIMBER-X) does not read this file at all: it fills the
     ! record in memory, relying on the in-code type defaults plus its own &vilma.
     !
-    ! Δt fields (dt_*) are in YEARS here and converted to SI seconds on load;
-    ! everything else is SI.
+    ! Δt fields (dt_*) and equil_time_max are in YEARS here and converted to SI
+    ! seconds on load; equil_rate_tol is in m/yr; everything else is SI.
     ! ====================================================================
 
     ! --- solid-earth solver backend -----------------------------------
@@ -118,7 +118,7 @@
     cfl        = 1.0           ! explicit (fe) sub-step Maxwell-number ceiling M=mu*dt/eta, in (0, 2)
 
     ! --- rotational feedback (vilma_rotation) ----------------------------
-    rotation = .true.          ! TPW feedback: on for real runs; set .false. for
+    l_rotation = .true.        ! TPW feedback: on for real runs; set .false. for
                                ! the non-rotating community benchmarks
     rotation_k_s = 0.0         ! secular Love number k_s; <= 0 = the model's own
                                ! fluid limit k^T_f (Spada 2011 eq. 11)
@@ -164,10 +164,10 @@
     ! The viscosity, sigma and shift fields must be free of NaN, Inf and fill values: the run stops on one.
     visc_log10_min = 19.5    ! floor on log10(eta) after read + perturbation [dex]
     visc_log10_max = 30.0    ! ceiling on log10(eta) after read + perturbation [dex]
-    visc3d_lid_depth    = 0.0   ! [m] 0 = off. Maxwell elements lying wholly above this depth whose
-    visc3d_lid_log10max = 22.0  ! log10(eta) exceeds visc3d_lid_log10max are set to visc_log10_max
-                                ! (effectively elastic): they relax over Myr, so no spin-up equilibrates them
-    visc3d_tol     = 1.0e-3  ! lateral log10(eta) spread [dex] above which an element is genuinely
+    visc_3d_lid_depth    = 0.0   ! [m] 0 = off. Maxwell elements lying wholly above this depth whose
+    visc_3d_lid_log10max = 22.0  ! log10(eta) exceeds visc_3d_lid_log10max are set to visc_log10_max
+                                 ! (effectively elastic): they relax over Myr, so no spin-up equilibrates them
+    visc_3d_tol    = 1.0e-3  ! lateral log10(eta) spread [dex] above which an element is genuinely
                              ! 3-D (pays the dyadic SHT round-trip); higher => fewer 3-D elements,
                              ! cheaper memory advance, at the cost of approximating weak lateral structure
     l_toroidal     = .true.  ! carry the toroidal field once an element is genuinely 3-D. .false. is ~1.5x
@@ -184,6 +184,7 @@
     vilma_v1_grid_file    = "input/vilma/vilma_grid.nc" ! lon/lat axes of VILMA1's own grid
     vilma_v1_visc_1d_file = "visko.inp"               ! 1-D radial viscosity, rel. to vilma_v1_input_dir
     vilma_v1_visc_3d_file = "visc3d_Bagge2021.nc"     ! 3-D viscosity NetCDF, rel. to vilma_v1_input_dir
+                                                   ! (read only when l_visc_3d = .true.)
     vilma_v1_l_prem       = 1                         ! 1: VILMA1's polynomial PREM (densi.inp gives only
                                                    !    boundaries + element sizes). 0: use densi.inp's
                                                    !    rho/mu, e.g. one written from VILMA2's own
@@ -191,5 +192,4 @@
     vilma_v1_nsub         = 1                         ! VILMA1 sub-steps per coupling interval; raise
                                                    ! until dt/nsub < VILMA1's minimum Maxwell time
                                                    ! (it prints both and aborts if too large)
-                                                   ! (read only when l_visc_3d = .true.)
 /
