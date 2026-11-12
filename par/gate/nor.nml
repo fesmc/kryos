@@ -406,7 +406,7 @@
     semix_sensible_exchange_factor     = 1.5             ! [1]  Sensible-heat exchange factor (PD Greenland vs MAR ice and LGM fit)
     semix_stable_coefficient           = 40.0            ! [1]  b in the stable damping 1/(1 + b*Ri) (PD Greenland vs MAR ice and LGM fit)
     semix_latent_exchange_factor       = 1.0             ! [1]  Latent-heat exchange factor
-    alpha_dry                          = 0.83            ! [1] Dry snow albedo (upper bound; PD Greenland vs MAR, net SW)
+    alpha_dry                          = 0.85            ! [1] Dry snow albedo (upper bound; both domains: PD Antarctica melt vs RACMO, Greenland LGM fit unchanged)
     alpha_wet                          = 0.70            ! [1] Wet snow albedo (lower bound)
     alpha_ice                          = 0.55            ! [1] Bare ice albedo (PD Greenland vs MAR ice and LGM fit)
     max_lwc_albedo                     = 0.10            ! [1] LWC at which the albedo reaches alpha_wet

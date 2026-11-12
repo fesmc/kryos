@@ -466,7 +466,7 @@
     semix_sensible_exchange_factor     = 1.5             ! [1]  Sensible-heat exchange factor (PD Greenland vs MAR ice and LGM fit)
     semix_stable_coefficient           = 40.0            ! [1]  b in the stable damping 1/(1 + b*Ri) (PD Greenland vs MAR ice and LGM fit)
     semix_latent_exchange_factor       = 1.0             ! [1]  Latent-heat exchange factor
-    alpha_dry                          = 0.83            ! [1] Dry snow albedo (upper bound; PD Greenland vs MAR, net SW)
+    alpha_dry                          = 0.85            ! [1] Dry snow albedo (upper bound; both domains: PD Antarctica melt vs RACMO, Greenland LGM fit unchanged)
     alpha_wet                          = 0.70            ! [1] Wet snow albedo (lower bound)
     alpha_ice                          = 0.55            ! [1] Bare ice albedo (PD Greenland vs MAR ice and LGM fit)
     max_lwc_albedo                     = 0.10            ! [1] LWC at which the albedo reaches alpha_wet
@@ -1303,7 +1303,7 @@
     wind_lapse = 0.20    ! [m s-1 km-1] Its change with the surface elevation
     wind_slope = 0.0     ! [m s-1 per m/km] Its change with the surface slope (katabatic)
     wind_slope_length = 50.0  ! [km] Baseline of the slope
-    rel_hum    = 0.9     ! [1] Constant relative humidity (bessi; Antarctica: the interior's sublimation against RACMO)
+    rel_hum    = 0.8     ! [1] Constant relative humidity (bessi; Antarctica: melt against RACMO with alpha_dry 0.85)
     tvar_sigma0       = 2.0    ! [K] Daily temperature variability at T_mon = 0 C (ERA5 1981-2010, Greenland and Antarctic ice)
     tvar_sigma_slope  = -0.14  ! [K K-1] Its change with the monthly mean temperature (Seguinot and Rogozhina 2014)
     tvar_sigma_min    = 2.0    ! [K] Lower bound
@@ -1352,7 +1352,7 @@
     semix_sensible_exchange_factor     = 1.5             ! [1]  Sensible-heat exchange factor (Greenland's set)
     semix_stable_coefficient           = 40.0            ! [1]  b in the stable damping 1/(1 + b*Ri) (Greenland's set)
     semix_latent_exchange_factor       = 1.0             ! [1]  Latent-heat exchange factor
-    alpha_dry                          = 0.83            ! [1] Dry snow albedo (upper bound; Greenland's set)
+    alpha_dry                          = 0.85            ! [1] Dry snow albedo (upper bound; both domains: PD Antarctica melt vs RACMO, Greenland LGM fit unchanged)
     alpha_wet                          = 0.70            ! [1] Wet snow albedo (lower bound)
     alpha_ice                          = 0.55            ! [1] Bare ice albedo (Greenland's set)
     max_lwc_albedo                     = 0.10            ! [1] LWC at which the albedo reaches alpha_wet
