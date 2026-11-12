@@ -49,6 +49,11 @@ module kryos_chion_host
     ! longwave is chion's own (longwave_scheme; default "cloud_proxy", whose
     ! cloudiness 1 - SWdn/(TOA*tau_clear) is elevation-only here, SWdn/TOA =
     ! trans_sw). PDD takes the air temperature and the snowfall/rainfall only.
+    !
+    ! Optionally (BESSI, surface_chion_seb_enable) the monthly means of the
+    ! last annual cycle of BESSI's surface energy balance, albedo, surface
+    ! temperature and melt (sc%seb): chion_get_surface_fluxes after every
+    ! step, by the month of the step's first day.
 
     use nml,        only : nml_read, nml_has_param
     use ncio,       only : nc_open, nc_close, nc_write, nc_read, nc_exists_var
@@ -59,6 +64,7 @@ module kryos_chion_host
     use chion,      only : wp, dp, wp_acc, MV, chion_class, chion_init, chion_init_state, &
                            chion_update, chion_set_active_mask, &
                            chion_get_surface_flux_totals, chion_get_surface, &
+                           chion_get_surface_fluxes, &
                            chion_restart_write, chion_restart_read, &
                            monthly_to_daily_class, monthly_to_daily_init, &
                            monthly_to_daily_controls, interp_monthly_to_day, &
@@ -104,6 +110,23 @@ module kryos_chion_host
         real(wp), allocatable :: H_snow(:,:)    ! [mm w.e.] end-of-year snowpack (itm, pdd)
     end type surface_chion_ann_class
 
+    ! The monthly surface energy balance (sc%seb%f(:,:,month,k)): BESSI's terms
+    ! [W m-2], positive into the surface, the albedo, the surface temperature
+    ! and the melt rate.
+    integer, parameter, public :: NSEB = 10
+    character(len=4), parameter, public :: SEB_NAME(NSEB) = &
+        [character(len=4) :: "swd", "swn", "lwd", "lwn", "shf", "lhf", "prh", "alb", "tsrf", "melt"]
+    character(len=10), parameter, public :: SEB_UNITS(NSEB) = &
+        [character(len=10) :: "W m-2", "W m-2", "W m-2", "W m-2", "W m-2", "W m-2", "W m-2", "1", "K", "mm w.e./d"]
+    character(len=40), parameter, public :: SEB_LONG(NSEB) = [character(len=40) :: &
+        "Shortwave down", "Net shortwave", "Longwave down", "Net longwave", "Sensible heat flux", &
+        "Turbulent latent heat flux", "Heat of the precipitation", "Surface albedo", "Surface temperature", "Melt"]
+
+    type surface_chion_seb_class
+        logical               :: on = .false.
+        real(wp), allocatable :: f(:,:,:,:)            ! (nx,ny,nmon,NSEB), MV off the active columns
+    end type surface_chion_seb_class
+
     type surface_chion_insol_class
         ! Daily TOA insolation on a regular latitude table, rebuilt only when
         ! the orbital elements change, and the fixed linear-interpolation
@@ -123,6 +146,7 @@ module kryos_chion_host
         type(monthly_to_daily_class)    :: md
         type(surface_chion_insol_class) :: ins
         type(surface_chion_ann_class)   :: ann
+        type(surface_chion_seb_class)   :: seb
         integer                         :: nx, ny, ncol
         logical                         :: itm      ! model = "itm" (ITM-only forcing)
         logical                         :: insol    ! the model takes insolation (itm, bessi)
@@ -132,6 +156,7 @@ module kryos_chion_host
     public :: surface_chion_class
     public :: surface_chion_init
     public :: surface_chion_spinup
+    public :: surface_chion_seb_enable
     public :: surface_chion_update
     public :: surface_chion_restart_write
     public :: surface_chion_restart_read
@@ -198,6 +223,21 @@ contains
         call ann_alloc(sc%ann, sc%nx, sc%ny)
     end subroutine surface_chion_init
 
+    subroutine surface_chion_seb_enable(sc)
+        ! Keep the monthly surface energy balance of every annual cycle (BESSI only: the
+        ! other models have none).
+        type(surface_chion_class), intent(inout) :: sc
+
+        if (trim(sc%chn%par%model) /= "bessi") then
+            write(*,*) "surface_chion_seb_enable:: error: the surface energy balance is BESSI's; model = "// &
+                       trim(sc%chn%par%model)
+            stop 1
+        end if
+        sc%seb%on = .true.
+        allocate(sc%seb%f(sc%nx, sc%ny, nmon, NSEB))
+        sc%seb%f = MV
+    end subroutine surface_chion_seb_enable
+
     subroutine surface_chion_spinup(sc, t2m, pr, z_srf, z_bed, H_ice, z_sl, orbit)
         ! Cold-start snowpack: time_equil annual cycles under the initial climate
         ! and geometry (smbpal's 100-yr ITM equilibration). With swe_init_ice > 0
@@ -243,8 +283,9 @@ contains
         real(wp_acc), allocatable :: melt0(:), runoff0(:), refrz0(:), subl0(:)
         real(wp_acc), allocatable :: melt1(:), runoff1(:), refrz1(:), subl1(:)
         real(wp), allocatable :: melt_a(:), runoff_a(:), refrz_a(:), subl_a(:)
+        real(wp), allocatable :: fx(:,:), seb_sum(:,:,:)
         integer,  allocatable :: idx(:)
-        integer  :: na, i, icol, m, day, nday
+        integer  :: na, i, icol, m, k, day, nday
         real(wp) :: dt, spd, T0, t_d, p_d, sf_d, S_d
 
         nday = sc%md%nday_year
@@ -318,6 +359,10 @@ contains
         t_sum = 0.0_wp;  pr_sum = 0.0_wp;  sf_sum = 0.0_wp;  S_sum = 0.0_wp
         ts_sum = 0.0_wp; alb_sum = 0.0_wp
         allocate(tsrf_c(sc%ncol), alb_c(sc%ncol))
+        if (sc%seb%on) then
+            allocate(fx(sc%ncol, NSEB), seb_sum(na, nmon, NSEB))
+            seb_sum = 0.0_wp
+        end if
 
         do day = 1, nday, sc%par%dt_days
             sc%chn%forc%day_of_year         = real(day, wp)
@@ -360,7 +405,29 @@ contains
                 alb_sum(i) = alb_sum(i) + alb_c(icol)*dt
             end do
             !$omp end parallel do
+
+            if (sc%seb%on) then
+                call chion_get_surface_fluxes(sc%chn, melt=fx(:,10), sw_down=fx(:,1), sw_net=fx(:,2), &
+                                              lw_down=fx(:,3), lw_net=fx(:,4), sh=fx(:,5), lh=fx(:,6), prh=fx(:,7))
+                fx(:,8)  = alb_c
+                fx(:,9)  = tsrf_c
+                fx(:,10) = fx(:,10)*spd                                ! [kg m-2 s-1] -> [mm w.e./d]
+                m = (day - 1)/nday_mon + 1
+                !$omp parallel do default(shared) private(i)
+                do i = 1, na
+                    seb_sum(i,m,:) = seb_sum(i,m,:) + fx(idx(i),:)*dt
+                end do
+                !$omp end parallel do
+            end if
         end do
+
+        if (sc%seb%on) then
+            do k = 1, NSEB
+                do m = 1, nmon
+                    sc%seb%f(:,:,m,k) = unpack_col(seb_sum(:,m,k)/real(nday_mon, wp), idx, sc, MV)
+                end do
+            end do
+        end if
 
         call chion_get_surface_flux_totals(sc%chn, melt=melt1, runoff=runoff1, refrz=refrz1, subl=subl1)
 
@@ -682,7 +749,7 @@ module kryos_surface_chion
     use fesm_units,      only: units_conv
     use ncio,            only: nc_close
     use nml,             only: nml_read, nml_has_param
-    use kryos_outfile,   only: outfile_dims_2d, outfile_open, outfile_var2d
+    use kryos_outfile,   only: outfile_dims_2d, outfile_open, outfile_var2d, outfile_axis, outfile_var3d
     use kryos_component, only: init_ctx_t, step_time_t, constraints_t, component_write_output, &
                                sec_year_check, NAME_LEN, PASS_BOUNDARY, PASS_FINAL
     use kryos_surface,   only: surface_t, surface_opt_t
@@ -690,7 +757,8 @@ module kryos_surface_chion
     use insolation,      only: orbit_pars_class, orbit_pars_fixed
     use kryos_chion_host, only: surface_chion_class, surface_chion_init, surface_chion_spinup, &
                                 surface_chion_update, surface_chion_restart_write, &
-                                surface_chion_restart_read
+                                surface_chion_restart_read, surface_chion_seb_enable, &
+                                NSEB, SEB_NAME, SEB_UNITS, SEB_LONG
 
     implicit none
 
@@ -706,6 +774,7 @@ module kryos_surface_chion
         type(surface_chion_class) :: sc               ! chion + its yelmox host
         character(len=NAME_LEN) :: host_group  = "surface_chion"   ! host parameters ([surface_chion])
         character(len=NAME_LEN) :: chion_group = "chion"           ! chion's group
+        logical :: seb = .false.                      ! stream seb on (out_seb): the monthly energy balance
         real(dp) :: pr_scale = 1.0_dp                 ! pr [kg m-2 yr-1] = pr [mm d-1] * pr_scale
         real(cwp), allocatable :: t2m(:,:,:), pr_mmd(:,:,:)        ! narrowed imports (nx,ny,12)
         real(dp),  allocatable :: pr_in(:,:,:)
@@ -749,6 +818,7 @@ contains
                                 group=trim(self%host_group), chion_group=trim(self%chion_group), &
                                 cnst=ctx%cnst)
         self%opt%orbit = self%sc%insol                       ! the forcing's orbit for the insolation
+        if (self%seb) call surface_chion_seb_enable(self%sc)
 
         select case (trim(self%sc%chn%par%restart))
         case ("none", "None", "")
@@ -857,18 +927,34 @@ contains
 
     subroutine chion_write_output_(self, file, t, stream, init)
         ! Stream 2D: the 13 annual fields of surface_chion_write_step
-        ! (kryos_output.f90:326-361), same units and precision. Others: default.
+        ! (kryos_output.f90:326-361), same units and precision. Stream seb:
+        ! BESSI's monthly surface energy balance, albedo, surface temperature
+        ! and melt of the last annual cycle (xc, yc, month). Others: default.
         class(chion_surface_t), intent(inout) :: self
         character(len=*),       intent(in)    :: file, stream
         real(dp),               intent(in)    :: t
         logical,                intent(in)    :: init
 
-        integer :: ncid, n
+        integer :: ncid, n, k, m
 
-        if (trim(stream) /= "2D") then
+        select case (trim(stream))
+        case ("2D")
+        case ("seb")
+            if (init) then
+                call outfile_dims_2d(file, self%xkm, self%ykm, t)
+                call outfile_axis(file, "month", [(real(m, dp), m = 1, NMON)], "month")
+            end if
+            call outfile_open(file, t, ncid, n)
+            do k = 1, NSEB
+                call outfile_var3d(file, trim(SEB_NAME(k)), self%sc%seb%f(:,:,:,k), "month", n, ncid, &
+                                   trim(SEB_UNITS(k)), "Monthly mean "//trim(SEB_LONG(k)))
+            end do
+            call nc_close(ncid)
+            return
+        case default
             call component_write_output(self, file, t, stream, init)
             return
-        end if
+        end select
 
         if (init) call outfile_dims_2d(file, self%xkm, self%ykm, t)
         call outfile_open(file, t, ncid, n)
@@ -904,10 +990,17 @@ contains
         class(chion_surface_t), intent(inout) :: self
         type(init_ctx_t),       intent(in)    :: ctx
 
+        character(len=NAME_LEN) :: sched
+
         if (nml_has_param(ctx%par_file, ctx%instance, "surface_chion")) &
             call nml_read(ctx%par_file, ctx%instance, "surface_chion", self%host_group)
         if (nml_has_param(ctx%par_file, ctx%instance, "chion")) &
             call nml_read(ctx%par_file, ctx%instance, "chion", self%chion_group)
+        ! The stream seb (its schedule out_seb) needs the monthly accumulation, set up at init.
+        if (nml_has_param(ctx%par_file, ctx%instance, "out_seb")) then
+            call nml_read(ctx%par_file, ctx%instance, "out_seb", sched)
+            self%seb = .not. any(trim(sched) == ["none", "None", "    "])
+        end if
     end subroutine group_read
 
     function restart_file(self, dir) result(file)

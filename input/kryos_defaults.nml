@@ -308,6 +308,8 @@
 &surface_chion
     surface_chion = "surface_chion"            ! host group
     chion         = "chion"
+    out_seb       = "none"                     ! schedule of <instance>_seb.nc: BESSI's monthly surface energy balance
+                                               ! (swd, swn, lwd, lwn, shf, lhf, prh [W m-2], alb, tsrf, melt) of the last annual cycle
 /
 
 &surface_smb_simple
