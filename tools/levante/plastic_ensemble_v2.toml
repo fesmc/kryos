@@ -1,6 +1,7 @@
 # Weighted ensemble v2: tau_b multipliers of the plastic ice and the Earth (shifts of log10 viscosity of the 3-D Earth, Bagge 2021,
-# globally and by region; plastic_earth_shift.jl), NH-32KM, ANT-16KM and PAT-PAL-8KM; all data groups judge. The error model
-# from ens-v1 wave 1 (errmodel.toml there). docs/dev/plastic-ensemble-design.md.
+# globally and by region; plastic_earth_shift.jl), NH-32KM, ANT-16KM and PAT-PAL-8KM; all data groups judge: the RSL index points
+# and the present-day GNSS uplift rates ([[gnss]]). The error model from ens-v1 wave 1 (errmodel.toml there); GNSS: starting values.
+# docs/dev/plastic-ensemble-design.md.
 #   tools/levante/plastic_ensemble.sh start tools/levante/plastic_ensemble_v2.toml <ensemble folder>
 [scale]                                  # the parameters: plastic_taub_scale.jl
 taub_files    = ["{fesmdata}/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST_taub.nc",
@@ -71,7 +72,8 @@ theta_max     = 1.5
 [ensemble]
 n          = 49                          # members besides the prior mean (m000)
 seed       = 1
-obs_groups = ["Laurentide", "Greenland", "Fennoscandia/Barents", "Antarctica", "far field"]   # pm_compare.jl's GROUPS
+obs_groups = ["Laurentide", "Greenland", "Fennoscandia/Barents", "Antarctica", "far field",   # pm_compare.jl's GROUPS
+              "GNSS Laurentide", "GNSS Greenland", "GNSS Fennoscandia", "GNSS Antarctica"]     # [[gnss]]
 compare_max_age_ka = 25.0                # judging and the comparison with the references: GLAC1D's own GIA ends at 26 ka
 bar        = ["pub-PMIST", "pub-GLAC1D"]  # the cut per group: as good as the best published reconstruction (plastic_ensemble.jl weights)
 
@@ -95,6 +97,18 @@ corr_time_kyr = 40.0
 sigma_m = 23.0
 corr_dist_km = 100.0
 corr_time_kyr = 20.0
+[likelihood."GNSS Laurentide"]           # GNSS: sigma_m [mm/yr], no time term; starting values (plastic_ensemble.jl errmodel)
+sigma_m = 1.0
+corr_dist_km = 300.0
+[likelihood."GNSS Greenland"]
+sigma_m = 1.0
+corr_dist_km = 300.0
+[likelihood."GNSS Fennoscandia"]
+sigma_m = 1.0
+corr_dist_km = 300.0
+[likelihood."GNSS Antarctica"]
+sigma_m = 1.0
+corr_dist_km = 300.0
 
 [earth]                                  # the Earth: shifts of log10(eta) of the 3-D field (VILMA2 visc_shift_file)
 sigma        = 0.5                       # prior sd [dex] of every shift, independent
@@ -136,6 +150,30 @@ time       = "11:00:00"                  # within albedo's 12h queue
 throttle   = 25                          # 25 members + the weights job + one other run: within 30 jobs
 
 [score]
+# gnss_dir = "{fesmdata}/Records/GPS"   # the default; until FesmData's release with Records/GPS:
+#                                         "/albedo/work/user/alrobi001/fesmdata-gnss/Records/GPS"
+
+# The GNSS data groups (pm_compare.jl read_gnss): the present-day uplift rate at the stations, elastic-corrected, against
+# dz_bed_rate of the member's last VILMA2 record. rate: gia = uplift_rate - uplift_rate_elastic (products that keep the elastic
+# part), corrected = the authors' elastic-corrected uplift_rate. box, exclude: [lon_min, lon_max, lat_min, lat_max].
+[[gnss]]
+name    = "GNSS Fennoscandia"
+product = "BIFROST2015"                  # Kierulf et al. 2021, ITRF2008
+rate    = "gia"
+[[gnss]]
+name    = "GNSS Greenland"
+product = "GNET"                         # Berg et al. 2024, IGS14; sd combined with the elastic part's
+rate    = "gia"
+[[gnss]]
+name    = "GNSS Antarctica"
+product = "MartinEspanol2016"            # Martín-Español et al. 2016, ITRF2008, elastic-corrected
+rate    = "corrected"
+[[gnss]]
+name    = "GNSS Laurentide"
+product = "Schumacher2018"               # Schumacher et al. 2018, elastic-corrected: North America east of the Rockies, north
+rate    = "corrected"                    # of 40 N, without Greenland (two boxes)
+box     = [[-115.0, -50.0, 40.0, 84.0]]
+exclude = [[-74.0, -10.0, 75.0, 85.0], [-58.0, -10.0, 59.0, 75.0]]
 
 # The reconstructions the members are compared with (plastic_ensemble.jl reference_series), named as in docs/simulations.md: each with its own GIA, and its ice under
 # VILMA2 (toroidal flow) with the members' 3-D Earth (prior mean), its radial mean (Bagge1D) and Gowan's 1-D Earth (gia_refcorr.sh
