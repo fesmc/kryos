@@ -72,7 +72,8 @@ theta_max     = 1.5
 n          = 49                          # members besides the prior mean (m000)
 seed       = 1
 obs_groups = ["Laurentide", "Greenland", "Fennoscandia/Barents", "Antarctica", "far field"]   # pm_compare.jl's GROUPS
-compare_max_age_ka = 25.0                # the comparison with the references: GLAC1D's own GIA ends at 26 ka
+compare_max_age_ka = 25.0                # judging and the comparison with the references: GLAC1D's own GIA ends at 26 ka
+bar        = ["PaleoMIST", "GLAC1D"]  # the cut per group: as good as the best published reconstruction (plastic_ensemble.jl weights)
 
 [likelihood."Laurentide"]                # model error per data group: ens-v1 wave 1 (plastic_ensemble.jl errmodel, top 6 members)
 sigma_m = 14.0
