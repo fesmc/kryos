@@ -455,10 +455,10 @@ contains
         type(geo_slot_t),  intent(inout) :: g
         type(solid_earth), intent(in)    :: d
         real(dp),          intent(in)    :: t1
-        real(dp), allocatable :: hl(:,:), he(:,:), load(:,:)
+        real(dp), allocatable :: hl(:,:), he(:,:), load(:,:), ur(:,:)
         integer :: np, nl
         np = d%sht%nphi;  nl = d%sht%nlat
-        allocate(hl(np,nl), he(np,nl))
+        allocate(hl(np,nl), he(np,nl), ur(np,nl))
         call geo_write_output(g, DIR//"vilma.nc", t1, "vilma", .true.)
         call nc_read(DIR//"vilma.nc", "h_ice", hl, start=[1,1,1], count=[np,nl,1])
         call nc_read(DIR//"vilma.nc", "h_ice_ext", he, start=[1,1,1], count=[np,nl,1])
@@ -466,6 +466,9 @@ contains
         call check(maxval(abs(he - d%gg%h_ice)) <= 0.5e-2_dp + 1.0e-9_dp, "stream vilma: h_ice_ext is the external ice")
         call check(maxval(abs(hl - load)) <= 0.5e-2_dp + 1.0e-9_dp .and. maxval(abs(hl - he)) > 1.0_dp, &
                    "stream vilma: h_ice is the load, I_g + (1 - w) h_ice_ext, not the external ice")
+        call nc_read(DIR//"vilma.nc", "dz_bed_rate", ur, start=[1,1,1], count=[np,nl,1])
+        call check(maxval(abs(ur - d%gg%dz_bed_rate)) <= 1.0e-5_dp + 1.0e-12_dp .and. maxval(abs(d%gg%dz_bed_rate)) > 1.0e-5_dp, &
+                   "stream vilma: dz_bed_rate, the bed's rate over the last update (rounded to 1e-5 m/yr)")
     end subroutine test_stream
 
     function exp2(g, h) result(a)

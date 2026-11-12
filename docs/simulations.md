@@ -74,6 +74,14 @@ On the index points of age ≤ 25 ka (GLAC-1D's own RSL ends at 26 ka), under th
 Groups: L Laurentide (892 points), G Greenland (276), F Fennoscandia/Barents (1088), A Antarctica (47), FF far field
 (2248).
 
+GNSS groups (`plastic_ensemble.jl`, `[[gnss]]`; columns to come): the present-day uplift rate at GNSS stations,
+elastic-corrected, against the run's `dz_bed_rate` at its last VILMA2 record, with the same likelihood (sigma_m in mm/yr,
+correlated over distance only): GNSS Fennoscandia (BIFROST2015) and GNSS Hudson Bay (Schumacher et al. 2018 and
+MIDAS) judge; GNSS Greenland (GNET) and GNSS Antarctica (Martín-Español et al. 2016) are reported only. Their RMSE is
+in mm/yr. A simulation without
+`dz_bed_rate` (P1, P2 and every run of VILMA2 before 2026-11-12) has no GNSS score. The model rate is in VILMA2's
+centre-of-mass frame, the data in ITRF/IGS: a few tenths of a mm/yr apart, not corrected.
+
 ## The ladder
 
 Each step changes one thing against its parent, so the change in score is that thing's. Steps:

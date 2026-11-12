@@ -194,7 +194,7 @@ In the run folder (`[kryos] out_dir = "./"`):
 | `ice_nor.nc`, `ice_ant.nc`, `ice_pat.nc` | 2.5 kyr | all exports of the plastic instance (`out_vars = ""`): `H_ice`, `z_srf`, `z_bed`, `z_sl`, `f_ice`, `f_grnd`, `dHidt`, `mb_net`, `H_grnd`, ... |
 | `ice_*_plastic.nc` | 2.5 kyr (`out_plastic = "out_2D"`) | the backend's stream: `mask`, `sdist`, `tau_b`, `taub_domain`, convergence (`converged`, `n_outer_used`, stress residual) |
 | `ice_*_ts.nc` | 100 yr | 0-D exports, e.g. `M_ice` [Gt] |
-| `geo_glob_vilma.nc` | 2.5 kyr (`out_vilma = "out_2D"`) | VILMA2's own diagnostics on the Gauss grid: `rsl`, `dz_bed`, `dz_ss`, `z_bed`, `bsl`, `bsl_ive`, ...; the file the GAPSLIP scores read |
+| `geo_glob_vilma.nc` | 2.5 kyr (`out_vilma = "out_2D"`) | VILMA2's own diagnostics on the Gauss grid: `rsl`, `dz_bed`, `dz_bed_rate`, `dz_ss`, `z_bed`, `bsl`, `bsl_ive`, ...; the file the GAPSLIP and GNSS scores read |
 | `geo_glob.nc`, `geo_glob_ts.nc` | 2.5 kyr, 100 yr | `dz_bed`, `dz_ss`, `C_ocn` on the Gauss grid; the series |
 | `geo_nor.nc`, `geo_ant.nc`, `geo_pat.nc` (+ `_ts`) | 2.5 kyr, 100 yr | the Earth on each ice grid |
 | `restart-<time>/` | 10 kyr and the end | restart bundles |

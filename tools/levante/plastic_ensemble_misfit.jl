@@ -29,6 +29,7 @@ mkpath(out)
 
 cfg = ES.config(C)
 ids, _, res, og, obs, A = EN.wave_residuals(C, k, cfg)
+og = filter(in(EN.RSL_GROUPS), og)                     # the RSL groups (the GNSS groups have no index points)
 em, emsrc = EN.error_model(cfg, C)
 plaus = [m for m in sort(collect(keys(res))) if ES.mdir(C, k, m) in strip.(readlines(joinpath(ES.itdir(C, k), "plausible.txt")))]
 # the selection shown: the plausible members, or those of members=

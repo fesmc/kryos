@@ -22,6 +22,8 @@
 # areas (FOCUS).
 # Writes: pm_metrics.md (tables), pm_metrics_B1_PM.csv (all records), pm_sites.csv, pm_gmsl.csv, pm_fields.nc (for pm_maps.jl),
 # pm_indicators.md (scores), pm_ind_samples.csv (per sample), pm_ind_sites.csv (per site), pm_ind_curves.csv (model RSL at the sites).
+# GNSS uplift rates (the GNSS groups of plastic_ensemble.jl): read_gnss (the stations of a group, FesmData Records/GPS), read_rate and
+# rate_at (the model's present-day uplift rate, dz_bed_rate of the run's last VILMA2 record, at the stations).
 # Included by plastic_esmda.jl (in a module) for the scoring functions: main runs only as a script.
 using NCDatasets, Printf, Statistics
 
@@ -153,6 +155,63 @@ function rsl_topo(file)
         Float64.(ds["lon"][:]), Float64.(ds["lat"][:]), ages, zb[:, :, k0:k0] .- zb
     end
 end
+
+# --- GNSS uplift rates ----------------------------------------------------------------------------------------------------------
+# The stations of a GNSS group (a [[gnss]] entry of an ensemble config: plastic_ensemble.jl), from FesmData Records/GPS/GPS-<product>.nc
+# in dir (uplift_rate, uplift_rate_sd [mm/yr], optional uplift_rate_elastic and its sd; the attribute elastic_correction of uplift_rate
+# says whether the product removed the elastic response to present-day ice change). rate (of the entry):
+#   gia        uplift_rate - uplift_rate_elastic, the GIA estimate of a product that did not remove it (sd combined with the elastic
+#              part's where the product has one)
+#   corrected  uplift_rate of a product that removed it (default)
+#   observed   uplift_rate as it is
+# box, exclude (optional): lists of [lon_min, lon_max, lat_min, lat_max] [degrees east, north; lon_min to lon_max eastward]: the
+# stations in a box (all without box) and in no exclude box. min_years (optional): stations whose series (time_start to time_end)
+# spans at least that many years. Stations without a finite rate and a positive sd are left out.
+# Returns per station (group, site_name, lat, lon, t = 0 (the present: no time term in the error covariance), rate, sd) [mm/yr].
+function read_gnss(dir, spec)
+    nm = spec["name"]; f = joinpath(dir, "GPS-" * spec["product"] * ".nc")
+    isfile(f) || error("[[gnss]] $nm: no $f ([score] gnss_dir)")
+    kind = get(spec, "rate", "corrected")
+    inbox(b, x, y) = b[3] <= y <= b[4] && (b[2] - b[1] >= 360 || mod(x - b[1], 360) <= mod(b[2] - b[1], 360))
+    boxes = get(spec, "box", Any[]); excl = get(spec, "exclude", Any[])
+    NCDataset(f) do ds
+        ec = get(ds["uplift_rate"].attrib, "elastic_correction", "")
+        v(n) = Float64.(nomissing(ds[n][:], NaN))
+        r = v("uplift_rate"); sd = v("uplift_rate_sd")
+        if kind == "gia"
+            ec == "not removed" && haskey(ds, "uplift_rate_elastic") ||
+                error("[[gnss]] $nm: rate = \"gia\" needs a product with uplift_rate_elastic, the elastic part not removed ($f: $ec)")
+            r = r .- v("uplift_rate_elastic")
+            haskey(ds, "uplift_rate_elastic_sd") && (sd = sqrt.(sd .^ 2 .+ v("uplift_rate_elastic_sd") .^ 2))
+        elseif kind == "corrected"
+            ec == "removed" || error("[[gnss]] $nm: rate = \"corrected\" needs a product with the elastic part removed ($f: $ec)")
+        elseif kind != "observed"
+            error("[[gnss]] $nm: rate = \"$kind\": gia | corrected | observed")
+        end
+        lat = v("lat"); lon = v("lon"); site = string.(ds["site_name"][:])
+        span = haskey(spec, "min_years") ? (haskey(ds, "time_start") ? v("time_end") .- v("time_start") :
+                                             error("[[gnss]] $nm: min_years, but $f has no time_start")) : fill(Inf, length(r))
+        sel = [i for i in eachindex(r) if isfinite(r[i]) && isfinite(sd[i]) && sd[i] > 0 && span[i] >= get(spec, "min_years", 0.0) &&
+               (isempty(boxes) || any(b -> inbox(b, lon[i], lat[i]), boxes)) && !any(b -> inbox(b, lon[i], lat[i]), excl)]
+        [(group = nm, site_name = site[i], lat = lat[i], lon = lon[i], t = 0.0, rate = r[i], sd = sd[i]) for i in sel]
+    end
+end
+
+# The model's present-day uplift rate of a run: dz_bed_rate [m/yr] of the last record of its VILMA2 stream (vilma_out.nc of a standalone
+# run, <inst>_vilma.nc of a kryos run), the rate of the bed over VILMA2's last update; nothing without the file or the variable (VILMA2
+# before dz_bed_rate). Grid as read_run's.
+function read_rate(dir; inst = "geo_glob")
+    f = joinpath(dir, "vilma_out.nc"); isfile(f) || (f = joinpath(dir, inst * "_vilma.nc"))
+    isfile(f) || return nothing
+    NCDataset(f) do ds
+        haskey(ds, "dz_bed_rate") || return nothing
+        lon = Float64.(ds["lon"][:]); lat = Float64.(ds["lat"][:]); jl = sortperm(lat); il = sortperm(mod.(lon, 360))
+        n = size(ds["dz_bed_rate"], 3)
+        (lon = mod.(lon[il], 360), lat = lat[jl], rate = Float64.(nomissing(ds["dz_bed_rate"][:, :, n], NaN))[il, jl])
+    end
+end
+# the rate at points (plon, plat) [mm/yr], bilinear
+rate_at(R, plon, plat) = [1000.0 * interp(R.rate, xweight(R.lon, x), yweight(R.lat, y)) for (x, y) in zip(plon, plat)]
 
 # linear in time: the value and the slope at t; the range over [t0, t1]
 function tval(A, s, t)
