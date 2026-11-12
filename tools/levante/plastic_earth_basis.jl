@@ -167,3 +167,67 @@ function earth_sample(basis, par, outdir; n = 30, K = 4, seed = 1, ext = 0.1, li
     end
     println("wrote ", n, " members in ", outdir, " (coefficients in ", join([@sprintf("[%.2f, %.2f]", a, b) for (a, b) in zip(lo, hi)], " "), ")")
 end
+
+# --- 1-D Earths of the broad search (docs/dev/earth-search-design.md, wave A) ----------------------------------------------------
+# A 1-D Earth from the 5 radial parameters: the elastic lithosphere thickness [km] and log10 eta of the upper mantle (lithosphere
+# base to 410 km), the transition zone (410-670 km) and the lower mantle above and below 1500 km (to the core, 2891 km).
+const EARTH1D_PARAMS = [(name = "litho_km", lo = 50.0, hi = 200.0), (name = "log10_eta_um", lo = 19.5, hi = 21.5),
+                        (name = "log10_eta_tz", lo = 20.0, hi = 22.5), (name = "log10_eta_lm1", lo = 21.0, hi = 23.5),
+                        (name = "log10_eta_lm2", lo = 21.0, hi = 23.5)]
+const EARTH1D_BASE_KM = [410.0, 670.0, 1500.0, 2891.0]   # the bases of UM, TZ, LM1 and LM2 [km depth]; below: the fluid core
+# The layers [km depth, surface first] of the 1-D Earth θ = (L, um, tz, lm1, lm2) on the layering of a template: VILMA2 takes
+# density and rigidity per layer as PREM's shell average (earth = "PREM"), so the template's boundaries (Gowan's 12 layers: the
+# PREM discontinuities and the lower mantle in parts) are kept, with the boundaries of the viscosity (L, 410, 670, 1500 km)
+# added; a template boundary within merge_km of one of those is dropped (no sliver layers). Elastic (rheology 0, eta 1e40) above
+# L, Maxwell (1) below, the fluid core (2, eta 0) below 2891 km. (top, bot) [km depth], eta [Pa s], rheology per layer.
+function earth1d_layers(θ, tmpl_depths_km; merge_km = 5.0)
+    L = θ[1]; vb = [L; EARTH1D_BASE_KM]
+    keep = [d for d in tmpl_depths_km if 0 < d < R_VILMA_KM && all(abs(d - b) > merge_km for b in vb)]
+    b = sort(unique([0.0; keep; vb; R_VILMA_KM]))
+    top = b[1:end-1]; bot = b[2:end]; eta = similar(top); rh = zeros(Int, length(top))
+    for (i, (t, d)) in enumerate(zip(top, bot))
+        mid = (t + d) / 2
+        eta[i], rh[i] = mid < L ? (1e40, 0) : mid < 410 ? (10.0^θ[2], 1) : mid < 670 ? (10.0^θ[3], 1) :
+                        mid < 1500 ? (10.0^θ[4], 1) : mid < 2891 ? (10.0^θ[5], 1) : (0.0, 2)
+    end
+    top, bot, eta, rh
+end
+# A VILMA2 1-D par file of θ: a copy of the template (a 1-D kryos par file: its spin-up and the rest as they are) with the &vilma
+# layer arrays of earth1d_layers (r in m, surface first) and l_visc_3d = .false. (set_nml.py: only keys the template has).
+function earth1d_par(tmpl, out, θ; note = "")
+    v = nml_group(tmpl, "vilma")
+    tmplr = nml_reals(v["r_top"]) ./ 1e3
+    top, bot, eta, rh = earth1d_layers(θ, R_VILMA_KM .- tmplr)
+    length(top) <= 16 || error("$(length(top)) layers: VILMA2 takes at most 16 (MAX_LAYER)")
+    fr(d) = @sprintf("%.3fe3", R_VILMA_KM - d); fe(x) = x == 0 ? "0.0" : @sprintf("%.4e", x)
+    cp(tmpl, out; force = true); chmod(out, 0o644)
+    kv = ["vilma.n_layer=$(length(top))", "vilma.r_top=" * join(fr.(top), ", "), "vilma.r_bot=" * join(fr.(bot), ", "),
+          "vilma.eta=" * join(fe.(eta), ", "), "vilma.rheology=" * join(rh, ", "), "vilma.l_visc_3d=.false."]
+    Base.run(`python3 $(joinpath(@__DIR__, "set_nml.py")) $out $kv`)
+    hdr = "! A 1-D Earth of the broad search (plastic_ensemble.jl earth-search-sample$(isempty(note) ? "" : ", " * note)): lithosphere " *
+          @sprintf("%.2f km, log10 eta UM %.3f, TZ %.3f, LM1 %.3f, LM2 %.3f", θ...) * "; the layering of $(basename(tmpl)) with the\n" *
+          "! viscosity boundaries (L, 410, 670, 1500 km) added (earth1d_layers).\n"
+    write(out, hdr * read(out, String))
+    out
+end
+# Wave A of the search: n 1-D Earths in a Latin hypercube, uniform over EARTH1D_PARAMS. Writes in outdir E<nnn>.nml (earth1d_par
+# of the template, a 1-D par file such as par/kryos_NH-ANT_plastic_vilma2_b1.nml) and members.csv (the parameters, rounded as in
+# the par files: L to 0.01 km, log10 eta to 0.001).
+#   julia --project=tools/levante tools/levante/plastic_ensemble.jl earth-search-sample <template par> <outdir> [n=200] [seed=1]
+#   julia --project=tools/levante tools/levante/plastic_ensemble.jl earth-search-par <template par> <out.nml> L um tz lm1 lm2
+function earth_search_sample(tmpl, outdir; n = 200, seed = 1)
+    rng = MersenneTwister(seed); np = length(EARTH1D_PARAMS)
+    U = hcat([(randperm(rng, n) .- rand(rng, n)) ./ n for _ in 1:np]...)     # n x np in (0, 1)
+    mkpath(outdir)
+    open(joinpath(outdir, "members.csv"), "w") do io
+        println(io, "member,", join([p.name for p in EARTH1D_PARAMS], ","))
+        for m in 1:n
+            θ = [p.lo + U[m, k] * (p.hi - p.lo) for (k, p) in enumerate(EARTH1D_PARAMS)]
+            θ = [round(θ[1], digits = 2); round.(θ[2:end], digits = 3)]
+            nm = @sprintf("E%03d", m)
+            earth1d_par(tmpl, joinpath(outdir, nm * ".nml"), θ; note = "$nm of $n, seed $seed")
+            println(io, nm, ",", @sprintf("%.2f", θ[1]), ",", join([@sprintf("%.3f", x) for x in θ[2:end]], ","))
+        end
+    end
+    println("wrote ", n, " 1-D Earths in ", outdir, " (", join([@sprintf("%s [%g, %g]", p.name, p.lo, p.hi) for p in EARTH1D_PARAMS], ", "), ")")
+end
