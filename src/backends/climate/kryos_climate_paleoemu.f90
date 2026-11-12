@@ -516,7 +516,7 @@ contains
 
     subroutine global_write_output_(self, file, t, stream, init)
         ! Streams 2D and 1D: the default writer (the exports on lon, lat). `emu`: the emulator's state on the
-        ! CESM grid (paleoemu_write_*: inputs, dV, dz, dtas, dlogpr and their standard deviations).
+        ! CESM grid (paleoemu_write_*: inputs, dV, dz, dtas, dlogpr, dto and their standard deviations).
         class(paleoemu_climate_t), intent(inout) :: self
         character(len=*),          intent(in)    :: file, stream
         real(dp),                  intent(in)    :: t

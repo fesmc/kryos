@@ -4,7 +4,8 @@ title: "PaleoEmulator (climate)"
 
 The climate backend `paleoemu` couples the CESM-3Ma climate emulator of
 [PaleoEmulator](https://github.com/fesmc/PaleoEmulator) to kryos. The emulator
-returns monthly 2-m temperature and precipitation anomalies against pre-industrial.
+returns monthly 2-m temperature and precipitation anomalies against pre-industrial,
+and the annual ocean temperature change at 8 levels between 4 and 1475 m.
 Its inputs are the orbit, CO2 and the Northern Hemisphere ice sheets: the regional
 grounded ice volumes, their slow filters and the surface-elevation change. It was
 trained on the 3-Myr transient CESM simulation of Yun et al. (2023), and its
@@ -20,7 +21,8 @@ Like VILMA2, it has two parts:
 
 The surface (chion) takes `tas` and `pr` from the port through the lapse rows, and
 computes its insolation on the same orbit. The surface's `smb` and `T_srf` then
-drive the ice.
+drive the ice. A port with a present-day ocean also gives the shelf its ocean
+profiles (set A), the present day plus the emulator's change ([The ocean](#the-ocean)).
 
 - **Build:** `paleoemu=1`.
   - `config/common.mk` expects `PaleoEmulator/fortran/build` (`libpaleoemu.a`,
@@ -42,8 +44,9 @@ drive the ice.
     (`src/core/kryos_globe_ice.f90`).
   - The globe side is in `globe_climate_ice`, `globe_climate_reference` and
     `globe_forcing_to_climate` (`src/core/kryos_globe.f90`).
-- **Par file:** `par/kryos_North_plastic_paleoemu.nml`: the PaleoMIST plastic ice of
-  North with chion, from 21 to 20 ka.
+- **Par files:** `par/kryos_North_plastic_paleoemu.nml`: the PaleoMIST plastic ice of
+  North with chion, from 21 to 20 ka; `par/kryos_Antarctica_paleoemu.nml`: Yelmo's
+  Antarctica with chion and marine_shelf on the emulator's atmosphere and ocean.
 - **Inputs:** `kryos_data/paleoemu/` (its README): the emulator file, the reference
   climate on GLOBAL-0.5DEG and the CO2 table, in `$KRYOS_DATA` on Levante and albedo.
 
@@ -107,6 +110,7 @@ reference climate on the grid (key `reference`), with the same formulas as
 | `z_srf_clim` | m | the surface of the reference climate (ERA5) |
 | `lapse` | K m-1 | Γ = 6.5e-3, the emulator's lapse rate |
 | `beta_p` | K-1 | key `beta_p`, default 0: precipitation does not change with the lapse rows' elevation, as in the emulator's own downscaling. Its `dlogpr` already holds CESM's response to the ice sheets; only `dtas` is at the reference surface |
+| `dto_lev` | K | the annual ocean temperature change on the emulator's levels (axis `level`), filled and interpolated ([The ocean](#the-ocean)) |
 
 **Reference climate.** It is a file on the instance grid holding `tas_ref` [K] and
 `pr_ref` [mm d-1] by month, `z_srf_ref` [m] and the global attribute `grid_name`.
@@ -140,18 +144,78 @@ the bundle's imports, and then the filters are restored.
 - Streams `2D` and `1D`: the default writer, with the exports on `lon` and `lat`.
 - Stream `emu` (`out_emu`, `<name>_emu.nc`): the emulator's state on the CESM grid,
   as written by `paleoemu_write_step`. It holds the inputs, the regional volume
-  changes, the elevation change, `dtas` and `dlogpr`, and their standard deviations.
+  changes, the elevation change, `dtas`, `dlogpr` and the ocean's `dto` (unfilled,
+  0 outside the ocean), and their standard deviations.
 
 ## The regional port
 
 The port is stateless (no backend restart file) and steps on the cadence and clock of
 the global part. The rows `climate_g -> climate` remap `tas`, `pr`, `z_srf_clim`,
 `lapse` and `beta_p` onto its grid: bilinear for the intensive fields, conservative
-for `pr`. The port passes them on with their validity. The rows `climate -> surface`
+for `pr`. The port passes them on with their validity (and, with an ocean, makes the
+profiles: [The ocean](#the-ocean)). The rows `climate -> surface`
 then take `tas` and `pr` to the surface's elevation:
 
 - `tas − lapse · (z_srf − z_srf_clim)`;
 - `pr · exp(−beta_p · lapse · (z_srf − z_srf_clim))`.
+
+## The ocean
+
+The emulator predicts the annual ocean potential temperature change `dto` against
+pre-industrial at 8 levels (`ocean_depth`, 4-1475 m) on the CESM grid, with its
+standard deviation `dto_sd`. Its values are 0 on land and below the sea floor
+(`ocean_mask`, fixed: CESM-3Ma's present-day bathymetry).
+
+**The global part** always predicts and exports it, on its own axis `level` (the
+emulator's depths, m):
+
+1. `d = scale_dto · dto + dto_nsd · dto_sd` (keys, defaults 1 and 0);
+2. `ocean_fill`: on each level, the cells outside the ocean are filled from the ocean,
+   a Poisson fill periodic in longitude whose first guess is the zonal mean of the ocean
+   (fesm-utils' `fill_poisson`, method 1); the ocean cells keep their values; a level
+   without ocean takes the level above;
+3. `dto_lev`: each level interpolated bilinearly onto the grid
+   (`paleoemu_target_bilinear`). At `PASS_INIT` it is 0.
+
+The fill matters on Antarctica's shelves: the CESM grid (~3.75°) sees little ocean
+there, and the shelves of a regional grid lie mostly in CESM land cells.
+
+**The port** takes the ocean only with a present-day reference on its grid, the keys
+`to_ref` and `so_ref`: var_defs groups read as the snapshots read a snapshot's `to`
+and `so` (units, scaling, `fill`, the annual mean of a monthly climatology), e.g.
+`ismip7_to`, `ismip7_so` of the ISMIP7 climatology. Without them (the default) the
+port has no ocean, as before. With them it sets `caps%has_ocn`, imports `dto_lev`
+on the axis `level` (the domains see the global part's axes: `domain_create`'s
+`axes_g`) through the row `climate_g -> climate dto_lev` (bilinear, level by level),
+and exports the profiles of set A on the file's depths (axis `depth`, |z|):
+
+- `dto_ann = W · dto_lev`, `W` linear in depth between the levels, constant above
+  the top level and below the bottom one;
+- `to_ann = to_ref + dto_ann`, `so_ann = so_ref`.
+
+The shelf (e.g. marine_shelf, set A) interpolates them to its shelf base as with the
+snapshots climate.
+
+**Basin means.** With `dto_basins` (a basin set of the domain's regions, e.g.
+`Zwally2012` as the shelf corrections use), `dto_lev` is replaced in each basin by
+its mean, level by level, over the basin's sample `dto_sample` (a regions selection,
+default `zone:shelf_break_buffer`: FesmData's zone between the continental shelf and
+the open ocean). The shelf then sees the change of the ocean it exchanges with,
+uniform within the basin, rather than the filled values on the shelf itself. A basin
+without sampled cells keeps its cells' own values (logged at init). The sample is
+static (the present-day zones), as is the emulator's ocean mask.
+
+**Caveats.**
+
+- `dto` is a change against pre-industrial (CESM-3Ma at 0 ka: `dto` ≈ 0), while
+  ISMIP7 (and ORAS5) are present-day climatologies: the profiles add a change against
+  pre-industrial to a present-day ocean, so the warming since pre-industrial stays in
+  the reference. Accepted: the shelf's `tf_corr` are calibrated at present day on that
+  same reference.
+- Drafts below 1475 m take the change at 1475 m (constant below the bottom level).
+- No sea-level datum shift: the depths are those of the present-day reference, not
+  shifted with the glacial sea level.
+- Salinity stays at present day (`so_ref`).
 
 ## Sequence
 
