@@ -38,6 +38,7 @@ include("pm_compare.jl")
 end
 include("plastic_taub_scale.jl")
 include("plastic_earth_shift.jl")
+include("plastic_earth_basis.jl")
 
 const ESL_AGE = 20000.0
 # the exports every member writes per plastic instance: the 2-D ice (thickness, surface, bed and sea level as the ice saw them, ice
