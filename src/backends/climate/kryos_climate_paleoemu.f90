@@ -27,17 +27,10 @@ module kryos_climate_paleoemu
     !                       response to the ice sheets (only dtas is at the
     !                       reference surface). The ocean: the annual ocean
     !                       temperature change dto at the emulator's levels
-    !                       (axis `level`, 4-1475 m), scale_dto (dto - dto0) +
-    !                       dto_nsd dto_sd, its land and below-floor cells filled
-    !                       per level (ocean_fill), interpolated bilinearly onto the
-    !                       grid: the export dto_lev [K] (opt%ocn_lev). dto0, the
-    !                       present-day anchor (key dto_anchor, default on): dto of
-    !                       a copy of the emulator at present-day inputs (0 ka, its
-    !                       own orbit table, CO2 dto_anchor_co2, the reference ice,
-    !                       the filters in equilibrium), once the reference is set;
-    !                       it removes the offset of the emulator's reference
-    !                       inputs (CESM-3Ma's 0 ka, whose filters hold the
-    !                       deglaciation) from a run at present day.
+    !                       (axis `level`, 4-1475 m), scale_dto dto + dto_nsd
+    !                       dto_sd, its land and below-floor cells filled per level
+    !                       (ocean_fill), interpolated bilinearly onto the grid:
+    !                       the export dto_lev [K] (opt%ocn_lev).
     !   paleoemu_port_t     the regional port (stateless): the global part's
     !                       atmosphere remapped onto the domain's grid by the rows
     !                       climate_g -> climate, passed on; the lapse rows
@@ -104,9 +97,6 @@ module kryos_climate_paleoemu
         real(dp) :: bias_scale = 1.0_dp                    ! the bias correction times this (and the ice-volume weight)
         real(dp) :: scale_dto = 1.0_dp                     ! the ocean: scale_dto dto + dto_nsd dto_sd
         real(dp) :: dto_nsd   = 0.0_dp
-        logical  :: dto_anchor = .true.                    ! dto0: the emulator's dto at present-day inputs, subtracted
-        real(dp) :: dto_anchor_co2 = 280.0_dp              ! [ppm] the CO2 of the anchor's inputs
-        real(dp), allocatable :: dto0(:,:,:)               ! [lon, lat, level] the anchor on the CESM grid (0 without it)
         real(dp) :: day_year = 365.0_dp                    ! days of the run's year (pr: mm d-1 -> kg m-2 yr-1)
         type(paleoemu_class)        :: emu
         type(paleoemu_target_class) :: tgt                 ! the instance grid with its reference climate
@@ -186,10 +176,6 @@ contains
             call nml_read(ctx%par_file, ctx%instance, "scale_dto", self%scale_dto)
         if (nml_has_param(ctx%par_file, ctx%instance, "dto_nsd")) &
             call nml_read(ctx%par_file, ctx%instance, "dto_nsd", self%dto_nsd)
-        if (nml_has_param(ctx%par_file, ctx%instance, "dto_anchor")) &
-            call nml_read(ctx%par_file, ctx%instance, "dto_anchor", self%dto_anchor)
-        if (nml_has_param(ctx%par_file, ctx%instance, "dto_anchor_co2")) &
-            call nml_read(ctx%par_file, ctx%instance, "dto_anchor_co2", self%dto_anchor_co2)
         grid_name = ""
         if (nml_has_param(ctx%par_file, ctx%instance, "grid")) call nml_read(ctx%par_file, ctx%instance, "grid", grid_name)
         if (len_trim(self%file) == 0 .or. len_trim(self%reference) == 0 .or. len_trim(grid_name) == 0) then
@@ -225,7 +211,7 @@ contains
                      to_str(self%beta_p)//", beta_adj "//to_str(self%beta_adj)//", scale_dtas "//to_str(self%scale_dtas)//", bias "//trim(bias_txt)// &
                      ", ocean: "//to_str(self%emu%nlev)//" levels "//to_str(self%emu%ocean_depth(1))//"-"// &
                      to_str(self%emu%ocean_depth(self%emu%nlev))//" m, scale_dto "//to_str(self%scale_dto)//", dto_nsd "// &
-                     to_str(self%dto_nsd)//", dto_anchor "//merge("on ", "off", self%dto_anchor), "instance "//trim(self%name))
+                     to_str(self%dto_nsd), "instance "//trim(self%name))
     end subroutine global_init_
 
     subroutine level_axis(self)
@@ -359,7 +345,7 @@ contains
     end subroutine global_update_
 
     subroutine reference_set(self, what)
-        ! The reference ice (the spliced present day of globe_ice) on the emulator's ice grid; the anchor on it.
+        ! The reference ice (the spliced present day of globe_ice) on the emulator's ice grid.
         class(paleoemu_climate_t), intent(inout) :: self
         character(len=*),          intent(in)    :: what
 
@@ -368,41 +354,7 @@ contains
         call geometry_get(self, self%hi_H_ice_ref, self%hi_z_bed_ref, self%hi_z_srf_ref, H, zb, zs, what)
         call paleoemu_set_reference(self%emu, H, zb, zs)
         self%ref_set = .true.
-        call anchor_set(self, H, zb, zs)
     end subroutine reference_set
-
-    subroutine anchor_set(self, H, zb, zs)
-        ! dto0: the dto of one update of a copy of the emulator (its filters, just restarted by the reference,
-        ! start in equilibrium; the run's emulator is untouched) at present-day inputs: time 0, the emulator's
-        ! own orbit table at 0 ka (the forcing's elements are not available at init), CO2 dto_anchor_co2, the
-        ! reference ice H, zb, zs. Deterministic: a restart recomputes it bitwise. 0 without the anchor.
-        class(paleoemu_climate_t), intent(inout) :: self
-        real(dp),                  intent(in)    :: H(:,:), zb(:,:), zs(:,:)
-
-        type(paleoemu_class), allocatable :: e0            ! on the heap (the emulator's matrices)
-        integer :: k
-        character(len=:), allocatable :: txt
-        character(len=32) :: buf
-
-        if (allocated(self%dto0)) deallocate(self%dto0)
-        allocate(self%dto0(self%emu%nlon, self%emu%nlat, self%emu%nlev))
-        self%dto0 = 0.0_dp
-        if (.not. self%dto_anchor) return
-        allocate(e0)
-        e0 = self%emu
-        call paleoemu_update(e0, 0.0_dp, self%dto_anchor_co2, H, zb, zs)
-        self%dto0 = e0%now%dto
-        deallocate(e0)
-        txt = ""
-        do k = 1, self%emu%nlev
-            write(buf, "(f7.2,a,f6.2)") minval(self%dto0(:, :, k), mask=self%emu%ocean_mask(:, :, k) == 1), " to", &
-                                        maxval(self%dto0(:, :, k), mask=self%emu%ocean_mask(:, :, k) == 1)
-            txt = txt//" "//to_str(nint(self%emu%ocean_depth(k)))//" m"//trim(buf)//";"
-        end do
-        call log_msg(LOG_INFO, "kryos_climate_paleoemu", "dto anchor at present-day inputs (0 ka, CO2 "// &
-                     to_str(self%dto_anchor_co2)//" ppm, the reference ice, filters in equilibrium), dto0 [K] over the "// &
-                     "ocean:"//txt, "instance "//trim(self%name))
-    end subroutine anchor_set
 
     subroutine step(self, st, what)
         ! One emulator update at the evaluation time (the forcing time with clock = "forcing") with the
@@ -436,7 +388,7 @@ contains
     end subroutine step
 
     subroutine ocean_put(self, t1)
-        ! dto_lev: scale_dto (dto - dto0) + dto_nsd dto_sd on the CESM grid, filled (ocean_fill), each level
+        ! dto_lev: scale_dto dto + dto_nsd dto_sd on the CESM grid, filled (ocean_fill), each level
         ! interpolated bilinearly onto the instance grid.
         class(paleoemu_climate_t), intent(inout) :: self
         real(dp),                  intent(in)    :: t1
@@ -445,7 +397,7 @@ contains
         integer :: k
 
         allocate(d(self%emu%nlon, self%emu%nlat, self%emu%nlev), x(self%nx, self%ny, self%emu%nlev))
-        d = self%scale_dto*(self%emu%now%dto - self%dto0) + self%dto_nsd*self%emu%now%dto_sd
+        d = self%scale_dto*self%emu%now%dto + self%dto_nsd*self%emu%now%dto_sd
         call ocean_fill(self%emu%ocean_mask, d)
         do k = 1, self%emu%nlev
             x(:, :, k) = paleoemu_target_bilinear(self%tgt, d(:, :, k))

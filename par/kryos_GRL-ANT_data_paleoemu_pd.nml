@@ -8,7 +8,7 @@
 ! anomaly at 1950 is about 0).
 ! Shelf diagnostics (marine_shelf) on the imposed geometry, no ice model or GIA (the data ice ignores bmb_shlf):
 ! the ports' ocean is the present day (Greenland: ORAS5 1981-2010; Antarctica: ISMIP7, Zwally2012 basin means) plus the
-! emulator's dto_lev anchored at present day (0 there).
+! emulator's dto_lev (0 at present day: the emulator's filters start from its training trajectory).
 ! Build: paleoemu=1.
 !   runme -r -s -q 30min --omp 32 -m 60G -o <run> -n par/kryos_GRL-ANT_data_paleoemu_pd.nml   (albedo; Levante: -q shared -w 00:30:00)
 
@@ -94,10 +94,8 @@
     scale_dtas   = 1.0            ! the emulator's temperature anomaly times this (a colder/warmer climate, its pattern)
     bias         = "kryos_data/paleoemu/bias/bias_pmip4_mean.nc"   ! the PMIP4 mean LGM bias (NH ice-volume weighted)
     bias_scale   = 1.5            ! the reference: x1 to x2 bracket the LGM budgets (balanced Laurentide at x2)
-    scale_dto    = 1.0            ! the ocean: dto_lev = scale_dto (dto - dto0) + dto_nsd dto_sd (clim_glob.nc)
+    scale_dto    = 1.0            ! the ocean: dto_lev = scale_dto dto + dto_nsd dto_sd (clim_glob.nc)
     dto_nsd      = 0.0
-    dto_anchor   = True           ! dto0: the emulator's dto at present-day inputs (dto_lev = 0 at present day)
-    dto_anchor_co2 = 280.0        ! [ppm]
 /
 
 &globe_ice
