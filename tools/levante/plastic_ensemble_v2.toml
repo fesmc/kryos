@@ -127,10 +127,10 @@ set        = ['kryos.restart_out="none"', 'ice_nor.out_plastic="none"', 'ice_ant
 scale_keys = ["ice_nor.taub_scale_file", "ice_ant.taub_scale_file", "ice_pat.taub_scale_file"]
 domain_factor_file = "{kryos_data}/plastic/taub_domain_factor_v3.nc"   # Stage 1 with PAT
 domain_factor_keys = ["ice_nor.taub_domain_factor_file", "ice_ant.taub_domain_factor_file", "ice_pat.taub_domain_factor_file"]
-threads    = 64                          # 3-D Earth: 3.5-4.2 h on 64 (sci-v2-prior, -post, sci-v3-base, 2026-11-09)
+threads    = 64                          # 3-D Earth: 3.5-4.2 h on 64 (sci-v2-prior, -post, sci-v3-base, 2026-11-09), 3.0-4.3 h
+                                         # (ens-v2 on Levante); VILMA2's toroidal flow (on by default) costs about 1.5 times
 mem        = "30G"
-time       = "08:00:00"
-partition  = "shared"
+time       = "11:00:00"                  # within albedo's 12h queue
 throttle   = 25                          # 25 members + the weights job + one other run: within 30 jobs
 
 [score]

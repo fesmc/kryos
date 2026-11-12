@@ -28,8 +28,7 @@ level of the geo backend (VILMA2) at every coupling step. The solver is the Fort
 | `tools/levante/plastic_esmda_report.jl`, `plastic_taub_fit_report.jl`, `plastic_pd_regions.jl` | the reports: of a calibration; of Stage 1 (lambda, the domain factor file, maps); the present-day thickness per region |
 
 Build: `plastic=1` adds `INC_PLASTIC` / `LIB_PLASTIC` (`config/common.mk`: the sibling `PlasticIceSheet`,
-`libplastic/include` with `libplastic.a` and the `.mod` files; `make -C PlasticIceSheet static
-config=dkrz_levante_ifx`). `yelmo=0` is enough for these runs. The library's API: PlasticIceSheet
+`libplastic/include` with `libplastic.a` and the `.mod` files; `make plastic-static`). `yelmo=0` is enough for these runs. The library's API: PlasticIceSheet
 `docs/fortran-port.md` (branch `fortran-port`).
 
 ## What a step does

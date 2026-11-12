@@ -148,7 +148,7 @@ program test_geo_vilma2
     call solid_earth_spinup(dsp, H_ext(0), w, Ig(0), Cc(0), Ff(0))
     call solid_earth_update(dsp, H_ext(0), 0.0_dp, w, Ig(0), Cc(0), Ff(0))
     call compare(spin, dsp, "spin-up and seed")
-    call check(dsp%time > 0.0_dp, "pre_spinup_1d advanced VILMA2's clock")
+    call check(dsp%time == 0.0_dp, "pre_spinup_1d holds VILMA2's clock (the spin-up holds it, vilma2 22cf056)")
 
     call test_port()
     call test_densities(glob)

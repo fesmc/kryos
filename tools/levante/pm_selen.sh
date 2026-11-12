@@ -12,7 +12,7 @@ CASE=${CASE:?72_73_74_75/ehgr | 72_73_74_75_h/ehgr}
 W=$PM_DIR/selen/${CASE//\//_}
 if [ "${KRYOS_JOB:-}" != 1 ]; then
     mkdir -p $W
-    sbatch --parsable -A $ACCOUNT -p shared -t 00:30:00 -n 1 -c 1 --mem=4G -J pm_selen -o $W/job-%j.out \
+    sbatch --parsable -A $ACCOUNT $KRYOS_PART -t 00:30:00 -n 1 -c 1 --mem=4G -J pm_selen -o $W/job-%j.out \
         --export=ALL,KRYOS_JOB=1 "$_h/pm_selen.sh"
     exit
 fi

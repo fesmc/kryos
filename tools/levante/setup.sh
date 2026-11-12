@@ -1,5 +1,5 @@
 #!/bin/bash
-# setup.sh: the one-time setup of the Levante tools, run in a login shell on Levante from anywhere:
+# setup.sh: the one-time setup of the HPC tools, run in a login shell on Levante or albedo from anywhere:
 #   tools/levante/setup.sh
 # Checks the environment (env.sh: the paths, their access); links the data stores into the checkout (fesmdata, kryos_data:
 # runme links them into every run folder) and seeds the checkout's maps/ with the shared remapping weights
@@ -12,9 +12,9 @@ _h=$(dirname "$(readlink -f "$0")"); . "$_h/env.sh"
 ok() { printf "  ok    %s\n" "$*"; }
 no() { printf "  MISSING  %s\n" "$*"; bad=1; }
 bad=0
-echo "kryos checkout: $KRYOS"
+echo "kryos checkout: $KRYOS (machine $KRYOS_MACHINE)"
 echo "paths (env.sh; override in the environment or ~/.kryos.env):"
-for v in FESMDATA KRYOS_DATA PM_REF; do
+for v in FESMDATA KRYOS_DATA PM_REF; do      # KRYOS_DATA/paleoemu: the inputs of the paleoemu par files
     d=${!v}; [ -r "$d" ] && ok "$v = $d (readable)" || no "$v = $d (not readable)"
 done
 mkdir -p "$KRYOS_WORK" 2> /dev/null && [ -w "$KRYOS_WORK" ] && ok "KRYOS_WORK = $KRYOS_WORK (writable)" || no "KRYOS_WORK = $KRYOS_WORK (cannot write)"
@@ -40,7 +40,11 @@ else
         no "runme $rv: the ensemble tools need >= 0.5.27 (--array): runme update"
     else ok "runme $rv"; fi
     if [ ! -f "$KRYOS/.runme/config.toml" ]; then
-        cp "$KRYOS/.runme/config.default.toml" "$KRYOS/.runme/config.toml" && ok ".runme/config.toml (created from config.default.toml: dkrz_levante, account ba1442; edit it for another account)"
+        case $KRYOS_MACHINE in
+            albedo) sed -e 's/^hpc = "dkrz_levante"/hpc = "awi_albedo"/' -e "s/^account = \"ba1442\"/account = \"$ACCOUNT\"/" \
+                        "$KRYOS/.runme/config.default.toml" > "$KRYOS/.runme/config.toml" ;;
+            *) cp "$KRYOS/.runme/config.default.toml" "$KRYOS/.runme/config.toml" ;;
+        esac && ok ".runme/config.toml (created from config.default.toml for $KRYOS_MACHINE, account $ACCOUNT; edit it for another account)"
     else ok ".runme/config.toml (account $ACCOUNT)"; fi
 fi
 echo "builds:"

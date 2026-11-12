@@ -64,7 +64,7 @@ builds it. Use `make deps-static` (or each dependency's own make) first.
 | `fastisostasy` | 1 | geo backend `fastisostasy` (regional and global part): adapter, `INC_ISOSTASY`/`LIB_ISOSTASY` (+ LIS, FFTW); off: stub, and `tests/test_geo_fastisostasy.f90` is not built (`test_skip`) |
 | `chion`, `insol` | 1 | surface backend `chion`: `chion=1` compiles the chion host (with its orbit) into the adapter and needs `insol=1`; off: stub |
 | `vilma` | 0 | geo backend `vilma2` (the global Earth and the regional port): adapter, `INC_VILMA`/`LIB_VILMA` (`libvilma.a` of `vilma2/`), SHTns of fesm-utils (`LIB_SHTNS`; LIS, FFTW); off: stub, and `tests/test_geo_vilma2.f90` is not built (`test_skip`), `tests/test_geo_vilma2_stub.f90` is |
-| `plastic` | 0 | ice backend `plastic` (docs/dev/plastic-backend.md): adapter, `INC_PLASTIC`/`LIB_PLASTIC` (`PlasticIceSheet/libplastic/include/libplastic.a`, built with `make -C PlasticIceSheet static config=<machine>_<compiler>`); off: stub, and `tests/test_ice_plastic.f90` is not built (`test_skip`) |
+| `plastic` | 0 | ice backend `plastic` (docs/dev/plastic-backend.md): adapter, `INC_PLASTIC`/`LIB_PLASTIC` (`PlasticIceSheet/libplastic/include/libplastic.a`, built with `make plastic-static`); off: stub, and `tests/test_ice_plastic.f90` is not built (`test_skip`) |
 | `cism`, `pism`, `rembo` | 0 | stop with the phase in which the adapter arrives |
 
 Objects are stamped with the switch settings

@@ -148,7 +148,7 @@ $(VILMA_ARCHIVE):
 	@$(call dep_missing,VILMA2,make -C $(VILMAROOT) vilma-static openmp=$(openmp))
 
 $(PLASTIC_ARCHIVE):
-	@$(call dep_missing,PlasticIceSheet,make -C $(PLASTICROOT) static config=<machine>_<compiler>)
+	@$(call dep_missing,PlasticIceSheet,make -C $(PLASTICROOT) static openmp=$(openmp) lis=1 FESMUTILSROOT=$(abspath $(FESMUTILSROOT)))
 
 $(SHTNS_ARCHIVE):
 	@$(call dep_missing,SHTns of fesm-utils (one-time),make -C $(FESMUTILSROOT) shtns openmp=$(openmp))
@@ -179,10 +179,9 @@ insol-static:
 vilma-static: fesmutils-static
 	$(MAKE) -C $(VILMAROOT) vilma-static openmp=$(openmp)
 
-# PlasticIceSheet: dp, no dependencies; its config fragment (PLASTIC_CONFIG) names machine and compiler
-PLASTIC_CONFIG ?= dkrz_levante_ifx
-plastic-static:
-	$(MAKE) -C $(PLASTICROOT) static config=$(PLASTIC_CONFIG)
+# PlasticIceSheet (configured by configme like the others): dp, no dependencies but the Lis of kryos' fesm-utils
+plastic-static: fesmutils-static
+	$(MAKE) -C $(PLASTICROOT) static openmp=$(openmp) lis=1 FESMUTILSROOT=$(abspath $(FESMUTILSROOT))
 
 deps-static: fesmutils-static $(backend_static)
 

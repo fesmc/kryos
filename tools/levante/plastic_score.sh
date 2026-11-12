@@ -15,5 +15,5 @@ RUN=$(readlink -f "$1"); LBL=$2; S=${3:-$KRYOS_WORK/score/$LBL}
 [ -f "$RUN/geo_glob_vilma.nc" ] || { echo "no $RUN/geo_glob_vilma.nc (the run's VILMA2 stream: out_vilma of geo_glob)"; exit 1; }
 for r in B1_l170 ref/I910_it0; do [ -d "$PM_REF/$r" ] || { echo "no reference $PM_REF/$r (PM_REF)"; exit 1; }; done
 mkdir -p "$S"; S=$(readlink -f "$S")
-sbatch --parsable -A "$ACCOUNT" -p shared -t 01:00:00 -c 4 --mem=32G -J "score-$LBL" -o "$S/score-%j.out" \
+sbatch --parsable -A "$ACCOUNT" $KRYOS_PART -t 01:00:00 -c 4 --mem=32G -J "score-$LBL" -o "$S/score-%j.out" \
     --export=ALL,KRYOS_JOB=1 "$_h/plastic_score.sh" "$RUN" "$LBL" "$S"

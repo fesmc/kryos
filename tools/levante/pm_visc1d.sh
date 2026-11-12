@@ -20,7 +20,7 @@ if [ "${KRYOS_JOB:-}" != 1 ]; then
   [ $# -ge 1 ] || { sed -n '2,7p' "$0"; exit 1; }
   [ -x $X ] || { echo "no $X: tools/levante/pm_visc1d.sh build"; exit 1; }
   R=$(readlink -f "$1"); ls $R/pm_3d.nml $R/pm.nml > /dev/null 2>&1 || { echo "no $R/pm_3d.nml (a run of the case pm_3d.nml)"; exit 1; }
-  sbatch --parsable -A $ACCOUNT -p shared -t 00:30:00 -c 16 --mem=40G -J pm-visc1d -o $PM_DIR/data/pm_visc1d-%j.out \
+  sbatch --parsable -A $ACCOUNT $KRYOS_PART -t 00:30:00 -c 16 --mem=40G -J pm-visc1d -o $PM_DIR/data/pm_visc1d-%j.out \
       --export=ALL,KRYOS_JOB=1 "$_h/pm_visc1d.sh" "$R"
   exit
 fi
