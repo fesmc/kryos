@@ -8,6 +8,7 @@
 #   julia --project=tools/levante plastic_ensemble.jl earth-regions <config.toml> <out.nc>   the region masks of [earth]
 #   julia --project=tools/levante plastic_ensemble.jl earth-shift <config.toml> <out.nc> UM=0.5 LM=0 <region>=1.0   one shift file
 #   julia --project=tools/levante plastic_ensemble.jl earth-basis <out.nc> <pan visc.nc> <pan litho.nc> | earth-field <basis.nc> <out.nc> c1 ...   (plastic_earth_basis.jl)
+#   julia --project=tools/levante plastic_ensemble.jl earth-radial <3-D par.nml> <out par.nml>   the 1-D radial mean of the 3-D Earth
 # The folder, the members and the scale groups are those of plastic_esmda.jl (prepare, write_iteration, member_series). Config:
 # [scale], [prior] (sigma, ramp_ka, corr_time_kyr, theta_max), [run], [score] as plastic_esmda_v2.toml; [ensemble]: n (members
 # besides the prior mean, m000), seed, obs_groups, compare_max_age_ka (the window of the judging and of the comparison with the
@@ -405,11 +406,12 @@ function main(args)
         return ES.earth_sample(args[2], args[3], args[4]; n = parse(Int, get(kv, "n", "30")), K = parse(Int, get(kv, "K", "4")),
                                seed = parse(Int, get(kv, "seed", "1")))
     end
+    args[1] == "earth-radial" && return ES.earth_radial(args[2], args[3])
     args[1] == "weights" && return weights(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1)
     args[1] == "scores" && return scores(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1)
     args[1] == "errmodel" && return errmodel(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1;
                                              top = length(args) >= 4 ? parse(Int, args[4]) : 6)
     error("plastic_ensemble.jl init <config> <folder> | weights <folder> [<wave>] | errmodel <folder> [<wave>] [<top>] | " *
-          "earth-regions <config> <out.nc> | earth-shift <config> <out.nc> UM=.. LM=.. <region>=..")
+          "earth-regions <config> <out.nc> | earth-shift <config> <out.nc> UM=.. LM=.. <region>=.. | earth-radial <par> <out par>")
 end
 abspath(PROGRAM_FILE) == @__FILE__() && main(ARGS)
