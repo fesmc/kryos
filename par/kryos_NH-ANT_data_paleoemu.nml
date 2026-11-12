@@ -6,6 +6,9 @@
 ! and T_srf on the reconstructed geometry are the output: tools/levante/smb_basin_budget.jl takes them per basin.
 ! dtt 100 yr (chion steps one annual cycle per update; the ice is linear between the 2.5 kyr slices). CO2: the CESM-3Ma
 ! series (PaleoEmulator scripts/prep_kryos_co2.jl). Output: 2D every 2.5 kyr (the PaleoMIST slices), 1D every 100 yr.
+! Shelf diagnostics (marine_shelf) on the imposed geometry, no ice model or GIA (the data ice ignores bmb_shlf):
+! the ports' ocean is the present day (North: ORAS5 1981-2010; Antarctica: ISMIP7, Zwally2012 basin means) plus the
+! emulator's dto_lev anchored at present day (0 there).
 ! Build: paleoemu=1 (plastic, vilma and yelmo not needed). Inputs in kryos_data/paleoemu/ (its README): the emulator
 ! file, its reference climate on GLOBAL-0.5DEG, the CO2 table.
 !   runme -r -s -q 12h -w 01:00:00 --omp 32 -m 60G -o <run> -n par/kryos_NH-ANT_data_paleoemu.nml   (albedo; Levante: -q shared)
@@ -83,7 +86,7 @@
     grid      = "GLOBAL-0.5DEG"   ! the background grid of [globe_ice]
     dt        = 0.0               ! every step
     clock     = "forcing"
-    out_2D    = "out_2D"          ! clim_glob.nc: tas, pr, z_srf_clim, lapse on lon, lat
+    out_2D    = "out_2D"          ! clim_glob.nc: tas, pr, z_srf_clim, lapse, dto_lev on lon, lat (level)
     out_1D    = "none"
     out_emu   = "out_2D"          ! clim_glob_emu.nc: the emulator on the CESM grid (inputs, dV, dz, anomalies, sd)
     file      = "kryos_data/paleoemu/emulator_cesm3ma.nc"
@@ -93,6 +96,10 @@
     scale_dtas   = 1.0            ! the emulator's temperature anomaly times this (a colder/warmer climate, its pattern)
     bias         = "kryos_data/paleoemu/bias/bias_pmip4_mean.nc"   ! the PMIP4 mean LGM bias (NH ice-volume weighted)
     bias_scale   = 1.5            ! the reference: x1 to x2 bracket the LGM budgets (balanced Laurentide at x2)
+    scale_dto    = 1.0            ! the ocean: dto_lev = scale_dto (dto - dto0) + dto_nsd dto_sd (clim_glob.nc)
+    dto_nsd      = 0.0
+    dto_anchor   = True           ! dto0: the emulator's dto at present-day inputs (dto_lev = 0 at present day)
+    dto_anchor_co2 = 280.0        ! [ppm]
 /
 
 &globe_ice
@@ -138,6 +145,7 @@
     ice         = "ice_nor"
     climate     = "climate_nor"
     surface     = "surface_nor"
+    shelf       = "shelf_nor"
 /
 
 &ice_nor
@@ -177,6 +185,7 @@
     ice         = "ice_ant"
     climate     = "climate_ant"
     surface     = "surface_ant"
+    shelf       = "shelf_ant"
 /
 
 &ice_ant
@@ -219,12 +228,16 @@
 
 &regions_ant
     path_regions = "fesmdata/{domain}/{grid_name}/{grid_name}_REGIONS.nc"
+    path_basins  = "fesmdata/{domain}/{grid_name}/{grid_name}_BASINS-{set}.nc"
+    basin_sets   = "Zwally2012"
 /
 
 &climate_nor
     backend  = "paleoemu"          ! the port of clim_glob (its cadence and clock)
     grid     = "NH-32KM"            ! the ice grid
-    out_2D   = "out_2D"            ! climate_nor.nc: monthly tas (at z_srf_clim), pr, z_srf_clim, lapse
+    out_2D   = "out_2D"            ! climate_nor.nc: monthly tas (at z_srf_clim), pr, z_srf_clim, lapse; to_ann, so_ann, dto_ann
+    to_ref   = "oras5_1981_2010_to"   ! the present-day ocean (ORAS5 1981-2010, the annual mean): set A for the shelf
+    so_ref   = "oras5_1981_2010_so"
 /
 
 &surface_nor
@@ -238,10 +251,27 @@
     chion         = "chion"
 /
 
+&shelf_nor
+    backend      = "marine_shelf"   ! shelf diagnostics on the imposed geometry (the data ice ignores bmb_shlf)
+    grid         = "NH-32KM"         ! the hub grid
+    dt           = 0.0
+    phase        = 0.0
+    clock        = "model"
+    out_2D       = "out_2D"         ! shelf_nor.nc: bmb_shlf [m/yr], T_shlf, tf_shlf, dT_shlf
+    out_1D       = "none"
+    out_vars     = ""
+    marine_shelf = "marine_shelf_nor"
+    corr         = "shelf_corr_nor"
+/
+
 &climate_ant
-    backend  = "paleoemu"          ! the port of clim_glob (its cadence and clock)
-    grid     = "ANT-32KM"            ! the ice grid
-    out_2D   = "out_2D"            ! climate_ant.nc: monthly tas (at z_srf_clim), pr, z_srf_clim, lapse
+    backend    = "paleoemu"          ! the port of clim_glob (its cadence and clock)
+    grid       = "ANT-32KM"            ! the ice grid
+    out_2D     = "out_2D"            ! climate_ant.nc: monthly tas (at z_srf_clim), pr, z_srf_clim, lapse; to_ann, so_ann, dto_ann
+    to_ref     = "ismip7_to"         ! the present-day ocean (ISMIP7): set A for the shelf
+    so_ref     = "ismip7_so"
+    dto_basins = "Zwally2012"        ! dto_ann: each basin's mean of dto_lev over its sample
+    dto_sample = "zone:shelf_break_buffer"   ! the sample: the ocean at the shelf break (none: the basin's ocean)
 /
 
 &surface_ant
@@ -253,6 +283,19 @@
     out_1D        = "out_1D"
     surface_chion = "surface_chion_ant"
     chion         = "chion_ant"     ! Antarctica's own ITM group (itm_chion_ant): the per-domain tuning
+/
+
+&shelf_ant
+    backend      = "marine_shelf"   ! shelf diagnostics on the imposed geometry (the data ice ignores bmb_shlf)
+    grid         = "ANT-32KM"         ! the hub grid
+    dt           = 0.0
+    phase        = 0.0
+    clock        = "model"
+    out_2D       = "out_2D"         ! shelf_ant.nc: bmb_shlf [m/yr], T_shlf, tf_shlf, dT_shlf
+    out_1D       = "none"
+    out_vars     = ""
+    marine_shelf = "marine_shelf_ant"
+    corr         = "shelf_corr_ant"
 /
 
 &surface_chion
@@ -550,4 +593,137 @@
     alb_snow_dry       = 0.8      ! [1] Albedo of dry snow
     alb_snow_wet       = 0.65     ! [1] Albedo of wet snow
     firn_fac           = 0.0266   ! [K (mm w.e. yr-1)-1] Firn warming per annual net refreezing
+/
+
+! The shelves (as par/kryos_NH-ANT.nml's): North anom (tf_method 2); Antarctica quad-nl
+! (tf_method 1) with the Zwally2012 tf corrections.
+
+&marine_shelf_nor
+    bmb_method      = "anom"     ! "pico", "anom", "lin", "quad", "quad-nl", "*-slope"
+    tf_method       = 2          ! 1: T_shlf-T_fp_shlf, 2: dT_shlf (needed by bmb_method="anom")
+    interp_depth    = "shlf"     ! "shlf", "bed", "const"
+    interp_method   = "interp"   ! "mean", "layer", "interp" ! Same method is used for salinity
+    find_ocean      = True       ! Find which points are connected to open ocean (ie, ignore subglacial lakes)
+    restart         = "None"     ! Load fields from a restart file?
+    extrap_shlf     = False      ! Extrapolate ocean front values into the shelf
+    mask_ocean      = "none"     ! mask_ocn_ref: ocean (else land)
+    mask_deep_ocean = "all"      ! mask_ocn_ref: deep ocean (c_deep), over ocean
+    mask_pico_deep  = "none"     ! pico only (bmb_method="pico"): bmb averaged with c_deep there
+    bmb_max         = 0.0        ! [m/a] Maximum allowed bmb value (eg, for no refreezing, set bmb_max=0.0)
+    c_deep          = -1.0       ! [m/a] Melt rate in deep ocean, should be negative but not huge
+    depth_deep      = 2000.0     ! [m] Depth at which deep ocean is assumed
+    depth_const     = 2000.0     ! [m] Constant shelf depth for interp_depth=const
+    depth_min       = 1100.0     ! [m] interp_method=mean, min depth to include
+    depth_max       = 1500.0     ! [m] interp_method=mean, max depth to include
+    lambda1         = -0.0575    ! [degC PSU−1] Liquidus slope
+    lambda2         = 0.0832     ! [degC] Liquidus intercept
+    lambda3         = 7.59e-4    ! [degC m−1] Liquidus pressure coefficient
+    gamma_lin       = 630.0      ! [m/yr] Linear heat excange velocity. Favier et al., (2019) suggest 630.
+    gamma_quad      = 11100.0    ! [m/yr] Quadratic heat exchange velocity. Jourdain et al. (2020) suggest 11100.
+    gamma_quad_nl   = 14500.0    ! [m/yr] Quadratic non-local heat exchange velocity. Jourdain et al. (2020) suggest 14500.
+    gamma_prime     = 100.0      ! [-] Scalar when '*-slope' method is used
+    kappa_grz       = 10.0       ! [m/a K-1] Heat flux coefficient [kappa*dT]
+    c_grz           = 1.0        ! [-] bmb_ref scalar [c_grz*bmb_ref]
+    f_grz_shlf      = 10.0       ! [-] Ratio of grz melt to shelf melt
+    grz_length      = 32.0       ! [km] Length scale of assumed grounding zone
+    use_obs         = False      ! Load obs for bmb_ref
+    obs_path        = "ice_data/{domain}/{grid_name}/{grid_name}_BMELT-R13.nc"
+    obs_name        = "bm_eq_reese"
+    obs_scale       = 1.0        ! [-] bmb_ref = obs_scale*bmb_obs
+    obs_lim         = 100.0      ! [m/yr] Maximum magnitude of bmb_ref
+/
+
+&shelf_corr_nor
+    basins        = "domain"   ! basin ids: <set>, <set>.group, None or domain (one basin)
+    corr_method   = "none"     ! none, tf or bmb: corrections by region
+    corr_names    = ""
+    corr_values   = 0.0
+    tf_correction = False
+    tf_path       = "none"
+    tf_name       = "dT_nl"
+/
+
+&marine_shelf_ant
+    bmb_method      = "quad-nl"                                                          ! "pico", "anom", "lin", "quad", "quad-nl", "*-slope"
+    tf_method       = 1                                                                  ! 1: T_shlf-T_fp_shlf, 2: dT_shlf (needed by bmb_method="anom")
+    interp_depth    = "shlf"                                                             ! "shlf", "bed", "const"
+    interp_method   = "interp"                                                           ! "mean", "layer", "interp" ! Same method is used for salinity
+    find_ocean      = True                                                               ! Find which points are connected to open ocean (ie, ignore subglacial lakes)
+    restart         = "None"                                                             ! Load fields from a restart file?
+    extrap_shlf     = False                                                              ! Extrapolate ocean front values into the shelf
+    mask_ocean      = "zone:open_ocean"                                                  ! mask_ocn_ref: ocean (else land)
+    mask_deep_ocean = "~region:Antarctica | zone:open_ocean | zone:shelf_break_buffer"   ! mask_ocn_ref: deep ocean (c_deep), over ocean
+    mask_pico_deep  = "none"                                                             ! pico only (bmb_method="pico"): bmb averaged with c_deep there, e.g. "region:Antarctica & zone:shelf_break_buffer"
+    bmb_max         = 0.0                                                                ! [m/a] Maximum allowed bmb value (eg, for no refreezing, set bmb_max=0.0)
+    c_deep          = -10.0                                                              ! [m/a] Melt rate in deep ocean, should be negative but not huge
+    depth_deep      = 2000.0                                                             ! [m] Depth at which deep ocean is assumed
+    depth_const     = 2000.0                                                             ! [m] Constant shelf depth for interp_depth=const
+    depth_min       = 1100.0                                                             ! [m] interp_method=mean, min depth to include
+    depth_max       = 1500.0                                                             ! [m] interp_method=mean, max depth to include
+    lambda1         = -0.0575                                                            ! [degC PSU−1] Liquidus slope
+    lambda2         = 0.0832                                                             ! [degC] Liquidus intercept
+    lambda3         = 7.59e-4                                                            ! [degC m−1] Liquidus pressure coefficient
+    gamma_lin       = 630.0                                                              ! [m/yr] Linear heat excange velocity. Favier et al., (2019) suggest 630.
+    gamma_quad      = 11100.0                                                            ! [m/yr] Quadratic heat exchange velocity. Jourdain et al. (2020) suggest 11100.
+    gamma_quad_nl   = 14500.0                                                            ! [m/yr] Quadratic non-local heat exchange velocity. Jourdain et al. (2020) suggest 14500.
+    gamma_prime     = 100.0                                                              ! [-] Scalar when '*-slope' method is used
+    kappa_grz       = 10.0                                                               ! [m/a K-1] Heat flux coefficient [kappa*dT]
+    c_grz           = 1.0                                                                ! [-] bmb_ref scalar [c_grz*bmb_ref]
+    f_grz_shlf      = 10.0                                                               ! [-] Ratio of grz melt to shelf melt
+    grz_length      = 16.0                                                               ! [km] Length scale of assumed grounding zone
+    use_obs         = False                                                              ! Load obs for bmb_ref
+    obs_path        = "fesmdata/{domain}/{grid_name}/{grid_name}_BasalMelt-Rignot2013.nc"
+    obs_name        = "bmelt_eq_reese"
+    obs_scale       = 1.0                                                                ! [-] bmb_ref = obs_scale*bmb_obs
+    obs_lim         = 100.0                                                              ! [m/yr] Maximum magnitude of bmb_ref
+/
+
+&shelf_corr_ant
+    basins        = "Zwally2012"   ! basin ids: <set>, <set>.group, None or domain (one basin)
+    corr_method   = "tf"           ! none, tf or bmb: corrections by region
+    corr_names    = "b1" "b12" "b14" "b15"
+    corr_values   = 0.3 0.3 -1.5 0.0
+    corr_b1       = "Zwally2012:1"
+    corr_b12      = "Zwally2012:12"
+    corr_b14      = "Zwally2012:14"
+    corr_b15      = "Zwally2012:15"
+    tf_correction = False          ! no grid-specific tf file: mshlf runs from the remapped climate forcing
+    tf_path       = "ice_data/{domain}/{grid_name}/{grid_name}_OCEAN_ISMIP6_J20.nc"
+    tf_name       = "dT_nl"
+/
+
+&oras5_1981_2010_to
+    filename = "fesmdata/{domain}/{grid_name}/{grid_name}_Ocean-ORAS5-1981-2010.nc"
+    name     = "to"
+    units    = "degC" "K"
+    scaling  = 1.0 273.15
+    time     = 0 0 0 0 12
+    fill     = "nearest"
+/
+
+&oras5_1981_2010_so
+    filename = "fesmdata/{domain}/{grid_name}/{grid_name}_Ocean-ORAS5-1981-2010.nc"
+    name     = "so"
+    units    = "PSU" "PSU"
+    scaling  = 1.0 0.0
+    time     = 0 0 0 0 12
+    fill     = "nearest"
+/
+
+&ismip7_to
+    filename = "fesmdata/{domain}/{grid_name}/{grid_name}_Ocean-ISMIP7.nc"
+    name     = "to"
+    units    = "degC" "K"
+    scaling  = 1.0 273.15
+    time     = 0 0 0 0 1
+    fill     = "nearest"
+/
+
+&ismip7_so
+    filename = "fesmdata/{domain}/{grid_name}/{grid_name}_Ocean-ISMIP7.nc"
+    name     = "so"
+    units    = "PSU" "PSU"
+    scaling  = 1.0 0.0
+    time     = 0 0 0 0 1
+    fill     = "nearest"
 /
