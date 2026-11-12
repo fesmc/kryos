@@ -111,7 +111,7 @@ Each step changes one thing against its parent, so the change in score is that t
 | **Our ice, present-day factors** | | | | | | | | |
 | D1 | `tau-PMIST-PD \| E1D-PMIST` | T1: the present-day factors | running | | | | | |
 | D2 | `tau-PMIST-PD \| E3D-B21-6` | D1: the 3-D Earth (m000 of ens-v2) | done | −9243 | 3/5 | 20.3 | 34.7 | 3.2 / 7.0 / 13.7 / 0.5 / 1.4 |
-| D3 | `tau-PMIST-PD \| E3D-B21-6 @NH16` | D2: Northern Hemisphere resolution | running | | | | | |
+| D3 | `tau-PMIST-PD \| E3D-B21-6 @NH16` | D2: Northern Hemisphere resolution, 32 → 16 km (ESL at 20 ka −128.4 against −130.4 m; par `..._nh16.nml`) | done | −9256 | 3/5 | 20.6 | 35.4 | 3.1 / 7.8 / 13.8 / 0.5 / 1.5 |
 | **Ensembles** | | | | | | | | |
 | E1 | `tau-ENS1 \| E3D-B21-6` | D2: sampled τ_b (ens-v1, 25 members, Levante) | done, not rescored | | | | | |
 | E2 | `tau-ENS2 \| E3D-B21-6-ENS2` | E1: the Earth sampled too (ens-v2, 50 members) | done | | | | | |
