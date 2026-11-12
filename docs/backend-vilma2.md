@@ -72,7 +72,7 @@ Template `[geo_vilma2]` (global instance), besides the core keys of `[instance]`
 | `ice_bg` | `"globe_ice"` | the global ice field group |
 | `allow_no_spinup` | `False` | a run without VILMA2's spin-up (neither `pre_spinup_1d` nor `equil_time_max > 0`) stops unless True (tests, present-day starts) |
 | `out_gia` | `"none"` | schedule of `<instance>_gia.nc`: the global ice field VILMA2 got |
-| `out_vilma` | `"none"` | schedule of `<instance>_vilma.nc`: VILMA2's own diagnostics |
+| `out_vilma` | `"none"` | schedule of `<instance>_vilma.nc`: VILMA2's own diagnostics (with `dz_bed_rate` [m/yr], the bed's rate over the last VILMA2 update: at the last record, the present-day uplift rate the GNSS scores read) |
 
 The `&vilma` keys used by the runs (defaults from `input/vilma_defaults.nml`):
 
