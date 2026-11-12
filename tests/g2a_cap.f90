@@ -249,8 +249,8 @@ contains
         call nc_write(fr, "bedrock_topography", z_ref, dim1="lon", dim2="lat", units="m")
         call nc_write(fr, "ice_thickness", zero, dim1="lon", dim2="lat", units="m")
         open(newunit=u, file="vilma_g2a.nml", status="replace", action="write")
-        write(u,'(a)') "&ctl", ' file_forcing = "g2a_force.nc"', ' name_ice = "h_ice"', ' name_time = "time"', &
-            ' file_ref = ""', ' name_zbed_eq = "z_bed_eq"', ' name_hice_ref = "h_ice_ref"', ' file_out = "vilma_out.nc"', &
+        write(u,'(a)') "&ctl", ' file_forcing = "g2a_force.nc"', ' name_h_ice = "h_ice"', ' name_time = "time"', &
+            ' file_ref = ""', ' name_z_bed_start = "z_bed_eq"', ' file_out = "vilma_out.nc"', &
             ' file_hor = ""', " write_lossless = .true.", " time_init = -1.0e30", " time_end = 1.0e30", &
             " remap_input = .false.", ' name_lon = "lon"', ' name_lat = "lat"', " i_eq = 2", ' z_bed_ref_file = ""', &
             ' h_ice_ref_file = ""', ' z_bed_eq_file = "g2a_ref.nc"', ' h_ice_eq_file = "g2a_ref.nc"', ' rsl_restart_file = ""', &
@@ -296,8 +296,8 @@ contains
         call nc_write(fr, "bedrock_topography", zl, dim1="lon", dim2="lat", units="m")
         call nc_write(fr, "ice_thickness", zero_l, dim1="lon", dim2="lat", units="m")
         open(newunit=u, file="vilma_g2a_ll.nml", status="replace", action="write")
-        write(u,'(a)') "&ctl", ' file_forcing = "'//ff//'"', ' name_ice = "h_ice"', ' name_time = "time"', &
-            ' file_ref = ""', ' name_zbed_eq = "z_bed_eq"', ' name_hice_ref = "h_ice_ref"', ' file_out = "vilma_out_ll.nc"', &
+        write(u,'(a)') "&ctl", ' file_forcing = "'//ff//'"', ' name_h_ice = "h_ice"', ' name_time = "time"', &
+            ' file_ref = ""', ' name_z_bed_start = "z_bed_eq"', ' file_out = "vilma_out_ll.nc"', &
             ' file_hor = ""', " write_lossless = .true.", " time_init = -1.0e30", " time_end = 1.0e30", &
             " remap_input = .true.", ' name_lon = "lon"', ' name_lat = "lat"', " i_eq = 2", ' z_bed_ref_file = ""', &
             ' h_ice_ref_file = ""', ' z_bed_eq_file = "'//fr//'"', ' h_ice_eq_file = "'//fr//'"', ' rsl_restart_file = ""', &

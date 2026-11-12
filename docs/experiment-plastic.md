@@ -117,7 +117,7 @@ par/kryos_NH-ANT_plastic_vilma2.nml`; the North pair likewise):
 | lateral viscosity | `l_visc_3d = .false.` | `l_visc_3d = .true.`, `visc_3d_file = "fesmdata/Global/GLOBAL-T170/GLOBAL-T170_SolidEarth-Bagge2021.nc"`, `visc_3d_structure = 6` |
 | spin-up | `pre_spinup_1d = .false.`, `equil_time_max = 2.0e6` | `pre_spinup_1d = .true.`, `equil_time_max = 2.0e4` (after the 1-D pre-spin-up) |
 | tolerance | `equil_rate_tol = 1.0e-5` | same |
-| rotation | `rotation = .true.` (set) | `.true.` (the default of `input/vilma_defaults.nml`) |
+| rotation | `l_rotation = .true.` (set) | `.true.` (the default of `input/vilma_defaults.nml`) |
 | `[X_z_bed]`, `[X_H_ice]` | PaleoMIST's 0 ka bed and ice, `fesmdata/Global/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc`, `mode = "transient"` (read at `ext_tref` = 0) | `kryos_data/refcorr/PaleoMIST-sci/{grid_name}/{grid_name}_REFCORR.nc` (PaleoMIST's 0 ka bed + r, its 0 ka ice), `mode = "static"` |
 | `[topo_*] path` | `fesmdata/.../{grid_name}_TOPO-GEBCO2026.nc`, `..._TOPO-BedMachine-v4.nc` (today's, no correction) | `kryos_data/refcorr/PaleoMIST-sci/{domain}/{grid_name}/{grid_name}_TOPO-...-refcorr.nc` (today's + r) |
 

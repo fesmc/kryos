@@ -54,11 +54,10 @@ bash $T/pm_project.sh $O $O/data > /dev/null || exit 1
 cat > $O/vilma_rc.nml <<EOF
 &ctl
  file_forcing = "pm_data/force.nc"
- name_ice = "h_ice"
+ name_h_ice = "h_ice"
  name_time = "time"
  file_ref = ""
- name_zbed_eq = "z_bed_eq"
- name_hice_ref = "h_ice_ref"
+ name_z_bed_start = "z_bed_eq"
  file_out = "vilma_out.nc"
  file_hor = ""
  write_lossless = .true.

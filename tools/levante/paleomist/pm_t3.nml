@@ -12,11 +12,10 @@
 
 &ctl
  file_forcing = "pm_data/pm_force_B.nc"
- name_ice = "h_ice"
+ name_h_ice = "h_ice"
  name_time = "time"
  file_ref = ""
- name_zbed_eq = "z_bed_eq"
- name_hice_ref = "h_ice_ref"
+ name_z_bed_start = "z_bed_eq"
  file_out = "vilma_out.nc"
  file_hor = ""
  write_lossless = .true.
@@ -41,7 +40,7 @@
  scheme = "fe"
  sle_subgrid = .true.
  cfl = 1.0
- rotation = .true.
+ l_rotation = .true.
  rotation_k_s = 0.0
  deg1_frame = "cm"
  rho_ice = 910.0

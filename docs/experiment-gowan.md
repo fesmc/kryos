@@ -18,7 +18,7 @@ is scored.
   [tools/levante/paleomist/](https://github.com/fesmc/kryos/tree/main/tools/levante/paleomist)
   `pm_1d.nml`, `pm_l80.nml`, `pm_bm.nml`, `pm_3d.nml`, `pm_t3.nml` (the options in their header
   comments). Defaults: forcing `pm_data/pm_force_B.nc`, reference `pm_data/pm_ref.nc`, `lmax` 170,
-  `equil_time_max` 5e5, `rho_ice` 910, `rho_water` 1000, `rotation = .true.`, `deg1_frame = "cm"`,
+  `equil_time_max` 5e5, `rho_ice` 910, `rho_water` 1000, `l_rotation = .true.`, `deg1_frame = "cm"`,
   `scheme = "fe"`.
 - **Scripts** (`tools/levante/`):
   [pm_prep.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/pm_prep.jl) (inputs),
@@ -47,7 +47,7 @@ coupling of a replayed PaleoMIST load through the kryos globe was tested by gate
 | Before 80 ka | equilibrium with the first record | equilibrium with the 80 ka load (spin-up) |
 | Reference | present topography as final condition | PaleoMIST's 0 ka `z_bed` and `H_ice` (`pm_ref.nc`), relaxed (`i_eq = 1`) |
 | Densities | 910 / 1000 (SELEN `data.inc`) | 931 / 1000 (B1); 910 / 1000 (`I910_it0`) |
-| Sea-level equation | shoreline migration, grounding line, rotation | `rotation = .true.`, `deg1_frame = "cm"`, flotation, sloping coast (`sle_subgrid = .true.`) |
+| Sea-level equation | shoreline migration, grounding line, rotation | `l_rotation = .true.`, `deg1_frame = "cm"`, flotation, sloping coast (`sle_subgrid = .true.`) |
 
 The step is a 1-yr ramp because `vilma.x` ramps the ice linearly between two forcing slices;
 record t_k is compared with the state at t_k + 1 yr (`pm_prep.jl`, `pm_compare.jl` `trec`).
@@ -164,7 +164,7 @@ A run is the case file (`-n`, the Earth) with `-p` settings; a key must exist in
 | `ctl.file_forcing` | `pm_data/pm_force_<F>.nc`, F = `B` (80 -> 0 ka steps; default), `A` (22.5 ka ice held: equilibrium), `S` (smoke, 25 -> 20 ka); diagnosis variants `Bg`, `Bl`, `Bm`, `Bm910`, `Bgm910`, `Bm80`, `Bgm80_910` | the forcing file (`pm_prep.jl`) |
 | `vilma.equil_time_max`, `vilma.equil_rate_tol` | 5e5, 1e-5 | spin-up cap [yr] (0: no spin-up, the Earth relaxed to the reference), tolerance [m/yr] |
 | `vilma.rho_ice`, `vilma.rho_water` | 910, 1000 | densities of the load |
-| `vilma.rotation`, `vilma.deg1_frame` | `.true.`, `cm` | rotation, degree-1 frame (`cm`, `cf`) |
+| `vilma.l_rotation`, `vilma.deg1_frame` | `.true.`, `cm` | rotation, degree-1 frame (`cm`, `cf`) |
 | `vilma.rotation_k_s` | 0 | 0: the model's own fluid Love number; 0.94349: from the observed flattening |
 | `vilma.scheme`, `vilma.cfl` | `fe`, 1.0 | the memory scheme (`fe`, `trap`); the Maxwell-number ceiling of the `fe` sub-steps |
 | `vilma.sle_subgrid` | `.true.` | the sloping-coast ocean load; `.false.`: the binary C rsl |

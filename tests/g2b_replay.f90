@@ -635,8 +635,8 @@ contains
         ! reference of the same product, i_eq = 1 (reference = present day), the same &vilma and the run's densities.
         integer :: u
         open(newunit=u, file="vilma_g2b.nml", status="replace", action="write")
-        write(u,'(a)') "&ctl", ' file_forcing = "'//trim(datadir)//'/g2b_force_'//trim(itoa(nstep))//'.nc"', ' name_ice = "h_ice"', &
-            ' name_time = "time"', ' file_ref = ""', ' name_zbed_eq = "z_bed_eq"', ' name_hice_ref = "h_ice_ref"', &
+        write(u,'(a)') "&ctl", ' file_forcing = "'//trim(datadir)//'/g2b_force_'//trim(itoa(nstep))//'.nc"', ' name_h_ice = "h_ice"', &
+            ' name_time = "time"', ' file_ref = ""', ' name_z_bed_start = "z_bed_eq"', &
             ' file_out = "vilma_out.nc"', ' file_hor = ""', " write_lossless = .true.", " time_init = -1.0e30", &
             " time_end = 1.0e30", " remap_input = .true.", ' name_lon = "lon"', ' name_lat = "lat"', " i_eq = 1", &
             ' z_bed_ref_file = "'//trim(datadir)//'/g2b_ref.nc"', ' h_ice_ref_file = "'//trim(datadir)//'/g2b_ref.nc"', &
