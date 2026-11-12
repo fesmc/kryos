@@ -3,10 +3,12 @@
 # on Bagge's grid (GLOBAL-T170, its 164 depths to the core-mantle boundary). Each field is clamped to [lo, hi] first (the
 # cratonic roots near 30 dex would dominate the spread; above about 23 dex the mantle is elastic over a glacial cycle, which the
 # lid threshold of VILMA2 decides, visc_3d_lid_log10max). The fields count equally; the components are weighted by area (cos lat)
-# and volume (r^2 dr). A component is stored as the pattern of one standard deviation over the fields, so a field of the basis is
+# and volume (r^2 dr). weights = "field" counts the fields equally (v1), "study" the three studies equally (Bagge's structures share
+# one weight). lid (v2: 22.5) gives all fields one lithosphere: elastic (hi) from the surface down to where log10 eta first drops
+# below lid. A component is stored as the pattern of one (weighted) standard deviation over the fields, so a field of the basis is
 #   log10 eta = mean + sum_k c_k pc_k,   c_k ~ N(0, 1),
 # and the experts sit at c_k = coef(field, k). Fields of the basis: earth-field (a VILMA2 lon-lat-r file, visc_3d_structure = 0).
-#   julia --project=tools/levante tools/levante/plastic_ensemble.jl earth-basis <out.nc> <pan visc.nc> <pan litho.nc> [kmax=6] [lo=19.5] [hi=24]
+#   julia --project=tools/levante tools/levante/plastic_ensemble.jl earth-basis <out.nc> <pan visc.nc> <pan litho.nc> [kmax=6] [lo=19.5] [hi=24] [weights=field|study] [lid=22.5]
 #   julia --project=tools/levante tools/levante/plastic_ensemble.jl earth-field <basis.nc> <out.nc> c1 c2 ...
 # Pan et al. (2022) is not released in FesmData yet: its viscosity is vilma2's input/pan2022.nc (log10 eta on lon, lat, radius), its
 # lithosphere thickness isostasy_data's earth_structure/lithothickness/pan2022.nc (T_litho [km]). Pan's viscosity field starts below
@@ -41,7 +43,7 @@ function regrid(slon, slat, sdep, F, tlon, tlat, tdep)
     G
 end
 
-function earth_basis(out, panfile, panlitho; kmax = 6, lo = 19.5, hi = 24.0)
+function earth_basis(out, panfile, panlitho; kmax = 6, lo = 19.5, hi = 24.0, weights = "field", lid = nothing)
     fes = ENV["FESMDATA"]
     bf = joinpath(fes, "Global", "GLOBAL-T170", "GLOBAL-T170_SolidEarth-Bagge2021.nc")
     lon, lat, dep, B, snames = NCDataset(bf) do ds
@@ -64,21 +66,32 @@ function earth_basis(out, panfile, panlitho; kmax = 6, lo = 19.5, hi = 24.0)
         dep[k] < 1e3 * T[i, j] && (P[i, j, k] = Float32(hi))
     end
     push!(fields, ("P22", P))
+    issorted(dep) || error("$bf: depth not ascending")
     for (nm, F) in fields
         any(!isfinite, F) && error("$nm: non-finite values")
         F .= clamp.(F, Float32(lo), Float32(hi))
+        # one lithosphere definition for all: elastic (hi) down to the first depth where log10 eta drops below lid
+        lid === nothing || for j in eachindex(lat), i in eachindex(lon)
+            k = findfirst(<(Float32(lid)), view(F, i, j, :)); k === nothing && (k = length(dep) + 1)
+            F[i, j, 1:k-1] .= Float32(hi)
+        end
     end
     M = length(fields); N = length(lon) * length(lat) * length(dep)
-    μ = sum(F for (_, F) in fields) ./ M
+    # the weight of each field: equal ("field"), or equal per study with Bagge's 8 structures sharing one ("study")
+    nb = count(f -> startswith(f[1], "B21"), fields)
+    wm = weights == "study" ? [startswith(nm, "B21") ? 1 / (3nb) : 1 / 3 for (nm, _) in fields] :
+         weights == "field" ? fill(1 / M, M) : error("weights = field | study, not $weights")
+    μ = sum(wm[m] .* F for (m, (_, F)) in enumerate(fields))
     A = zeros(Float32, M, N); for (m, (_, F)) in enumerate(fields); A[m, :] .= vec(F .- μ); end
     # weights: area and volume, normalized
     rr = R_VILMA_KM .- dep ./ 1e3; dr = [abs(i == 1 ? (dep[2] - dep[1]) : i == length(dep) ? (dep[end] - dep[end-1]) : (dep[i+1] - dep[i-1]) / 2) for i in eachindex(dep)]
     w = vec([cosd(y) * r^2 * d for _ in lon, y in lat, (r, d) in zip(rr, dr)]); w ./= sum(w)
-    G = Symmetric(Float64.((A .* w') * A'))
+    sw = sqrt.(wm)
+    G = Symmetric(sw .* Float64.((A .* w') * A') .* sw')            # the weighted covariance of the fields
     ev = eigen(G); o = sortperm(ev.values, rev = true); λ = max.(ev.values[o], 0); U = ev.vectors[:, o]
     K = min(kmax, M - 1)
-    pcs = [reshape(A' * U[:, k], length(lon), length(lat), length(dep)) ./ Float32(sqrt(M - 1)) for k in 1:K]
-    coef = sqrt(M - 1) .* U[:, 1:K]                             # the experts in the coefficients
+    pcs = [reshape(A' * Float32.(sw .* U[:, k]), length(lon), length(lat), length(dep)) for k in 1:K]   # one weighted sd
+    coef = U[:, 1:K] ./ sw                                      # the experts in the coefficients: field m = mean + sum coef pc
     frac = λ ./ sum(λ)
     wa = cosd.(lat) ./ (length(lon) * sum(cosd.(lat)))
     prof = [sum(F[i, j, d] * wa[j] for i in eachindex(lon), j in eachindex(lat)) for (_, F) in fields, d in eachindex(dep)]   # area means
@@ -95,6 +108,7 @@ function earth_basis(out, panfile, panlitho; kmax = 6, lo = 19.5, hi = 24.0)
         defVar(ds, "coef", Float64.(coef), ("field", "component"); attrib = ["long_name" => "the coefficients of the fields"])
         defVar(ds, "profile", Float64.(prof), ("field", "depth"); attrib = ["units" => "log10(Pa s)", "long_name" => "area mean of each clamped field"])
         ds.attrib["fields"] = join(first.(fields), "; "); ds.attrib["clamp"] = "$lo $hi"
+        ds.attrib["weights"] = weights * ": " * join([@sprintf("%.4f", x) for x in wm], " "); ds.attrib["lid"] = lid === nothing ? "none" : string(lid)
         ds.attrib["title"] = "Basis of 3-D Earths: mean and principal components of log10 viscosity of expert fields (plastic_ensemble.jl earth-basis)"
     end
     println("wrote ", out, ": ", M, " fields, variance fractions ", join([@sprintf("%.3f", f) for f in frac[1:K]], " "),
