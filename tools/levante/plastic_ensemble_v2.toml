@@ -156,6 +156,12 @@ run  = "$KRYOS_WORK/kryos_data/refcorr/PaleoMIST-1D"
 name = "PaleoMIST-Bagge1D"                # the radial mean of the 3-D Earth (par ..._bagge1d.nml: visc_3d_tol = 99, VILMA2's 1Db)
 run  = "$KRYOS_WORK/kryos_data/refcorr/PaleoMIST-Bagge1D"
 [[references]]
+name = "PaleoMIST-online-1D"              # kryos online (plastic every step, 32 km) with Gowan's tau_b and his 1-D Earth (runs/pm-online)
+run  = "$KRYOS/runs/pm-online/gowan"
+[[references]]
+name = "m000-1D"                          # the same with the present-day tau_b factors: m000 on Gowan's 1-D Earth
+run  = "$KRYOS/runs/pm-online/pdfac"
+[[references]]
 name = "GLAC1D-3D"
 run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D-3D"
 [[references]]
