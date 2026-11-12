@@ -316,7 +316,8 @@
     so_ref    = ""                             ! port: the present-day salinity, a var_defs group (with to_ref; e.g. ismip7_so)
     dto_basins = ""                            ! port: basin set of the domain's regions (e.g. "Zwally2012"; extended over the
                                                ! domain by nearest neighbour): dto_ann is each basin's mean over its sampled
-                                               ! cells; "" = the cells' own values
+                                               ! cells (a basin without any: over its ocean cells of the reference topography,
+                                               ! z_bed < 0 and not grounded); "" = the cells' own values
     dto_sample = "zone:shelf_break_buffer"     ! port: the cells each basin's mean samples (a regions selection; default the
                                                ! ocean at the shelf break: the zone between continental shelf and open ocean)
 /
