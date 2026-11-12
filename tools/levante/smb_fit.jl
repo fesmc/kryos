@@ -13,10 +13,12 @@
 #                Greenland MAR v3.14 and Antarctica RACMO2.3p2, 1981-2010 like the PD run's reference climate
 #   ∫smb_PD    = the integrated smb of the PD run on the ice of both [Gt/yr]; A_abl its ablation area (smb < 0) as a share
 #                of that ice: the gridpoint rmse alone can prefer a too narrow ablation zone (wI, wA default 0)
-#   With fice=true (default) the PD run's smb is weighted by the RCM's ice-covered fraction f_ice of the cell: the RCM's
-#   value on the grid is the mean over the cell (FesmData's remap), ice and ice-free, and the ice-free part's smb is about
-#   0 (seasonal snow), so f_ice smb is its counterpart. Unweighted, the margin cells, partly ice-free, read as too much
-#   melt (Greenland: up to 25 % at 600 m). fice=false compares the PD run's smb as it is.
+#   With fice=true (default) the PD run's smb is weighted by the RCM's ice-covered fraction f_ice of the cell where the
+#   RCM has values off the ice (MAR: the tundra): its value on the grid is then the mean over the cell (FesmData's
+#   remap), ice and ice-free, and the ice-free part's smb is about 0 (seasonal snow), so f_ice smb is its counterpart.
+#   Unweighted, Greenland's margin cells, partly ice-free, read as too much melt (up to 25 % at 600 m). RACMO2.3p2 has
+#   values on the ice only (grounded and floating; its f_ice is the grounded share), so Antarctica is not weighted.
+#   fice=false compares the PD run's smb as it is everywhere.
 # Basins in the regions of `exclude` (smb_basin_budget.jl's region names, e.g. Cordillera_and_Alaska,British_Isles: small
 # maritime ice sheets whose precipitation the emulator's 3.75 deg grid does not resolve) are left out of the LGM terms.
 #
@@ -29,10 +31,13 @@ using NCDatasets, CairoMakie, Printf, Statistics, DelimitedFiles, LinearAlgebra
 
 const FESMDATA = get(ENV, "FESMDATA", "/work/ba1442/fesmdata")
 # the domains: suffix of the PaleoMIST run, suffix of the PD run, whether its groups end in _ant, the RCM of the PD run
+# and whether the RCM has values off the ice, so that its cell means are diluted by the ice-free part (fice)
 const DOMAINS = [(pm="nor", pd="grl", ant=false,
-                  rcm="$FESMDATA/Greenland/GRL-16KM/GRL-16KM_SMB-MARv3.14-1981-2010-annual-mean.nc", rcm_name="MAR 1981-2010"),
+                  rcm="$FESMDATA/Greenland/GRL-16KM/GRL-16KM_SMB-MARv3.14-1981-2010-annual-mean.nc", rcm_name="MAR 1981-2010",
+                  fice=true),
                  (pm="ant", pd="ant", ant=true,
-                  rcm="$FESMDATA/Antarctica/ANT-32KM/ANT-32KM_SMB-RACMO2.3p2-1981-2010-annual-mean.nc", rcm_name="RACMO2.3p2 1981-2010")]
+                  rcm="$FESMDATA/Antarctica/ANT-32KM/ANT-32KM_SMB-RACMO2.3p2-1981-2010-annual-mean.nc", rcm_name="RACMO2.3p2 1981-2010",
+                  fice=false)]
 
 """The columns of params.txt that are the domain's parameters (see the header)."""
 function domain_columns(ph, dom)
@@ -64,7 +69,7 @@ function pd_terms(dir, dom, fice)
     m = NCDataset(joinpath(dir, "surface_$(dom.pd).nc")); i = NCDataset(joinpath(dir, "ice_$(dom.pd).nc")); o = NCDataset(dom.rcm)
     x = Float64.(m["xc"][:]); A = ((x[2] - x[1]) * 1e3)^2
     smb, so, H = last2(m, "smb"), last2(o, "smb"), last2(i, "H_ice")
-    fice && (smb = smb .* coalesce.(replace(last2(o, "f_ice"), NaN => 0.0), 0.0))
+    fice && dom.fice && (smb = smb .* replace(last2(o, "f_ice"), NaN => 0.0))
     ok = (H .> 0) .& isfinite.(smb) .& isfinite.(so)
     r = (rmse_pd=sqrt(mean((smb[ok] .- so[ok]) .^ 2)), smb_pd=sum(smb[ok]) * A * 1e-12, smb_rcm=sum(so[ok]) * A * 1e-12,
          abl_pd=count(smb[ok] .< 0) / count(ok), abl_rcm=count(so[ok] .< 0) / count(ok))

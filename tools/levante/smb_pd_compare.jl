@@ -1,25 +1,27 @@
 # The present-day anchor of the SMB tuning: chion on the reference topography (par/kryos_GRL-ANT_data_paleoemu_pd.nml)
 # against the regional climate models, Greenland (GRL-16KM) with MAR v3.14 1981-2010 and Antarctica (ANT-32KM) with
 # RACMO2.3p2 1981-2010 (the reference climate of the PD run is 1981-2010): ∫smb, snowfall, melt [Gt/yr], ablation area, T_srf bias and SMB rmse on the ice of both,
-# and maps of chion's and the RCM's smb and their differences. chion's smb, melt and snowfall are weighted by the RCM's
-# ice-covered fraction f_ice of the cell, as in smb_fit.jl (fice=true): the RCM's values on the grid are cell means, ice
-# and ice-free (smb about 0), so f_ice times chion's ice column is their counterpart.
+# and maps of chion's and the RCM's smb and their differences. In Greenland chion's smb, melt and snowfall are weighted
+# by MAR's ice-covered fraction f_ice of the cell, as in smb_fit.jl (fice=true): MAR has values on the tundra too, so its
+# values on the grid are cell means, ice and ice-free (smb about 0). RACMO2.3p2 has values on the ice only.
 #
 #   julia --project=tools/levante tools/levante/smb_pd_compare.jl <run dir> <out.png>
 using NCDatasets, Statistics, CairoMakie
 R, out = ARGS
 F = get(ENV, "FESMDATA", "/work/ba1442/fesmdata")
-cases = [("grl", "Greenland", "$F/Greenland/GRL-16KM/GRL-16KM_SMB-MARv3.14-1981-2010-annual-mean.nc", "MAR 1981-2010"),
-         ("ant", "Antarctica", "$F/Antarctica/ANT-32KM/ANT-32KM_SMB-RACMO2.3p2-1981-2010-annual-mean.nc", "RACMO2.3p2 1981-2010")]
+cases = [("grl", "Greenland", "$F/Greenland/GRL-16KM/GRL-16KM_SMB-MARv3.14-1981-2010-annual-mean.nc", "MAR 1981-2010", true),
+         ("ant", "Antarctica", "$F/Antarctica/ANT-32KM/ANT-32KM_SMB-RACMO2.3p2-1981-2010-annual-mean.nc", "RACMO2.3p2 1981-2010", false)]
 last2(ds, v) = (a = Array(ds[v]); ndims(a) == 3 ? Float64.(coalesce.(a[:, :, end], NaN)) : Float64.(coalesce.(a, NaN)))
 fig = Figure(size=(1500, 900))
-for (r, (s, dom, rcm, lab)) in enumerate(cases)
+for (r, (s, dom, rcm, lab, wfice)) in enumerate(cases)
     m = NCDataset(joinpath(R, "surface_$s.nc")); i = NCDataset(joinpath(R, "ice_$s.nc")); o = NCDataset(rcm)
     x = Array(m["xc"]); dA = (x[2] - x[1])^2 * 1e6
     H = last2(i, "H_ice"); ice = H .> 0
     smb, tm, mlt, sf = last2(m, "smb"), last2(m, "tsrf"), last2(m, "melt"), last2(m, "sf")
     so, to, mo, sfo = last2(o, "smb"), last2(o, "T_srf"), last2(o, "melt"), last2(o, "sf")
-    fi = replace(last2(o, "f_ice"), NaN => 0.0); smb, mlt, sf = smb .* fi, mlt .* fi, sf .* fi
+    if wfice
+        fi = replace(last2(o, "f_ice"), NaN => 0.0); smb, mlt, sf = smb .* fi, mlt .* fi, sf .* fi
+    end
     ok = ice .& isfinite.(so) .& isfinite.(smb)
     gt(a) = sum(a[ok]) * dA * 1e-12
     println(dom, " (", count(ok), " ice cells; ", lab, ")")
