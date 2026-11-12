@@ -45,8 +45,7 @@ profiles (set A), the present day plus the emulator's change ([The ocean](#the-o
   - The globe side is in `globe_climate_ice`, `globe_climate_reference` and
     `globe_forcing_to_climate` (`src/core/kryos_globe.f90`).
 - **Par files:** `par/kryos_North_plastic_paleoemu.nml`: the PaleoMIST plastic ice of
-  North with chion, from 21 to 20 ka; `par/kryos_Antarctica_paleoemu.nml`: Yelmo's
-  Antarctica with chion and marine_shelf on the emulator's atmosphere and ocean.
+  North with chion, from 21 to 20 ka.
 - **Inputs:** `kryos_data/paleoemu/` (its README): the emulator file, the reference
   climate on GLOBAL-0.5DEG and the CO2 table, in `$KRYOS_DATA` on Levante and albedo.
 
