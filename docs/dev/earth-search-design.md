@@ -1,6 +1,6 @@
 # A broad search of the solid Earth with emulation (design, 2026-11-12)
 
-Status: for discussion, nothing implemented. Follows the literature review (`solid-earth-literature.md`), the Earth basis from
+Status: decided, being implemented. Follows the literature review (`solid-earth-literature.md`), the Earth basis from
 expert fields (`plastic_ensemble.jl earth-basis`) and the first scores against the published reconstructions
 (`docs/simulations.md`).
 
@@ -73,10 +73,10 @@ An Earth search with fixed ice blames the ice's errors on the Earth. Two ice his
 they differ: an Earth pattern counts when it improves both. Our own ice comes in at wave C, on Earths that are already plausible
 for both.
 
-## To decide
+## Decided (2026-11-12)
 
-1. The ranges and the 13 parameters above.
-2. The emulator: our own small Gaussian process (LinearAlgebra only, about 100 lines) or a package (AbstractGPs.jl: a new
-   dependency of tools/levante).
-3. The size of waves A and B.
-4. Whether GNSS judges from wave A on, or is reported only until its error model is fitted.
+1. The 13 parameters and ranges above.
+2. The emulator: AbstractGPs.jl (with KernelFunctions.jl), new dependencies of tools/levante; hyperparameters by maximum
+   likelihood on a grid (no optimizer package).
+3. Wave A: 200 1-D Earths, wave B: 50 3-D Earths, each under both ice histories.
+4. GNSS judges from wave A on (the runs need vilma2 with `dz_bed_rate`: they run on a stack built on vilma2 main).
