@@ -156,7 +156,7 @@ function earth_radial(par, out)
     lat, dep, F = NCDataset(f) do ds
         Float64.(ds["lat"][:]), Float64.(ds["depth"][:]) ./ 1e3, clamp.(Float64.(ds["log10_visc"][:, :, :, st]), lo, hi)
     end
-    w = cosd.(lat); A = [sum(F[:, j, k] .* w[j] for j in eachindex(lat)) / (size(F, 1) * sum(w)) for k in eachindex(dep)]   # area mean per level
+    w = cosd.(lat); A = [sum(F[:, :, k] .* w') / (size(F, 1) * sum(w)) for k in eachindex(dep)]   # area mean per level
     p = sortperm(dep); dep = dep[p]; A = A[p]
     at(d) = (d <= dep[1] ? A[1] : d >= dep[end] ? A[end] : (k = searchsortedlast(dep, d); x = (d - dep[k]) / (dep[k+1] - dep[k]); (1 - x) * A[k] + x * A[k+1]))
     new = copy(eta)
