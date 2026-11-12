@@ -29,7 +29,7 @@ module kryos_run
                                 schedule_init, schedule_due
     use kryos_config,     only: config_t, config_init, config_read, config_has, config_validate, &
                                 CFG_NAME_LEN, CFG_PATH_LEN
-    use kryos_component,  only: component_t, census_t, PASS_INIT, NAME_LEN
+    use kryos_component,  only: component_t, census_t, axis_t, PASS_INIT, NAME_LEN
     use kryos_wiring,     only: wiring_describe
     use kryos_gia_check,  only: gia_check
     use kryos_forcing,    only: forcing_present, forcing_kill, forcing_restart_due, forcing_restart_fldr
@@ -180,7 +180,8 @@ contains
         do d = 1, run%n_dom
             call domain_init(run%dom(d), run%cfg, trim(run%cfg%domains(d)), run%cnst, clock_time(run%clk))
             if (run%globe%has_gi) then
-                call domain_create(run%dom(d), run%cfg, run%clk, run%cnst, run%census, ports=globe_ports(run%globe))
+                call domain_create(run%dom(d), run%cfg, run%clk, run%cnst, run%census, ports=globe_ports(run%globe), &
+                                   axes_g=globe_axes(run%globe))
                 call globe_register_grid(run%globe, run%dom(d)%cpl)
             else
                 call domain_create(run%dom(d), run%cfg, run%clk, run%cnst, run%census)
@@ -688,5 +689,17 @@ contains
         if (climate_present(globe%climate)) &
             ports = [ports, port_cadence_t(C_CLIMATE, globe%climate_dt, globe%climate_phase, globe%clock_climate)]
     end function globe_ports
+
+    function globe_axes(globe) result(axes)
+        ! The axes of the global climate (paleoemu: month, the ocean `level`), which its regional ports
+        ! declare their imports on; none without a global climate.
+        type(globe_t), intent(in) :: globe
+        type(axis_t), allocatable :: axes(:)
+
+        allocate(axes(0))
+        if (climate_present(globe%climate)) then
+            if (allocated(globe%climate%c%axes)) axes = globe%climate%c%axes
+        end if
+    end function globe_axes
 
 end module kryos_run

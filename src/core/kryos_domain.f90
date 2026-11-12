@@ -355,7 +355,7 @@ contains
                               grid_name=trim(dom%grid_hub), grid=grid, verbose=.false.)
     end subroutine domain_regions_load
 
-    subroutine domain_create(dom, cfg, clk, cnst, census, ports)
+    subroutine domain_create(dom, cfg, clk, cnst, census, ports, axes_g)
         ! The instances of the domain (core-design 3.1 step 4), in INIT_ORDER:
         ! each present component's init_ctx_t (instance_ctx), its factory
         ! (admission against the run's census), <comp>_init, its cadence on
@@ -367,12 +367,16 @@ contains
         ! geo, a global climate), one per component; an instance that is the regional port of such a
         ! global part (opt%port) steps on its cadence whatever its own keys say (kryos_gia_check stops
         ! on a geo port's dt that differs).
+        ! axes_g: the axes of the global parts (a global climate's, e.g. paleoemu's ocean `level`), which
+        ! every instance of the domain sees in ctx%axes from the start: a port declares its imports of
+        ! the global part's rank-3 fields on the same axis (the rows climate_g -> climate).
         type(domain_t),  target, intent(inout) :: dom
         type(config_t),          intent(in)    :: cfg
         type(clock_t),           intent(inout) :: clk
         type(phys_const_class),  intent(in)    :: cnst
         type(census_t),          intent(inout) :: census
         type(port_cadence_t),    intent(in), optional :: ports(:)
+        type(axis_t),            intent(in), optional :: axes_g(:)
 
         type(init_ctx_t) :: ctx
         type(axis_t), allocatable :: axes(:)
@@ -380,6 +384,7 @@ contains
         integer :: j, k, i, p
 
         allocate(axes(0))
+        if (present(axes_g)) axes = axes_g
         do j = 1, NCOMP
             k = INIT_ORDER(j)
             if (len_trim(dom%inst(k)) == 0) cycle
