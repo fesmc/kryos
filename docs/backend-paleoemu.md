@@ -128,7 +128,9 @@ julia --project=scripts scripts/prep_kryos_reference.jl <dir> GLOBAL-0.5DEG <out
 
 The par files use `kryos_data/paleoemu/paleoemu_reference_rcm_GLOBAL-0.5DEG.nc` (the
 remapped RCMs in `kryos_data/paleoemu/rcm/`); `paleoemu_reference_GLOBAL-0.5DEG.nc`
-is ERA5 alone.
+is ERA5 alone. The present-day run (`par/kryos_GRL-ANT_data_paleoemu_pd.nml`) uses
+`paleoemu_reference_rcm_1981-2010_GLOBAL-0.5DEG.nc`, made with `shift_pi=false`:
+1981-2010 itself, to compare with MAR and RACMO of the same period.
 
 **Restart.** The file `<name>_restart.nc` holds the emulator's memory: the filter
 states and the time of the last update. On restore, the reference is set again from

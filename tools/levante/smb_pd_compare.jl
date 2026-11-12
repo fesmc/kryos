@@ -1,13 +1,13 @@
 # The present-day anchor of the SMB tuning: chion on the reference topography (par/kryos_GRL-ANT_data_paleoemu_pd.nml)
-# against the regional climate models, Greenland (GRL-16KM) with MAR v3.14 1961-1990 and Antarctica (ANT-32KM) with
-# RACMO2.3p2 1981-2010 (): ∫smb, snowfall, melt [Gt/yr], ablation area, T_srf bias and SMB rmse on the ice of both,
+# against the regional climate models, Greenland (GRL-16KM) with MAR v3.14 1981-2010 and Antarctica (ANT-32KM) with
+# RACMO2.3p2 1981-2010 (the reference climate of the PD run is 1981-2010): ∫smb, snowfall, melt [Gt/yr], ablation area, T_srf bias and SMB rmse on the ice of both,
 # and maps of chion's and the RCM's smb and their differences.
 #
 #   julia --project=tools/levante tools/levante/smb_pd_compare.jl <run dir> <out.png>
 using NCDatasets, Statistics, CairoMakie
 R, out = ARGS
 F = get(ENV, "FESMDATA", "/work/ba1442/fesmdata")
-cases = [("grl", "Greenland", "$F/Greenland/GRL-16KM/GRL-16KM_SMB-MARv3.14-1961-1990-annual-mean.nc", "MAR 1961-1990"),
+cases = [("grl", "Greenland", "$F/Greenland/GRL-16KM/GRL-16KM_SMB-MARv3.14-1981-2010-annual-mean.nc", "MAR 1981-2010"),
          ("ant", "Antarctica", "$F/Antarctica/ANT-32KM/ANT-32KM_SMB-RACMO2.3p2-1981-2010-annual-mean.nc", "RACMO2.3p2 1981-2010")]
 last2(ds, v) = (a = Array(ds[v]); ndims(a) == 3 ? Float64.(coalesce.(a[:, :, end], NaN)) : Float64.(coalesce.(a, NaN)))
 fig = Figure(size=(1500, 900))

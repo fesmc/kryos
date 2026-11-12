@@ -3,8 +3,9 @@
 ! emulator (paleoemu; the rest of the globe PaleoMIST's 0 ka ice) driving chion (bessi) as par/kryos_NH-ANT_data_paleoemu.nml.
 ! chion spins up 100 annual cycles at -100 yr, then one cycle per 10 yr to 0 (1950). Compare surface_grl.nc with
 ! MAR v3.14 (fesmdata/Greenland/GRL-16KM/GRL-16KM_SMB-MARv3.14-*.nc) and surface_ant.nc with RACMO2.3p2
-! (fesmdata/Antarctica/ANT-32KM/ANT-32KM_SMB-RACMO2.3p2-*.nc). The emulator's climate is pre-industrial (ERA5 1981-2010
-! minus the HadCRUT warming since 1850-1900): the RCMs' 1961-1990 means are the closer period.
+! (fesmdata/Antarctica/ANT-32KM/ANT-32KM_SMB-RACMO2.3p2-*.nc), both 1981-2010: the reference climate here is 1981-2010
+! itself (ERA5 corrected by MAR and RACMO, without the pre-industrial shift of the paleo par files; the emulator's
+! anomaly at 1950 is about 0).
 ! Build: paleoemu=1.
 !   runme -r -s -q 30min --omp 32 -m 60G -o <run> -n par/kryos_GRL-ANT_data_paleoemu_pd.nml   (albedo; Levante: -q shared -w 00:30:00)
 
@@ -84,7 +85,7 @@
     out_1D    = "none"
     out_emu   = "out_2D"          ! clim_glob_emu.nc: the emulator on the CESM grid (inputs, dV, dz, anomalies, sd)
     file      = "kryos_data/paleoemu/emulator_cesm3ma.nc"
-    reference = "kryos_data/paleoemu/paleoemu_reference_rcm_GLOBAL-0.5DEG.nc"
+    reference = "kryos_data/paleoemu/paleoemu_reference_rcm_1981-2010_GLOBAL-0.5DEG.nc"   ! 1981-2010, as the RCMs
     beta_p       = 0.0            ! [K-1] lapse rows: 0, the emulator's dlogpr already holds the ice sheets' response
     beta_adj     = 0.05           ! [K-1] precipitation per K of the adjustments (scale_dtas, bias)
     scale_dtas   = 1.0            ! the emulator's temperature anomaly times this (a colder/warmer climate, its pattern)

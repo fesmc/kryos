@@ -10,7 +10,7 @@
 #   rms_land   = sqrt(Σ A (B/A)² / Σ A) over the land-terminating basins of the LGM slices (B = ∫(smb - ρ_i ∂H/∂t): ≈ 0)
 #   rms_marine = the same of min(B, 0) over the marine basins (B ≥ 0)
 #   rmse_PD    = the rms difference of smb from the regional climate model on the ice of the PD run [kg m-2 yr-1]:
-#                Greenland MAR v3.14 1961-1990 (the emulator's climate is pre-industrial), Antarctica RACMO2.3p2 1981-2010
+#                Greenland MAR v3.14 and Antarctica RACMO2.3p2, 1981-2010 like the PD run's reference climate
 #   ∫smb_PD    = the integrated smb of the PD run on the ice of both [Gt/yr]; A_abl its ablation area (smb < 0) as a share
 #                of that ice: the gridpoint rmse alone can prefer a too narrow ablation zone (wI, wA default 0)
 # Basins in the regions of `exclude` (smb_basin_budget.jl's region names, e.g. Cordillera_and_Alaska,British_Isles: small
@@ -26,7 +26,7 @@ using NCDatasets, CairoMakie, Printf, Statistics, DelimitedFiles, LinearAlgebra
 const FESMDATA = get(ENV, "FESMDATA", "/work/ba1442/fesmdata")
 # the domains: suffix of the PaleoMIST run, suffix of the PD run, whether its groups end in _ant, the RCM of the PD run
 const DOMAINS = [(pm="nor", pd="grl", ant=false,
-                  rcm="$FESMDATA/Greenland/GRL-16KM/GRL-16KM_SMB-MARv3.14-1961-1990-annual-mean.nc", rcm_name="MAR 1961-1990"),
+                  rcm="$FESMDATA/Greenland/GRL-16KM/GRL-16KM_SMB-MARv3.14-1981-2010-annual-mean.nc", rcm_name="MAR 1981-2010"),
                  (pm="ant", pd="ant", ant=true,
                   rcm="$FESMDATA/Antarctica/ANT-32KM/ANT-32KM_SMB-RACMO2.3p2-1981-2010-annual-mean.nc", rcm_name="RACMO2.3p2 1981-2010")]
 
