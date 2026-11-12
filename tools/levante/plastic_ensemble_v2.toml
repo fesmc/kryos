@@ -73,7 +73,7 @@ n          = 49                          # members besides the prior mean (m000)
 seed       = 1
 obs_groups = ["Laurentide", "Greenland", "Fennoscandia/Barents", "Antarctica", "far field"]   # pm_compare.jl's GROUPS
 compare_max_age_ka = 25.0                # judging and the comparison with the references: GLAC1D's own GIA ends at 26 ka
-bar        = ["PaleoMIST", "GLAC1D"]  # the cut per group: as good as the best published reconstruction (plastic_ensemble.jl weights)
+bar        = ["pub-PMIST", "pub-GLAC1D"]  # the cut per group: as good as the best published reconstruction (plastic_ensemble.jl weights)
 
 [likelihood."Laurentide"]                # model error per data group: ens-v1 wave 1 (plastic_ensemble.jl errmodel, top 6 members)
 sigma_m = 14.0
@@ -137,42 +137,66 @@ throttle   = 25                          # 25 members + the weights job + one ot
 
 [score]
 
-# The reconstructions the members are compared with (plastic_ensemble.jl reference_series): each with its own GIA, and its ice under
+# The reconstructions the members are compared with (plastic_ensemble.jl reference_series), named as in docs/simulations.md: each with its own GIA, and its ice under
 # VILMA2 (toroidal flow) with the members' 3-D Earth (prior mean), its radial mean (Bagge1D) and Gowan's 1-D Earth (gia_refcorr.sh
 # cases, rho_ice 910)
 [[references]]
-name    = "PaleoMIST"
+name    = "pub-PMIST"
 product = "Global/GLOBAL-0.5DEG/GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc"
 [[references]]
-name = "GLAC1D"
+name = "pub-GLAC1D"
 topo = "Global/GLOBAL-0.5DEG/GLOBAL-0.5DEG_IceHistory-GLAC1D.nc"
 [[references]]
-name = "PaleoMIST-3D"
+name = "ice-PMIST | E3D-B21-6"
 run  = "$KRYOS_WORK/kryos_data/refcorr/PaleoMIST-3D"
 [[references]]
-name = "PaleoMIST-1D"
+name = "ice-PMIST | E1D-PMIST"
 run  = "$KRYOS_WORK/kryos_data/refcorr/PaleoMIST-1D"
 [[references]]
-name = "PaleoMIST-Bagge1D"                # the radial mean of the 3-D Earth (par ..._bagge1d.nml: visc_3d_tol = 99, VILMA2's 1Db)
+name = "ice-PMIST | E1D-B21-6"                # the radial mean of the 3-D Earth (par ..._bagge1d.nml: visc_3d_tol = 99, VILMA2's 1Db)
 run  = "$KRYOS_WORK/kryos_data/refcorr/PaleoMIST-Bagge1D"
 [[references]]
-name = "PaleoMIST-online-1D"              # kryos online (plastic every step, 32 km) with Gowan's tau_b and his 1-D Earth (runs/pm-online)
+name = "tau-PMIST | E1D-PMIST"              # kryos online (plastic every step, 32 km) with Gowan's tau_b and his 1-D Earth (runs/pm-online)
 run  = "$KRYOS/runs/pm-online/gowan"
 [[references]]
-name = "m000-1D"                          # the same with the present-day tau_b factors: m000 on Gowan's 1-D Earth
+name = "tau-PMIST-PD | E1D-PMIST"                          # the same with the present-day tau_b factors: m000 on Gowan's 1-D Earth
 run  = "$KRYOS/runs/pm-online/pdfac"
 [[references]]
-name = "GLAC1D-3D"
+name = "ice-GLAC1D | E3D-B21-6"
 run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D-3D"
 [[references]]
-name = "GLAC1D-1D"
+name = "tau-PMIST-PD | E3D-B21-6 @NH16"   # m000 with the Northern Hemisphere on 16 km (runs/res16)
+run  = "$KRYOS/runs/res16/m000-NH16"
+[[references]]
+name = "ice-PMIST | E3D-B21-1"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-B21-1"
+[[references]]
+name = "ice-PMIST | E3D-B21-2"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-B21-2"
+[[references]]
+name = "ice-PMIST | E3D-B21-3"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-B21-3"
+[[references]]
+name = "ice-PMIST | E3D-B21-4"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-B21-4"
+[[references]]
+name = "ice-PMIST | E3D-B21-5"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-B21-5"
+[[references]]
+name = "ice-PMIST | E3D-B21-7"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-B21-7"
+[[references]]
+name = "ice-PMIST | E3D-B21-8"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-B21-8"
+[[references]]
+name = "ice-GLAC1D | E1D-PMIST"
 run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D-1D"
 [[references]]
-name = "GLAC1D-Bagge1D"
+name = "ice-GLAC1D | E1D-B21-6"
 run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D-Bagge1D"
 [[references]]
-name = "GLAC1D_nn9927-3D"
+name = "ice-GLAC1D-9927 | E3D-B21-6"
 run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D_nn9927-3D"
 [[references]]
-name = "GLAC1D_nn9927-1D"
+name = "ice-GLAC1D-9927 | E1D-PMIST"
 run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D_nn9927-1D"
