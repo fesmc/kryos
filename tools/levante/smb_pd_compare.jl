@@ -1,7 +1,9 @@
 # The present-day anchor of the SMB tuning: chion on the reference topography (par/kryos_GRL-ANT_data_paleoemu_pd.nml)
 # against the regional climate models, Greenland (GRL-16KM) with MAR v3.14 1981-2010 and Antarctica (ANT-32KM) with
 # RACMO2.3p2 1981-2010 (the reference climate of the PD run is 1981-2010): ∫smb, snowfall, melt [Gt/yr], ablation area, T_srf bias and SMB rmse on the ice of both,
-# and maps of chion's and the RCM's smb and their differences.
+# and maps of chion's and the RCM's smb and their differences. chion's smb, melt and snowfall are weighted by the RCM's
+# ice-covered fraction f_ice of the cell, as in smb_fit.jl (fice=true): the RCM's values on the grid are cell means, ice
+# and ice-free (smb about 0), so f_ice times chion's ice column is their counterpart.
 #
 #   julia --project=tools/levante tools/levante/smb_pd_compare.jl <run dir> <out.png>
 using NCDatasets, Statistics, CairoMakie
@@ -17,6 +19,7 @@ for (r, (s, dom, rcm, lab)) in enumerate(cases)
     H = last2(i, "H_ice"); ice = H .> 0
     smb, tm, mlt, sf = last2(m, "smb"), last2(m, "tsrf"), last2(m, "melt"), last2(m, "sf")
     so, to, mo, sfo = last2(o, "smb"), last2(o, "T_srf"), last2(o, "melt"), last2(o, "sf")
+    fi = replace(last2(o, "f_ice"), NaN => 0.0); smb, mlt, sf = smb .* fi, mlt .* fi, sf .* fi
     ok = ice .& isfinite.(so) .& isfinite.(smb)
     gt(a) = sum(a[ok]) * dA * 1e-12
     println(dom, " (", count(ok), " ice cells; ", lab, ")")
