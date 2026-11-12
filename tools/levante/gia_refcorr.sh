@@ -16,7 +16,11 @@
 #   XGRID    the globe_ice background grid (GLOBAL-0.5DEG) and its history file (XHIST, default HIST on that grid)
 #   DOMAINS  "<domain>:<hub grid>:<topo file under fesmdata> ..." the domain reference topographies to correct (default North on NH-16KM and
 #            NH-32KM, and Antarctica; the case PaleoMIST-sci also has PatagoniaPaleo:PAT-PAL-8KM:PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_TOPO-GEBCO2026.nc)
-#   NTHR     OpenMP threads (64)
+#   NCPU, MEM  cpus and memory of the job (128, 60G): a 3-D Earth; a 1-D Earth needs far fewer (16-32 cpus, about 3 GB at
+#            degree 170; many 1-D cases: gia_refcorr_pool.sh)
+#   NTHR     OpenMP threads (NCPU, at most 64)
+#   KEEP     all (default) | last: once converged, delete the model output of the iterations (vilma_out.nc, spinup/, final/)
+#            but the converged iteration's vilma_out.nc, what the scores read (a 1-D case: about 0.3 instead of 3 GB)
 #   R0       a present-day correction r to run with, once and without iterating (the members of an Earth-only ensemble: the r of a
 #            nearby Earth); the run is it0, no reference files are written
 # Restartable: an iteration whose status is 0 is not rerun. The folder is a PaleoMIST runme project (pm_project.sh): the
@@ -31,12 +35,13 @@ KD=${KD:-$KRYOS_WORK/kryos_data}
 if [ "${KRYOS_JOB:-}" != 1 ]; then
     [ -f "$PAR" ] || { echo "no par file $PAR"; exit 1; }
     mkdir -p $KD/refcorr/$CASE
-    sbatch --parsable -A $ACCOUNT $KRYOS_PART_LONG -t 2-00:00:00 -c 128 --mem=60G -J gia_refcorr-$CASE \
+    sbatch --parsable -A $ACCOUNT $KRYOS_PART_LONG -t 2-00:00:00 -c ${NCPU:-128} --mem=${MEM:-60G} -J gia_refcorr-$CASE \
         -o $KD/refcorr/$CASE/job-%j.out --export=ALL,KRYOS_JOB=1,PAR=$PAR,KD=$KD "$_h/gia_refcorr.sh"
     exit
 fi
 HIST=${HIST:-$F/Global/GLOBAL-0.25DEG/GLOBAL-0.25DEG_IceHistory-PaleoMIST.nc}; INTERP=${INTERP:-linear}
-RHOI=${RHOI:-910.0}; RHOW=${RHOW:-1028.0}; TOL=${TOL:-1.5}; NMAX=${NMAX:-8}; NTHR=${NTHR:-64}
+RHOI=${RHOI:-910.0}; RHOW=${RHOW:-1028.0}; TOL=${TOL:-1.5}; NMAX=${NMAX:-8}
+NCPU=${NCPU:-128}; NTHR=${NTHR:-$(( NCPU < 64 ? NCPU : 64 ))}
 XGRID=${XGRID:-GLOBAL-0.5DEG}; XHIST=${XHIST:-$F/Global/$XGRID/${XGRID}_IceHistory-$(basename $HIST | sed 's/.*_IceHistory-//')}
 DOMAINS=${DOMAINS:-"North:NH-16KM:North/NH-16KM/NH-16KM_TOPO-GEBCO2026.nc North:NH-32KM:North/NH-32KM/NH-32KM_TOPO-GEBCO2026.nc Antarctica:ANT-16KM:Antarctica/ANT-16KM/ANT-16KM_TOPO-BedMachine-v4.nc"}
 VX=$VILMA2/bin/vilma.x
@@ -104,6 +109,12 @@ for n in $(seq 0 $((NMAX - 1))); do
 done
 [ $conv = 1 ] || { echo "not converged after $NMAX runs" | tee -a $O/iter.log; exit 1; }
 ln -sf $(basename $final) $O/r.nc
+if [ "${KEEP:-all}" = last ]; then
+    for d in $O/it*; do
+        [ $d = $O/it$n ] || rm -f $d/vilma_out.nc; rm -rf $d/spinup $d/final
+    done
+    echo "KEEP=last: kept it$n/vilma_out.nc of the model output" | tee -a $O/iter.log
+fi
 DOMS=""; for d in $DOMAINS; do IFS=: read dom hub topo <<< "$d"; DOMS="$DOMS $dom:$hub:$F/$topo"; done
 RHO_ICE=$RHOI RHO_SW=$RHOW $JL $T/gia_refcorr.jl write $O/r.nc $O $XGRID:$XHIST $DOMS | tee -a $O/iter.log
 echo "== done $(date -Is)" | tee -a $O/iter.log
