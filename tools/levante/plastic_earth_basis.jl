@@ -204,7 +204,7 @@ function earth1d_par(tmpl, out, θ; note = "")
     kv = ["vilma.n_layer=$(length(top))", "vilma.r_top=" * join(fr.(top), ", "), "vilma.r_bot=" * join(fr.(bot), ", "),
           "vilma.eta=" * join(fe.(eta), ", "), "vilma.rheology=" * join(rh, ", "), "vilma.l_visc_3d=.false."]
     Base.run(`python3 $(joinpath(@__DIR__, "set_nml.py")) $out $kv`)
-    hdr = "! A 1-D Earth of the broad search (plastic_ensemble.jl earth-search-sample$(isempty(note) ? "" : ", " * note)): lithosphere " *
+    hdr = "! A 1-D Earth of the broad search (plastic_ensemble.jl earth-search-*$(isempty(note) ? "" : ", " * note)): lithosphere " *
           @sprintf("%.2f km, log10 eta UM %.3f, TZ %.3f, LM1 %.3f, LM2 %.3f", θ...) * "; the layering of $(basename(tmpl)) with the\n" *
           "! viscosity boundaries (L, 410, 670, 1500 km) added (earth1d_layers).\n"
     write(out, hdr * read(out, String))
