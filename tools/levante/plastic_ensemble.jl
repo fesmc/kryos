@@ -161,7 +161,7 @@ function gnss_model(dir, gd)
     isempty(gd.obs) && return nothing
     v = fill(NaN, length(gd.obs)); ig = findall(s -> s.kind == :gnss, gd.obs); ie = findall(s -> s.kind == :esl, gd.obs)
     if !isempty(ig)
-        r = PM.read_run(dir); R = (r === nothing || !PM.run_done(r)) ? nothing : PM.read_rate(dir)     # the present-day rate: a finished run
+        R = PM.run_done(dir) ? PM.read_rate(dir) : nothing                   # the present-day rate: of a finished run only
         R === nothing || (v[ig] = PM.rate_at(R, [gd.obs[i].lon for i in ig], [gd.obs[i].lat for i in ig]))
     end
     isempty(ie) || (v[ie] = PM.esl_at(dir, [gd.obs[i].t for i in ie]))
@@ -246,6 +246,7 @@ function reference_series(ref, fes, obs, A)
     plon = [o.lon for o in obs]; plat = [o.lat for o in obs]
     if haskey(ref, "run")
         d = ref_dir(ref)
+        PM.run_done(d) || return nothing, "$d: not finished (no status 0)"
         r = PM.read_run(d); r === nothing && return nothing, "no run in $d"
         all(a -> any(x -> abs(x - PM.trun(r, a)) < 0.01, r.t), A) || return nothing, "$d: records missing"
         return PM.series_run(r, plon, plat, A; rec = a -> PM.trun(r, a)), ""

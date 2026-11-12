@@ -236,13 +236,15 @@ function read_esl(fesmdata, spec)
     [(group = get(spec, "name", "ESL"), kind = :esl, site_name = @sprintf("ESL %g ka", a / 1000), lat = 0.0, lon = 0.0, t = a,
       value = v[i], sd = sd[i]) for (i, a) in enumerate(ages)]
 end
-# whether a run has reached the present (its last record is that of 0 ka): the point data (present-day rates, ESL relative to the
-# present) of a run still going, or stopped, would be those of its last record instead
-run_done(r::Run) = abs(r.t[end] - trun(r, 0.0)) < 0.01
+# whether the run of a folder has finished without error: its status file (written at the end: the exit code and the run time, by
+# runme's job and by gia_refcorr.sh) says 0. VILMA2 writes the whole time axis of its output when it starts, so the output alone does
+# not tell a finished run from one still going (or stopped), whose later records are fill values.
+run_done(dir) = (f = joinpath(dir, "status"); isfile(f) && (w = split(read(f, String)); !isempty(w) && w[1] == "0"))
 # a run's ESL [m] at the ages: bsl_ive (ice-volume equivalent) of its record of each age (trun) minus that of its last record (0 ka);
-# NaN for a run that has not reached the present
+# NaN for a run that has not finished
 function esl_at(dir, ages)
-    r = read_run(dir); (r === nothing || !run_done(r)) && return fill(NaN, length(ages))
+    run_done(dir) || return fill(NaN, length(ages))
+    r = read_run(dir); r === nothing && return fill(NaN, length(ages))
     [(k = findfirst(x -> abs(x - trun(r, a)) < 0.01, r.t); k === nothing ? NaN : r.bsl_ive[k] - r.bsl_ive[end]) for a in ages]
 end
 
