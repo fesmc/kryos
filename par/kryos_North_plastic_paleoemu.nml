@@ -193,9 +193,12 @@
     sigma_pdd  = 5.0     ! [K] Temperature standard deviation for the annual PDDs (itm)
     time_equil = 100.0   ! [yr] Cold-start snowpack spin-up (annual cycles)
     dt_days    = 1       ! [d] chion step (divides the 360-day year)
-    cloud      = 0.28    ! [1] Cloud fraction, SWdn = TOA*tau_clear(z)*(1-cloud) (bessi; MAR Greenland)
-    wind_speed = 5.0     ! [m s-1] Constant wind speed (bessi)
-    rel_hum    = 0.8     ! [1] Constant relative humidity (bessi)
+    cloud      = 0.31    ! [1] Cloud fraction, SWdn = TOA*tau_clear(z)*(1-cloud) (bessi; MAR v3.14 Greenland)
+    wind_speed = 2.5     ! [m s-1] Wind speed at sea level on flat ground (bessi; ERA5 1981-2010 summer, the ice)
+    wind_lapse = 1.27    ! [m s-1 km-1] Its change with the surface elevation
+    wind_slope = 0.0     ! [m s-1 per m/km] Its change with the surface slope (katabatic)
+    wind_slope_length = 50.0  ! [km] Baseline of the slope
+    rel_hum    = 0.8     ! [1] Constant relative humidity (bessi; ERA5 JJA 0.72-0.81)
 /
 &chion
     model           = "pdd"                          ! Snowpack model: "itm", "bessi" or "pdd"

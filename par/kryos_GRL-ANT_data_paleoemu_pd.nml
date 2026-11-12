@@ -231,7 +231,7 @@
     out_2D        = "out_2D"       ! surface_ant.nc: smb, T_srf, melt, runoff, refreezing, S, PDDs, ...
     out_1D        = "out_1D"
     out_seb       = "out_2D"       ! surface_ant_seb.nc: the monthly surface energy balance (against MAR / RACMO)
-    surface_chion = "surface_chion"
+    surface_chion = "surface_chion_ant"
     chion         = "chion_ant"     ! Antarctica's own ITM group (itm_chion_ant): the per-domain tuning
 /
 
@@ -242,9 +242,27 @@
     time_equil = 100.0   ! [yr] Cold-start snowpack spin-up (annual cycles)
     swe_init_ice = 500.0 ! [kg m-2] Cold start: snow and firn on ice columns, at the annual-mean air temperature
     dt_days    = 1       ! [d] chion step (divides the 360-day year)
-    cloud      = 0.28    ! [1] Cloud fraction, SWdn = TOA*tau_clear(z)*(1-cloud) (bessi; MAR Greenland)
-    wind_speed = 5.0     ! [m s-1] Constant wind speed (bessi)
-    rel_hum    = 0.8     ! [1] Constant relative humidity (bessi)
+    cloud      = 0.31    ! [1] Cloud fraction, SWdn = TOA*tau_clear(z)*(1-cloud) (bessi; MAR v3.14 Greenland)
+    wind_speed = 2.5     ! [m s-1] Wind speed at sea level on flat ground (bessi; ERA5 1981-2010 summer, the ice)
+    wind_lapse = 1.27    ! [m s-1 km-1] Its change with the surface elevation
+    wind_slope = 0.0     ! [m s-1 per m/km] Its change with the surface slope (katabatic)
+    wind_slope_length = 50.0  ! [km] Baseline of the slope
+    rel_hum    = 0.8     ! [1] Constant relative humidity (bessi; ERA5 JJA 0.72-0.81)
+/
+
+&surface_chion_ant
+    sf_a       = 0.273   ! Snow fraction function (parameter a)
+    sf_b       = 273.6   ! Snow fraction function (parameter b)
+    sigma_pdd  = 5.0     ! [K] Temperature standard deviation for the annual PDDs (itm)
+    time_equil = 100.0   ! [yr] Cold-start snowpack spin-up (annual cycles)
+    swe_init_ice = 500.0 ! [kg m-2] Cold start: snow and firn on ice columns, at the annual-mean air temperature
+    dt_days    = 1       ! [d] chion step (divides the 360-day year)
+    cloud      = 0.23    ! [1] Cloud fraction, SWdn = TOA*tau_clear(z)*(1-cloud) (bessi; CERES Antarctica)
+    wind_speed = 5.5     ! [m s-1] Wind speed at sea level on flat ground (bessi; ERA5 1981-2010 summer, the ice)
+    wind_lapse = 0.20    ! [m s-1 km-1] Its change with the surface elevation
+    wind_slope = 0.0     ! [m s-1 per m/km] Its change with the surface slope (katabatic)
+    wind_slope_length = 50.0  ! [km] Baseline of the slope
+    rel_hum    = 0.7     ! [1] Constant relative humidity (bessi; ERA5 DJF 0.66-0.75)
 /
 
 &chion
