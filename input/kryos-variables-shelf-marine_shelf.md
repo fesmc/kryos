@@ -12,3 +12,4 @@ See kryos-variables-ice.md for the columns. `units` must be those of the data.
 |  1 | bmb_shlf | xc, yc     | m/yr  | Shelf basal mass balance    | 1e-4 |
 |  2 | T_shlf   | xc, yc     | K     | Shelf temperature           | 1e-3 |
 |  3 | tf_shlf  | xc, yc     | K     | Thermal forcing             | 1e-3 |
+|  4 | dT_shlf  | xc, yc     | K     | Shelf temperature anomaly   | 1e-3 |
