@@ -398,7 +398,8 @@ function main(args)
     if args[1] == "earth-basis"
         kv = Dict(split(x, "=") for x in args[5:end])
         return ES.earth_basis(args[2], args[3], args[4]; kmax = parse(Int, get(kv, "kmax", "6")), lo = parse(Float64, get(kv, "lo", "19.5")),
-                              hi = parse(Float64, get(kv, "hi", "24")))
+                              hi = parse(Float64, get(kv, "hi", "24")), weights = String(get(kv, "weights", "field")),
+                              lid = haskey(kv, "lid") ? parse(Float64, kv["lid"]) : nothing)
     end
     args[1] == "earth-field" && return ES.earth_field(args[2], args[3], parse.(Float64, args[4:end]))
     if args[1] == "earth-sample"
