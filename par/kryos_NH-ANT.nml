@@ -416,9 +416,9 @@
     time_equil = 100.0   ! [yr] Cold-start snowpack spin-up (annual cycles)
     dt_days    = 1       ! [d] chion step (divides the 360-day year)
     cloud      = 0.31    ! [1] Cloud fraction, SWdn = TOA*tau_clear(z)*(1-cloud) (bessi; MAR v3.14 Greenland)
-    wind_speed = 2.5     ! [m s-1] Wind speed at sea level on flat ground (bessi; ERA5 1981-2010 summer, the ice)
-    wind_lapse = 1.27    ! [m s-1 km-1] Its change with the surface elevation
-    wind_slope = 0.0     ! [m s-1 per m/km] Its change with the surface slope (katabatic)
+    wind_speed = 3.0     ! [m s-1] Wind speed at sea level on flat ground (bessi; PD Greenland vs MAR and LGM fit)
+    wind_lapse = 0.0     ! [m s-1 km-1] Its change with the surface elevation
+    wind_slope = 0.25     ! [m s-1 per m/km] Its change with the surface slope (katabatic; PD Greenland vs MAR and LGM fit)
     wind_slope_length = 50.0  ! [km] Baseline of the slope
     rel_hum    = 0.8     ! [1] Constant relative humidity (bessi; ERA5 JJA 0.72-0.81)
     tvar_sigma0       = 2.0    ! [K] Daily temperature variability at T_mon = 0 C (ERA5 1981-2010, Greenland and Antarctic ice)
@@ -466,8 +466,8 @@
     semix_z0m_snow                     = 0.001           ! [m]  Momentum roughness length, snow
     semix_z0m_ice                      = 0.01            ! [m]  Momentum roughness length, bare ice
     semix_zm_to_zh                     = 10.0            ! [1]  z0m/z0h
-    semix_sensible_exchange_factor     = 1.5             ! [1]  Sensible-heat exchange factor (PD Greenland vs MAR)
-    semix_stable_coefficient           = 10.0            ! [1]  b in the stable damping 1/(1 + b*Ri) (PD Greenland vs MAR)
+    semix_sensible_exchange_factor     = 1.0             ! [1]  Sensible-heat exchange factor (PD Greenland vs MAR and LGM fit)
+    semix_stable_coefficient           = 20.0            ! [1]  b in the stable damping 1/(1 + b*Ri) (PD Greenland vs MAR and LGM fit)
     semix_latent_exchange_factor       = 1.0             ! [1]  Latent-heat exchange factor
     alpha_dry                          = 0.83            ! [1] Dry snow albedo (upper bound; PD Greenland vs MAR, net SW)
     alpha_wet                          = 0.70            ! [1] Wet snow albedo (lower bound)
