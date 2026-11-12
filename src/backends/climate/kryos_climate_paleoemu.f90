@@ -25,7 +25,12 @@ module kryos_climate_paleoemu
     !                       rows' precipitation per K of elevation cooling, stays 0
     !                       by default: the emulator's dlogpr already holds the
     !                       response to the ice sheets (only dtas is at the
-    !                       reference surface).
+    !                       reference surface). The ocean: the annual ocean
+    !                       temperature change dto at the emulator's levels
+    !                       (axis `level`, 4-1475 m), scale_dto dto + dto_nsd
+    !                       dto_sd, its land and below-floor cells filled per level
+    !                       (ocean_fill), interpolated bilinearly onto the grid:
+    !                       the export dto_lev [K] (opt%ocn_lev).
     !   paleoemu_port_t     the regional port (stateless): the global part's
     !                       atmosphere remapped onto the domain's grid by the rows
     !                       climate_g -> climate, passed on; the lapse rows
@@ -40,21 +45,24 @@ module kryos_climate_paleoemu
     use coords,          only: grid_cdo_read_desc
     use fesm_log,        only: LOG_INFO, log_msg, fesm_error, to_str
     use fesm_fields,     only: fields_get, fields_put
+    use interp2D,        only: fill_poisson
     use nml,             only: nml_read, nml_has_param
     use ncio,            only: nc_read, nc_read_attr, nc_size, nc_create, nc_write_dim, nc_write
-    use kryos_component, only: init_ctx_t, step_time_t, constraints_t, NAME_LEN, PATH_LEN, &
+    use kryos_component, only: init_ctx_t, step_time_t, constraints_t, axis_t, NAME_LEN, PATH_LEN, &
                                PASS_INIT, PASS_BOUNDARY, PASS_RESTART, component_write_output
     use kryos_climate,   only: climate_t, climate_opt_t
     use paleoemu,        only: paleoemu_class, paleoemu_target_class, paleoemu_init, paleoemu_set_reference, &
                                paleoemu_update, paleoemu_end, paleoemu_target_init, paleoemu_downscale, paleoemu_bias_init, &
-                               paleoemu_write_init, paleoemu_write_step
+                               paleoemu_target_bilinear, paleoemu_write_init, paleoemu_write_step
 
     implicit none
 
     private
     public :: paleoemu_climate_t, paleoemu_port_t, paleoemu_global_constraints, paleoemu_port_constraints
+    public :: ocean_fill
 
-    integer, parameter :: NMON = 12
+    integer,  parameter :: NMON = 12
+    real(dp), parameter :: MV = -9999.0_dp                 ! missing value of ocean_fill
 
     type, extends(climate_t) :: paleoemu_climate_t
         character(len=PATH_LEN) :: file      = ""          ! the emulator file
@@ -64,6 +72,8 @@ module kryos_climate_paleoemu
         real(dp) :: scale_dtas = 1.0_dp                    ! the emulator's temperature anomaly times this
         character(len=PATH_LEN) :: bias = ""               ! the bias correction file ("" none)
         real(dp) :: bias_scale = 1.0_dp                    ! the bias correction times this (and the ice-volume weight)
+        real(dp) :: scale_dto = 1.0_dp                     ! the ocean: scale_dto dto + dto_nsd dto_sd
+        real(dp) :: dto_nsd   = 0.0_dp
         real(dp) :: day_year = 365.0_dp                    ! days of the run's year (pr: mm d-1 -> kg m-2 yr-1)
         type(paleoemu_class)        :: emu
         type(paleoemu_target_class) :: tgt                 ! the instance grid with its reference climate
@@ -131,6 +141,10 @@ contains
         if (nml_has_param(ctx%par_file, ctx%instance, "bias")) call nml_read(ctx%par_file, ctx%instance, "bias", self%bias)
         if (nml_has_param(ctx%par_file, ctx%instance, "bias_scale")) &
             call nml_read(ctx%par_file, ctx%instance, "bias_scale", self%bias_scale)
+        if (nml_has_param(ctx%par_file, ctx%instance, "scale_dto")) &
+            call nml_read(ctx%par_file, ctx%instance, "scale_dto", self%scale_dto)
+        if (nml_has_param(ctx%par_file, ctx%instance, "dto_nsd")) &
+            call nml_read(ctx%par_file, ctx%instance, "dto_nsd", self%dto_nsd)
         grid_name = ""
         if (nml_has_param(ctx%par_file, ctx%instance, "grid")) call nml_read(ctx%par_file, ctx%instance, "grid", grid_name)
         if (len_trim(self%file) == 0 .or. len_trim(self%reference) == 0 .or. len_trim(grid_name) == 0) then
@@ -140,7 +154,7 @@ contains
         end if
 
         self%prec = dp
-        self%opt  = climate_opt_t(host=.true., orbit=.true.)
+        self%opt  = climate_opt_t(host=.true., orbit=.true., ocn_lev=.true.)
         self%day_year = ctx%sec_year/86400.0_dp
 
         allocate(self%grid_obj)
@@ -153,6 +167,7 @@ contains
         if (len_trim(self%bias) > 0) call paleoemu_bias_init(self%emu, trim(self%bias))
         call reference_load(self)
         call bins_init(self)
+        call level_axis(self)
 
         allocate(self%coef_names(1), self%coef_units(1))
         self%coef_names(1) = "co2"
@@ -162,9 +177,24 @@ contains
         if (len_trim(self%bias) > 0) bias_txt = trim(self%bias)//" x "//to_str(self%bias_scale)
         call log_msg(LOG_INFO, "kryos_climate_paleoemu", "emulator "//trim(self%file)//" ("//trim(self%emu%temperature)// &
                      "), grid "//trim(grid_name)//" "//to_str(self%nx)//" x "//to_str(self%ny)//", beta_p "// &
-                     to_str(self%beta_p)//", beta_adj "//to_str(self%beta_adj)//", scale_dtas "//to_str(self%scale_dtas)//", bias "//trim(bias_txt), &
-                     "instance "//trim(self%name))
+                     to_str(self%beta_p)//", beta_adj "//to_str(self%beta_adj)//", scale_dtas "//to_str(self%scale_dtas)//", bias "//trim(bias_txt)// &
+                     ", ocean: "//to_str(self%emu%nlev)//" levels "//to_str(self%emu%ocean_depth(1))//"-"// &
+                     to_str(self%emu%ocean_depth(self%emu%nlev))//" m, scale_dto "//to_str(self%scale_dto)//", dto_nsd "// &
+                     to_str(self%dto_nsd), "instance "//trim(self%name))
     end subroutine global_init_
+
+    subroutine level_axis(self)
+        ! The ocean axis `level` [m, positive down] of dto_lev: the emulator's levels (its ports declare
+        ! their import on it; domain_create passes it to them).
+        class(paleoemu_climate_t), intent(inout) :: self
+        type(axis_t) :: ax
+
+        ax%name  = "level"
+        ax%units = "m"
+        ax%v     = self%emu%ocean_depth
+        if (.not. allocated(self%axes)) allocate(self%axes(0))
+        self%axes = [self%axes, ax]
+    end subroutine level_axis
 
     subroutine reference_load(self)
         ! The reference climate (tas_ref [K], pr_ref [mm d-1] by month, z_srf_ref [m]) on the instance grid,
@@ -323,7 +353,46 @@ contains
         call paleoemu_downscale(self%tgt, self%emu, scale=[self%scale_dtas, 1.0_dp], bias_scale=self%bias_scale, &
                                 beta=self%beta_adj)
         call exports_put(self, st%t1)
+        call ocean_put(self, st%t1)
     end subroutine step
+
+    subroutine ocean_put(self, t1)
+        ! dto_lev: scale_dto dto + dto_nsd dto_sd on the CESM grid, filled (ocean_fill), each level
+        ! interpolated bilinearly onto the instance grid.
+        class(paleoemu_climate_t), intent(inout) :: self
+        real(dp),                  intent(in)    :: t1
+
+        real(dp), allocatable :: d(:,:,:), x(:,:,:)
+        integer :: k
+
+        allocate(d(self%emu%nlon, self%emu%nlat, self%emu%nlev), x(self%nx, self%ny, self%emu%nlev))
+        d = self%scale_dto*self%emu%now%dto + self%dto_nsd*self%emu%now%dto_sd
+        call ocean_fill(self%emu%ocean_mask, d)
+        do k = 1, self%emu%nlev
+            x(:, :, k) = paleoemu_target_bilinear(self%tgt, d(:, :, k))
+        end do
+        call fields_put(self%exports, self%h_dto_lev, x, t1=t1)
+    end subroutine ocean_put
+
+    subroutine ocean_fill(mask, d)
+        ! The cells of d [lon, lat, level] outside the ocean (mask /= 1: land, below the floor; the
+        ! emulator's values there are 0) filled level by level from the ocean: a Poisson fill, periodic
+        ! in longitude, from the zonal mean of the ocean as first guess (fill_poisson, method 1). A level
+        ! without ocean takes the level above. The ocean cells keep their values.
+        integer,  intent(in)    :: mask(:,:,:)
+        real(dp), intent(inout) :: d(:,:,:)
+        integer :: k
+
+        do k = 1, size(d, 3)
+            if (count(mask(:, :, k) == 1) == 0) then
+                if (k == 1) call fesm_error("kryos_climate_paleoemu::ocean_fill", "the top level holds no ocean")
+                d(:, :, k) = d(:, :, k - 1)
+                cycle
+            end if
+            where (mask(:, :, k) /= 1) d(:, :, k) = MV
+            call fill_poisson(d(:, :, k), MV, 1, .true.)
+        end do
+    end subroutine ocean_fill
 
     subroutine geometry_get(self, hH, hb, hs, H, zb, zs, what)
         ! Three imports (ice thickness, bed, surface on the instance grid) on the emulator's ice grid.
@@ -365,12 +434,16 @@ contains
     end subroutine exports_put
 
     subroutine exports_reference(self, t1)
-        ! The reference climate itself (PASS_INIT: no update yet).
+        ! The reference climate itself (PASS_INIT: no update yet), no ocean temperature change.
         class(paleoemu_climate_t), intent(inout) :: self
         real(dp),                  intent(in)    :: t1
+        real(dp), allocatable :: x(:,:,:)
         self%tgt%tas = self%tgt%tas_ref
         self%tgt%pr  = self%tgt%pr_ref
         call exports_put(self, t1)
+        allocate(x(self%nx, self%ny, self%emu%nlev))
+        x = 0.0_dp
+        call fields_put(self%exports, self%h_dto_lev, x, t1=t1)
     end subroutine exports_reference
 
     subroutine global_restart_write_(self, dir, t)

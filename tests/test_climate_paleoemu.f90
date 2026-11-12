@@ -11,6 +11,8 @@ program test_climate_paleoemu
     !   * without the orbit imports, the emulator's own orbit table;
     !   * keys scale_dtas, bias, bias_scale, beta_adj: as paleoemu_downscale with scale, bias_scale, beta and the
     !     bias of paleoemu_bias_init (a constant 2 K, dV_ref 50 m SLE: the grown ice gives a weight > 0);
+    !   * the ocean dto_lev: 0 at PASS_INIT; then scale_dto dto + dto_nsd dto_sd filled by ocean_fill (the
+    !     ocean cells unchanged) and interpolated per level (paleoemu_target_bilinear), on the axis `level`;
     !   * restart round trip: write, a new instance at the reference, read, PASS_RESTART, continue: bitwise;
     !   * the port copies its imports exactly, with their validity.
     ! Needs the emulator file in $PALEOEMU_FILE (PaleoEmulator scripts/06_emulator.jl); skipped without.
@@ -23,11 +25,12 @@ program test_climate_paleoemu
     use kryos_component, only: init_ctx_t, step_time_t, census_t, census_count, PASS_INIT, PASS_BOUNDARY, PASS_RESTART
     use kryos_climate,   only: climate_slot_t, climate_create, climate_init, climate_init_state, climate_update, &
                                climate_restart_write, climate_restart_read, climate_end
-    use kryos_climate_paleoemu, only: paleoemu_climate_t
+    use kryos_climate_paleoemu, only: paleoemu_climate_t, ocean_fill
+    use kryos_component, only: axis_find
     use insolation,      only: insol_class, insol_init, orbit_pars_class, orbit_pars_at
     use paleoemu,        only: paleoemu_class, paleoemu_target_class, paleoemu_init, paleoemu_set_reference, &
                                paleoemu_update, paleoemu_target_init, paleoemu_downscale, &
-                               paleoemu_bias_init, paleoemu_bias_weight
+                               paleoemu_bias_init, paleoemu_bias_weight, paleoemu_target_bilinear
 
     implicit none
 
@@ -83,6 +86,11 @@ program test_climate_paleoemu
                "global part: grid GLOBAL-0.5DEG (720 x 360), opt%host")
     call check(size(glob%c%coef_names) == 1 .and. trim(glob%c%coef_names(1)) == "co2", "coefficient co2")
     call check(glob%c%opt%orbit .and. glob%c%hi_orbit(1) > 0, "orbit imports declared (optional)")
+    call check(glob%c%opt%ocn_lev .and. glob%c%h_dto_lev > 0 .and. axis_find(glob%c%axes, "level") > 0, &
+               "dto_lev exported on the axis level")
+    if (axis_find(glob%c%axes, "level") > 0) &
+        call check(all(glob%c%axes(axis_find(glob%c%axes, "level"))%v == emu%ocean_depth) .and. &
+                   trim(glob%c%axes(axis_find(glob%c%axes, "level"))%units) == "m", "  level: the emulator's depths [m]")
     select type (c => glob%c)
     type is (paleoemu_climate_t)
         bin = c%bin
@@ -95,16 +103,20 @@ program test_climate_paleoemu
     call put_geometry(glob, Hr, zbr, zsr, ref=.true., t1=-21000.0_dp)
     call climate_init_state(glob, st(-21000.0_dp, -21000.0_dp), PASS_INIT)
     call check(maxval(abs(field3(glob, "tas") - tas_ref)) == 0.0_dp, "PASS_INIT: tas = the reference climate")
+    call check(all(fieldl(glob) == 0.0_dp), "PASS_INIT: dto_lev = 0")
 
     call paleoemu_set_reference(emu, Hr, zbr, zsr)
     t = -21000.0_dp
     call drive(glob, 0, t, PASS_BOUNDARY)
     call compare(glob, "PASS_BOUNDARY")
+    call compare_ocean(glob, "PASS_BOUNDARY", 1.0_dp, 0.0_dp)
     do n = 1, 3
         t = t + DTT
         call drive(glob, n, t)
         call compare(glob, "step "//char(48 + n))
     end do
+    call compare_ocean(glob, "step 3", 1.0_dp, 0.0_dp)
+    call check(maxval(abs(fieldl(glob))) > 0.1_dp, "dto_lev differs from 0 by more than 0.1 K somewhere")
     call check(maxval(abs(field3(glob, "tas") - tas_ref)) > 1.0_dp, "the grown ice changes tas somewhere by more than 1 K")
 
     ! ---- restart round trip -------------------------------------------------------------------
@@ -122,8 +134,8 @@ program test_climate_paleoemu
     call drive(glob, 4, t)
     call drive(glob2, 4, t, direct=.false.)
     call compare(glob,  "continued")
-    call check(all(field3(glob2, "tas") == field3(glob, "tas")) .and. all(field3(glob2, "pr") == field3(glob, "pr")), &
-               "restarted = continued, bitwise")
+    call check(all(field3(glob2, "tas") == field3(glob, "tas")) .and. all(field3(glob2, "pr") == field3(glob, "pr")) &
+               .and. all(fieldl(glob2) == fieldl(glob)), "restarted = continued, bitwise (tas, pr, dto_lev)")
 
     ! ---- without the orbit: the emulator's own table -----------------------------------------------
     call climate_create(glob3, ctx, census3)
@@ -147,6 +159,7 @@ program test_climate_paleoemu
     call drive(glob4, 2, -21000.0_dp, PASS_BOUNDARY, adjust=.true.)
     call check(paleoemu_bias_weight(emu) > 0.0_dp, "the bias weight of the grown ice is positive")
     call compare(glob4, "scale_dtas 1.5, bias x 0.5, beta_adj 0.05")
+    call compare_ocean(glob4, "scale_dto 1.5, dto_nsd 1", 1.5_dp, 1.0_dp)
     call climate_end(glob4)
 
     ! ---- the port --------------------------------------------------------------------------------
@@ -181,7 +194,7 @@ contains
                        ' reference = "'//REF//'"', ' beta_adj = 0.0', "/", &
                        "&clim_scl", ' backend = "paleoemu"', ' grid = "'//GRID//'"', ' file = "'//trim(efile)//'"', &
                        ' reference = "'//REF//'"', ' scale_dtas = 1.5', ' bias = "'//BIAS//'"', ' bias_scale = 0.5', &
-                       ' beta_adj = 0.05', "/"
+                       ' beta_adj = 0.05', ' scale_dto = 1.5', ' dto_nsd = 1.0', "/"
         close(u)
     end subroutine par_write
 
@@ -335,6 +348,41 @@ contains
                    what//": tas, pr, z_srf_clim, lapse, beta_p as paleoemu directly (the binning's round-off: "// &
                    "max |d tas| "//trim(r2s(dtas))//" K, |d pr| "//trim(r2s(dpr))//" kg m-2 yr-1)")
     end subroutine compare
+
+    subroutine compare_ocean(g, what, s, nsd)
+        ! dto_lev against the adapter's own emulator state: s dto + nsd dto_sd, filled, each level
+        ! bilinearly onto the grid (bitwise); its dto against the direct emulator's (the binning's round-off).
+        type(climate_slot_t), intent(inout) :: g
+        character(len=*),     intent(in)    :: what
+        real(dp),             intent(in)    :: s, nsd
+        real(dp), allocatable :: d(:,:,:), d0(:,:,:), x(:,:,:)
+        integer :: k
+
+        select type (c => g%c)
+        type is (paleoemu_climate_t)
+            call check(maxval(abs(c%emu%now%dto - emu%now%dto)) < 1.0e-10_dp, &
+                       what//": dto as paleoemu directly (max |d| "//trim(r2s(maxval(abs(c%emu%now%dto - emu%now%dto))))//" K)")
+            d0 = s*c%emu%now%dto + nsd*c%emu%now%dto_sd
+            d  = d0
+            call ocean_fill(c%emu%ocean_mask, d)
+            call check(all(d == d0 .or. c%emu%ocean_mask /= 1), what//": ocean_fill leaves the ocean cells unchanged")
+            call check(count(c%emu%ocean_mask /= 1) > 0 .and. all(abs(d) < 50.0_dp), &
+                       what//": the filled land and below-floor cells are finite and bounded")
+            allocate(x(g%c%nx, g%c%ny, c%emu%nlev))
+            do k = 1, c%emu%nlev
+                x(:, :, k) = paleoemu_target_bilinear(c%tgt, d(:, :, k))
+            end do
+            call check(all(fieldl(g) == x), what//": dto_lev = the bilinear of the filled field per level, bitwise")
+        end select
+    end subroutine compare_ocean
+
+    function fieldl(g) result(a)
+        ! dto_lev [x, y, level]
+        type(climate_slot_t), intent(in) :: g
+        real(dp), allocatable :: a(:,:,:)
+        allocate(a(g%c%nx, g%c%ny, emu%nlev))
+        call fields_get(g%c%exports, handle(g, "dto_lev"), a)
+    end function fieldl
 
     subroutine port_test()
         ! The port copies the imports (as the rows climate_g -> climate put them) with their validity.
