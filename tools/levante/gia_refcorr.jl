@@ -2,11 +2,13 @@
 # run that starts from equilibrium must be today's bed plus the rebound still to come at its end. VILMA2 with i_eq = 3 takes
 # z_bed_eq = z_bed_ref + r (r from rsl_restart_file), its bed at 0 ka is z_bed_eq - rsl(0 ka), so the 0 ka bed misfit is r - rsl(0 ka)
 # and r is the fixed point r = rsl(0 ka) of the run with reference r. gia_refcorr.sh iterates it; this file does the rest.
-#   julia --project=tools/levante tools/levante/gia_refcorr.jl prep  <ice history.nc> <linear|steps> <out folder>
+#   julia --project=tools/levante tools/levante/gia_refcorr.jl prep  <ice history.nc> <linear|steps> <out folder> [<z_bed file>]
 #       force.nc (h_ice(lon, lat, time), model time = -age) and ref.nc (z_bed, H_ice of the history's 0 ka record: VILMA2's
 #       present-day reference) from a FesmData IceHistory product. linear: with a slice DT_RATE before present (the ice of the
 #       line), so VILMA2's dz_bed_rate at 0 ka is the rate of the last century, as in a kryos run (geo cadence 100 yr), not
-#       the mean of the last record interval (2.5 kyr: too high where the rebound decays); the GNSS scores read it.
+#       the mean of the last record interval (2.5 kyr: too high where the rebound decays); the GNSS scores read it. A history
+#       without z_bed (GLAC1D_80k: ice only) takes today's bed from <z_bed file>, an IceHistory product on the same grid (its 0 ka
+#       record; PaleoMIST's).
 #   julia --project=tools/levante tools/levante/gia_refcorr.jl next  <vilma_out.nc> <r next.nc> [<r used.nc>]
 #       r_{n+1} = rsl(0 ka) of the run, on its own Gauss grid; prints the 0 ka bed misfit r_n - rsl_n(0 ka) (max, location, RMS).
 #   julia --project=tools/levante tools/levante/gia_refcorr.jl write <r.nc> <out folder> <X grid>:<history on that grid> <domain>:<hub grid>:<topo file> ...
@@ -22,13 +24,21 @@ using NCDatasets, Printf, Dates
 const DT_STEP = 1.0    # [yr] the ramp of a step (steps only)
 const DT_RATE = 100.0  # [yr] the last forcing interval (linear only): the interval of dz_bed_rate at 0 ka
 
-function prep(hist, interp, out)
+function prep(hist, interp, out, zref = "")
     mkpath(out)
     ds = NCDataset(hist)
     ages = Float64.(ds["time"][:]); lon = Float64.(ds["lon"][:]); lat = Float64.(ds["lat"][:])
     issorted(ages, rev = true) && ages[end] == 0.0 || error("$hist: time must be years ago, oldest first, ending at 0")
     H = Float32.(nomissing(ds["H_ice"][:, :, :], 0.0f0)); H[H .< 0] .= 0
-    zb = Float64.(nomissing(ds["z_bed"][:, :, end], NaN))
+    if isempty(zref)
+        haskey(ds, "z_bed") || error("$hist: no z_bed; give a z_bed file (gia_refcorr.sh ZREF)")
+        zb = Float64.(nomissing(ds["z_bed"][:, :, end], NaN))
+    else
+        zb = NCDataset(zref) do dz
+            Float64.(dz["lon"][:]) == lon && Float64.(dz["lat"][:]) == lat || error("$zref: not on the grid of $hist")
+            a = Float64.(dz["time"][:]); Float64.(nomissing(dz["z_bed"][:, :, findfirst(==(0.0), a)], NaN))
+        end
+    end
     close(ds)
     any(isnan, zb) && error("$hist: the 0 ka z_bed has missing values")
     if interp == "linear"
@@ -159,7 +169,7 @@ end
 
 function main(args)
     c = args[1]
-    c == "prep"  && return prep(args[2:4]...)
+    c == "prep"  && return prep(args[2:end]...)
     c == "next"  && return next(args[2:end]...)
     c == "write" && return write(args[2:end]...)
     error("gia_refcorr.jl prep | next | write")

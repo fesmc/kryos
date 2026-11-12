@@ -11,6 +11,8 @@
 #   VILMA2   the vilma2 checkout of vilma.x (env.sh; the published cases used the gate stack S11)
 #   HIST     the ice history (FesmData IceHistory product, lon-lat, years ago; default PaleoMIST on GLOBAL-0.25DEG)
 #   INTERP   linear (default: the records linear in time, as a datasrc history) | steps (SELEN's Heaviside steps)
+#   ZREF     an IceHistory product on the grid of HIST whose 0 ka z_bed is today's bed, for a history without z_bed (GLAC1D_80k:
+#            the PaleoMIST product)
 #   RHOI, RHOW  densities of the load (kryos sets VILMA2's from phys_const: rho_ice 910, rho_sw 1028)
 #   TOL, NMAX   stop when max |r_n - rsl_n(0 ka)| < TOL [m] (1.5), or after NMAX runs (8)
 #   XGRID    the globe_ice background grid (GLOBAL-0.5DEG) and its history file (XHIST, default HIST on that grid)
@@ -47,7 +49,7 @@ cp $PAR $O/par.nml
 awk '/^&vilma[ \t]*$/{f=1} f{print} f&&/^\//{exit}' $PAR | sed '1d;$d' > $O/vilma.nml
 [ -s $O/vilma.nml ] || { echo "no &vilma group in $PAR"; exit 1; }
 echo "== gia_refcorr $CASE: $PAR, $HIST ($INTERP), rho $RHOI/$RHOW, vilma.x $VX, tol $TOL m $(date -Is)" | tee -a $O/iter.log
-[ -f $O/data/force.nc ] || $JL $T/gia_refcorr.jl prep $HIST $INTERP $O/data || exit 1
+[ -f $O/data/force.nc ] || $JL $T/gia_refcorr.jl prep $HIST $INTERP $O/data ${ZREF:-} || exit 1
 
 # the folder as a PaleoMIST runme project (pm_project.sh: pm_data -> data/), the iterations its runs of the case vilma_rc.nml
 bash $T/pm_project.sh $O $O/data > /dev/null || exit 1
