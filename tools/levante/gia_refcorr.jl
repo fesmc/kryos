@@ -4,7 +4,9 @@
 # and r is the fixed point r = rsl(0 ka) of the run with reference r. gia_refcorr.sh iterates it; this file does the rest.
 #   julia --project=tools/levante tools/levante/gia_refcorr.jl prep  <ice history.nc> <linear|steps> <out folder>
 #       force.nc (h_ice(lon, lat, time), model time = -age) and ref.nc (z_bed, H_ice of the history's 0 ka record: VILMA2's
-#       present-day reference) from a FesmData IceHistory product.
+#       present-day reference) from a FesmData IceHistory product. linear: with a slice DT_RATE before present (the ice of the
+#       line), so VILMA2's dz_bed_rate at 0 ka is the rate of the last century, as in a kryos run (geo cadence 100 yr), not
+#       the mean of the last record interval (2.5 kyr: too high where the rebound decays); the GNSS scores read it.
 #   julia --project=tools/levante tools/levante/gia_refcorr.jl next  <vilma_out.nc> <r next.nc> [<r used.nc>]
 #       r_{n+1} = rsl(0 ka) of the run, on its own Gauss grid; prints the 0 ka bed misfit r_n - rsl_n(0 ka) (max, location, RMS).
 #   julia --project=tools/levante tools/levante/gia_refcorr.jl write <r.nc> <out folder> <X grid>:<history on that grid> <domain>:<hub grid>:<topo file> ...
@@ -18,6 +20,7 @@
 using NCDatasets, Printf, Dates
 
 const DT_STEP = 1.0    # [yr] the ramp of a step (steps only)
+const DT_RATE = 100.0  # [yr] the last forcing interval (linear only): the interval of dz_bed_rate at 0 ka
 
 function prep(hist, interp, out)
     mkpath(out)
@@ -30,6 +33,10 @@ function prep(hist, interp, out)
     any(isnan, zb) && error("$hist: the 0 ka z_bed has missing values")
     if interp == "linear"
         t = -ages; s = [H[:, :, k] for k in eachindex(ages)]
+        if ages[end-1] > DT_RATE        # the slice at -DT_RATE, on the line between the last two records
+            w = Float32(DT_RATE / ages[end-1])
+            insert!(t, length(t), -DT_RATE); insert!(s, length(s), w .* H[:, :, end-1] .+ (1 - w) .* H[:, :, end])
+        end
     elseif interp == "steps"            # record t_k from t_k to t_{k+1} (SELEN's Heaviside history; a 1 yr ramp)
         t = [-ages[1]]; s = [H[:, :, 1]]
         for k in 2:length(ages)
