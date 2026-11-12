@@ -11,8 +11,13 @@ program test_climate_paleoemu
     !   * without the orbit imports, the emulator's own orbit table;
     !   * keys scale_dtas, bias, bias_scale, beta_adj: as paleoemu_downscale with scale, bias_scale, beta and the
     !     bias of paleoemu_bias_init (a constant 2 K, dV_ref 50 m SLE: the grown ice gives a weight > 0);
-    !   * the ocean dto_lev: 0 at PASS_INIT; then scale_dto dto + dto_nsd dto_sd filled by ocean_fill (the
-    !     ocean cells unchanged) and interpolated per level (paleoemu_target_bilinear), on the axis `level`;
+    !   * the ocean dto_lev: 0 at PASS_INIT; then scale_dto (dto - dto0) + dto_nsd dto_sd filled by ocean_fill
+    !     (the ocean cells unchanged) and interpolated per level (paleoemu_target_bilinear), on the axis `level`;
+    !   * the anchor dto0 (dto_anchor, default on): the emulator's dto at present-day inputs (0 ka, its own orbit,
+    !     CO2 280, the reference ice, the filters in equilibrium) as paleoemu directly on a copy, the run's
+    !     emulator untouched; at those inputs dto_lev = 0; recomputed bitwise on restart; without it (dto_anchor
+    !     = False) dto0 = 0 and dto_lev the filled emulator dto, not 0 at present day (the emulator's reference
+    !     inputs, CESM-3Ma's 0 ka, hold the deglaciation in its filters);
     !   * restart round trip: write, a new instance at the reference, read, PASS_RESTART, continue: bitwise;
     !   * the port copies its imports exactly, with their validity;
     !   * the port with a present-day ocean (to_ref, so_ref: groups read from a file on its grid) declares
@@ -56,8 +61,9 @@ program test_climate_paleoemu
     type(paleoemu_class) :: emu
     type(paleoemu_target_class) :: tgt
     type(insol_class)     :: ois
-    type(climate_slot_t)  :: glob3, glob4
-    type(census_t)        :: census3, census4
+    type(climate_slot_t)  :: glob3, glob4, glob5, glob6
+    type(census_t)        :: census3, census4, census5, census6
+    real(dp), allocatable :: dto0(:,:,:)
     integer,  allocatable :: bin(:,:)
     real(dp), allocatable :: Hr(:,:), zbr(:,:), zsr(:,:), lon(:,:), lat(:,:), tas_ref(:,:,:), pr_ref(:,:,:), zs_ref(:,:)
     real(dp) :: t
@@ -115,8 +121,15 @@ program test_climate_paleoemu
     call check(all(fieldl(glob) == 0.0_dp), "PASS_INIT: dto_lev = 0")
 
     call paleoemu_set_reference(emu, Hr, zbr, zsr)
+    dto0 = anchor_direct()
     t = -21000.0_dp
     call drive(glob, 0, t, PASS_BOUNDARY)
+    select type (c => glob%c)
+    type is (paleoemu_climate_t)
+        call check(maxval(abs(c%dto0 - dto0)) < 1.0e-10_dp .and. maxval(abs(dto0)) > 0.1_dp, &
+                   "anchor: dto0 as paleoemu directly at present-day inputs (max |d| "// &
+                   trim(r2s(maxval(abs(c%dto0 - dto0))))//" K); not 0 (max |dto0| "//trim(r2s(maxval(abs(dto0))))//" K)")
+    end select
     call compare(glob, "PASS_BOUNDARY")
     call compare_ocean(glob, "PASS_BOUNDARY", 1.0_dp, 0.0_dp)
     do n = 1, 3
@@ -145,6 +158,13 @@ program test_climate_paleoemu
     call compare(glob,  "continued")
     call check(all(field3(glob2, "tas") == field3(glob, "tas")) .and. all(field3(glob2, "pr") == field3(glob, "pr")) &
                .and. all(fieldl(glob2) == fieldl(glob)), "restarted = continued, bitwise (tas, pr, dto_lev)")
+    select type (c => glob%c)
+    type is (paleoemu_climate_t)
+        select type (c2 => glob2%c)
+        type is (paleoemu_climate_t)
+            call check(all(c2%dto0 == c%dto0), "restart: the anchor dto0 recomputed bitwise")
+        end select
+    end select
 
     ! ---- without the orbit: the emulator's own table -----------------------------------------------
     call climate_create(glob3, ctx, census3)
@@ -171,6 +191,28 @@ program test_climate_paleoemu
     call compare_ocean(glob4, "scale_dto 1.5, dto_nsd 1", 1.5_dp, 1.0_dp)
     call climate_end(glob4)
 
+    ! ---- the anchor at present-day inputs ------------------------------------------------------------
+    ctx%instance = "clim_glob"
+    call climate_create(glob5, ctx, census5)
+    call climate_init(glob5, ctx)
+    call drive_pd(glob5)
+    call check(maxval(abs(fieldl(glob5))) < 1.0e-12_dp, "anchor: dto_lev = 0 at present-day inputs (max |dto_lev| "// &
+               trim(r2s(maxval(abs(fieldl(glob5)))))//" K)")
+    call compare_ocean(glob5, "anchor at present day", 1.0_dp, 0.0_dp)
+    call climate_end(glob5)
+    ctx%instance = "clim_noanc"
+    call climate_create(glob6, ctx, census6)
+    call climate_init(glob6, ctx)
+    call drive_pd(glob6)
+    select type (c => glob6%c)
+    type is (paleoemu_climate_t)
+        call check(all(c%dto0 == 0.0_dp), "dto_anchor = False: dto0 = 0")
+    end select
+    call compare_ocean(glob6, "no anchor at present day", 1.0_dp, 0.0_dp)
+    call check(maxval(abs(fieldl(glob6))) > 0.1_dp, "no anchor: dto_lev at present-day inputs is the emulator's offset "// &
+               "(max |dto_lev| "//trim(r2s(maxval(abs(fieldl(glob6)))))//" K)")
+    call climate_end(glob6)
+
     ! ---- the port --------------------------------------------------------------------------------
     call port_test()
 
@@ -183,6 +225,29 @@ program test_climate_paleoemu
     write(*,"(a)") "test_climate_paleoemu: OK"
 
 contains
+
+    function anchor_direct() result(d)
+        ! dto of a copy of the direct emulator (its reference just set) at present-day inputs.
+        real(dp), allocatable :: d(:,:,:)
+        type(paleoemu_class), allocatable :: e0
+        allocate(e0)
+        e0 = emu
+        call paleoemu_update(e0, 0.0_dp, 280.0_dp, Hr, zbr, zsr)
+        d = e0%now%dto
+    end function anchor_direct
+
+    subroutine drive_pd(g)
+        ! Present-day inputs at 0 ka (PASS_BOUNDARY: the filters in equilibrium): the reference ice, CO2 280 ppm,
+        ! no orbit imports (the emulator's own table); the direct emulator the same.
+        type(climate_slot_t), intent(inout) :: g
+        call put_geometry(g, Hr, zbr, zsr, ref=.true., t1=0.0_dp)
+        call put_geometry(g, Hr, zbr, zsr, ref=.false., t1=0.0_dp)
+        call fields_put(g%c%imports, g%c%hi_coef(1), 280.0_dp, t1=0.0_dp)
+        call climate_init_state(g, st(0.0_dp, 0.0_dp), PASS_BOUNDARY)
+        call paleoemu_init(emu, trim(efile))
+        call paleoemu_set_reference(emu, Hr, zbr, zsr)
+        call paleoemu_update(emu, 0.0_dp, 280.0_dp, Hr, zbr, zsr)
+    end subroutine drive_pd
 
     subroutine bias_write()
         ! A constant 2 K bias on the CESM grid with dV_ref 50 m SLE.
@@ -204,6 +269,8 @@ contains
                        "&clim_scl", ' backend = "paleoemu"', ' grid = "'//GRID//'"', ' file = "'//trim(efile)//'"', &
                        ' reference = "'//REF//'"', ' scale_dtas = 1.5', ' bias = "'//BIAS//'"', ' bias_scale = 0.5', &
                        ' beta_adj = 0.05', ' scale_dto = 1.5', ' dto_nsd = 1.0', "/", &
+                       "&clim_noanc", ' backend = "paleoemu"', ' grid = "'//GRID//'"', ' file = "'//trim(efile)//'"', &
+                       ' reference = "'//REF//'"', ' dto_anchor = False', "/", &
                        "&clim_port_ocn", ' backend = "paleoemu"', ' to_ref = "test_to"', ' so_ref = "test_so"', "/", &
                        "&clim_port_bas", ' backend = "paleoemu"', ' to_ref = "test_to"', ' so_ref = "test_so"', &
                        ' dto_basins = "tb"', "/", &
@@ -366,7 +433,7 @@ contains
     end subroutine compare
 
     subroutine compare_ocean(g, what, s, nsd)
-        ! dto_lev against the adapter's own emulator state: s dto + nsd dto_sd, filled, each level
+        ! dto_lev against the adapter's own emulator state: s (dto - dto0) + nsd dto_sd, filled, each level
         ! bilinearly onto the grid (bitwise); its dto against the direct emulator's (the binning's round-off).
         type(climate_slot_t), intent(inout) :: g
         character(len=*),     intent(in)    :: what
@@ -378,7 +445,7 @@ contains
         type is (paleoemu_climate_t)
             call check(maxval(abs(c%emu%now%dto - emu%now%dto)) < 1.0e-10_dp, &
                        what//": dto as paleoemu directly (max |d| "//trim(r2s(maxval(abs(c%emu%now%dto - emu%now%dto))))//" K)")
-            d0 = s*c%emu%now%dto + nsd*c%emu%now%dto_sd
+            d0 = s*(c%emu%now%dto - c%dto0) + nsd*c%emu%now%dto_sd
             d  = d0
             call ocean_fill(c%emu%ocean_mask, d)
             call check(all(d == d0 .or. c%emu%ocean_mask /= 1), what//": ocean_fill leaves the ocean cells unchanged")

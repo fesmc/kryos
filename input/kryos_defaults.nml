@@ -303,8 +303,13 @@
     bias       = ""                            ! global: the bias correction file ("" none; PaleoEmulator scripts/prep_bias_pmip4.jl,
                                                ! kryos_data/paleoemu/bias), weighted by the NH ice volume
     bias_scale = 1.0                           ! global: the bias correction times this
-    scale_dto  = 1.0                           ! global: the ocean temperature change dto_lev = scale_dto dto + dto_nsd dto_sd
+    scale_dto  = 1.0                           ! global: the ocean temperature change dto_lev = scale_dto (dto - dto0) + dto_nsd dto_sd
     dto_nsd    = 0.0                           ! global: (the emulator's annual ocean T change and its standard deviation)
+    dto_anchor = True                          ! global: dto - dto0, dto0 the emulator's dto at present-day inputs (0 ka, its
+                                               ! orbit table, dto_anchor_co2, the reference ice, filters in equilibrium):
+                                               ! dto_lev = 0 at present day (the emulator's reference inputs, CESM-3Ma's
+                                               ! 0 ka, hold the deglaciation in their filters)
+    dto_anchor_co2 = 280.0                     ! [ppm] global: the CO2 of the anchor's inputs
     out_emu   = "none"                         ! global: schedule of <instance>_emu.nc (the emulator on the CESM grid)
     to_ref    = ""                             ! port: the present-day ocean temperature on the port's grid, a var_defs group
                                                ! (as a snapshot's `to`, e.g. ismip7_to); "" = no ocean (no set A)
