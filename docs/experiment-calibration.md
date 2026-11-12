@@ -285,7 +285,9 @@ cut), d = model - obs, and the error
 
 $$R_g = \mathrm{diag}(\sigma_i^2) + \sigma_{m,g}^2 C_g,\qquad \log L = \sum_g -\tfrac12\left(d^\top R_g^{-1} d + \log\det R_g\right)$$
 
-Here sigma_i is the member's own `ip_sigma` (its slope and the side of d). The groups are independent.
+Here sigma_i is the member's own `ip_sigma` (its slope and the side of d). The groups are independent. GNSS groups
+(`[[gnss]]`, present-day uplift rates at GNSS stations against the member's `dz_bed_rate`) use the same form with the
+station's sd and no time term ([docs/dev/plastic-ensemble-design.md](https://github.com/fesmc/kryos/blob/main/docs/dev/plastic-ensemble-design.md), GNSS uplift rates).
 
 **Weights.** w_m ∝ L_m: the sample follows the prior, so the prior and the sampling density cancel. The weights are
 normalised over the members that ran. The effective sample size is ESS = 1 / sum w^2, computed overall and per data
