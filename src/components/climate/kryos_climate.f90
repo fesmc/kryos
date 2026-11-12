@@ -26,6 +26,9 @@ module kryos_climate
                                                     ! atmosphere of the global part, remapped, and exports it
         logical :: orbit = .false.                  ! imports the orbital elements of the forcing (optional: a
                                                     ! backend with an orbit of its own uses it without them)
+        logical :: ocn_lev = .false.                ! the ocean temperature change dto_lev on the global part's
+                                                    ! own axis `level`: the global part (host) exports it, its
+                                                    ! port imports it (remapped) for its ocean profiles
     end type climate_opt_t
 
     type, abstract, extends(component_t), public :: climate_t
@@ -33,9 +36,11 @@ module kryos_climate
         integer :: hi_z_srf = 0, hi_H_ice = 0, hi_z_bed = 0, hi_f_grnd = 0, hi_z_sl = 0, hi_z_srf_ref = 0
         integer :: hi_H_ice_ref = 0, hi_z_bed_ref = 0                           ! host
         integer :: hi_tas = 0, hi_pr = 0, hi_z_srf_clim = 0, hi_lapse = 0, hi_beta_p = 0   ! port
+        integer :: hi_dto_lev = 0                                               ! port with ocn_lev
         integer :: hi_orbit(3) = 0                                              ! orbit_ecc, orbit_obl, orbit_per
         integer :: h_tas = 0, h_pr = 0, h_z_srf_clim = 0, h_lapse = 0, h_beta_p = 0
         integer :: h_to_ann = 0, h_so_ann = 0, h_dto_ann = 0                   ! has_ocn
+        integer :: h_dto_lev = 0                                               ! host with ocn_lev
         integer :: h_to_shlf = 0, h_so_shlf = 0, h_dto_shlf = 0, h_dso_shlf = 0 ! has_ocn_shelf
         integer :: h_smb = 0, h_T_srf = 0, h_Qd = 0                            ! has_smb, has_Qd
         integer :: h_tsl_ann = 0                                               ! has_tsl_ann
@@ -173,7 +178,10 @@ contains
         ! z_srf_ref, H_ice_ref, z_bed_ref on its own grid, all filled by the core
         ! (globe_ice); a regional port of it (opt%port) imports the global
         ! part's atmosphere (tas, pr, z_srf_clim, lapse, beta_p, remapped onto
-        ! its grid) instead of the geometry.
+        ! its grid) instead of the geometry. With opt%ocn_lev the global part
+        ! exports the ocean temperature change dto_lev on its axis `level` and
+        ! the port imports it on the same axis (domain_create passes the global
+        ! part's axes in ctx%axes).
         class(climate_t), intent(inout) :: c
         type(init_ctx_t), intent(in)    :: ctx
         integer :: d2(2), k
@@ -182,6 +190,11 @@ contains
         if (c%opt%host .and. (c%nx < 1 .or. c%ny < 1 .or. len_trim(c%grid) == 0 .or. .not. allocated(c%grid_obj))) then
             call fesm_error("kryos_climate::climate_init", "a global climate part has no grid", &
                             "instance "//trim(c%name)//": its init must set grid, nx, ny and grid_obj (opt%host)")
+        end if
+        if (c%opt%ocn_lev .and. .not. (c%opt%host .or. c%opt%port)) then
+            call fesm_error("kryos_climate::climate_init", "opt%ocn_lev belongs to a two-level climate", &
+                            "instance "//trim(c%name)//": dto_lev is exported by a global part (opt%host) and "// &
+                            "imported by its port (opt%port)")
         end if
         d2 = [c%nx, c%ny]
         g  = trim(c%grid)
@@ -196,6 +209,10 @@ contains
             call fields_add(c%imports, "lapse", "K m-1", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_lapse, grid=g, &
                             dims=[d2, component_axis(c, ctx, "month")], zdim="month")
             call fields_add(c%imports, "beta_p", "K-1", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_beta_p, grid=g, dims=d2)
+            if (c%opt%ocn_lev) then
+                call fields_add(c%imports, "dto_lev", "K", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_dto_lev, grid=g, &
+                                dims=[d2, component_axis(c, ctx, "level")], zdim="level")
+            end if
         else
             call fields_add(c%imports, "z_srf", "m", FIELD_INSTANT, FIELD_INTENSIVE, c%hi_z_srf, grid=g, dims=d2)
             call fields_add(c%imports, "H_ice", "m", FIELD_INSTANT, FIELD_EXTENSIVE, c%hi_H_ice, grid=g, dims=d2)
@@ -240,6 +257,10 @@ contains
         call fields_add(c%exports, "lapse", "K m-1", FIELD_INSTANT, FIELD_INTENSIVE, c%h_lapse, grid=g, &
                         dims=[d2, component_axis(c, ctx, "month")], zdim="month")
         call fields_add(c%exports, "beta_p", "K-1", FIELD_INSTANT, FIELD_INTENSIVE, c%h_beta_p, grid=g, dims=d2)
+        if (c%opt%host .and. c%opt%ocn_lev) then
+            call fields_add(c%exports, "dto_lev", "K", FIELD_INSTANT, FIELD_INTENSIVE, c%h_dto_lev, grid=g, &
+                            dims=[d2, component_axis(c, ctx, "level")], zdim="level")
+        end if
         if (c%caps%has_ocn) then
             call fields_add(c%exports, "to_ann", "K", FIELD_INSTANT, FIELD_INTENSIVE, c%h_to_ann, grid=g, &
                             dims=[d2, component_axis(c, ctx, "depth")], zdim="depth")

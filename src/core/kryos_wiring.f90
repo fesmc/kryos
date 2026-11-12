@@ -143,6 +143,8 @@ contains
         ! climate = paleoemu (two-level): the global part's atmosphere into the regional ports, remapped (the
         ! lapse rows climate -> surface re-elevate it); its ice geometry is the core's (globe_ice)
         call add_set(t, "climate_g", "tas pr z_srf_clim lapse beta_p", "climate", "")
+        ! and its ocean temperature change on its levels, for a port with ocean profiles (level by level)
+        call add(t, "climate_g", "dto_lev", "climate", "dto_lev", "bilin")
         ! hub -> climate, surface, shelf
         call add_set(t, "hub", "z_srf H_ice z_bed f_grnd z_sl", "climate", "auto")
         call add(t, "hub", "z_srf_ref", "climate", "z_srf_ref", "auto", lag=LAG_INIT)
