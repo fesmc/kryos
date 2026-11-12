@@ -17,6 +17,8 @@
 #   DOMAINS  "<domain>:<hub grid>:<topo file under fesmdata> ..." the domain reference topographies to correct (default North and
 #            Antarctica; the case PaleoMIST-sci also has PatagoniaPaleo:PAT-PAL-8KM:PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_TOPO-GEBCO2026.nc)
 #   NTHR     OpenMP threads (64)
+#   R0       a present-day correction r to run with, once and without iterating (the members of an Earth-only ensemble: the r of a
+#            nearby Earth); the run is it0, no reference files are written
 # Restartable: an iteration whose status is 0 is not rerun. The folder is a PaleoMIST runme project (pm_project.sh): the
 # iterations it<n> are runs of its case vilma_rc.nml, staged by runme.
 set -uo pipefail
@@ -84,7 +86,7 @@ $(cat $O/vilma.nml)
 EOF
 export OMP_NUM_THREADS=$NTHR OMP_PROC_BIND=true OMP_STACKSIZE=512M OMP_MAX_ACTIVE_LEVELS=1
 ulimit -s unlimited
-prev=""; conv=0
+prev=${R0:-}; conv=0
 for n in $(seq 0 $((NMAX - 1))); do
   R=$O/it$n; r=$O/r_$((n + 1)).nc
   if [ "$(cut -d' ' -f1 $R/status 2> /dev/null)" != 0 ]; then
@@ -98,6 +100,7 @@ for n in $(seq 0 $((NMAX - 1))); do
   $JL $T/gia_refcorr.jl next $R/vilma_out.nc $r $prev | tee -a $O/iter.log
   m=$(tail -1 $O/iter.log | sed -n 's/.*max |d| = \([0-9.]*\).*/\1/p')
   if [ -n "$prev" ] && awk -v m=$m -v t=$TOL 'BEGIN{exit !(m < t)}'; then conv=1; final=$prev; echo "converged: it$n (r_$n), max misfit $m m" | tee -a $O/iter.log; break; fi
+  [ -n "${R0:-}" ] && { echo "== done (one run with r = $R0) $(date -Is)" | tee -a $O/iter.log; exit 0; }
   prev=$r
 done
 [ $conv = 1 ] || { echo "not converged after $NMAX runs" | tee -a $O/iter.log; exit 1; }
