@@ -8,7 +8,9 @@
 ! The tau_b of the three instances: Gowan's, times the per-domain factors of the present-day fit (taub_domain_factor_file, Stage 1,
 ! tests/plastic_taub_fit.f90; "" = none) and the scale groups of the calibration (taub_scale_file; one file holds the domains of
 ! all grids).
-! Densities: the run's (910, 1028). Build: plastic=1 vilma=1 (yelmo=0 is enough). The maps folder needs grid_PAT-PAL-8KM.txt.
+! Densities: the run's (910, 1028). Build: plastic=1 vilma=1 (yelmo=0 is enough). The maps folder needs grid_PAT-PAL-8KM.txt
+! and grid_NH-16KM.txt. The Northern Hemisphere on NH-16KM since 2026-11-12 (32 km before, ens-v1 and ens-v2): within 2 m of the
+! ESL and the same scores (docs/simulations.md, D3); the reference topography NH-16KM_TOPO-GEBCO2026-refcorr.nc of the refcorr case.
 
 &kryos
     domains         = "North" "Antarctica" "PatagoniaPaleo"
@@ -122,7 +124,7 @@
 
 &geo_nor
     backend     = "vilma2"
-    grid        = "NH-32KM"   ! the ice grid
+    grid        = "NH-16KM"   ! the ice grid
     dt          = 100.0       ! the cadence of geo_glob (a different value stops)
     phase       = 0.0
     clock       = "model"
@@ -132,7 +134,7 @@
 /
 
 &North
-    grid_hub    = "NH-32KM"
+    grid_hub    = "NH-16KM"
     topo        = "topo_nor"
     regions     = "regions_nor"
     basins      = "domain"
@@ -143,7 +145,7 @@
 
 &ice_nor
     backend            = "plastic"
-    grid               = ""             ! the hub grid, NH-32KM
+    grid               = ""             ! the hub grid, NH-16KM
     dt                 = 0.0            ! every step
     phase              = 0.0
     clock              = "model"

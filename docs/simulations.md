@@ -53,7 +53,8 @@ Bagge's reference structure is 3 (v_0.4_s16). Ours so far is 6 (v_1.0_s16), the 
 
 **Defaults.** The GIA solver is VILMA2 except for `pub`: toroidal flow on, ice density 910 kg m⁻³, degree 170, and the
 present-day correction r that belongs to the same ice and Earth (`gia_refcorr.sh`). PlasticIceSheet runs the Northern
-Hemisphere on 32 km, Antarctica on 16 km and Patagonia on 8 km. A suffix `@NH16` marks the Northern Hemisphere on 16 km.
+Hemisphere on 16 km (since 2026-11-12: D3 gave the same scores as 32 km and 2 m less ESL), Antarctica on 16 km and Patagonia on
+8 km. A suffix `@NH32` marks the runs with the Northern Hemisphere on 32 km (ens-v1, ens-v2, T1, D1, D2).
 
 Examples: `ice-PMIST | E1D-PMIST` is PaleoMIST's ice and Earth with our solver; `tau-PMIST-PD | E3D-B21-6` is our ice with
 PaleoMIST's τ_b and the present-day factors on Bagge's structure 6 (m000 of ens-v2); `tau-ENS2-E036 | E3D-B21-6-E036` is
@@ -106,12 +107,12 @@ Each step changes one thing against its parent, so the change in score is that t
 | I7 | `ice-GLAC1D \| E3D-B21-6` | I6: the lateral structure | waits | | | | | |
 | I8 | `ice-GLAC1D-9927 \| E1D-PMIST`, `\| E1D-B21-6`, `\| E3D-B21-6` | I5-I7: North America nn9927 | waits | | | | | |
 | **Our ice, PaleoMIST's τ_b** | | | | | | | | |
-| T1 | `tau-PMIST \| E1D-PMIST` | I1: the ice model (ICESHEET 5 km offline → PlasticIceSheet 32 km online) | running | | | | | |
+| T1 | `tau-PMIST \| E1D-PMIST @NH32` | I1: the ice model (ICESHEET 5 km offline → PlasticIceSheet 32 km online) | running | | | | | |
 | T2 | `tau-PMIST \| E3D-B21-6` | T1: the 3-D Earth | proposed | | | | | |
 | **Our ice, present-day factors** | | | | | | | | |
-| D1 | `tau-PMIST-PD \| E1D-PMIST` | T1: the present-day factors | running | | | | | |
-| D2 | `tau-PMIST-PD \| E3D-B21-6` | D1: the 3-D Earth (m000 of ens-v2) | done | −9243 | 3/5 | 20.3 | 34.7 | 3.2 / 7.0 / 13.7 / 0.5 / 1.4 |
-| D3 | `tau-PMIST-PD \| E3D-B21-6 @NH16` | D2: Northern Hemisphere resolution | running | | | | | |
+| D1 | `tau-PMIST-PD \| E1D-PMIST @NH32` | T1: the present-day factors | running | | | | | |
+| D2 | `tau-PMIST-PD \| E3D-B21-6 @NH32` | D1: the 3-D Earth (m000 of ens-v2) | done | −9243 | 3/5 | 20.3 | 34.7 | 3.2 / 7.0 / 13.7 / 0.5 / 1.4 |
+| D3 | `tau-PMIST-PD \| E3D-B21-6` | D2: Northern Hemisphere resolution, 32 → 16 km (ESL at 20 ka −128.4 against −130.4 m) | done | −9256 | 3/5 | 20.6 | 35.4 | 3.1 / 7.8 / 13.8 / 0.5 / 1.5 |
 | **Ensembles** | | | | | | | | |
 | E1 | `tau-ENS1 \| E3D-B21-6` | D2: sampled τ_b (ens-v1, 25 members, Levante) | done, not rescored | | | | | |
 | E2 | `tau-ENS2 \| E3D-B21-6-ENS2` | E1: the Earth sampled too (ens-v2, 50 members) | done | | | | | |
