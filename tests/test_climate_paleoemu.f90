@@ -14,7 +14,11 @@ program test_climate_paleoemu
     !   * the ocean dto_lev: 0 at PASS_INIT; then scale_dto dto + dto_nsd dto_sd filled by ocean_fill (the
     !     ocean cells unchanged) and interpolated per level (paleoemu_target_bilinear), on the axis `level`;
     !   * restart round trip: write, a new instance at the reference, read, PASS_RESTART, continue: bitwise;
-    !   * the port copies its imports exactly, with their validity.
+    !   * the port copies its imports exactly, with their validity;
+    !   * the port with a present-day ocean (to_ref, so_ref: groups read from a file on its grid) declares
+    !     dto_lev on the global part's axis `level` (from ctx%axes, as domain_create passes it) and exports
+    !     set A on the file's depths: to_ann = to_ref + W dto_lev (W linear in depth, constant beyond the
+    !     levels), so_ann = so_ref; dto_lev = 0 gives to_ann = to_ref.
     ! Needs the emulator file in $PALEOEMU_FILE (PaleoEmulator scripts/06_emulator.jl); skipped without.
     ! With paleoemu=0 the test is not built (test_skip in config/common.mk).
 
@@ -25,8 +29,8 @@ program test_climate_paleoemu
     use kryos_component, only: init_ctx_t, step_time_t, census_t, census_count, PASS_INIT, PASS_BOUNDARY, PASS_RESTART
     use kryos_climate,   only: climate_slot_t, climate_create, climate_init, climate_init_state, climate_update, &
                                climate_restart_write, climate_restart_read, climate_end
-    use kryos_climate_paleoemu, only: paleoemu_climate_t, ocean_fill
-    use kryos_component, only: axis_find
+    use kryos_climate_paleoemu, only: paleoemu_climate_t, paleoemu_port_t, ocean_fill
+    use kryos_component, only: axis_find, axes_equal
     use insolation,      only: insol_class, insol_init, orbit_pars_class, orbit_pars_at
     use paleoemu,        only: paleoemu_class, paleoemu_target_class, paleoemu_init, paleoemu_set_reference, &
                                paleoemu_update, paleoemu_target_init, paleoemu_downscale, &
@@ -36,7 +40,8 @@ program test_climate_paleoemu
 
     character(len=*), parameter :: DIR = "tmp/test_climate_paleoemu/", PAR = DIR//"par.nml", REF = DIR//"ref.nc", &
                                    RST = DIR//"rst", MAPS = "maps", GRID = "GLOBAL-0.5DEG", &
-                                   BIAS = DIR//"bias.nc"
+                                   BIAS = DIR//"bias.nc", OCN = DIR//"ocean.nc"
+    real(dp), parameter :: ZOCN(5) = [-2.0_dp, -100.0_dp, -500.0_dp, -1000.0_dp, -2000.0_dp]   ! as files give z
     real(dp), parameter :: DTT = 1000.0_dp, SEC_YEAR = 365.0_dp*86400.0_dp
     integer :: nfail = 0
 
@@ -194,7 +199,12 @@ contains
                        ' reference = "'//REF//'"', ' beta_adj = 0.0', "/", &
                        "&clim_scl", ' backend = "paleoemu"', ' grid = "'//GRID//'"', ' file = "'//trim(efile)//'"', &
                        ' reference = "'//REF//'"', ' scale_dtas = 1.5', ' bias = "'//BIAS//'"', ' bias_scale = 0.5', &
-                       ' beta_adj = 0.05', ' scale_dto = 1.5', ' dto_nsd = 1.0', "/"
+                       ' beta_adj = 0.05', ' scale_dto = 1.5', ' dto_nsd = 1.0', "/", &
+                       "&clim_port_ocn", ' backend = "paleoemu"', ' to_ref = "test_to"', ' so_ref = "test_so"', "/", &
+                       "&test_to", ' filename = "'//OCN//'"', ' name = "to"', ' units = "degC" "K"', &
+                       ' scaling = 1.0 273.15', ' time = 0 0 0 0 1', "/", &
+                       "&test_so", ' filename = "'//OCN//'"', ' name = "so"', ' units = "PSU" "PSU"', &
+                       ' scaling = 1.0 0.0', ' time = 0 0 0 0 1', "/"
         close(u)
     end subroutine par_write
 
@@ -410,7 +420,91 @@ contains
                    "port: tas, beta_p copied with their validity")
         call fields_get(port%c%exports, port%c%h_pr, b3)
         call check(all(b3 == 2.0_dp*a3), "port: pr copied")
+        call check(.not. port%c%opt%ocn_lev .and. .not. port%c%caps%has_ocn .and. port%c%hi_dto_lev == 0, &
+                   "port without to_ref, so_ref: no ocean")
+        call port_ocean_test(pc)
     end subroutine port_test
+
+    subroutine port_ocean_test(pc0)
+        ! The port with the present-day ocean of a file on its grid (to [degC], so; 5 depths, z negative).
+        type(init_ctx_t), intent(in) :: pc0
+        type(init_ctx_t) :: pc
+        type(census_t)   :: cs
+        type(climate_slot_t) :: po
+        real(dp) :: to(10, 8, 5), so(10, 8, 5), dl(10, 8, 8), a3(10, 8, 12), a2(10, 8), b(10, 8, 5), w, t0, t1
+        real(dp) :: ex(10, 8, 5), lev(8)
+        integer  :: i, j, k, l, kg, kp
+
+        do k = 1, 5
+            do j = 1, 8
+                do i = 1, 10
+                    to(i, j, k) = 2.0_dp - 0.001_dp*abs(ZOCN(k)) + 0.1_dp*i - 0.05_dp*j
+                    so(i, j, k) = 34.0_dp + 0.0005_dp*abs(ZOCN(k)) + 0.01_dp*i
+                end do
+            end do
+        end do
+        call nc_create(OCN)
+        call nc_write_dim(OCN, "x", x=1.0_dp, dx=1.0_dp, nx=10)
+        call nc_write_dim(OCN, "y", x=1.0_dp, dx=1.0_dp, nx=8)
+        call nc_write_dim(OCN, "z", x=ZOCN, units="m")
+        call nc_write(OCN, "to", to, dim1="x", dim2="y", dim3="z")
+        call nc_write(OCN, "so", so, dim1="x", dim2="y", dim3="z")
+
+        pc = pc0
+        pc%instance = "clim_port_ocn"
+        pc%axes = glob%c%axes                          ! as domain_create seeds them (axes_g)
+        call climate_create(po, pc, cs)
+        call climate_init(po, pc)
+        kg = axis_find(glob%c%axes, "level");  kp = axis_find(po%c%axes, "level")
+        call check(po%c%opt%ocn_lev .and. po%c%caps%has_ocn .and. po%c%hi_dto_lev > 0 .and. kp > 0, &
+                   "port with to_ref, so_ref: imports dto_lev, exports set A")
+        if (kp == 0) return
+        call check(axes_equal(po%c%axes(kp), glob%c%axes(kg)), "  on the global part's axis level (the port sees it)")
+        k = axis_find(po%c%axes, "depth")
+        call check(k > 0, "  axis depth declared")
+        if (k == 0) return
+        call check(all(po%c%axes(k)%v == abs(ZOCN)), "  depth: the file's |z| [m]")
+
+        lev = glob%c%axes(kg)%v
+        do l = 1, 8
+            dl(:, :, l) = 0.5_dp*l + 0.01_dp*spread([(real(i, dp), i = 1, 10)], 2, 8)
+        end do
+        a3 = 270.0_dp;  a2 = 0.0_dp
+        call fields_put(po%c%imports, po%c%hi_tas, a3, t1=5.0_dp, t0=4.0_dp)
+        call fields_put(po%c%imports, po%c%hi_pr, a3, t1=5.0_dp, t0=4.0_dp)
+        call fields_put(po%c%imports, po%c%hi_lapse, a3, t1=5.0_dp, t0=4.0_dp)
+        call fields_put(po%c%imports, po%c%hi_z_srf_clim, a2, t1=5.0_dp, t0=4.0_dp)
+        call fields_put(po%c%imports, po%c%hi_beta_p, a2, t1=5.0_dp, t0=4.0_dp)
+        call fields_put(po%c%imports, po%c%hi_dto_lev, dl, t1=5.0_dp, t0=4.0_dp)
+        call climate_update(po, st(4.0_dp, 5.0_dp))
+        ! the expected change: linear in depth between the levels, constant beyond them
+        do k = 1, 5
+            if (abs(ZOCN(k)) <= lev(1)) then
+                ex(:, :, k) = dl(:, :, 1)
+            else if (abs(ZOCN(k)) >= lev(8)) then
+                ex(:, :, k) = dl(:, :, 8)
+            else
+                l = count(lev <= abs(ZOCN(k)))
+                w = (abs(ZOCN(k)) - lev(l))/(lev(l + 1) - lev(l))
+                ex(:, :, k) = (1.0_dp - w)*dl(:, :, l) + w*dl(:, :, l + 1)
+            end if
+        end do
+        call fields_get(po%c%exports, po%c%h_dto_ann, b, t0=t0, t1=t1)
+        call check(maxval(abs(b - ex)) < 1.0e-12_dp .and. t0 == 4.0_dp .and. t1 == 5.0_dp, &
+                   "  dto_ann = dto_lev linear in depth (constant beyond the levels), with its validity")
+        call fields_get(po%c%exports, po%c%h_to_ann, b)
+        call check(maxval(abs(b - (to + 273.15_dp + ex))) < 1.0e-4_dp, "  to_ann = to_ref [K] + dto_ann (to_ref in sp)")
+        call fields_get(po%c%exports, po%c%h_so_ann, b)
+        call check(maxval(abs(b - so)) < 1.0e-4_dp, "  so_ann = so_ref")
+        dl = 0.0_dp
+        call fields_put(po%c%imports, po%c%hi_dto_lev, dl, t1=6.0_dp, t0=5.0_dp)
+        call climate_update(po, st(5.0_dp, 6.0_dp))
+        call fields_get(po%c%exports, po%c%h_to_ann, b)
+        select type (c => po%c)
+        type is (paleoemu_port_t)
+            call check(all(b == c%to0), "  dto_lev = 0: to_ann = to_ref")
+        end select
+    end subroutine port_ocean_test
 
     function field3(g, name) result(a)
         type(climate_slot_t), intent(in) :: g

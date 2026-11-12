@@ -35,6 +35,13 @@ module kryos_climate_paleoemu
     !                       atmosphere remapped onto the domain's grid by the rows
     !                       climate_g -> climate, passed on; the lapse rows
     !                       climate -> surface take tas and pr to the ice surface.
+    !                       With a present-day ocean on its grid (keys to_ref,
+    !                       so_ref: var_defs groups, read as the snapshots read
+    !                       theirs, on the file's depth axis) it exports the
+    !                       profiles of set A: dto_ann = the imported dto_lev
+    !                       interpolated linearly in depth onto the reference's
+    !                       depths (constant above the top and below the bottom
+    !                       level), to_ann = to_ref + dto_ann, so_ann = so_ref.
     !
     ! The factory picks by scope. The emulator works in dp; nothing is narrowed.
     ! Precipitation: the emulator's mm d-1, exported as kg m-2 yr-1 (days of the
@@ -47,8 +54,10 @@ module kryos_climate_paleoemu
     use fesm_fields,     only: fields_get, fields_put
     use interp2D,        only: fill_poisson
     use nml,             only: nml_read, nml_has_param
+    use varslice,        only: varslice_class, varslice_init_nml, varslice_update, varslice_end
+    use kryos_snap_nml,  only: group_file
     use ncio,            only: nc_read, nc_read_attr, nc_size, nc_create, nc_write_dim, nc_write
-    use kryos_component, only: init_ctx_t, step_time_t, constraints_t, axis_t, NAME_LEN, PATH_LEN, &
+    use kryos_component, only: init_ctx_t, step_time_t, constraints_t, axis_t, axis_find, NAME_LEN, PATH_LEN, &
                                PASS_INIT, PASS_BOUNDARY, PASS_RESTART, component_write_output
     use kryos_climate,   only: climate_t, climate_opt_t
     use paleoemu,        only: paleoemu_class, paleoemu_target_class, paleoemu_init, paleoemu_set_reference, &
@@ -94,6 +103,9 @@ module kryos_climate_paleoemu
     end type paleoemu_climate_t
 
     type, extends(climate_t) :: paleoemu_port_t
+        character(len=NAME_LEN) :: to_ref = "", so_ref = ""     ! var_defs groups of the present-day ocean ("" none)
+        real(dp), allocatable :: to0(:,:,:), so0(:,:,:)         ! [x, y, depth] the reference ocean [K], [psu]
+        real(dp), allocatable :: W(:,:)                         ! [depth, level] linear-in-depth weights
     contains
         procedure :: init          => port_init_
         procedure :: init_state    => port_init_state_
@@ -531,7 +543,8 @@ contains
 
     subroutine port_init_(self, ctx)
         ! On the grid the chain gives it; it holds the global part's atmosphere, remapped. Its cadence is the
-        ! global part's (kryos_run).
+        ! global part's (kryos_run). With keys to_ref and so_ref: the present-day ocean on its grid, its
+        ! axis `depth`, the weights from the global part's axis `level` (in ctx%axes: domain_create).
         class(paleoemu_port_t), intent(inout) :: self
         type(init_ctx_t),       intent(in)    :: ctx
 
@@ -539,7 +552,103 @@ contains
         self%nx   = ctx%grid%G%nx
         self%ny   = ctx%grid%G%ny
         self%opt  = climate_opt_t(port=.true.)
+        if (nml_has_param(ctx%par_file, ctx%instance, "to_ref")) call nml_read(ctx%par_file, ctx%instance, "to_ref", self%to_ref)
+        if (nml_has_param(ctx%par_file, ctx%instance, "so_ref")) call nml_read(ctx%par_file, ctx%instance, "so_ref", self%so_ref)
+        if ((len_trim(self%to_ref) == 0) .neqv. (len_trim(self%so_ref) == 0)) then
+            call fesm_error("kryos_climate_paleoemu::init", "keys `to_ref` and `so_ref` go together", &
+                            "instance "//trim(self%name)//": both name the present-day ocean (var_defs groups), "// &
+                            "or both are empty (no ocean)")
+        end if
+        if (len_trim(self%to_ref) == 0) return
+
+        call ocean_ref_load(self, ctx)
+        self%caps%has_ocn = .true.
+        self%opt%ocn_lev  = .true.
+        call log_msg(LOG_INFO, "kryos_climate_paleoemu", "port ocean: present day "//trim(self%to_ref)//", "// &
+                     trim(self%so_ref)//" on "//to_str(size(self%to0, 3))//" depths "//to_str(self%axes(1)%v(1))//"-"// &
+                     to_str(self%axes(1)%v(size(self%axes(1)%v)))//" m; + dto_lev of "//to_str(size(self%W, 2))// &
+                     " levels", "instance "//trim(self%name))
     end subroutine port_init_
+
+    subroutine ocean_ref_load(self, ctx)
+        ! The present-day ocean of the groups to_ref, so_ref (the par file, else the first library file
+        ! holding them; the keys of a snapshot's to and so: units, scaling, fill), its annual mean, on the
+        ! file's depths (positive down: the axis `depth` of set A); the weights W [depth, level] from the
+        ! global part's levels, linear in depth, constant above the top and below the bottom level.
+        class(paleoemu_port_t), intent(inout) :: self
+        type(init_ctx_t),       intent(in)    :: ctx
+
+        character(len=*), parameter :: proc = "kryos_climate_paleoemu::init"
+        real(dp), allocatable :: zt(:), zs(:), lev(:)
+        type(axis_t) :: ax
+        integer :: k, l, nz, nl
+
+        call ocean_read(self, ctx, self%to_ref, self%to0, zt)
+        call ocean_read(self, ctx, self%so_ref, self%so0, zs)
+        if (size(zt) /= size(zs) .or. any(zt /= zs)) then
+            call fesm_error(proc, "to_ref and so_ref are on different depths", "instance "//trim(self%name)// &
+                            ": groups "//trim(self%to_ref)//", "//trim(self%so_ref))
+        end if
+
+        ax%name  = "depth"
+        ax%units = "m"
+        ax%v     = zt
+        if (.not. allocated(self%axes)) allocate(self%axes(0))
+        self%axes = [self%axes, ax]
+
+        k = 0
+        if (allocated(ctx%axes)) k = axis_find(ctx%axes, "level")
+        if (k == 0) then
+            call fesm_error(proc, "the port's ocean needs the global part's axis `level`", "instance "// &
+                            trim(self%name)//": a global paleoemu climate ([globe] climate) passes it to the domains")
+        end if
+        lev = ctx%axes(k)%v
+        nz = size(zt);  nl = size(lev)
+        allocate(self%W(nz, nl))
+        self%W = 0.0_dp
+        do k = 1, nz
+            if (zt(k) <= lev(1)) then
+                self%W(k, 1) = 1.0_dp
+            else if (zt(k) >= lev(nl)) then
+                self%W(k, nl) = 1.0_dp
+            else
+                l = count(lev <= zt(k))                        ! lev(l) <= zt(k) < lev(l+1)
+                self%W(k, l + 1) = (zt(k) - lev(l))/(lev(l + 1) - lev(l))
+                self%W(k, l)     = 1.0_dp - self%W(k, l + 1)
+            end if
+        end do
+    end subroutine ocean_ref_load
+
+    subroutine ocean_read(self, ctx, group, x, z)
+        ! One ocean field of the var_defs group `group` on the port's grid: its annual mean (a monthly
+        ! climatology is averaged), widened, and its depths |z| [m].
+        class(paleoemu_port_t), intent(in)  :: self
+        type(init_ctx_t),       intent(in)  :: ctx
+        character(len=*),       intent(in)  :: group
+        real(dp), allocatable,  intent(out) :: x(:,:,:), z(:)
+
+        type(varslice_class) :: vs
+        character(len=512)   :: vdb
+        integer :: nz, nt
+
+        vdb = group_file(trim(ctx%par_file), ctx%library, trim(group), "&"//trim(self%name)//" "//trim(group))
+        call varslice_init_nml(vs, trim(vdb), trim(group), domain=trim(ctx%domain), grid_name=trim(ctx%grid_name), &
+                               grid=ctx%grid)
+        if (vs%par%with_time) then
+            call varslice_update(vs, [ctx%time_rel], method="extrap")
+        else
+            call varslice_update(vs)
+        end if
+        nz = size(vs%var, 3);  nt = size(vs%var, 4)
+        if (size(vs%var, 1) /= self%nx .or. size(vs%var, 2) /= self%ny .or. nz < 2 .or. (nt /= 1 .and. nt /= NMON)) then
+            call fesm_error("kryos_climate_paleoemu::init", "group "//trim(group)//" is not an ocean field on the grid", &
+                            "instance "//trim(self%name)//": [x, y, depth] (and 1 or 12 months) on "//trim(ctx%grid_name)// &
+                            " expected")
+        end if
+        x = real(sum(vs%var, dim=4)/real(nt, kind(vs%var)), dp)
+        z = abs(real(vs%z(1:nz), dp))
+        call varslice_end(vs)
+    end subroutine ocean_read
 
     subroutine port_init_state_(self, st, pass)
         ! PASS_BOUNDARY: the imports the core passed (cold start). Other passes: nothing (PASS_RESTART: the
@@ -559,7 +668,7 @@ contains
     end subroutine port_update_
 
     subroutine copy_imports(self, what)
-        ! tas, pr, z_srf_clim, lapse, beta_p as remapped, with their validity.
+        ! tas, pr, z_srf_clim, lapse, beta_p as remapped, with their validity; with an ocean, the profiles.
         class(paleoemu_port_t), intent(inout) :: self
         character(len=*),       intent(in)    :: what
 
@@ -583,7 +692,31 @@ contains
         call require_published(self, self%hi_beta_p, "beta_p", what)
         call fields_get(self%imports, self%hi_beta_p, a2, t0=t0, t1=t1)
         call fields_put(self%exports, self%h_beta_p, a2, t1=t1, t0=t0)
+        if (self%opt%ocn_lev) call ocean_profiles(self, what)
     end subroutine copy_imports
+
+    subroutine ocean_profiles(self, what)
+        ! dto_ann = W dto_lev in each cell, to_ann = to_ref + dto_ann, so_ann = so_ref, with the validity
+        ! of the import.
+        class(paleoemu_port_t), intent(inout) :: self
+        character(len=*),       intent(in)    :: what
+
+        real(dp), allocatable :: dl(:,:,:), dz(:,:,:)
+        real(dp) :: t0, t1
+        integer  :: i, j
+
+        allocate(dl(self%nx, self%ny, size(self%W, 2)), dz(self%nx, self%ny, size(self%W, 1)))
+        call require_published(self, self%hi_dto_lev, "dto_lev", what)
+        call fields_get(self%imports, self%hi_dto_lev, dl, t0=t0, t1=t1)
+        do j = 1, self%ny
+            do i = 1, self%nx
+                dz(i, j, :) = matmul(self%W, dl(i, j, :))
+            end do
+        end do
+        call fields_put(self%exports, self%h_dto_ann, dz, t1=t1, t0=t0)
+        call fields_put(self%exports, self%h_to_ann, self%to0 + dz, t1=t1, t0=t0)
+        call fields_put(self%exports, self%h_so_ann, self%so0, t1=t1, t0=t0)
+    end subroutine ocean_profiles
 
     subroutine port_restart_write_(self, dir, t)
         ! Stateless: constraints restart = .false., so the core never calls this.

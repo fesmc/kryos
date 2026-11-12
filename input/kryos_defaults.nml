@@ -290,7 +290,8 @@
 /
 
 &climate_paleoemu
-    ! The global part (scope global, [globe] climate); the regional ports (each domain's climate) take no keys.
+    ! The global part (scope global, [globe] climate): the keys labelled global; the regional ports (each domain's
+    ! climate): the keys labelled port.
     file      = ""                             ! global: the emulator file (PaleoEmulator scripts/06_emulator.jl)
     reference = ""                             ! global: the pre-industrial reference climate on `grid` (tas_ref, pr_ref,
                                                ! z_srf_ref; PaleoEmulator scripts/prep_kryos_reference.jl)
@@ -305,6 +306,9 @@
     scale_dto  = 1.0                           ! global: the ocean temperature change dto_lev = scale_dto dto + dto_nsd dto_sd
     dto_nsd    = 0.0                           ! global: (the emulator's annual ocean T change and its standard deviation)
     out_emu   = "none"                         ! global: schedule of <instance>_emu.nc (the emulator on the CESM grid)
+    to_ref    = ""                             ! port: the present-day ocean temperature on the port's grid, a var_defs group
+                                               ! (as a snapshot's `to`, e.g. ismip7_to); "" = no ocean (no set A)
+    so_ref    = ""                             ! port: the present-day salinity, a var_defs group (with to_ref; e.g. ismip7_so)
 /
 
 &surface_chion
