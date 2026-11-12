@@ -353,7 +353,8 @@
     sigma_pdd  = 5.0     ! [K] Temperature standard deviation for the annual PDDs (itm)
     time_equil = 100.0   ! [yr] Cold-start snowpack spin-up (annual cycles)
     dt_days    = 1       ! [d] chion step (divides the 360-day year)
-    cloud      = 0.31    ! [1] Cloud fraction, SWdn = TOA*tau_clear(z)*(1-cloud) (bessi; MAR v3.14 Greenland)
+    sw_trans0  = 0.590   ! [1] SWdn/TOA at sea level (bessi; MAR v3.14 1981-2010 Greenland summer, chion's TOA)
+    sw_trans_per_km = 0.049  ! [km-1] Its change with the surface elevation
     wind_speed = 3.0     ! [m s-1] Wind speed at sea level on flat ground (bessi; PD Greenland vs MAR and LGM fit)
     wind_lapse = 0.0     ! [m s-1 km-1] Its change with the surface elevation
     wind_slope = 0.25     ! [m s-1 per m/km] Its change with the surface slope (katabatic; PD Greenland vs MAR and LGM fit)
@@ -373,7 +374,8 @@
     sigma_pdd  = 5.0     ! [K] Temperature standard deviation for the annual PDDs (itm)
     time_equil = 100.0   ! [yr] Cold-start snowpack spin-up (annual cycles)
     dt_days    = 1       ! [d] chion step (divides the 360-day year)
-    cloud      = 0.23    ! [1] Cloud fraction, SWdn = TOA*tau_clear(z)*(1-cloud) (bessi; CERES Antarctica)
+    sw_trans0  = 0.673   ! [1] SWdn/TOA at sea level (bessi; CERES 2001-2020 Antarctica summer, chion's TOA)
+    sw_trans_per_km = 0.041  ! [km-1] Its change with the surface elevation
     wind_speed = 5.5     ! [m s-1] Wind speed at sea level on flat ground (bessi; ERA5 1981-2010 summer, the ice)
     wind_lapse = 0.20    ! [m s-1 km-1] Its change with the surface elevation
     wind_slope = 0.0     ! [m s-1 per m/km] Its change with the surface slope (katabatic)
@@ -459,12 +461,19 @@
     sigma_orog_crit                    = 1000.0          ! [m]  Orographic roughness scale (Dang)
     eps_air                            = 0.80            ! [1] Emissivity of air (graybody longwave)
     longwave_scheme                    = "cloud_proxy"   ! Downwelling longwave if not prescribed: "graybody" | "cloud_proxy"
-    lw_emissivity_base                 = 0.624           ! [1]     Cloud proxy: emissivity at T0, clear sky
-    lw_emissivity_temperature_slope    = 0.0032          ! [K-1]   Cloud proxy: emissivity per K of T_air - T0
-    lw_emissivity_cloud_slope          = 0.613           ! [1]     Cloud proxy: emissivity per unit cloudiness
-    lw_clear_sky_transmissivity        = 0.85            ! [1]     Cloud proxy: clear-sky SW transmissivity at sea level
-    lw_clear_sky_transmissivity_per_km = 0.075           ! [km-1]  Cloud proxy: its increase with surface height
-    lw_night_cloud_fraction            = 0.389           ! [1]     Cloud proxy: cloudiness without a daily TOA
+    lw_clear_sky_transmissivity               = 0.718    ! [1]     Cloud proxy (Konzelmann 1994): clear-sky SW transmissivity at sea level, TOA 300 W m-2
+    lw_clear_sky_transmissivity_per_km        = 0.0298   ! [km-1]  Its increase with surface height
+    lw_clear_sky_transmissivity_insolation    = 0.0569   ! [1]     Its change per ln(TOA/300)
+    lw_cloud_transmission_coefficient         = 0.447    ! [1]     Cloud SW attenuation at sea level
+    lw_cloud_transmission_exponent            = 2.75     ! [1]     Cloud fraction = (attenuation deficit)^(1/exponent)
+    lw_cloud_transmission_decay_per_km        = 0.225    ! [km-1]  Decay of the cloud attenuation with surface height
+    lw_clear_sky_emissivity                   = 0.716    ! [1]     Clear-sky emissivity at T0
+    lw_clear_sky_emissivity_temperature_slope = 0.00239  ! [K-1]   Its change per K of T_air - T0
+    lw_overcast_emissivity                    = 0.952    ! [1]     Overcast emissivity at T0
+    lw_overcast_emissivity_temperature_slope  = 0.00362  ! [K-1]   Its change per K of T_air - T0
+    lw_cloud_emissivity_exponent              = 3.0      ! [1]     Weight of the overcast emissivity, n^exponent
+    lw_night_cloud_fraction                   = 0.85     ! [1]     Cloud fraction without a daily TOA
+    lw_emissivity_max                         = 1.0      ! [1]     Upper bound of the effective emissivity
     eps_snow                           = 0.98            ! [1] Emissivity of snow
     eps_ice                            = 0.98            ! [1] Emissivity of bare ice (seb_scheme = "semix" only)
     sigma_sb                           = 5.670373e-8     ! [W m-2 K-4] Stefan-Boltzmann constant

@@ -13,10 +13,10 @@ module kryos_chion_host
     !     host passes: the run's, from the forcing) from a per-day latitude table (insol_dlat)
     !     interpolated to the columns, as shortwave_down: as is
     !     for ITM (which applies its own transmissivity); for BESSI (surface
-    !     shortwave) times the clear-sky transmissivity of chion's cloud proxy
-    !     at the surface elevation and one cloud fraction,
-    !     tau_clear(z)*(1 - cloud); and as the TOA itself (toa_shortwave) for
-    !     BESSI's cloud-proxy longwave, so chion does not divide by its own
+    !     shortwave) times a transmissivity linear in the surface elevation,
+    !     sw_trans0 + sw_trans_per_km*z[km] (per domain); and as the TOA itself
+    !     (toa_shortwave) for BESSI's cloud-proxy longwave, which diagnoses its
+    !     cloudiness from the two, so chion does not divide by its own
     !     fixed-orbit 365-day TOA;
     !   - the annual positive degree days (ITM only: its vegetation proxy for the
     !     critical snow depth and the snow-free land albedo), with chion's
@@ -41,7 +41,7 @@ module kryos_chion_host
     ! ERA5 1981-2010 over the Greenland and Antarctic ice: sigma = 2.0 - 0.14 (T - T0) in [2, 6] K.
     !
     ! The shortwave, the wind and the temperature variability are chion's
-    ! chion_forcing_host functions (calibrations in its header).
+    ! chion_forcing_host functions.
     !
     ! Wind (BESSI's turbulent fluxes; the climate supplies none), constant through
     ! the year and set each annual cycle from the geometry:
@@ -71,10 +71,10 @@ module kryos_chion_host
     ! is OpenMP-parallel over the active columns, like chion's own step.
     !
     ! Supported chion models: "itm", "bessi" and "pdd". BESSI's downwelling
-    ! longwave is chion's own (longwave_scheme; default "cloud_proxy", whose
-    ! cloudiness 1 - SWdn/(TOA*tau_clear(z)) is then the key cloud everywhere).
-    ! The cloud fraction is per domain: MAR v3.14 1981-2010 over Greenland's
-    ! ice gives SWdn/TOA = 0.61 + 0.05 z[km] in summer, cloud = 0.28.
+    ! longwave is chion's own (longwave_scheme; default "cloud_proxy", its
+    ! cloudiness from SWdn/TOA). The transmissivity is per domain, fitted with
+    ! chion's TOA in summer: MAR v3.14 1981-2010 on Greenland's ice
+    ! 0.590 + 0.049 z[km], CERES 2001-2020 on Antarctica's 0.673 + 0.041 z[km].
     ! PDD takes the air temperature and the snowfall/rainfall only.
     !
     ! Optionally (BESSI, surface_chion_seb_enable) the monthly means of the
@@ -96,7 +96,7 @@ module kryos_chion_host
                            monthly_to_daily_class, monthly_to_daily_init, &
                            monthly_to_daily_controls, interp_monthly_to_day, &
                            pdd_expected_positive_temperature, chion_tsrf_annual, &
-                           forcing_shortwave_cloud, forcing_wind_speed, forcing_tvar_sigma, &
+                           forcing_shortwave_transmissivity, forcing_wind_speed, forcing_tvar_sigma, &
                            forcing_red_noise_monthly
 
     implicit none
@@ -116,7 +116,8 @@ module kryos_chion_host
         real(wp)           :: sigma_pdd     ! [K] temperature standard deviation for the PDDs
         real(wp)           :: time_equil    ! [yr] cold-start snowpack spin-up
         integer            :: dt_days       ! [d] chion step; divides the 360-day year
-        real(wp)           :: cloud         ! [1] cloud fraction (BESSI): SWdn = TOA*tau_clear(z)*(1 - cloud)
+        real(wp)           :: sw_trans0     ! [1] BESSI: SWdn/TOA at sea level
+        real(wp)           :: sw_trans_per_km   ! [km-1] its change with the surface elevation
         real(wp)           :: wind_speed    ! [m s-1] wind speed at sea level on flat ground
         real(wp)           :: wind_lapse        = 0.0_wp   ! [m s-1 km-1] its change with the surface elevation
         real(wp)           :: wind_slope        = 0.0_wp   ! [m s-1 per m/km] its change with the surface slope
@@ -386,10 +387,10 @@ contains
         col = reshape(z_srf, [sc%ncol])
         sc%chn%forc%surface_height(idx) = col(idx)
         ! shortwave_down = sw_fac*TOA: ITM applies its own transmissivity; BESSI the
-        ! cloud proxy's clear sky at the surface and the cloud fraction.
+        ! domain's, linear in the surface elevation.
         allocate(sw_fac(na))
         if (sc%bessi) then
-            sw_fac = forcing_shortwave_cloud(sc%chn%c, 1.0_wp, col(idx), sc%par%cloud)
+            sw_fac = forcing_shortwave_transmissivity(1.0_wp, col(idx), sc%par%sw_trans0, sc%par%sw_trans_per_km)
         else
             sw_fac = 1.0_wp
         end if
@@ -653,7 +654,8 @@ contains
         call nml_read(filename, group, "sigma_pdd",   par%sigma_pdd)
         call nml_read(filename, group, "time_equil",  par%time_equil)
         call nml_read(filename, group, "dt_days",     par%dt_days)
-        call nml_read(filename, group, "cloud",       par%cloud)
+        call nml_read(filename, group, "sw_trans0",       par%sw_trans0)
+        call nml_read(filename, group, "sw_trans_per_km", par%sw_trans_per_km)
         call nml_read(filename, group, "wind_speed",  par%wind_speed)
         call nml_read(filename, group, "rel_hum",     par%rel_hum)
         if (nml_has_param(filename, group, "wind_lapse"))        call nml_read(filename, group, "wind_lapse", par%wind_lapse)
