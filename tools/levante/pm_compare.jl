@@ -161,7 +161,8 @@ end
 #   corrected  uplift_rate of a product that removed it (default)
 #   observed   uplift_rate as it is
 # box, exclude (optional): lists of [lon_min, lon_max, lat_min, lat_max] [degrees east, north; lon_min to lon_max eastward]: the
-# stations in a box (all without box) and in no exclude box. Stations without a finite rate and a positive sd are left out.
+# stations in a box (all without box) and in no exclude box. min_years (optional): stations whose series (time_start to time_end)
+# spans at least that many years. Stations without a finite rate and a positive sd are left out.
 # Returns per station (group, site_name, lat, lon, t = 0 (the present: no time term in the error covariance), rate, sd) [mm/yr].
 function read_gnss(dir, spec)
     nm = spec["name"]; f = joinpath(dir, "GPS-" * spec["product"] * ".nc")
@@ -184,7 +185,9 @@ function read_gnss(dir, spec)
             error("[[gnss]] $nm: rate = \"$kind\": gia | corrected | observed")
         end
         lat = v("lat"); lon = v("lon"); site = string.(ds["site_name"][:])
-        sel = [i for i in eachindex(r) if isfinite(r[i]) && isfinite(sd[i]) && sd[i] > 0 &&
+        span = haskey(spec, "min_years") ? (haskey(ds, "time_start") ? v("time_end") .- v("time_start") :
+                                             error("[[gnss]] $nm: min_years, but $f has no time_start")) : fill(Inf, length(r))
+        sel = [i for i in eachindex(r) if isfinite(r[i]) && isfinite(sd[i]) && sd[i] > 0 && span[i] >= get(spec, "min_years", 0.0) &&
                (isempty(boxes) || any(b -> inbox(b, lon[i], lat[i]), boxes)) && !any(b -> inbox(b, lon[i], lat[i]), excl)]
         [(group = nm, site_name = site[i], lat = lat[i], lon = lon[i], t = 0.0, rate = r[i], sd = sd[i]) for i in sel]
     end
