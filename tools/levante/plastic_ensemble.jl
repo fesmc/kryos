@@ -14,9 +14,11 @@
 # besides the prior mean, m000), seed, obs_groups, compare_max_age_ka (the window of the judging and of the comparison with the
 # references, 25), bar (the references whose best I_g per group sets the cut, weights), implausibility, use_groups;
 # [[references]] (name and product | topo | run: the reconstructions the members are compared with, reference_series); [likelihood.<obs group>]: sigma_m [m], corr_dist_km, corr_time_kyr.
-# [[gnss]] (optional): GNSS data groups, the present-day uplift rate at GNSS stations: name (a group of obs_groups), product
+# [[gnss]] (optional): GNSS data groups, the present-day uplift rate at GNSS stations: name (the group), product
 # (FesmData Records/GPS/GPS-<product>.nc under [score] gnss_dir, default <fesmdata>/Records/GPS), rate (gia | corrected | observed),
-# box, exclude (pm_compare.jl read_gnss); [likelihood."<name>"]: sigma_m [mm/yr], corr_dist_km (no time term).
+# box, exclude, min_years (pm_compare.jl read_gnss), judge (default true; false: reported only, not in the default use_groups);
+# several entries of one name: one group of their stations, each once (gnss_data); every [[gnss]] group is a data group (after
+# obs_groups: data_groups); [likelihood."<name>"]: sigma_m [mm/yr], corr_dist_km (no time term).
 # [earth] (optional): the Earth as parameters, sampled with tau_b: shifts of log10(eta) of VILMA2's 3-D field, global in the upper
 # and lower mantle and per region in the upper mantle (plastic_earth_shift.jl): sigma (prior sd [dex]), theta_max, boundary_km,
 # regions_file (the masks, earth-regions), [[earth.regions]] (name, groups: scale groups), exclude_codes (REGIONS areas without a regional shift),
@@ -30,7 +32,7 @@
 # sample size ESS = 1 / sum w^2. The error model: [likelihood] of the config, or <folder>/errmodel.toml once errmodel has
 # estimated it from a wave (maximum likelihood from the residuals of the members that fit each group best). Plausibility
 # (history matching): the implausibility of a group I_g = (chi2_g - n_g) / sqrt(2 n_g), chi2_g = d' R_g^-1 d; a member is
-# plausible when max_g I_g <= [ensemble] implausibility (3) over [ensemble] use_groups (default all); the weights (of those
+# plausible when max_g I_g <= [ensemble] implausibility (3) over [ensemble] use_groups (default all but [[gnss]] judge = false); the weights (of those
 # groups) are over the plausible members only. Writes
 # iter_kk/weights.csv (per member and group log L, chi2/n, I_g; plausible, ESL at 20 ka, weight), weights.md and plausible.txt.
 # GNSS groups ([[gnss]]): d = model - obs at the stations of the group, the model dz_bed_rate of the run's last VILMA2 record [m/yr]
@@ -101,14 +103,27 @@ end
 # --- GNSS -------------------------------------------------------------------------------------------------------------------------
 # The data groups are of two kinds: RSL (the index points of pm_compare.jl's GROUPS) and GNSS ([[gnss]] of the config, by name).
 const RSL_GROUPS = first.(PM.GROUPS)
-# The GNSS data of a config: the stations of its GNSS groups in obs_groups (obs: pm_compare.jl read_gnss) and per group their indices
-# (idx); every group of obs_groups must be an RSL group or a [[gnss]] entry.
+# The data groups of a config: [ensemble] obs_groups and the GNSS groups of [[gnss]] (in the order of their entries); and those that
+# judge by default (use_groups absent): all but the GNSS groups of judge = false.
+data_groups(cfg) = unique([String.(cfg["ensemble"]["obs_groups"]); [String(sp["name"]) for sp in get(cfg, "gnss", Any[])]])
+judging_groups(cfg) = [g for g in data_groups(cfg) if !any(sp -> sp["name"] == g && !get(sp, "judge", true), get(cfg, "gnss", Any[]))]
+# The GNSS data of a config: the stations of its GNSS groups (obs: pm_compare.jl read_gnss) and per group their indices
+# (idx); every group of obs_groups must be an RSL group or a [[gnss]] entry. A group of several entries (products) takes their
+# stations in the order of the entries, without those of a later entry that an earlier one has (the same site name, or within
+# MERGE_KM): a station counts once.
+const MERGE_KM = 1.0
 function gnss_data(cfg)
-    og = cfg["ensemble"]["obs_groups"]; specs = get(cfg, "gnss", Any[])
+    og = data_groups(cfg); specs = get(cfg, "gnss", Any[])
     bad = [g for g in og if !(g in RSL_GROUPS) && !any(sp -> sp["name"] == g, specs)]
     isempty(bad) || error("obs_groups: neither an RSL group (pm_compare.jl GROUPS) nor a [[gnss]] entry: ", join(bad, ", "))
     dir = get(cfg["score"], "gnss_dir", joinpath(cfg["score"]["fesmdata"], "Records", "GPS"))
-    sts = [st for sp in specs if sp["name"] in og for st in PM.read_gnss(dir, sp)]
+    sts = NamedTuple[]
+    for sp in specs
+        sp["name"] in og || continue
+        have = [s for s in sts if s.group == sp["name"]]
+        append!(sts, [st for st in PM.read_gnss(dir, sp)
+                      if !any(s -> s.site_name == st.site_name || ES.gcdist(s, st) < MERGE_KM, have)])
+    end
     idx = [(g, findall(s -> s.group == g, sts)) for g in og if !(g in RSL_GROUPS)]
     none = [g for (g, ii) in idx if isempty(ii)]
     isempty(none) || error("[[gnss]]: no station selected in ", join(none, ", "))
@@ -120,11 +135,11 @@ function write_gnss(C, gd, cfg)
         println(io, "group,site,lat,lon,rate,sd")
         for s in gd.obs; println(io, join((s.group, s.site_name, s.lat, s.lon, @sprintf("%.3f", s.rate), @sprintf("%.3f", s.sd)), ",")); end
     end
-    sp = Dict(x["name"] => x for x in cfg["gnss"])
     open(joinpath(C, "ensemble.md"), "a") do io
         println(io, "\n\nGNSS groups (", gd.dir, "; the stations in gnss.csv):\n")
         for (g, ii) in gd.idx
-            println(io, "- ", g, ": GPS-", sp[g]["product"], ", rate ", get(sp[g], "rate", "corrected"), ", ", length(ii), " stations")
+            println(io, "- ", g, ": ", join(["GPS-" * x["product"] * " (rate " * get(x, "rate", "corrected") * ")"
+                                             for x in cfg["gnss"] if x["name"] == g], " + "), ", ", length(ii), " stations")
         end
     end
 end
@@ -175,7 +190,7 @@ implausibility(χ2, n) = (χ2 - n) / sqrt(2n)
 # the members of wave k that ran, their residuals per group (RSL from S; GNSS from G, the model rates at the stations, nothing without
 # dz_bed_rate) and ESL at 20 ka; gd the GNSS data (gnss_data)
 function wave_residuals(C, k, cfg)
-    og = cfg["ensemble"]["obs_groups"]; gd = gnss_data(cfg)
+    og = data_groups(cfg); gd = gnss_data(cfg)
     obs = [o for o in PM.read_indicators(cfg["score"]["fesmdata"]) if o.type == 0 && o.group in og]
     idx = [(g, findall(o -> o.group == g, obs)) for g in og if g in RSL_GROUPS]
     A = sort(NCDataset(ds -> Float64.(ds["time"][:]),
@@ -334,7 +349,7 @@ end
 function weights(C, k)
     C = abspath(C); cfg = ES.config(C); ids, Θ, res, og, obs, A, gd = wave_residuals(C, k, cfg); en = cfg["ensemble"]
     em, src = error_model(cfg, C); cut0 = get(en, "implausibility", 3.0)
-    ug0 = String.(get(en, "use_groups", og))     # the groups that judge: the cut and the weights; the rest reported
+    ug0 = String.(get(en, "use_groups", judging_groups(cfg)))     # the groups that judge: the cut and the weights; the rest reported
     all(in(og), ug0) || error("use_groups $(ug0) not all in obs_groups $(og)")
     sg = ES.scale_groups(cfg["scale"]); P = ES.params(cfg, sg)
     W = score_window(obs, A, og, 1000.0 * get(en, "compare_max_age_ka", Inf))
