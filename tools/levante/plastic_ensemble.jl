@@ -400,6 +400,11 @@ function main(args)
                               hi = parse(Float64, get(kv, "hi", "24")))
     end
     args[1] == "earth-field" && return ES.earth_field(args[2], args[3], parse.(Float64, args[4:end]))
+    if args[1] == "earth-sample"
+        kv = Dict(split(x, "=") for x in args[5:end])
+        return ES.earth_sample(args[2], args[3], args[4]; n = parse(Int, get(kv, "n", "30")), K = parse(Int, get(kv, "K", "4")),
+                               seed = parse(Int, get(kv, "seed", "1")))
+    end
     args[1] == "weights" && return weights(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1)
     args[1] == "scores" && return scores(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1)
     args[1] == "errmodel" && return errmodel(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1;

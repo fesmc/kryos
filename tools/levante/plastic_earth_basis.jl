@@ -12,7 +12,7 @@
 # lithosphere thickness isostasy_data's earth_structure/lithothickness/pan2022.nc (T_litho [km]). Pan's viscosity field starts below
 # the lithosphere (Seakon carries the lithosphere as a thickness): above T_litho the field is set to hi (elastic), as in the others.
 # Included by plastic_esmda.jl (after plastic_earth_shift.jl).
-using LinearAlgebra, NCDatasets, Printf
+using LinearAlgebra, NCDatasets, Printf, Random
 
 # linear weights of x in an ascending axis a (clamped at the ends)
 function linw(a, x)
@@ -121,4 +121,35 @@ function earth_field(basis, out, c)
         end
     end
     out
+end
+
+# An Earth-only ensemble of the basis (docs/simulations.md: E3D-PCA-E<nnn>): n members, the first K coefficients in a Latin hypercube
+# uniform over the range of the experts' coefficients extended by `ext` of it on each side (so the members span the experts, not a
+# prior centred on the more numerous Bagge structures), and the lid threshold (VILMA2 visc_3d_lid_log10max: Maxwell elements wholly
+# above lid_depth km stiffer than it are elastic) uniform in `lid`. Writes in outdir: E<nnn>.nc (earth-field), E<nnn>.nml (the 3-D
+# par file with visc_3d_file = E<nnn>.nc, visc_3d_structure = 0 and the lid in its &vilma group, for gia_refcorr.sh) and members.csv.
+#   julia --project=tools/levante tools/levante/plastic_ensemble.jl earth-sample <basis.nc> <3-D par.nml> <outdir> [n=30] [K=4] [seed=1]
+function earth_sample(basis, par, outdir; n = 30, K = 4, seed = 1, ext = 0.1, lid = (21.5, 23.5), lid_depth = 400.0)
+    coef = NCDataset(b -> Float64.(b["coef"][:, 1:K]), basis)
+    lo = [minimum(coef[:, k]) for k in 1:K]; hi = [maximum(coef[:, k]) for k in 1:K]; w = hi .- lo
+    lo .-= ext .* w; hi .+= ext .* w
+    rng = MersenneTwister(seed)
+    U = hcat([(randperm(rng, n) .- rand(rng, n)) ./ n for _ in 1:K+1]...)     # n x (K+1) in (0, 1)
+    mkpath(outdir); txt = read(par, String)
+    occursin(r"^\s*l_visc_3d\s*=\s*\.true\."mi, txt) || error("$par: not a 3-D par file")
+    open(joinpath(outdir, "members.csv"), "w") do io
+        println(io, "member,", join(["c$k" for k in 1:K], ","), ",lid_log10max")
+        for m in 1:n
+            c = lo .+ U[m, 1:K] .* (hi .- lo); λ = lid[1] + U[m, K+1] * (lid[2] - lid[1]); nm = @sprintf("E%03d", m)
+            f = earth_field(basis, joinpath(outdir, nm * ".nc"), c)
+            t = replace(txt, r"^(\s*visc_3d_file\s*=\s*).*$"m => SubstitutionString("\\1\"$(abspath(f))\""),
+                             r"^(\s*visc_3d_structure\s*=\s*).*$"m => s"\g<1>0")
+            t = replace(t, r"(^&vilma\b.*?)(^\s*/\s*$)"ms => SubstitutionString(
+                "\\1    visc_3d_lid_depth    = $(lid_depth * 1e3)   ! earth-sample: the lid rule above this depth [m]\n" *
+                "    visc_3d_lid_log10max = $(round(λ, digits = 3))   ! earth-sample: stiffer is elastic [dex]\n\\2"))
+            write(joinpath(outdir, nm * ".nml"), "! earth-sample $(nm): $(abspath(basis)), c = $(join(round.(c, digits = 3), " ")), lid $(round(λ, digits = 3))\n" * t)
+            println(io, nm, ",", join([@sprintf("%.4f", x) for x in c], ","), ",", @sprintf("%.3f", λ))
+        end
+    end
+    println("wrote ", n, " members in ", outdir, " (coefficients in ", join([@sprintf("[%.2f, %.2f]", a, b) for (a, b) in zip(lo, hi)], " "), ")")
 end
