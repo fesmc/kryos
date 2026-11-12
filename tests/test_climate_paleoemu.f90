@@ -18,6 +18,8 @@ program test_climate_paleoemu
     !     emulator untouched; at those inputs dto_lev = 0; recomputed bitwise on restart; without it (dto_anchor
     !     = False) dto0 = 0 and dto_lev the filled emulator dto, not 0 at present day (the emulator's reference
     !     inputs, CESM-3Ma's 0 ka, hold the deglaciation in its filters);
+    !   * output: the default writer's stream 2D holds dto_lev on lon, lat and the axis level (the global part)
+    !     and to_ann, dto_ann on xc, yc and the axis depth (the port), to their table precision;
     !   * restart round trip: write, a new instance at the reference, read, PASS_RESTART, continue: bitwise;
     !   * the port copies its imports exactly, with their validity;
     !   * the port with a present-day ocean (to_ref, so_ref: groups read from a file on its grid) declares
@@ -32,7 +34,7 @@ program test_climate_paleoemu
     ! With paleoemu=0 the test is not built (test_skip in config/common.mk).
 
     use precision,       only: dp
-    use ncio,            only: nc_create, nc_write_dim, nc_write, nc_write_attr
+    use ncio,            only: nc_create, nc_write_dim, nc_write, nc_write_attr, nc_read, nc_size, nc_exists_var
     use phys_constants,  only: phys_const_load
     use fesm_fields,     only: fields_get, fields_put, fields_restart_write, fields_restart_read
     use kryos_component, only: init_ctx_t, step_time_t, census_t, census_count, PASS_INIT, PASS_BOUNDARY, PASS_RESTART
@@ -139,6 +141,7 @@ program test_climate_paleoemu
         call compare(glob, "step "//char(48 + n))
     end do
     call compare_ocean(glob, "step 3", 1.0_dp, 0.0_dp)
+    call output_global(glob)
     call check(maxval(abs(fieldl(glob))) > 0.1_dp, "dto_lev differs from 0 by more than 0.1 K somewhere")
     call check(maxval(abs(field3(glob, "tas") - tas_ref)) > 1.0_dp, "the grown ice changes tas somewhere by more than 1 K")
 
@@ -226,6 +229,41 @@ program test_climate_paleoemu
     write(*,"(a)") "test_climate_paleoemu: OK"
 
 contains
+
+    subroutine output_global(g)
+        ! Stream 2D of the global part (the default writer): dto_lev [lon, lat, level, time] with the axis level.
+        type(climate_slot_t), intent(inout) :: g
+        character(len=*), parameter :: F = DIR//"clim_glob.nc"
+        real(dp), allocatable :: x(:,:,:), lev(:)
+        call g%c%write_output(F, 0.0_dp, "2D", .true.)
+        allocate(x(g%c%nx, g%c%ny, emu%nlev), lev(emu%nlev))
+        call check(nc_exists_var(F, "dto_lev") .and. nc_size(F, "level") == emu%nlev, &
+                   "output: the global part's stream 2D holds dto_lev and the axis level")
+        if (.not. nc_exists_var(F, "dto_lev")) return
+        call nc_read(F, "level", lev)
+        call nc_read(F, "dto_lev", x, start=[1, 1, 1, 1], count=[g%c%nx, g%c%ny, emu%nlev, 1])
+        call check(all(lev == emu%ocean_depth) .and. maxval(abs(x - fieldl(g))) <= 1.0e-3_dp, &
+                   "  dto_lev on lon, lat, level as exported (to the table's 1e-3 K; max |d| "// &
+                   trim(r2s(maxval(abs(x - fieldl(g)))))//" K)")
+    end subroutine output_global
+
+    subroutine output_port(po, ex)
+        ! Stream 2D of the port with an ocean: to_ann and dto_ann [xc, yc, depth, time] with the axis depth.
+        type(climate_slot_t), intent(inout) :: po
+        real(dp),             intent(in)    :: ex(:,:,:)
+        character(len=*), parameter :: F = DIR//"clim_port_ocn.nc"
+        real(dp) :: x(10, 8, 5), y(10, 8, 5), e(10, 8, 5), z(5)
+        call po%c%write_output(F, 5.0_dp, "2D", .true.)
+        call check(nc_exists_var(F, "to_ann") .and. nc_exists_var(F, "dto_ann") .and. nc_size(F, "depth") == 5, &
+                   "output: the port's stream 2D holds to_ann, dto_ann and the axis depth")
+        if (.not. (nc_exists_var(F, "to_ann") .and. nc_exists_var(F, "dto_ann"))) return
+        call nc_read(F, "depth", z)
+        call nc_read(F, "dto_ann", x, start=[1, 1, 1, 1], count=[10, 8, 5, 1])
+        call nc_read(F, "to_ann", y, start=[1, 1, 1, 1], count=[10, 8, 5, 1])
+        call fields_get(po%c%exports, po%c%h_to_ann, e)
+        call check(all(abs(z - abs(ZOCN)) < 1.0e-6_dp) .and. maxval(abs(x - ex)) <= 1.0e-3_dp .and. &
+                   maxval(abs(y - e)) <= 1.0e-3_dp, "  to_ann, dto_ann on xc, yc, depth as exported (to 1e-3 K)")
+    end subroutine output_port
 
     function anchor_direct() result(d)
         ! dto of a copy of the direct emulator (its reference just set) at present-day inputs.
@@ -527,6 +565,7 @@ contains
         pc = pc0
         pc%instance = "clim_port_ocn"
         pc%axes = glob%c%axes                          ! as domain_create seeds them (axes_g)
+        pc%grid%G%x = [(32.0_dp*i, i = 1, 10)];  pc%grid%G%y = [(32.0_dp*j, j = 1, 8)]   ! its axes [km] (the writer)
         call climate_create(po, pc, cs)
         call climate_init(po, pc)
         kg = axis_find(glob%c%axes, "level");  kp = axis_find(po%c%axes, "level")
@@ -570,6 +609,7 @@ contains
         call check(maxval(abs(b - (to + 273.15_dp + ex))) < 1.0e-4_dp, "  to_ann = to_ref [K] + dto_ann (to_ref in sp)")
         call fields_get(po%c%exports, po%c%h_so_ann, b)
         call check(maxval(abs(b - so)) < 1.0e-4_dp, "  so_ann = so_ref")
+        call output_port(po, ex)
         dl = 0.0_dp
         call fields_put(po%c%imports, po%c%hi_dto_lev, dl, t1=6.0_dp, t0=5.0_dp)
         call climate_update(po, st(5.0_dp, 6.0_dp))
