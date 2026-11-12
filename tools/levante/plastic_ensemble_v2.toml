@@ -156,6 +156,9 @@ run  = "$KRYOS_WORK/kryos_data/refcorr/PaleoMIST-1D"
 name = "ice-PMIST | E1D-B21-6"                # the radial mean of the 3-D Earth (par ..._bagge1d.nml: visc_3d_tol = 99, VILMA2's 1Db)
 run  = "$KRYOS_WORK/kryos_data/refcorr/PaleoMIST-Bagge1D"
 [[references]]
+name = "ice-PMIST | E1D-B21-6-layers"     # the same radial mean as a plain 1-D Earth (earth-radial: layer means), ~35x faster
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E1D-B21-6-layers"
+[[references]]
 name = "tau-PMIST | E1D-PMIST"              # kryos online (plastic every step, 32 km) with Gowan's tau_b and his 1-D Earth (runs/pm-online)
 run  = "$KRYOS/runs/pm-online/gowan"
 [[references]]
