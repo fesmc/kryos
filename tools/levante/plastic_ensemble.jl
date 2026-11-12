@@ -102,7 +102,7 @@ end
 
 # --- GNSS -------------------------------------------------------------------------------------------------------------------------
 # The data groups are of two kinds: RSL (the index points of pm_compare.jl's GROUPS) and GNSS ([[gnss]] of the config, by name).
-const RSL_GROUPS = first.(PM.GROUPS)
+const RSL_GROUPS = [first.(PM.GROUPS); collect(keys(PM.GROUP_UNIONS))]   # the RSL groups, and their unions (older configs)
 # The data groups of a config: [ensemble] obs_groups and the GNSS groups of [[gnss]] (in the order of their entries); and those that
 # judge by default (use_groups absent): all but the GNSS groups of judge = false.
 data_groups(cfg) = unique([String.(cfg["ensemble"]["obs_groups"]); [String(sp["name"]) for sp in get(cfg, "gnss", Any[])]])
@@ -191,8 +191,8 @@ implausibility(χ2, n) = (χ2 - n) / sqrt(2n)
 # dz_bed_rate) and ESL at 20 ka; gd the GNSS data (gnss_data)
 function wave_residuals(C, k, cfg)
     og = data_groups(cfg); gd = gnss_data(cfg)
-    obs = [o for o in PM.read_indicators(cfg["score"]["fesmdata"]) if o.type == 0 && o.group in og]
-    idx = [(g, findall(o -> o.group == g, obs)) for g in og if g in RSL_GROUPS]
+    obs = [o for o in PM.read_indicators(cfg["score"]["fesmdata"]) if o.type == 0 && any(g -> PM.in_group(o, g), og)]
+    idx = [(g, findall(o -> PM.in_group(o, g), obs)) for g in og if g in RSL_GROUPS]
     A = sort(NCDataset(ds -> Float64.(ds["time"][:]),
                        joinpath(cfg["score"]["fesmdata"], "Global", "GLOBAL-0.5DEG", "GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc")))
     ids, Θ = ES.read_theta(C, k)
@@ -257,7 +257,7 @@ end
 # scored on the same window.
 function score_window(obs, A, og, tmax)
     kp = findall(o -> o.t <= tmax, obs); ka = findall(<=(tmax), A)
-    (tmax = tmax, kp = kp, ka = ka, A = A[ka], obs = obs[kp], idx = [(g, findall(o -> o.group == g, obs[kp])) for g in og if g in RSL_GROUPS])
+    (tmax = tmax, kp = kp, ka = ka, A = A[ka], obs = obs[kp], idx = [(g, findall(o -> PM.in_group(o, g), obs[kp])) for g in og if g in RSL_GROUPS])
 end
 # per data group (log L, chi2, n, I) of a series S (all points x all ages) on the window W; nothing when S misses a record there (the
 # points where S has gaps are dropped, as in group_residuals). The GNSS groups (present day, in every window) from the series' model
@@ -521,7 +521,8 @@ function main(args)
     if args[1] == "earth-basis"
         kv = Dict(split(x, "=") for x in args[5:end])
         return ES.earth_basis(args[2], args[3], args[4]; kmax = parse(Int, get(kv, "kmax", "6")), lo = parse(Float64, get(kv, "lo", "19.5")),
-                              hi = parse(Float64, get(kv, "hi", "24")))
+                              hi = parse(Float64, get(kv, "hi", "24")), weights = String(get(kv, "weights", "field")),
+                              lid = haskey(kv, "lid") ? parse(Float64, kv["lid"]) : nothing)
     end
     args[1] == "earth-field" && return ES.earth_field(args[2], args[3], parse.(Float64, args[4:end]))
     if args[1] == "earth-sample"

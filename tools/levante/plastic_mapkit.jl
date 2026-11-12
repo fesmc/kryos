@@ -12,7 +12,7 @@ end
 const FES = get(ENV, "FESMDATA", "/work/ba1442/fesmdata")   # tools/levante/env.sh
 const INSTANCES = [("ice_nor", "North", "NH-32KM"), ("ice_ant", "Antarctica", "ANT-16KM"), ("ice_pat", "PatagoniaPaleo", "PAT-PAL-8KM")]
 const SIGMA_M = 5.0                                   # [m] the model error of z_m (as plastic_esmda_report.jl)
-const NEAR = ["Laurentide", "Greenland", "Fennoscandia/Barents", "Antarctica"]
+const NEAR = ["Laurentide", "Greenland", "Fennoscandia", "Barents", "Antarctica"]
 const LAND = RGBf(0.88, 0.86, 0.82)
 const MARGIN = RGBf(0.0, 0.39, 0.0)                  # dark green: the target margin (PaleoMIST's, prescribed)
 const ICEMAP = cgrad([RGBf(0.42, 0.42, 0.44), RGBf(1, 1, 1)])

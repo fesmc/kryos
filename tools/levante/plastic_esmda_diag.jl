@@ -106,7 +106,7 @@ sc, sh = readdlm(joinpath(C, "iter_01", "scores.csv"), ','; header = true)
 setcol = findfirst(==("set"), vec(sh)); dcol = findfirst(==("mean_d"), vec(sh)); rcol = findfirst(==("rms_z"), vec(sh))
 kl = maximum(parse(Int, d[6:7]) for d in readdir(C) if startswith(d, "iter_"))
 thpost, _ = readdlm(joinpath(C, @sprintf("iter_%02d", kl), "theta.csv"), ','; header = true)
-sets = ["far field", "Antarctica", "Laurentide", "Fennoscandia/Barents"]
+sets = ["far field", "Antarctica", "Laurentide", "Fennoscandia", "Barents"]
 pars = ["Antarctica_80-60-40-25-20", "Laurentide_20"]
 fig = Figure(size = (1500, 650))
 for (j, p) in enumerate(pars), (i, s) in enumerate(sets)

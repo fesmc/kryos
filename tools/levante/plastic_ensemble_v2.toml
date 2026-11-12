@@ -73,7 +73,7 @@ theta_max     = 1.5
 [ensemble]
 n          = 49                          # members besides the prior mean (m000)
 seed       = 1
-obs_groups = ["Laurentide", "Greenland", "Fennoscandia/Barents", "Antarctica", "far field"]   # pm_compare.jl's GROUPS
+obs_groups = ["Laurentide", "Greenland", "Fennoscandia", "Barents", "Antarctica", "far field"]   # pm_compare.jl's GROUPS
 compare_max_age_ka = 25.0                # judging and the comparison with the references: GLAC1D's own GIA ends at 26 ka
 bar        = ["pub-PMIST", "pub-GLAC1D"]  # the cut per group: as good as the best published reconstruction (plastic_ensemble.jl weights)
 
@@ -85,10 +85,16 @@ corr_time_kyr = 40.0
 sigma_m = 40.0
 corr_dist_km = 25.0
 corr_time_kyr = 40.0
-[likelihood."Fennoscandia/Barents"]      # inflated by the 3-D Earth's misfit there (ens-v1): refit after this wave
+[likelihood."Fennoscandia"]              # the Fennoscandia/Barents values of ens-v1, split 2026-11-12: refit
 sigma_m = 26.0
 corr_dist_km = 500.0
 corr_time_kyr = 40.0
+
+[likelihood."Barents"]
+sigma_m = 26.0
+corr_dist_km = 500.0
+corr_time_kyr = 40.0
+
 [likelihood."Antarctica"]
 sigma_m = 10.0
 corr_dist_km = 250.0
