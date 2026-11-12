@@ -211,16 +211,16 @@ run  = "$KRYOS_WORK/kryos_data/refcorr/PaleoMIST-Bagge1D"
 name = "ice-PMIST | E1D-B21-6-layers"     # the same radial mean as a plain 1-D Earth (earth-radial: layer means), ~35x faster
 run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E1D-B21-6-layers"
 [[references]]
-name = "tau-PMIST | E1D-PMIST @NH32"              # kryos online (plastic every step, 32 km) with Gowan's tau_b and his 1-D Earth (runs/pm-online)
+name = "tau-PMIST | E1D-PMIST"              # kryos online (plastic every step, 32 km) with Gowan's tau_b and his 1-D Earth (runs/pm-online)
 run  = "$KRYOS/runs/pm-online/gowan"
 [[references]]
-name = "tau-PMIST-PD | E1D-PMIST @NH32"                          # the same with the present-day tau_b factors: m000 on Gowan's 1-D Earth
+name = "tau-PMIST-PD | E1D-PMIST"                          # the same with the present-day tau_b factors: m000 on Gowan's 1-D Earth
 run  = "$KRYOS/runs/pm-online/pdfac"
 [[references]]
 name = "ice-GLAC1D | E3D-B21-6"
 run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D-3D"
 [[references]]
-name = "tau-PMIST-PD | E3D-B21-6"        # m000 with the Northern Hemisphere on 16 km, the default since 2026-11-12 (runs/res16)
+name = "tau-PMIST-PD | E3D-B21-6 @NH16"   # m000 with the Northern Hemisphere on 16 km (runs/res16)
 run  = "$KRYOS/runs/res16/m000-NH16"
 [[references]]
 name = "ice-PMIST | E3D-B21-1"
