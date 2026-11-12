@@ -98,8 +98,25 @@ and the floating surface `z_sl + (1 − ρ_i/ρ_sw) H` elsewhere.
   (`bias_pmip4_<model>.nc`, and `bias_pmip4_mean.nc` with the spread).
 - `beta_adj` (default 0.05, 5 %/K) carries both into the precipitation, exp(beta_adj ΔT).
 
-The emulator's filters of CO2 and ice volume start in equilibrium at the first update
-and advance over the elapsed time. Its anomalies are applied to the pre-industrial
+**Filter start.** The emulator also sees CO2 and the regional ice volumes through
+exponential filters (3 and 10 kyr), its memory; they advance over the elapsed time.
+At a cold start (the first update, PASS_BOUNDARY) the key `filter_start` sets them:
+
+- `"training"` (default): the run's input plus the lag CESM-3Ma's trajectory had at
+  that time, f(t0) = x(t0) + f_train(t0) − x_train(t0), from the emulator file's
+  training inputs (PaleoEmulator's `paleoemu_init`). At 0 ka the 10-kyr filters still
+  hold the deglaciation (North America +21.2 m SLE, Eurasia +3.9 m SLE, log(CO2/280)
+  −0.11): a run at the reference state (the reference ice, CESM-3Ma's 280.4 ppm, the
+  CO2 series' value at 0) reproduces the reference climate, `dtas`, `dlogpr`, `dto` 0.
+  Outside 0-3 Ma the filters start in equilibrium.
+- `"equilibrium"`: the run's input, as if it had been constant forever. At present day
+  this lacks the deglacial memory: `dtas` −0.56 K over Greenland's ice and −0.58 K over
+  Antarctica's (annual means; JJA +0.23 and −0.45 K), `dlogpr` +0.8 %, `dto` −2.8 to
+  +1.5 K.
+
+A restart restores the filters of the bundle, whatever `filter_start`.
+
+Its anomalies are applied to the pre-industrial
 reference climate on the grid (key `reference`), with the same formulas as
 `paleoemu_downscale`.
 
@@ -112,7 +129,7 @@ reference climate on the grid (key `reference`), with the same formulas as
 | `z_srf_clim` | m | the surface of the reference climate (ERA5) |
 | `lapse` | K m-1 | Γ = 6.5e-3, the emulator's lapse rate |
 | `beta_p` | K-1 | key `beta_p`, default 0: precipitation does not change with the lapse rows' elevation, as in the emulator's own downscaling. Its `dlogpr` already holds CESM's response to the ice sheets; only `dtas` is at the reference surface |
-| `dto_lev` | K | the annual ocean temperature change on the emulator's levels (axis `level`), anchored at present day, filled and interpolated ([The ocean](#the-ocean)) |
+| `dto_lev` | K | the annual ocean temperature change on the emulator's levels (axis `level`), filled and interpolated ([The ocean](#the-ocean)) |
 
 **Reference climate.** It is a file on the instance grid holding `tas_ref` [K] and
 `pr_ref` [mm d-1] by month, `z_srf_ref` [m] and the global attribute `grid_name`.
@@ -140,8 +157,7 @@ is ERA5 alone. The present-day run (`par/kryos_GRL-ANT_data_paleoemu_pd.nml`) us
 
 **Restart.** The file `<name>_restart.nc` holds the emulator's memory: the filter
 states and the time of the last update. On restore, the reference is set again from
-the bundle's imports (and with it the anchor `dto0`, recomputed: it is deterministic,
-so a restart reproduces it bitwise), and then the filters are restored.
+the bundle's imports, and then the filters are restored.
 
 **Output.**
 - Streams `2D` and `1D`: the default writer, with the exports on `lon` and `lat`;
@@ -149,7 +165,7 @@ so a restart reproduces it bitwise), and then the filters are restored.
 - Stream `emu` (`out_emu`, `<name>_emu.nc`): the emulator's state on the CESM grid,
   as written by `paleoemu_write_step`. It holds the inputs, the regional volume
   changes, the elevation change, `dtas`, `dlogpr` and the ocean's `dto` (unfilled,
-  0 outside the ocean, not anchored), and their standard deviations.
+  0 outside the ocean), and their standard deviations.
 
 ## The regional port
 
@@ -173,8 +189,7 @@ standard deviation `dto_sd`. Its values are 0 on land and below the sea floor
 **The global part** always predicts and exports it, on its own axis `level` (the
 emulator's depths, m):
 
-1. `d = scale_dto · (dto − dto0) + dto_nsd · dto_sd` (keys, defaults 1 and 0; `dto0`
-   the anchor, below);
+1. `d = scale_dto · dto + dto_nsd · dto_sd` (keys, defaults 1 and 0);
 2. `ocean_fill`: on each level, the cells outside the ocean are filled from the ocean,
    a Poisson fill periodic in longitude whose first guess is the zonal mean of the ocean
    (fesm-utils' `fill_poisson`, method 1); the ocean cells keep their values; a level
@@ -185,23 +200,10 @@ emulator's depths, m):
 The fill matters on Antarctica's shelves: the CESM grid (~3.75°) sees little ocean
 there, and the shelves of a regional grid lie mostly in CESM land cells.
 
-**The anchor.** `dto` is relative to the emulator's reference inputs, CESM-3Ma at
-0 ka. Their filters hold the deglaciation (the 10-kyr filter of the North American
-volume change is +21 m SLE, of log(CO2/280) −0.11), while a run started near present
-day starts its filters in equilibrium (0). At present-day inputs the emulator therefore
-predicts a `dto` of −2.8 to +1.5 K (south of 50°S, +0.2 to +0.5 K below 400 m), which
-a run at 0 ka passed on to the shelves. With `dto_anchor` (default on), the global part
-evaluates the emulator once, when the reference is set (PASS_BOUNDARY, PASS_RESTART), on
-a copy of its state (the run's filters untouched) at present-day inputs: time 0, the
-emulator's own orbit table at 0 ka (the forcing's elements are not available at init),
-CO2 `dto_anchor_co2` (default 280 ppm), the reference ice, its filters in equilibrium.
-Its `dto` is `dto0`, subtracted at every update: `dto_lev` is 0 at those inputs. A run
-at 0 ka differs from them by its own inputs (the CO2 series, 280.4 ppm at 0 ka; the
-forcing's orbit; its filters' memory of the ice before 0): in the present-day run
-(`par/kryos_GRL-ANT_data_paleoemu_pd.nml`, from −100 yr) `dto_lev` stays within 0.025 K
-of 0, against up to 0.7 K (Antarctic basin means at 500 m) without the anchor.
-`dto_anchor = False` restores the emulator's own reference. The atmosphere (`dtas`,
-`dlogpr`) is not anchored.
+At present day `dto` is 0 with the default filter start (above): the emulator's
+reference is CESM-3Ma at 0 ka, whose filters hold the deglaciation, and a run started
+there inherits that memory. A transient that reaches 0 ka carries its own memory
+instead, and its `dto` there is the emulator's response to it.
 
 **The port** takes the ocean only with a present-day reference on its grid, the keys
 `to_ref` and `so_ref`: var_defs groups read as the snapshots read a snapshot's `to`
@@ -236,8 +238,8 @@ ocean either keeps its cells' own values. Both are logged at init. The sample is
 
 **Caveats.**
 
-- With the anchor, `dto_lev` is the change against the emulator's present-day-input
-  state (pre-industrial CO2, today's ice), while ISMIP7 (and ORAS5) are present-day
+- `dto_lev` is the change against the emulator's reference (CESM-3Ma at 0 ka:
+  pre-industrial CO2, today's ice), while ISMIP7 (and ORAS5) are present-day
   climatologies: the profiles add that change to a present-day ocean, so the warming
   since pre-industrial stays in the reference. Accepted: the shelf's `tf_corr` are
   calibrated at present day on that same reference.
