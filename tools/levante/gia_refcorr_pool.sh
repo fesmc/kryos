@@ -22,6 +22,9 @@ if [ "${KRYOS_JOB:-}" != 1 ]; then
     done
     exit
 fi
+# every case would fail at once without these (a job submitted from a shell without the login environment)
+command -v ${KRYOS_RUNME%% *} > /dev/null || { echo "no ${KRYOS_RUNME%% *} on PATH: submit from a login shell (bash -l)"; exit 1; }
+[ -x $VILMA2/bin/vilma.x ] || { echo "no $VILMA2/bin/vilma.x"; exit 1; }
 IFS=: read -r hh mm ss <<< "$TIME"; deadline=$(( $(date +%s) + 10#$hh * 3600 + 10#$mm * 60 - MARGIN * 60 ))
 # the cores of the job, NCPU/NWORK per worker
 cpus=(); for r in $(taskset -cp $$ | sed 's/.*: //' | tr ',' ' '); do
