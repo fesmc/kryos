@@ -19,8 +19,9 @@ program test_climate_paleoemu
     !     dto_lev on the global part's axis `level` (from ctx%axes, as domain_create passes it) and exports
     !     set A on the file's depths: to_ann = to_ref + W dto_lev (W linear in depth, constant beyond the
     !     levels), so_ann = so_ref; dto_lev = 0 gives to_ann = to_ref;
-    !   * with dto_basins: in each basin the mean over its sample (default zone:shelf_break_buffer) of the
-    !     regions on the port's grid; a basin without a sample keeps its cells' values.
+    !   * with dto_basins: the basins extended over the domain by nearest neighbour; in each basin the mean
+    !     over its sample (default zone:shelf_break_buffer, offshore of the basins) of the regions on the
+    !     port's grid; a basin without a sample keeps its cells' values.
     ! Needs the emulator file in $PALEOEMU_FILE (PaleoEmulator scripts/06_emulator.jl); skipped without.
     ! With paleoemu=0 the test is not built (test_skip in config/common.mk).
 
@@ -513,8 +514,9 @@ contains
     end subroutine port_ocean_test
 
     subroutine port_basins_test(pc0)
-        ! Basins tb: 1 in x <= 5, 2 in x > 5, none in row y = 8; the shelf-break buffer (zone 1) in
-        ! cells (2:3, 2:4) of basin 1 only: basin 1 takes their mean, basin 2 and row 8 keep their values.
+        ! Basins tb: 1 in x <= 5, 2 in x > 5, none in rows y = 7, 8 (offshore, extended from row 6); the
+        ! shelf-break buffer (zone 1) in cells (2:3, 7:8), offshore of basin 1: basin 1 (with its extension)
+        ! takes their mean, basin 2 keeps its values.
         type(init_ctx_t), intent(in) :: pc0
         type(init_ctx_t) :: pc
         type(census_t)   :: cs
@@ -522,8 +524,8 @@ contains
         integer  :: tb(10, 8), zone(10, 8), i, l
         real(dp) :: dl(10, 8, 8), a3(10, 8, 12), a2(10, 8), b(10, 8, 5), m(8)
 
-        tb = 1;  tb(6:, :) = 2;  tb(:, 8) = 0
-        zone = 2;  zone(2:3, 2:4) = 1
+        tb = 1;  tb(6:, :) = 2;  tb(:, 7:8) = 0
+        zone = 2;  zone(2:3, 7:8) = 1
         pc = pc0
         pc%instance = "clim_port_bas"
         pc%axes = glob%c%axes
@@ -546,16 +548,17 @@ contains
         call climate_update(po, st(4.0_dp, 5.0_dp))
         call fields_get(po%c%exports, po%c%h_dto_ann, b)
         do l = 1, 8
-            m(l) = sum(dl(2:3, 2:4, l))/6.0_dp
+            m(l) = sum(dl(2:3, 7:8, l))/4.0_dp
         end do
         select type (c => po%c)
         type is (paleoemu_port_t)
             call check(all(abs(b(3, 5, :) - matmul(c%W, m)) < 1.0e-12_dp) .and. &
-                       all(abs(b(1, 1, :) - matmul(c%W, m)) < 1.0e-12_dp), &
-                       "basins: basin 1 the mean of its shelf-break cells, in all its cells")
+                       all(abs(b(1, 1, :) - matmul(c%W, m)) < 1.0e-12_dp) .and. &
+                       all(abs(b(2, 8, :) - matmul(c%W, m)) < 1.0e-12_dp), &
+                       "basins: basin 1 the mean of its offshore shelf-break cells, in all its (extended) cells")
             call check(all(abs(b(7, 3, :) - matmul(c%W, dl(7, 3, :))) < 1.0e-12_dp) .and. &
-                       all(abs(b(2, 8, :) - matmul(c%W, dl(2, 8, :))) < 1.0e-12_dp), &
-                       "basins: basin 2 (no sample) and the cells of no basin keep their values")
+                       all(abs(b(8, 8, :) - matmul(c%W, dl(8, 8, :))) < 1.0e-12_dp), &
+                       "basins: basin 2 (no sample) keeps its values, its extension too")
         end select
     end subroutine port_basins_test
 

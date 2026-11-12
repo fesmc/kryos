@@ -200,10 +200,13 @@ snapshots climate.
 `Zwally2012` as the shelf corrections use), `dto_lev` is replaced in each basin by
 its mean, level by level, over the basin's sample `dto_sample` (a regions selection,
 default `zone:shelf_break_buffer`: FesmData's zone between the continental shelf and
-the open ocean). The shelf then sees the change of the ocean it exchanges with,
-uniform within the basin, rather than the filled values on the shelf itself. A basin
-without sampled cells keeps its cells' own values (logged at init). The sample is
-static (the present-day zones), as is the emulator's ocean mask.
+the open ocean). The basin sets end at the continental shelf, so the basins are first
+extended over the whole domain by nearest neighbour (`fill_nearest`): the shelf-break
+buffer, and the shelf the ice may advance onto, belong to the nearest basin. The shelf
+then sees the change of the ocean it exchanges with, uniform within the basin, rather
+than the filled values on the shelf itself. A basin without sampled cells keeps its
+cells' own values (logged at init). The sample is static (the present-day zones), as
+is the emulator's ocean mask.
 
 **Caveats.**
 

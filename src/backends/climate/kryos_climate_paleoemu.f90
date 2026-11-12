@@ -43,13 +43,15 @@ module kryos_climate_paleoemu
     !                       depths (constant above the top and below the bottom
     !                       level), to_ann = to_ref + dto_ann, so_ann = so_ref.
     !                       With basins (key dto_basins, a basin set of the
-    !                       domain's regions) dto_ann is the mean of each basin's
-    !                       sample (key dto_sample, a regions selection: by
-    !                       default the ocean cells of the shelf-break buffer,
-    !                       FesmData's zone between the continental shelf and the
-    !                       open ocean) in all of its cells: a basin-wide change
-    !                       from the ocean the shelf exchanges with, not the
-    !                       emulator's filled values on the shelf itself.
+    !                       domain's regions, extended over the whole domain by
+    !                       nearest neighbour: the sets end at the continental
+    !                       shelf) dto_ann is the mean of each basin's sample (key
+    !                       dto_sample, a regions selection: by default the ocean
+    !                       cells of the shelf-break buffer, FesmData's zone
+    !                       between the continental shelf and the open ocean) in
+    !                       all of its cells: a basin-wide change from the ocean
+    !                       the shelf exchanges with, not the emulator's filled
+    !                       values on the shelf itself.
     !
     ! The factory picks by scope. The emulator works in dp; nothing is narrowed.
     ! Precipitation: the emulator's mm d-1, exported as kg m-2 yr-1 (days of the
@@ -60,7 +62,7 @@ module kryos_climate_paleoemu
     use coords,          only: grid_cdo_read_desc
     use fesm_log,        only: LOG_INFO, log_msg, fesm_error, to_str
     use fesm_fields,     only: fields_get, fields_put
-    use interp2D,        only: fill_poisson
+    use interp2D,        only: fill_poisson, fill_nearest
     use nml,             only: nml_read, nml_has_param
     use varslice,        only: varslice_class, varslice_init_nml, varslice_update, varslice_end
     use kryos_snap_nml,  only: group_file
@@ -117,7 +119,7 @@ module kryos_climate_paleoemu
         real(dp), allocatable :: W(:,:)                         ! [depth, level] linear-in-depth weights
         character(len=NAME_LEN) :: dto_basins = ""               ! basin set of the basin means ("" none)
         character(len=512)      :: dto_sample = "zone:shelf_break_buffer"   ! the cells each basin's mean samples
-        integer, allocatable :: basin(:,:)                      ! [x, y] basin id (0: none)
+        integer, allocatable :: basin(:,:)                      ! [x, y] basin id, extended over the domain
         logical, allocatable :: sample(:,:)                     ! [x, y] sampled cells
         integer, allocatable :: nsample(:)                      ! [basin] sampled cells of each basin
     contains
@@ -647,8 +649,11 @@ contains
     end subroutine ocean_ref_load
 
     subroutine basins_init(self, ctx)
-        ! The basins of dto_basins on the port's grid (regions_basin_ids: the ids of the set over the whole
-        ! domain) and the sampled cells (regions_select of dto_sample); each basin's count of them.
+        ! The basins of dto_basins on the port's grid (regions_basin_ids), extended over the whole domain:
+        ! a cell outside every basin (the ocean beyond the continental shelf, where the basin sets end)
+        ! takes the id of its nearest basin cell (fill_nearest), so that the sample at the shelf break and
+        ! the shelves the ice may advance onto belong to a basin. The sampled cells (regions_select of
+        ! dto_sample); each basin's count of them.
         class(paleoemu_port_t), intent(inout) :: self
         type(init_ctx_t),       intent(in)    :: ctx
 
@@ -656,6 +661,11 @@ contains
         integer :: b
 
         self%basin  = regions_basin_ids(ctx%reg, trim(self%dto_basins))
+        if (all(self%basin <= 0)) then
+            call fesm_error("kryos_climate_paleoemu::init", "dto_basins `"//trim(self%dto_basins)//"` holds no basin", &
+                            "instance "//trim(self%name)//" on grid "//trim(ctx%grid_name))
+        end if
+        call fill_nearest(self%basin, 0)
         self%sample = regions_select(ctx%reg, trim(self%dto_sample))
         allocate(self%nsample(max(maxval(self%basin), 0)))
         txt = ""
@@ -771,8 +781,7 @@ contains
 
     subroutine basin_means(self, dl)
         ! dl [x, y, level] replaced in each basin by the mean over its sampled cells, level by level (W is
-        ! linear: the same as the mean of dto_ann); basins without a sample and cells without a basin keep
-        ! their values.
+        ! linear: the same as the mean of dto_ann); basins without a sample keep their values.
         class(paleoemu_port_t), intent(in)    :: self
         real(dp),               intent(inout) :: dl(:,:,:)
 
