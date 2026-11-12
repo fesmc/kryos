@@ -433,7 +433,7 @@
     tvar_sigma0       = 2.0    ! [K] Daily temperature variability at T_mon = 0 C (ERA5 1981-2010, Greenland and Antarctic ice)
     tvar_sigma_slope  = -0.14  ! [K K-1] Its change with the monthly mean temperature (Seguinot and Rogozhina 2014)
     tvar_sigma_min    = 2.0    ! [K] Lower bound
-    tvar_sigma_max    = 0.0    ! [K] Upper bound; 0: no variability (ERA5: 6.0)
+    tvar_sigma_max    = 6.0    ! [K] Upper bound (ERA5); 0: no variability
     tvar_tau          = 4.0    ! [d] e-folding time of the red noise (ERA5: 4-6 d)
     tvar_seed         = 1      ! Seed of the noise sequence
 /
@@ -1253,7 +1253,7 @@
     tvar_sigma0       = 2.0    ! [K] Daily temperature variability at T_mon = 0 C (ERA5 1981-2010, Greenland and Antarctic ice)
     tvar_sigma_slope  = -0.14  ! [K K-1] Its change with the monthly mean temperature (Seguinot and Rogozhina 2014)
     tvar_sigma_min    = 2.0    ! [K] Lower bound
-    tvar_sigma_max    = 0.0    ! [K] Upper bound; 0: no variability (ERA5: 6.0)
+    tvar_sigma_max    = 6.0    ! [K] Upper bound (ERA5); 0: no variability
     tvar_tau          = 4.0    ! [d] e-folding time of the red noise (ERA5: 4-6 d)
     tvar_seed         = 1      ! Seed of the noise sequence
 /
