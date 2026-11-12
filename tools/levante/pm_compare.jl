@@ -167,7 +167,8 @@ end
 # box, exclude (optional): lists of [lon_min, lon_max, lat_min, lat_max] [degrees east, north; lon_min to lon_max eastward]: the
 # stations in a box (all without box) and in no exclude box. min_years (optional): stations whose series (time_start to time_end)
 # spans at least that many years. Stations without a finite rate and a positive sd are left out.
-# Returns per station (group, site_name, lat, lon, t = 0 (the present: no time term in the error covariance), rate, sd) [mm/yr].
+# Returns per station (group, kind = :gnss, site_name, lat, lon, t = 0 (the present: no time term in the error covariance), value (the
+# rate), sd) [mm/yr].
 function read_gnss(dir, spec)
     nm = spec["name"]; f = joinpath(dir, "GPS-" * spec["product"] * ".nc")
     isfile(f) || error("[[gnss]] $nm: no $f ([score] gnss_dir)")
@@ -193,7 +194,7 @@ function read_gnss(dir, spec)
                                              error("[[gnss]] $nm: min_years, but $f has no time_start")) : fill(Inf, length(r))
         sel = [i for i in eachindex(r) if isfinite(r[i]) && isfinite(sd[i]) && sd[i] > 0 && span[i] >= get(spec, "min_years", 0.0) &&
                (isempty(boxes) || any(b -> inbox(b, lon[i], lat[i]), boxes)) && !any(b -> inbox(b, lon[i], lat[i]), excl)]
-        [(group = nm, site_name = site[i], lat = lat[i], lon = lon[i], t = 0.0, rate = r[i], sd = sd[i]) for i in sel]
+        [(group = nm, kind = :gnss, site_name = site[i], lat = lat[i], lon = lon[i], t = 0.0, value = r[i], sd = sd[i]) for i in sel]
     end
 end
 
@@ -212,6 +213,40 @@ function read_rate(dir; inst = "geo_glob")
 end
 # the rate at points (plon, plat) [mm/yr], bilinear
 rate_at(R, plon, plat) = [1000.0 * interp(R.rate, xweight(R.lon, x), yweight(R.lat, y)) for (x, y) in zip(plon, plat)]
+
+# --- ESL --------------------------------------------------------------------------------------------------------------------------
+# A global sea-level curve of FesmData Records/SeaLevel/SeaLevel-<product>.nc (sl or the variable var, negative when lower; region 1),
+# relative to its own present (the value at 0 ka subtracted: Spratt and Lisiecki 2016 are +8.5 m there), at the ages [yr]
+# (nearest record); with its 1 sigma (var_sd, NaN without one).
+function sealevel_at(fesmdata, product, ages; var = "sl")
+    NCDataset(joinpath(fesmdata, "Records", "SeaLevel", "SeaLevel-" * product * ".nc")) do ds
+        t = Float64.(ds["time"][:]); x = Float64.(nomissing(ds[var][:], NaN)); x = ndims(x) > 1 ? vec(x[1, :]) : x
+        sd = haskey(ds, var * "_sd") ? (y = Float64.(nomissing(ds[var * "_sd"][:], NaN)); ndims(y) > 1 ? vec(y[1, :]) : y) : fill(NaN, length(t))
+        x0 = x[argmin(abs.(t))]; k = [argmin(abs.(t .- a)) for a in ages]
+        x[k] .- x0, sd[k]
+    end
+end
+# The points of the ESL group ([esl] of an ensemble config: name, product, var, ages_ka): the curve at the ages, each a point at
+# (0, 0) with t its age, so that the error covariance has only its time term. Returns (group, kind = :esl, site_name, lat, lon, t,
+# value [m], sd [m]).
+function read_esl(fesmdata, spec)
+    ages = 1000.0 .* Float64.(get(spec, "ages_ka", [25.0, 22.5, 20.0, 17.5, 15.0, 12.5, 10.0]))
+    v, sd = sealevel_at(fesmdata, spec["product"], ages; var = get(spec, "var", "sl"))
+    any(x -> !(isfinite(x) && x > 0), sd) && error("[esl]: $(spec["product"]) has no positive sd at every age")
+    [(group = get(spec, "name", "ESL"), kind = :esl, site_name = @sprintf("ESL %g ka", a / 1000), lat = 0.0, lon = 0.0, t = a,
+      value = v[i], sd = sd[i]) for (i, a) in enumerate(ages)]
+end
+# whether the run of a folder has finished without error: its status file (written at the end: the exit code and the run time, by
+# runme's job and by gia_refcorr.sh) says 0. VILMA2 writes the whole time axis of its output when it starts, so the output alone does
+# not tell a finished run from one still going (or stopped), whose later records are fill values.
+run_done(dir) = (f = joinpath(dir, "status"); isfile(f) && (w = split(read(f, String)); !isempty(w) && w[1] == "0"))
+# a run's ESL [m] at the ages: bsl_ive (ice-volume equivalent) of its record of each age (trun) minus that of its last record (0 ka);
+# NaN for a run that has not finished
+function esl_at(dir, ages)
+    run_done(dir) || return fill(NaN, length(ages))
+    r = read_run(dir); r === nothing && return fill(NaN, length(ages))
+    [(k = findfirst(x -> abs(x - trun(r, a)) < 0.01, r.t); k === nothing ? NaN : r.bsl_ive[k] - r.bsl_ive[end]) for a in ages]
+end
 
 # linear in time: the value and the slope at t; the range over [t0, t1]
 function tval(A, s, t)
