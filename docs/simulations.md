@@ -161,6 +161,10 @@ ESL ≤ 7.0 by the bar). Earth: lithosphere [km], log10 η UM / TZ / LM1 / LM2.
 | | best log L: `ice-GLAC1D \| E1D-ES1-E165` | 67, 20.77 / 20.08 / 22.54 / 21.88 | −8708.9 | 7/9 | −3.5 / 2.6 / 0.8 / 3.3 / −1.4 / −4.4 | 3.6 / 2.9 | 3.3 |
 | | all groups: `ice-GLAC1D \| E1D-ES1-E033` (14 Earths pass all 9) | 106, 20.84 / 21.43 / 21.08 / 22.08 | −8745.6 | 9/9 | −2.4 / 1.7 / 2.2 / 0.7 / −1.1 / −4.4 | 0.5 / 1.1 | 3.4 |
 
+![Wave A: log L (RSL groups and ESL) of every 1-D Earth against each parameter, by ice history; dashed: I1 and I5.](figures/earth-search/wave-a-logL.png)
+
+![Wave A: the fraction of the 1-D Earth space the emulator does not rule out under either ice history, per parameter pair.](figures/earth-search/wave-a-nroi-either.png)
+
 ## So far
 
 - **Our solver with PaleoMIST's ice beats the publication** (I1 against P1): every group passes, RMSE 16 m against 20 m.
