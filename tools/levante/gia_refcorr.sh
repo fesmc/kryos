@@ -16,6 +16,8 @@
 #   RHOI, RHOW  densities of the load (kryos sets VILMA2's from phys_const: rho_ice 910, rho_sw 1028)
 #   TOL, NMAX   stop when max |r_n - rsl_n(0 ka)| < TOL [m] (1.5), or after NMAX runs (8)
 #   XGRID    the globe_ice background grid (GLOBAL-0.5DEG) and its history file (XHIST, default HIST on that grid)
+#   XZREF    ZREF on XGRID, the 0 ka bed of the reference files for a history without z_bed (default ZREF on that grid; none
+#            without ZREF)
 #   DOMAINS  "<domain>:<hub grid>:<topo file under fesmdata> ..." the domain reference topographies to correct (default North on NH-16KM and
 #            NH-32KM, and Antarctica; the case PaleoMIST-sci also has PatagoniaPaleo:PAT-PAL-8KM:PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_TOPO-GEBCO2026.nc)
 #   NCPU, MEM  cpus and memory of the job (128, 60G): a 3-D Earth; a 1-D Earth needs far fewer (16-32 cpus, about 3 GB at
@@ -45,6 +47,7 @@ HIST=${HIST:-$F/Global/GLOBAL-0.25DEG/GLOBAL-0.25DEG_IceHistory-PaleoMIST.nc}; I
 RHOI=${RHOI:-910.0}; RHOW=${RHOW:-1028.0}; TOL=${TOL:-1.5}; NMAX=${NMAX:-8}
 NCPU=${NCPU:-128}; NTHR=${NTHR:-$(( NCPU < 64 ? NCPU : 64 ))}
 XGRID=${XGRID:-GLOBAL-0.5DEG}; XHIST=${XHIST:-$F/Global/$XGRID/${XGRID}_IceHistory-$(basename $HIST | sed 's/.*_IceHistory-//')}
+[ -n "${ZREF:-}" ] && XZREF=${XZREF:-$(dirname $(dirname $ZREF))/$XGRID/${XGRID}_IceHistory-$(basename $ZREF | sed 's/.*_IceHistory-//')}
 DOMAINS=${DOMAINS:-"North:NH-16KM:North/NH-16KM/NH-16KM_TOPO-GEBCO2026.nc North:NH-32KM:North/NH-32KM/NH-32KM_TOPO-GEBCO2026.nc Antarctica:ANT-16KM:Antarctica/ANT-16KM/ANT-16KM_TOPO-BedMachine-v4.nc"}
 VX=$VILMA2/bin/vilma.x
 [ -x $VX ] || { echo "no $VX (VILMA2)"; exit 1; }
@@ -118,5 +121,5 @@ if [ "${KEEP:-all}" = last ]; then
     echo "KEEP=last: kept it$n/vilma_out.nc of the model output" | tee -a $O/iter.log
 fi
 DOMS=""; for d in $DOMAINS; do IFS=: read dom hub topo <<< "$d"; DOMS="$DOMS $dom:$hub:$F/$topo"; done
-RHO_ICE=$RHOI RHO_SW=$RHOW $JL $T/gia_refcorr.jl write $O/r.nc $O $XGRID:$XHIST $DOMS | tee -a $O/iter.log
+RHO_ICE=$RHOI RHO_SW=$RHOW $JL $T/gia_refcorr.jl write $O/r.nc $O $XGRID:$XHIST${XZREF:+:$XZREF} $DOMS | tee -a $O/iter.log || exit 1
 echo "== done $(date -Is)" | tee -a $O/iter.log
