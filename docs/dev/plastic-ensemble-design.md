@@ -162,6 +162,57 @@ cheaper per run), and whether a member can start from a shared spun-up 80 kyr st
 `plastic_ensemble.jl` (sample, write members as plastic_esmda.jl does, score, weights, refine), `plastic_ensemble_report.jl`
 (the products above, from the existing map and comparison tools), config `plastic_ensemble_v1.toml`.
 
+## Constraints on the ice (2026-11-13)
+
+ens-v2 showed that the prior lets the ice do things no ice sheet can. Member m036 (6/7 groups passed) loses about 12×10⁶ Gt of
+Antarctic ice between 20 and 15 ka: its East Antarctic factor goes from ×1.82 (the tied node 80-20 ka) to ×0.71 (15 ka), and the
+plastic ice follows tau_b at once, so the interior thins by 1500 m in 5 kyr, an ice-loss rate that snowfall of a few cm per
+year cannot explain. The prior allowed it: the tied parameter's age is the mean of its nodes (45 ka), so its correlation with
+the 15 ka node was weak (step sd 0.37 in log). Three changes for the ensembles to come (ens-v2 itself is not redone):
+
+1. **Random-walk prior** (`[prior] kind = "random_walk"`, plastic_esmda.jl prior_cov): the log factor walks back in time from
+   the pinned present, steps of sd `step_sigma` per `step_kyr`; a tied block takes the age of its youngest node. With 0.1 per
+   5 kyr, m036's step is 9.4 sd (0.37 sd before); the sd at 20 ka is 0.2 (0.3 before), at 80 ka 0.4. `step_sigma` can be set per
+   group.
+2. **Rate of ice change** (`[rate]`, plastic_ensemble.jl weights): per scale group, the largest change of ice volume over 2.5 kyr
+   steps (25-0 ka) must stay within 1.5 times that of the fastest of PaleoMIST, GLAC-1D, ICE-6G_C and ICE-5G on the same cells.
+   Bounds [m SLE / kyr]: Laurentide 25.4, Greenland 1.7, Fennoscandia 2.7, Barents-Kara 2.2, British-Irish 0.4, West Antarctica
+   2.2, East Antarctica 2.8. On ens-v2 it rules out 21 of 50 members, 20 of them for East Antarctica (m036 2.8 times the bound).
+3. **Antarctic excess volume** (`[[volume]]`): the ice above floatation of West and East Antarctica at 20 ka relative to 0 ka
+   within 9.6-15.4 m SLE, the range of Blasco et al. (2021, The Cryosphere 15, 215; Yelmo under the PMIP3 LGM forcings, CNRM-CM5
+   excluded; their friction sensitivity gives 12.3-15.1 m). ens-v2 spans −6 to +45 m; 9 of 50 members are inside, 6 of them
+   also within the rate bound (m000 14.1 m, m048 14.7 m; m036 36.3 m). GNSS Antarctica judges from the next ensemble on
+   (`[[gnss]] judge = true`, its error model refitted on the first wave with `dz_bed_rate`).
+
+Config of the next ensemble (with the Earths of the Earth search, wave C):
+
+```toml
+[prior]
+kind = "random_walk"
+step_sigma = 0.1
+step_kyr = 5.0
+theta_max = 1.5
+
+[[ice_grids]]
+ice = "ice_nor"
+domain = "North"
+grid = "NH-32KM"
+[[ice_grids]]
+ice = "ice_ant"
+domain = "Antarctica"
+grid = "ANT-16KM"
+
+[rate]                      # references, tolerance (1.5), step_kyr (2.5), max_age_ka (compare_max_age_ka), judge (true)
+
+[[volume]]
+name = "Antarctica LGM"
+groups = ["West Antarctica", "East Antarctica"]
+age_ka = 20
+min_m = 9.6
+max_m = 15.4
+source = "Blasco et al. (2021)"
+```
+
 ## Open questions
 
 1. The group splits and nodes above.
