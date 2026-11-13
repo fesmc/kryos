@@ -38,6 +38,49 @@ better than they do, group by group.
 - **Ensembles**: τ_b is sampled (scales per region and domain factors), the members are weighted by their likelihood
   with tempering, and the Earth is either fixed (Bagge structure 6) or sampled.
 
+## The Earth search, step by step
+
+Which Earth do the data want, independent of our ice? The expert 3-D viscosity fields (Bagge, Lloyd, Pan) disagree by about
+a factor of 10 in the lower mantle and the lithosphere, and Bagge's lateral structure fails Fennoscandia (the I rows of
+[Simulations and scores](simulations.md#imposed-ice-on-our-solver)). So the search samples Earths broadly, scores them under
+imposed ice, and uses an emulator to cover the space that was not run. The design and the decisions:
+`docs/dev/earth-search-design.md`. Results: [Simulations and scores](simulations.md#the-earth-search).
+
+**0. Held fixed in every wave**
+
+| piece | what it is | what it is for |
+|---|---|---|
+| two imposed ice histories, PaleoMIST and GLAC-1D | every Earth runs under both | an Earth effect must not be an ice error in disguise |
+| present-day correction r | per Earth and ice, by `gia_refcorr.sh` | the run's bed today matches the observed bed, so a score measures the Earth, not a topography offset |
+| the scores | log L and I per group: 6 RSL groups, GNSS uplift rates in Fennoscandia and Hudson Bay, ESL | GNSS constrains today's upper mantle directly; ESL mainly checks the ice |
+| the bar | I ≤ 3, Greenland ≤ 7.9, ESL ≤ 7.04 (the best published score where both publications fail) | an Earth is plausible when it is as good as the published reconstructions in every group |
+
+**1. Wave A: 1-D Earths (done 2026-11-13).** 200 radial profiles of 5 parameters (lithosphere thickness; log10 viscosity of
+the upper mantle, the transition zone, the upper and the lower part of the lower mantle), a Latin hypercube over wide
+ranges. 400 runs of 3-5 passes of about 5 min. *For*: a cheap, broad map of the radial profiles the data allow.
+
+**2. Emulator and cut of wave A (done).** Per data group and ice history, a Gaussian process predicts the score
+(log χ²/n) and its uncertainty anywhere in the 5-D space (`plastic_earth_emulate.jl`). A point is ruled out when the emulator
+is confident (3 sd) that it fails the bar in a group. *For*: the space wave B samples from (29 % of the 1-D space, under
+either ice), and what 1-D Earths alone can say (the lithosphere and the upper mantle are constrained; the transition zone
+and the lower mantle are not).
+
+**3. Wave B: 3-D Earths (running).** 50 Earths: the radial part from the space left by wave A, plus 8 lateral parameters,
+the amplitude α of the experts' mean lateral pattern, two coefficients c₂, c₃ of the expert basis (Lloyd against Pan,
+Bagge's reduction factor) and five regional upper-mantle shifts (Fennoscandia, Barents, Laurentide, Greenland, West
+Antarctica). Per Earth and ice two runs: its radial profile alone (1-D, iterated to its r), then the 3-D Earth in one pass
+from that r (`R0`). *For*: does lateral structure fit better than the best 1-D Earths, and where? The pair 3-D minus 1-D
+is the effect of the lateral structure on the same radial profile.
+
+**4. Emulator and cut of wave B (next).** As step 2, in all 13 parameters. Each Earth also gets its distance from the
+expert fields (radial and lateral), a second axis next to the fit, not a weight in it. *For*: the plausible 3-D Earth
+space, and the front of the fit against the closeness to the experts. An Earth far from the experts that fits much better
+is a finding; one that fits a little better is not.
+
+**5. Wave C: our own ice (after B).** A τ_b ensemble (as ens-v2) on a handful of plausible Earths from wave B, spread
+over the space left. *For*: the target, beating the publications with our ice, and splitting the gain between the ice
+and the Earth, since the Earths were chosen without our ice.
+
 ## Reproducing a simulation
 
 1. Install and build kryos ([Getting started](getting-started.md)): `configme install kryos`, then
@@ -69,7 +112,10 @@ T1, D1) therefore stand for main.
 | `tools/levante/gia_refcorr.sh` | an imposed-ice case: VILMA2 standalone, r iterated, reference topographies written |
 | `tools/levante/plastic_ensemble.sh`, `.jl` | ensembles: sampling, the runs, weights, scores, error model, the Earth basis and Earth samples |
 | `tools/levante/plastic_ensemble_misfit.jl` | maps and tables of the misfits, the shared misfit of the best members |
-| `tools/levante/plastic_earth_basis.jl` | the PCA basis of the expert viscosity fields and fields from it |
+| `tools/levante/plastic_earth_basis.jl` | the PCA basis of the expert viscosity fields, fields from it, the 1-D par files of the Earth search |
+| `tools/levante/gia_refcorr_pool.sh` | many small `gia_refcorr.sh` cases in few jobs (the Earth search) |
+| `tools/levante/plastic_earth_emulate.jl` | the emulators and the cut of the Earth search |
+| `tools/levante/plastic_sim_figures.jl` | the figures of [Simulations and scores](simulations.md) |
 | `tools/levante/pm_compare.jl` | the RSL, GNSS and ESL data and the model series at the sites |
 
 ## Findings so far
@@ -89,8 +135,7 @@ T1, D1) therefore stand for main.
 
 ## Open questions
 
-- **Which Earth?** The Earth search (`docs/dev/earth-search-design.md`): wave A samples 1-D Earths under both ice
-  histories with an emulator; wave B adds lateral structure from the expert basis.
+- **Which Earth?** The Earth search ([above](#the-earth-search-step-by-step)): wave A done, wave B running.
 - **Structural misfit.** West Greenland, the St. Lawrence and parts of the far field fail for every simulation,
   published ones included (the shared-misfit maps of `plastic_ensemble_misfit.jl`).
 - **Far field against ESL.** Members that fit the ESL stack overshoot the far-field RSL and the reverse.
