@@ -17,6 +17,7 @@ All scripts run on Levante or albedo from a kryos checkout installed with `confi
 | D2, E2 | `ens.sh v2` | ens-v2, 50 members (m000 = D2): `$KRYOS_WORK/ens-v2` |
 | E1 | `ens.sh v1` | ens-v1, 25 members (on Levante) |
 | Earth-only | `earth-pca.sh basis v1`, `sample`, `run` | the PCA basis of the expert Earths, 30 sampled Earths, one pass each: `.../refcorr/ice-PMIST_E3D-PCA-E<nnn>` |
+| S0-S4 | `earth-search.sh sample-a`, `run-a`, `score`, `sample-b`, `run-b 1d`, `run-b 3d`, `score b` | the Earth search: wave A, 200 1-D Earths under PaleoMIST and GLAC-1D (402 cases); wave B, 50 3-D Earths and the 1-D runs of their profiles (200 cases); scores and emulators: `$W/{earths,earthsB,kryos_data/refcorr,score,emulate,emulateB}` |
 | scores | `scores.sh <ensemble folder>` | `<folder>/iter_01/scores.csv`: every member and every reference of the folder's config |
 
 Order for a full rebuild: `refs-ice.sh all` and `ens.sh v2` (independent), then `refs-tau.sh <ens-v2> all` and
