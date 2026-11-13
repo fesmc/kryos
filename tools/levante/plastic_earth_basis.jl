@@ -311,14 +311,19 @@ function earth3d_par(tmpl3, tmpl1, field, out, θ; note = "")
     out
 end
 # Wave B: n 3-D Earths. The radial parameters from the points of the wave-A emulator's dense sample (plastic_earth_emulate.jl
-# sample.csv) not ruled out under every ice history (Imax_<ice> <= cut for all), spread by greedy maximin on [0, 1] of their ranges
+# sample.csv) not ruled out under any ice history (space = "either", Imax_<ice> <= cut for one at least) or under every one
+# ("both"), spread by greedy maximin on [0, 1] of their ranges
 # (the first: the point nearest the centre of the kept ones); the other 8 in a Latin hypercube over their ranges. Writes in outdir
-# per member E<nnn>.nc (the field), E<nnn>.nml (the 3-D par file), E<nnn>_1d.nml (the 1-D par file of its P) and members.csv.
-#   julia --project=tools/levante tools/levante/plastic_ensemble.jl earth-search-sample3d <sample.csv> <basis.nc> <regions.nc> <3-D par> <1-D par> <outdir> [n=50] [seed=1] [cut=3]
-function earth_search_sample3d(samplef, basis, regions, tmpl3, tmpl1, outdir; n = 50, seed = 1, cut = 3.0)
+# per member E<nnn>.nc (the field), E<nnn>.nml (the 3-D par file), E<nnn>_1d.nml (the 1-D par file of its P), members.csv and
+# origin.csv (per member the ice histories under which wave A did not rule its radial part out, e.g. "GLAC1D PMIST").
+#   julia --project=tools/levante tools/levante/plastic_ensemble.jl earth-search-sample3d <sample.csv> <basis.nc> <regions.nc> <3-D par> <1-D par> <outdir> [n=50] [seed=1] [cut=3] [space=either|both]
+function earth_search_sample3d(samplef, basis, regions, tmpl3, tmpl1, outdir; n = 50, seed = 1, cut = 3.0, space = "either")
     S, h = readdlm(samplef, ',', Float64; header = true); h = String.(vec(h))
     ir = [findfirst(==(p.name), h) for p in EARTH1D_PARAMS]; any(isnothing, ir) && error("$samplef: not the radial parameters")
-    keep = [all(S[i, k] <= cut for k in findall(startswith("Imax_"), h)) for i in axes(S, 1)]
+    ki = findall(startswith("Imax_"), h); ices = replace.(h[ki], "Imax_" => "")
+    space in ("either", "both") || error("space = either | both, not $space")
+    keep = [(space == "both" ? all : any)(S[i, k] <= cut for k in ki) for i in axes(S, 1)]
+    orig = [join([ices[j] for (j, k) in enumerate(ki) if S[i, k] <= cut], " ") for i in findall(keep)]
     count(keep) >= n || error("$samplef: $(count(keep)) points not ruled out, fewer than $n")
     R = S[keep, ir]; lo = [p.lo for p in EARTH1D_PARAMS]; hi = [p.hi for p in EARTH1D_PARAMS]; U = (R .- lo') ./ (hi .- lo)'
     c = vec(sum(U, dims = 1)) ./ size(U, 1); pick = [argmin(vec(sum(abs2, U .- c', dims = 2)))]
@@ -329,6 +334,9 @@ function earth_search_sample3d(samplef, basis, regions, tmpl3, tmpl1, outdir; n 
     P = earth3d_params(basis); rng = MersenneTwister(seed); nl = length(P) - 5
     L = hcat([(randperm(rng, n) .- rand(rng, n)) ./ n for _ in 1:nl]...)
     parts = earth3d_parts(basis, regions); mkpath(outdir)
+    open(joinpath(outdir, "origin.csv"), "w") do io
+        println(io, "member,not_ruled_out_under"); for m in 1:n; println(io, @sprintf("E%03d", m), ",", orig[pick[m]]); end
+    end
     open(joinpath(outdir, "members.csv"), "w") do io
         println(io, "member,", join([p.name for p in P], ","))
         for m in 1:n
@@ -340,6 +348,7 @@ function earth_search_sample3d(samplef, basis, regions, tmpl3, tmpl1, outdir; n 
             println(io, nm, ",", @sprintf("%.2f", θ[1]), ",", join([@sprintf("%.3f", x) for x in θ[2:end]], ","))
         end
     end
-    println("wrote ", n, " 3-D Earths in ", outdir, " (radial: ", count(keep), " of ", size(S, 1), " points not ruled out; ",
+    println("wrote ", n, " 3-D Earths in ", outdir, " (radial: ", count(keep), " of ", size(S, 1), " points not ruled out ($space); origin ",
+            join(["$o $(count(==(o), orig[pick]))" for o in unique(orig[pick])], ", "), "; ",
             join([@sprintf("%s [%.2f, %.2f]", p.name, p.lo, p.hi) for p in P[6:end]], ", "), ")")
 end
