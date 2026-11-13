@@ -80,6 +80,11 @@ for both.
    likelihood on a grid (no optimizer package).
 3. Wave A: 200 1-D Earths, wave B: 50 3-D Earths, each under both ice histories.
 4. GNSS judges from wave A on (the runs need vilma2 with `dz_bed_rate`: they run on a stack built on vilma2 main).
+5. (2026-11-13) The Earth search keeps the bar for ESL (7.04, PaleoMIST's): ESL is a property of the imposed ice, not of the
+   Earth (I_ESL 5.9-6.1 under PaleoMIST for every Earth), so a plain cut would rule Earths out for the ice. The plain ESL cut
+   (`fixed_cut = ["ESL"]`) applies only to weighting our own ice in the ensembles. The wave configs state `fixed_cut = []`.
+6. (2026-11-13) Wave B samples the radial part from the space wave A left under either ice history, not both: the two histories
+   want different Earths, and the final ice will be neither.
 
 ## Implementation and wave A (2026-11-12/13)
 
