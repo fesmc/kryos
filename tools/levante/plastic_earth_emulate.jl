@@ -108,7 +108,7 @@ function plot_nroi(Xs01, keep, pn, lo, hi, idx, file, title; nb = 20)
         hm = heatmap!(ax, range(lo[j], hi[j], length = nb + 1), range(lo[i], hi[i], length = nb + 1), F ./ max.(N, 1),
                       colormap = :viridis, colorrange = (0, 1))
     end
-    Colorbar(fig[1, max(2, d - 2):d-1], hm, label = "fraction not ruled out", vertical = false, width = Relative(0.8), tellheight = false, valign = :center)
+    Colorbar(fig[1:d-1, d], hm, label = "fraction not ruled out", height = Relative(0.6))
     Label(fig[0, :], title * @sprintf(" (%.2f %% of the sample)", 100mean(keep)), fontsize = 18)
     save(file, fig)
 end
