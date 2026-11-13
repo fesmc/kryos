@@ -171,9 +171,9 @@ year cannot explain. The prior allowed it: the tied parameter's age is the mean 
 the 15 ka node was weak (step sd 0.37 in log). Three changes for the ensembles to come (ens-v2 itself is not redone):
 
 1. **Random-walk prior** (`[prior] kind = "random_walk"`, plastic_esmda.jl prior_cov): the log factor walks back in time from
-   the pinned present, steps of sd `step_sigma` per `step_kyr`; a tied block takes the age of its youngest node. With 0.1 per
-   5 kyr, m036's step is 9.4 sd (0.37 sd before); the sd at 20 ka is 0.2 (0.3 before), at 80 ka 0.4. `step_sigma` can be set per
-   group.
+   the pinned present, steps of sd `step_sigma` per `step_kyr`; a tied block takes the age of its youngest node. With 0.15 per
+   5 kyr, m036's step (0.94) is 6.3 sd (2.5 sd under the v2 prior); the sd at 20 ka is 0.3 as in v2, at 80 ka 0.6. `step_sigma`
+   can be set per group.
 2. **Rate of ice change** (`[rate]`, plastic_ensemble.jl weights): per scale group, the largest change of ice volume over 2.5 kyr
    steps (25-0 ka) must stay within 1.5 times that of the fastest of PaleoMIST, GLAC-1D, ICE-6G_C and ICE-5G on the same cells.
    Bounds [m SLE / kyr]: Laurentide 25.4, Greenland 1.7, Fennoscandia 2.7, Barents-Kara 2.2, British-Irish 0.4, West Antarctica
@@ -189,7 +189,7 @@ Config of the next ensemble (with the Earths of the Earth search, wave C):
 ```toml
 [prior]
 kind = "random_walk"
-step_sigma = 0.1
+step_sigma = 0.15
 step_kyr = 5.0
 theta_max = 1.5
 
