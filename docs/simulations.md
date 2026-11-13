@@ -35,6 +35,7 @@ variant left out when there is only one. A simulation is its ice and its Earth, 
 | `B21` | Bagge et al. (2021): the 3-D viscosity structures of FesmData `SolidEarth-Bagge2021` |
 | `L24`, `P22` | Lloyd et al. (2024), Pan et al. (2022): other 3-D viscosity fields in FesmData (not used yet) |
 | `ENS1`, `ENS2` | our weighted ensembles (ens-v1, ens-v2) |
+| `ES1`, `ES2` | the broad Earth search (docs/dev/earth-search-design.md): wave A, 200 1-D Earths of 5 radial parameters; wave B, 50 3-D Earths of 13 parameters (`E1D-ES2-E<nnn>` the radial profile of `E3D-ES2-E<nnn>`) |
 
 **Variants**
 
@@ -43,6 +44,7 @@ variant left out when there is only one. A simulation is its ice and its Earth, 
 | `9927` | `ice-GLAC1D` | North America nn9927 instead of nn9894 |
 | `PD` | `tau-PMIST` | times the present-day factors (Stage 1, fitted to today's Greenland and Antarctica) |
 | `E036` | `tau-ENS2`, `E3D-B21-6` | ensemble member m036: its sampled τ_b, or its sampled viscosity shifts |
+| `E<nnn>`, `PMIST` | `E1D-ES1`, `E1D-ES2`, `E3D-ES2` | Earth E<nnn> of the search; `E1D-ES1-PMIST` is Gowan's Earth in the search's parameters (the check) |
 | `1` ... `8` | `E3D-B21`, `E1D-B21` | Bagge structure k (below); `E1D-B21-k` is its radial mean (VILMA2's case 1Db, `visc_3d_tol = 99`) |
 
 The Bagge structures (`structure` in FesmData; lateral reduction factor and radial viscosity profile):
@@ -140,6 +142,24 @@ The scored runs, on Albedo under `/albedo/work/user/alrobi001`:
 | D2, E2 | `kryos-plastic/kryos/runs/ens-v2/iter_01/<m>` (m000; all members) |
 | D3 | `kryos-plastic/kryos/runs/res16/m000-NH16` |
 | E1 | Levante `/work/ba1442/robinson/kryos-ice-plastic/runs/ens-v1` |
+
+## The Earth search
+
+Imposed ice on sampled Earths (docs/dev/earth-search-design.md), scored as the rows above but on the split groups, the GNSS
+groups and ESL: the error model of refs-test (Fennoscandia, Barents refitted after the split), the GNSS groups refitted on the
+wave-A runs (Fennoscandia 0.7 mm/yr and 750 km, Hudson Bay 1.5 mm/yr and 500 km), ESL at its starting values. log L over the RSL
+groups (on this scale I1 −8860, I5 −8835); passed of 9 groups (6 RSL, GNSS Fennoscandia and Hudson Bay, ESL; Greenland ≤ 7.9 and
+ESL ≤ 7.0 by the bar). Earth: lithosphere [km], log10 η UM / TZ / LM1 / LM2.
+
+| id | simulation | Earth | log L | passed | I L / G / F / B / A / FF | I GNSS F / HB | I ESL |
+|---|---|---|---|---|---|---|---|
+| S0 | `ice-PMIST \| E1D-ES1-PMIST` | Gowan's, in the parameters (the check: I1 again) | −8860.3 | 7/9 | −3.5 / 6.8 / 1.0 / 0.7 / 0.4 / −0.6 | 7.4 / 3.5 | 5.9 |
+| S1 | `ice-PMIST \| E1D-ES1-E<nnn>` | wave A, 200 Earths: not ruled out 20.2 % of the space (30.3 % without GNSS) | | | | | |
+| | best log L: `ice-PMIST \| E1D-ES1-E117` | 111, 20.13 / 21.75 / 23.15 / 21.69 | −8800.7 | 7/9 | −3.2 / 2.0 / 1.6 / 1.4 / 0.2 / −0.7 | 5.7 / 6.4 | 5.9 |
+| | most groups: `ice-PMIST \| E1D-ES1-E017` | 87, 20.56 / 20.61 / 21.68 / 21.02 | −8905.5 | 8/9 | −0.7 / 2.5 / 0.6 / 1.0 / 0.8 / −1.6 | 4.9 / 2.1 | 6.0 |
+| S2 | `ice-GLAC1D \| E1D-ES1-E<nnn>` | wave A: not ruled out 13.5 % (26.3 % without GNSS); under either ice 28.8 %, both 4.9 % | | | | | |
+| | best log L: `ice-GLAC1D \| E1D-ES1-E165` | 67, 20.77 / 20.08 / 22.54 / 21.88 | −8708.9 | 7/9 | −3.5 / 2.6 / 0.8 / 3.3 / −1.4 / −4.4 | 3.6 / 2.9 | 3.3 |
+| | all groups: `ice-GLAC1D \| E1D-ES1-E033` (14 Earths pass all 9) | 106, 20.84 / 21.43 / 21.08 / 22.08 | −8745.6 | 9/9 | −2.4 / 1.7 / 2.2 / 0.7 / −1.1 / −4.4 | 0.5 / 1.1 | 3.4 |
 
 ## So far
 

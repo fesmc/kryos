@@ -3,12 +3,18 @@
 # data group; members the data rule out (implausibility) get no weight. The jobs: plastic_ensemble.sh.
 #   julia --project=tools/levante plastic_ensemble.jl init <config.toml> <ensemble folder>    wave 1: the members (iter_01/<m>)
 #   julia --project=tools/levante plastic_ensemble.jl weights <ensemble folder> [<wave>]     score the members, the weights
-#   julia --project=tools/levante plastic_ensemble.jl errmodel <ensemble folder> [<wave>] [<top>]   the error model from a wave
+#   julia --project=tools/levante plastic_ensemble.jl errmodel <ensemble folder> [<wave>] [<top>] [refs=<regex>] [groups=<g1;g2>]
+#       the error model from a wave (refs: of the point groups, from the run references whose name matches; groups: only those fitted)
 #   julia --project=tools/levante plastic_ensemble.jl scores <ensemble folder> [<wave>]     RMSE, RMS z, I_g, log L of every series
 #   julia --project=tools/levante plastic_ensemble.jl earth-regions <config.toml> <out.nc>   the region masks of [earth]
 #   julia --project=tools/levante plastic_ensemble.jl earth-shift <config.toml> <out.nc> UM=0.5 LM=0 <region>=1.0   one shift file
 #   julia --project=tools/levante plastic_ensemble.jl earth-basis <out.nc> <pan visc.nc> <pan litho.nc> | earth-field <basis.nc> <out.nc> c1 ...   (plastic_earth_basis.jl)
 #   julia --project=tools/levante plastic_ensemble.jl earth-radial <3-D par.nml> <out par.nml>   the 1-D radial mean of the 3-D Earth
+#   julia --project=tools/levante plastic_ensemble.jl earth-search-sample <1-D par.nml> <outdir> [n=200] [seed=1]   wave A of the
+#       Earth search: 1-D Earths of the 5 radial parameters (plastic_earth_basis.jl; docs/dev/earth-search-design.md)
+#   julia --project=tools/levante plastic_ensemble.jl earth-search-par <1-D par.nml> <out par.nml> L um tz lm1 lm2   one of them
+#   julia --project=tools/levante plastic_ensemble.jl earth-search-sample3d <sample.csv> <basis.nc> <regions.nc> <3-D par> <1-D par> <outdir> [n=50] [seed=1] [space=either|both]
+#       wave B: 3-D Earths of 13 parameters, the radial ones from the space wave A did not rule out (under either ice history)
 # The folder, the members and the scale groups are those of plastic_esmda.jl (prepare, write_iteration, member_series). Config:
 # [scale], [prior] (sigma, ramp_ka, corr_time_kyr, theta_max), [run], [score] as plastic_esmda_v2.toml; [ensemble]: n (members
 # besides the prior mean, m000), seed, obs_groups, compare_max_age_ka (the window of the judging and of the comparison with the
@@ -235,7 +241,8 @@ end
 #   topo     a FesmData IceHistory file with the topography relative to the sea level of the time (GLAC1D: its own GIA, PM.rsl_topo)
 #   run      a standalone VILMA2 run under a reconstruction's ice: a gia_refcorr.sh case (its converged iteration, r.nc -> r_<n>.nc:
 #            it<n>) or a folder with vilma_out.nc ($VAR in the path from the environment)
-# The RSL at the index points (npoints x nages), NaN at the ages the reference does not have; nothing (and why) when it is missing.
+# The RSL at the index points (npoints x nages), NaN at the ages the reference does not have (a run: no record there; a window
+# with such an age leaves the reference out); nothing (and why) when it is missing.
 expandenv(p) = replace(p, r"\$\{?(\w+)\}?" => m -> ENV[strip(m, ['$', '{', '}'])])
 # the folder of a run reference: a gia_refcorr.sh case's converged iteration, or the folder itself
 function ref_dir(ref)
@@ -249,8 +256,11 @@ function reference_series(ref, fes, obs, A)
         d = ref_dir(ref)
         PM.run_done(d) || return nothing, "$d: not finished (no status 0)"
         r = PM.read_run(d); r === nothing && return nothing, "no run in $d"
-        all(a -> any(x -> abs(x - PM.trun(r, a)) < 0.01, r.t), A) || return nothing, "$d: records missing"
-        return PM.series_run(r, plon, plat, A; rec = a -> PM.trun(r, a)), ""
+        k = findall(a -> any(x -> abs(x - PM.trun(r, a)) < 0.01, r.t), A)     # the ages it has records at (GLAC1D_80k: 1 kyr before
+        isempty(k) && return nothing, "$d: no records at the ages"           # 30 ka, none at 32.5, 37.5, ... ka)
+        S = fill(NaN, length(obs), length(A))
+        S[:, k] = PM.series_run(r, plon, plat, A[k]; rec = a -> PM.trun(r, a))
+        return S, ""
     end
     f = joinpath(fes, haskey(ref, "product") ? ref["product"] : ref["topo"]); isfile(f) || return nothing, "no $f"
     lon, lat, ages, sl = haskey(ref, "product") ? NCDataset(ds -> (Float64.(ds["lon"][:]), Float64.(ds["lat"][:]), Float64.(ds["time"][:]),
@@ -313,14 +323,27 @@ const GRID_LX = [10.0, 25.0, 50.0, 100.0, 175.0, 250.0, 350.0, 500.0, 750.0, 100
 const GRID_LT = [1.0, 2.0, 5.0, 10.0, 20.0, 40.0, 80.0, 160.0]                            # [kyr]
 const GRID_SIGMA_GNSS = [0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.0, 10.0]                # [mm/yr]
 const GRID_SIGMA_ESL = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 15.0, 20.0, 30.0]                       # [m]
-function errmodel(C, k; top = 6)
-    C = abspath(C); cfg = ES.config(C); ids, _, res, og = wave_residuals(C, k, cfg)
+function errmodel(C, k; top = 6, refs = nothing, groups = nothing)
+    C = abspath(C); cfg = ES.config(C)
+    if refs === nothing
+        ids, _, res, og = wave_residuals(C, k, cfg)
+    else            # the point groups from the run references whose name matches refs (the cases of an Earth search)
+        og = data_groups(cfg); gd = gnss_data(cfg); res = Dict{String,Any}()
+        for ref in get(cfg, "references", [])
+            (haskey(ref, "run") && occursin(Regex(refs), ref["name"])) || continue
+            G = gnss_model(ref_dir(ref), gd); G === nothing || (res[ref["name"]] = (rg = gnss_residuals(gd, G),))
+        end
+        println("errmodel from ", length(res), " references matching ", refs)
+    end
+    fitg = groups === nothing ? og : String.(groups)
+    all(in(og), fitg) || error("groups $(fitg) not all data groups $(og)")
+    refs === nothing || all(g -> group_kind(cfg, g) != :rsl, fitg) || error("errmodel from references: point groups (GNSS, ESL) only, not $(fitg)")
     em, src = error_model(cfg, C); ok = sort(collect(keys(res)))
     lk = Dict{String,Any}(); rows = []
     for g in og
-        okg = [m for m in ok if haskey(res[m].rg, g)]
+        okg = g in fitg ? [m for m in ok if haskey(res[m].rg, g)] : []
         if isempty(okg)
-            println(g, ": no member has a score (no dz_bed_rate); not fitted")
+            println(g, g in fitg ? ": no member has a score (no dz_bed_rate); not fitted" : ": kept")
             haskey(em, g) && (lk[g] = Dict{String,Any}("sigma_m" => em[g][1], "corr_dist_km" => em[g][2]);
                               isfinite(em[g][3]) && (lk[g]["corr_time_kyr"] = em[g][3] / 1000))
             continue
@@ -346,8 +369,8 @@ function errmodel(C, k; top = 6)
                      χold = mean(χn(m, em[g]...) for m in best), χnew = mean(χn(m, σm, Lx, 1000Lt) for m in best)))
     end
     open(joinpath(C, "errmodel.toml"), "w") do io
-        println(io, "# the model error per data group from wave $k (plastic_ensemble.jl errmodel, top $top members per group, ",
-                "maximum likelihood on a grid; previous: $src)")
+        println(io, "# the model error per data group from ", refs === nothing ? "wave $k" : "the references matching $refs",
+                " (plastic_ensemble.jl errmodel, top $top per group, maximum likelihood on a grid; fitted: ", join(fitg, ", "), "; the rest and previous: $src)")
         TOML.print(io, Dict("likelihood" => lk))
     end
     open(joinpath(C, "errmodel.md"), "w") do io
@@ -363,7 +386,7 @@ Per data group: sigma_m, L_x, L_t by maximum likelihood on a grid, from the resi
         for r in rows
             println(io, "| ", r.g, " | ", r.n, " | ", @sprintf("%g → %g", r.old[1], r.new[1]), " | ", @sprintf("%g → %g", r.old[2], r.new[2]),
                     " | ", isfinite(r.old[3]) || isfinite(r.new[3]) ? @sprintf("%g → %g", r.old[3] / 1000, r.new[3]) : "-", " | ", @sprintf("%.2f → %.2f", r.χold, r.χnew), " | ",
-                    join(["m" * lpad(m, 3, "0") for m in r.best], " "), r.edge ? " (on the edge of the grid)" : "", " |")
+                    join([m isa Integer ? "m" * lpad(m, 3, "0") : string(m) for m in r.best], ", "), r.edge ? " (on the edge of the grid)" : "", " |")
         end
     end
     println("wrote ", joinpath(C, "errmodel.toml"), ", errmodel.md")
@@ -589,11 +612,25 @@ function main(args)
                                seed = parse(Int, get(kv, "seed", "1")))
     end
     args[1] == "earth-radial" && return ES.earth_radial(args[2], args[3])
+    if args[1] == "earth-search-sample"
+        kv = Dict(split(x, "=") for x in args[4:end])
+        return ES.earth_search_sample(args[2], args[3]; n = parse(Int, get(kv, "n", "200")), seed = parse(Int, get(kv, "seed", "1")))
+    end
+    if args[1] == "earth-search-sample3d"
+        kv = Dict(split(x, "=") for x in args[8:end])
+        return ES.earth_search_sample3d(args[2:7]...; n = parse(Int, get(kv, "n", "50")), seed = parse(Int, get(kv, "seed", "1")),
+                                        cut = parse(Float64, get(kv, "cut", "3")), space = String(get(kv, "space", "either")))
+    end
+    args[1] == "earth-search-par" && return println("wrote ", ES.earth1d_par(args[2], args[3], parse.(Float64, args[4:8])))
     args[1] == "weights" && return weights(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1)
     args[1] == "scores" && return scores(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1)
-    args[1] == "errmodel" && return errmodel(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1;
-                                             top = length(args) >= 4 ? parse(Int, args[4]) : 6)
+    if args[1] == "errmodel"
+        pos = [a for a in args[3:end] if !occursin('=', a)]; kv = Dict(split(a, "=", limit = 2) for a in args[3:end] if occursin('=', a))
+        return errmodel(args[2], length(pos) >= 1 ? parse(Int, pos[1]) : 1; top = length(pos) >= 2 ? parse(Int, pos[2]) : 6,
+                        refs = get(kv, "refs", nothing), groups = haskey(kv, "groups") ? split(kv["groups"], ";") : nothing)
+    end
     error("plastic_ensemble.jl init <config> <folder> | weights <folder> [<wave>] | errmodel <folder> [<wave>] [<top>] | " *
-          "earth-regions <config> <out.nc> | earth-shift <config> <out.nc> UM=.. LM=.. <region>=.. | earth-radial <par> <out par>")
+          "earth-regions <config> <out.nc> | earth-shift <config> <out.nc> UM=.. LM=.. <region>=.. | earth-radial <par> <out par> | " *
+          "earth-search-sample <1-D par> <outdir> [n=200] [seed=1] | earth-search-par <1-D par> <out par> L um tz lm1 lm2")
 end
 abspath(PROGRAM_FILE) == @__FILE__() && main(ARGS)

@@ -11,7 +11,7 @@
 #       record; PaleoMIST's).
 #   julia --project=tools/levante tools/levante/gia_refcorr.jl next  <vilma_out.nc> <r next.nc> [<r used.nc>]
 #       r_{n+1} = rsl(0 ka) of the run, on its own Gauss grid; prints the 0 ka bed misfit r_n - rsl_n(0 ka) (max, location, RMS).
-#   julia --project=tools/levante tools/levante/gia_refcorr.jl write <r.nc> <out folder> <X grid>:<history on that grid> <domain>:<hub grid>:<topo file> ...
+#   julia --project=tools/levante tools/levante/gia_refcorr.jl write <r.nc> <out folder> <X grid>:<history on that grid>[:<z_bed file on that grid>] <domain>:<hub grid>:<topo file> ...
 #       The kryos reference files (bilinear from the Gauss grid; H_ice stays present-day):
 #       <out>/<X grid>/<X grid>_REFCORR.nc            z_bed = the history's 0 ka bed + r, H_ice its 0 ka ice, r (globe_ice X)
 #       <out>/<domain>/<hub>/<topo file name>-refcorr  the domain topography with z_bed + r and z_srf adjusted to it, r (the other
@@ -129,11 +129,15 @@ function write(rfile, out, xspec, doms...)
         defVar(nc, "r", [S(x, y) for x in lon, y in lat], ("lon", "lat"); attrib = ["units" => "m", "long_name" => "present-day reference correction"])
     end
     # globe_ice X: the history's 0 ka bed + r and its 0 ka ice on the X grid
-    xg, xh = split(xspec, ':'; limit = 2)
-    lo, la, zb, H = NCDataset(xh) do ds
-        Float64.(ds["lon"][:]), Float64.(ds["lat"][:]), Float64.(nomissing(ds["z_bed"][:, :, end], NaN)), Float64.(nomissing(ds["H_ice"][:, :, end], 0.0))
+    # (the 0 ka bed from the X ZREF product when given: a history without z_bed)
+    xp = split(xspec, ':'); xg, xh = xp[1], xp[2]; xz = length(xp) > 2 ? xp[3] : ""
+    lo, la, H = NCDataset(ds -> (Float64.(ds["lon"][:]), Float64.(ds["lat"][:]), Float64.(nomissing(ds["H_ice"][:, :, end], 0.0))), xh)
+    zb = NCDataset(isempty(xz) ? xh : xz) do ds
+        isempty(xz) && !haskey(ds, "z_bed") && error("$xh: no z_bed; give a z_bed file on $xg (gia_refcorr.sh XZREF)")
+        isempty(xz) || (Float64.(ds["lon"][:]) == lo && Float64.(ds["lat"][:]) == la) || error("$xz: not on the grid of $xh")
+        a = Float64.(ds["time"][:]); Float64.(nomissing(ds["z_bed"][:, :, isempty(xz) ? length(a) : findfirst(==(0.0), a)], NaN))
     end
-    any(isnan, zb) && error("$xh: missing 0 ka z_bed")
+    any(isnan, zb) && error("$(isempty(xz) ? xh : xz): missing 0 ka z_bed")
     r = [S(x, y) for x in lo, y in la]
     mkpath(joinpath(out, xg)); f = joinpath(out, xg, "$(xg)_REFCORR.nc"); isfile(f) && rm(f)
     NCDataset(f, "c") do nc
