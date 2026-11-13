@@ -214,28 +214,28 @@ name = "pub-GLAC1D"
 topo = "Global/GLOBAL-0.5DEG/GLOBAL-0.5DEG_IceHistory-GLAC1D.nc"
 [[references]]
 name = "ice-PMIST | E3D-B21-6"
-run  = "$KRYOS_WORK/kryos_data/refcorr/PaleoMIST-3D"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-B21-6"
 [[references]]
 name = "ice-PMIST | E1D-PMIST"
-run  = "$KRYOS_WORK/kryos_data/refcorr/PaleoMIST-1D"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E1D-PMIST"
 [[references]]
 name = "ice-PMIST | E1D-B21-6"                # the radial mean of the 3-D Earth (par ..._bagge1d.nml: visc_3d_tol = 99, VILMA2's 1Db)
-run  = "$KRYOS_WORK/kryos_data/refcorr/PaleoMIST-Bagge1D"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E1D-B21-6"
 [[references]]
 name = "ice-PMIST | E1D-B21-6-layers"     # the same radial mean as a plain 1-D Earth (earth-radial: layer means), ~35x faster
 run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E1D-B21-6-layers"
 [[references]]
 name = "tau-PMIST | E1D-PMIST"              # kryos online (plastic every step, 32 km) with Gowan's tau_b and his 1-D Earth (runs/pm-online)
-run  = "$KRYOS/runs/pm-online/gowan"
+run  = "$KRYOS_WORK/runs/pm-online/gowan"
 [[references]]
 name = "tau-PMIST-PD | E1D-PMIST"                          # the same with the present-day tau_b factors: m000 on Gowan's 1-D Earth
-run  = "$KRYOS/runs/pm-online/pdfac"
+run  = "$KRYOS_WORK/runs/pm-online/pdfac"
 [[references]]
 name = "ice-GLAC1D | E3D-B21-6"
-run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D-3D"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-GLAC1D_E3D-B21-6"
 [[references]]
 name = "tau-PMIST-PD | E3D-B21-6 @NH16"   # m000 with the Northern Hemisphere on 16 km (runs/res16)
-run  = "$KRYOS/runs/res16/m000-NH16"
+run  = "$KRYOS_WORK/runs/res16/m000-NH16"
 [[references]]
 name = "ice-PMIST | E3D-B21-1"
 run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-B21-1"
@@ -259,13 +259,104 @@ name = "ice-PMIST | E3D-B21-8"
 run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-B21-8"
 [[references]]
 name = "ice-GLAC1D | E1D-PMIST"
-run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D-1D"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-GLAC1D_E1D-PMIST"
 [[references]]
-name = "ice-GLAC1D | E1D-B21-6"
-run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D-Bagge1D"
+name = "ice-GLAC1D | E1D-B21-6-layers"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-GLAC1D_E1D-B21-6-layers"
 [[references]]
 name = "ice-GLAC1D-9927 | E3D-B21-6"
-run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D_nn9927-3D"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-GLAC1D-9927_E3D-B21-6"
 [[references]]
 name = "ice-GLAC1D-9927 | E1D-PMIST"
-run  = "$KRYOS_WORK/kryos_data/refcorr/GLAC1D_nn9927-1D"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-GLAC1D-9927_E1D-PMIST"
+# The Earth-only ensemble earth-pca-v1 (experiments/earth-pca.sh): PaleoMIST ice on 30 sampled 3-D Earths, one pass with r of PaleoMIST-sci
+[[references]]
+name = "ice-PMIST | E3D-PCA-E001"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E001/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E002"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E002/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E003"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E003/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E004"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E004/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E005"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E005/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E006"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E006/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E007"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E007/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E008"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E008/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E009"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E009/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E010"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E010/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E011"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E011/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E012"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E012/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E013"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E013/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E014"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E014/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E015"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E015/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E016"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E016/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E017"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E017/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E018"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E018/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E019"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E019/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E020"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E020/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E021"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E021/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E022"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E022/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E023"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E023/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E024"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E024/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E025"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E025/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E026"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E026/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E027"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E027/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E028"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E028/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E029"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E029/it0"
+[[references]]
+name = "ice-PMIST | E3D-PCA-E030"
+run  = "$KRYOS_WORK/kryos_data/refcorr/ice-PMIST_E3D-PCA-E030/it0"

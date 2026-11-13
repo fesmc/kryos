@@ -67,7 +67,7 @@ export VILMA2=${VILMA2:-$KRYOS/vilma2}
 export PM_DIR=${PM_DIR:-$KRYOS_WORK/paleomist}
 export PM_REF=${PM_REF:-$KRYOS_DATA/paleomist}
 if [ -z "${ACCOUNT:-}" ]; then
-    ACCOUNT=$(sed -n 's/^ *account *= *"\([^"]*\)".*/\1/p' "$KRYOS/.runme/config.toml" 2> /dev/null | head -1)
+    ACCOUNT=$( { sed -n 's/^ *account *= *"\([^"]*\)".*/\1/p' "$KRYOS/.runme/config.toml" 2> /dev/null || true; } | head -1)
     [ -n "$ACCOUNT" ] && [ "$ACCOUNT" != CHANGEME ] || ACCOUNT=$_account
 fi
 export ACCOUNT
