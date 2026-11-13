@@ -1,5 +1,7 @@
 ---
 title: "Simulations and scores"
+toc: false
+page-layout: full
 ---
 
 A working table of the glacial-cycle simulations: what each one changes, and how well it fits the GAPSLIP 2.1 RSL index
@@ -92,35 +94,41 @@ Each step changes one thing against its parent, so the change in score is that t
 - **D**: our ice with the present-day factors.
 - **E**: ensembles of τ_b (and Earth).
 
-| id | simulation | changes against | status | log L | passed | RMSE [m] | RMS z | I: L / G / F / A / FF |
-|---|---|---|---|---|---|---|---|---|
-| **P1** | `pub-PMIST` | published | done | −9318 | 2/5 | 20.0 | 30.1 | 6.7 / 7.9 / 2.9 / 3.4 / 6.4 |
-| **P2** | `pub-GLAC1D` | published | done | −9096 | 3/5 | 19.0 | 18.6 | −0.3 / 9.8 / 4.6 / −0.2 / −0.6 |
-| **Imposed ice, our solver** | | | | | | | | |
-| I1 | `ice-PMIST \| E1D-PMIST` | P1: the solver (SELEN → VILMA2, 931 → 910 kg m⁻³, 2.5 kyr steps → linear, r) | done | **−8866** | **5/5** | **16.2** | 28.5 | −3.5 / 6.8 / 2.2 / 0.4 / −0.6 |
-| I2 | `ice-PMIST \| E1D-B21-6` | I1: the radial profile (PaleoMIST's → Bagge's mean) | running | | | | | |
-| I3 | `ice-PMIST \| E3D-B21-6` | I2: the lateral structure | running | | | | | |
-| I4 | `ice-PMIST \| E3D-B21-k`, k ≠ 6 | I3: Bagge's other structures, 3 his reference | proposed | | | | | |
-| I5 | `ice-GLAC1D \| E1D-PMIST` | I1: the ice (PaleoMIST → GLAC-1D) | waits for FesmData | | | | | |
-| I6 | `ice-GLAC1D \| E1D-B21-6` | I5: the radial profile | waits | | | | | |
-| I7 | `ice-GLAC1D \| E3D-B21-6` | I6: the lateral structure | waits | | | | | |
-| I8 | `ice-GLAC1D-9927 \| E1D-PMIST`, `\| E1D-B21-6`, `\| E3D-B21-6` | I5-I7: North America nn9927 | waits | | | | | |
-| **Our ice, PaleoMIST's τ_b** | | | | | | | | |
-| T1 | `tau-PMIST \| E1D-PMIST` | I1: the ice model (ICESHEET 5 km offline → PlasticIceSheet 32 km online) | running | | | | | |
-| T2 | `tau-PMIST \| E3D-B21-6` | T1: the 3-D Earth | proposed | | | | | |
-| **Our ice, present-day factors** | | | | | | | | |
-| D1 | `tau-PMIST-PD \| E1D-PMIST` | T1: the present-day factors | running | | | | | |
-| D2 | `tau-PMIST-PD \| E3D-B21-6` | D1: the 3-D Earth (m000 of ens-v2) | done | −9243 | 3/5 | 20.3 | 34.7 | 3.2 / 7.0 / 13.7 / 0.5 / 1.4 |
-| D3 | `tau-PMIST-PD \| E3D-B21-6 @NH16` | D2: Northern Hemisphere resolution, 32 → 16 km (ESL at 20 ka −128.4 against −130.4 m; par `..._nh16.nml`) | done | −9256 | 3/5 | 20.6 | 35.4 | 3.1 / 7.8 / 13.8 / 0.5 / 1.5 |
-| **Ensembles** | | | | | | | | |
-| E1 | `tau-ENS1 \| E3D-B21-6` | D2: sampled τ_b (ens-v1, 25 members, Levante) | done, not rescored | | | | | |
-| E2 | `tau-ENS2 \| E3D-B21-6-ENS2` | E1: the Earth sampled too (ens-v2, 50 members) | done | | | | | |
-| | best log L: `tau-ENS2-E048 \| E3D-B21-6-E048` | | | −9017 | 3/5 | 19.7 | 32.2 | −0.5 / 13.0 / 5.1 / 0.9 / −0.6 |
-| | closest to the bar: `tau-ENS2-E036 \| E3D-B21-6-E036` | | | −9063 | 4/5 | 18.5 | 27.3 | 1.3 / 6.2 / 7.1 / 2.9 / 0.4 |
-| | median of the 50 | | | −9426 | | 23.0 | 37.3 | 5.9 / 7.8 / 12.2 / 1.0 / 3.0 |
-| E3 | ensemble τ_b on `E1D-PMIST` | E2: our τ_b on PaleoMIST's Earth | proposed | | | | | |
-| E4 | ensemble τ_b on a sampled 1-D Earth | E3: the 1-D Earth sampled | proposed | | | | | |
-| E5 | ensemble τ_b on `E3D-B21-k` | E1: the Bagge structure as a parameter | proposed | | | | | |
+Columns (see [Scores](#scores)): **log L** the log-likelihood over all groups, higher is better; **passed** the groups
+within the bar; **RMSE** over all points [m]; **RMS z** of the normalized residuals; **I** the implausibility
+(χ² − n)/√(2n) of one data group, ≤ 3 passes (Greenland ≤ 7.9, the bar), lower is better. The groups: **Laur.** Laurentide
+(892 points), **Greenl.** Greenland (276), **Fenn./Bar.** Fennoscandia and the Barents Sea (1088), **Antarc.** Antarctica
+(47), **far field** (2248).
+
+| id | simulation | changes against | status | log L | passed | RMSE [m] | RMS z | I Laur. | I Greenl. | I Fenn./Bar. | I Antarc. | I far field |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **P1** | `pub-PMIST` | published | done | −9318 | 2/5 | 20.0 | 30.1 | 6.7 | 7.9 | 2.9 | 3.4 | 6.4 |
+| **P2** | `pub-GLAC1D` | published | done | −9096 | 3/5 | 19.0 | 18.6 | −0.3 | 9.8 | 4.6 | −0.2 | −0.6 |
+| **Imposed ice, our solver** | | | | | | | |  |  |  |  |  |
+| I1 | `ice-PMIST \| E1D-PMIST` | P1: the solver (SELEN → VILMA2, 931 → 910 kg m⁻³, 2.5 kyr steps → linear, r) | done | **−8866** | **5/5** | **16.2** | 28.5 | −3.5 | 6.8 | 2.2 | 0.4 | −0.6 |
+| I2 | `ice-PMIST \| E1D-B21-6` | I1: the radial profile (PaleoMIST's → Bagge's mean) | running | | | | |  |  |  |  |  |
+| I3 | `ice-PMIST \| E3D-B21-6` | I2: the lateral structure | running | | | | |  |  |  |  |  |
+| I4 | `ice-PMIST \| E3D-B21-k`, k ≠ 6 | I3: Bagge's other structures, 3 his reference | proposed | | | | |  |  |  |  |  |
+| I5 | `ice-GLAC1D \| E1D-PMIST` | I1: the ice (PaleoMIST → GLAC-1D) | waits for FesmData | | | | |  |  |  |  |  |
+| I6 | `ice-GLAC1D \| E1D-B21-6` | I5: the radial profile | waits | | | | |  |  |  |  |  |
+| I7 | `ice-GLAC1D \| E3D-B21-6` | I6: the lateral structure | waits | | | | |  |  |  |  |  |
+| I8 | `ice-GLAC1D-9927 \| E1D-PMIST`, `\| E1D-B21-6`, `\| E3D-B21-6` | I5-I7: North America nn9927 | waits | | | | |  |  |  |  |  |
+| **Our ice, PaleoMIST's τ_b** | | | | | | | |  |  |  |  |  |
+| T1 | `tau-PMIST \| E1D-PMIST` | I1: the ice model (ICESHEET 5 km offline → PlasticIceSheet 32 km online) | running | | | | |  |  |  |  |  |
+| T2 | `tau-PMIST \| E3D-B21-6` | T1: the 3-D Earth | proposed | | | | |  |  |  |  |  |
+| **Our ice, present-day factors** | | | | | | | |  |  |  |  |  |
+| D1 | `tau-PMIST-PD \| E1D-PMIST` | T1: the present-day factors | running | | | | |  |  |  |  |  |
+| D2 | `tau-PMIST-PD \| E3D-B21-6` | D1: the 3-D Earth (m000 of ens-v2) | done | −9243 | 3/5 | 20.3 | 34.7 | 3.2 | 7.0 | 13.7 | 0.5 | 1.4 |
+| D3 | `tau-PMIST-PD \| E3D-B21-6 @NH16` | D2: Northern Hemisphere resolution, 32 → 16 km (ESL at 20 ka −128.4 against −130.4 m; par `..._nh16.nml`) | done | −9256 | 3/5 | 20.6 | 35.4 | 3.1 | 7.8 | 13.8 | 0.5 | 1.5 |
+| **Ensembles** | | | | | | | |  |  |  |  |  |
+| E1 | `tau-ENS1 \| E3D-B21-6` | D2: sampled τ_b (ens-v1, 25 members, Levante) | done, not rescored | | | | |  |  |  |  |  |
+| E2 | `tau-ENS2 \| E3D-B21-6-ENS2` | E1: the Earth sampled too (ens-v2, 50 members) | done | | | | |  |  |  |  |  |
+| | best log L: `tau-ENS2-E048 \| E3D-B21-6-E048` | | | −9017 | 3/5 | 19.7 | 32.2 | −0.5 | 13.0 | 5.1 | 0.9 | −0.6 |
+| | closest to the bar: `tau-ENS2-E036 \| E3D-B21-6-E036` | | | −9063 | 4/5 | 18.5 | 27.3 | 1.3 | 6.2 | 7.1 | 2.9 | 0.4 |
+| | median of the 50 | | | −9426 | | 23.0 | 37.3 | 5.9 | 7.8 | 12.2 | 1.0 | 3.0 |
+| E3 | ensemble τ_b on `E1D-PMIST` | E2: our τ_b on PaleoMIST's Earth | proposed | | | | |  |  |  |  |  |
+| E4 | ensemble τ_b on a sampled 1-D Earth | E3: the 1-D Earth sampled | proposed | | | | |  |  |  |  |  |
+| E5 | ensemble τ_b on `E3D-B21-k` | E1: the Bagge structure as a parameter | proposed | | | | |  |  |  |  |  |
 
 The scored runs, on Albedo under `/albedo/work/user/alrobi001`:
 
