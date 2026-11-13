@@ -21,10 +21,9 @@ This writes the root `Makefile` (template + compiler/machine fragments +
 netCDF) and `config/deps.mk` (needs configme >= 0.16). `--only` leaves the
 dependencies' own Makefiles alone.
 
-`vilma=1` (geo backend `vilma2`) needs `make vilma-static` in `vilma2/` (or
-`make vilma-static` here, which builds fesm-utils first) and the SHTns that
-fesm-utils builds once (`make -C fesm-utils shtns openmp=0|1`; `make deps-check`
-names it when missing). VILMA2, fesm-utils and kryos must use the same `openmp=`.
+`vilma=1` (geo backend `vilma2`) links `libvilma.a` and the SHTns of fesm-utils; `make kryos` builds both
+(configme install builds SHTns with the other external libraries of fesm-utils). VILMA2, fesm-utils and kryos must
+use the same `openmp=`.
 `make check` needs the `vilma2` checkout whatever the switch: two of the
 synchronised copies in `input/` (`vilma_defaults.nml`, `vilma-variables.md`) come from it.
 
@@ -38,8 +37,7 @@ synchronised copies in `input/` (`vilma_defaults.nml`, `vilma-variables.md`) com
 | `make check-long` | the long tests, left out of `make check`: `tests/test_run_sequence.f90` (GRL-16KM, every backend, the restart round trips, about 4.5 min), `tests/test_run_domains.f90` (two domains, GRL-16KM + ANT-32KM, about 8 min; needs Julia with the project of `tools/`, else it reports OPEN and passes; its header lists the checks) and `tests/test_gia_sequence.f90` (VILMA2 with GRL-16KM + ANT-32KM at lmax 16, about 6 min; needs `vilma=1`) |
 | `make sync-input` | copies the library sources over the synchronised copies in `input/` (`input/sync.txt`; the Getting started page) |
 | `make input-check` | fails naming every copy in `input/` that differs from its source |
-| `make deps-check` | fails with instructions if a dependency archive is missing |
-| `make deps-static` | builds fesm-utils and the enabled backend libraries in their own trees |
+| `make deps-static` | builds fesm-utils and the enabled backend libraries in their own trees, without kryos |
 | `make depend` | regenerates `config/deps.mk` (`configme deps .`) |
 | `make clean` / `make cleanall` | kryos objects and executables / also the dependencies |
 | `make` / `make usage` | lists the targets and the current switches |
@@ -49,9 +47,11 @@ A host links kryos as yelmox links yelmo: `-Ikryos/libkryos/include
 objects depend on `libkryos.a` so a type change rebuilds them. The archive is
 rewritten from scratch, so its mtime changes only when an object does.
 
-`kryos-static` does not descend into the dependencies: it builds against
-whatever is built, and a missing archive stops the build with the command that
-builds it. Use `make deps-static` (or each dependency's own make) first.
+Every kryos object depends on the archives of the enabled dependencies, and each archive's rule runs its library's
+own make on every call (a `FORCE` prerequisite), as yelmox does: `make kryos`, `make kryos-static` and `make check`
+first build fesm-utils and the enabled backends with the same `openmp=`. Up to date, that is a quick pass through
+each tree; an archive that changes rebuilds the kryos objects. fesm-utils' external libraries (LIS, FFTW, SHTns) are
+built only when missing: `configme install kryos` builds them.
 
 ## Switches
 
@@ -64,7 +64,7 @@ builds it. Use `make deps-static` (or each dependency's own make) first.
 | `fastisostasy` | 1 | geo backend `fastisostasy` (regional and global part): adapter, `INC_ISOSTASY`/`LIB_ISOSTASY` (+ LIS, FFTW); off: stub, and `tests/test_geo_fastisostasy.f90` is not built (`test_skip`) |
 | `chion`, `insol` | 1 | surface backend `chion`: `chion=1` compiles the chion host (with its orbit) into the adapter and needs `insol=1`; off: stub |
 | `vilma` | 0 | geo backend `vilma2` (the global Earth and the regional port): adapter, `INC_VILMA`/`LIB_VILMA` (`libvilma.a` of `vilma2/`), SHTns of fesm-utils (`LIB_SHTNS`; LIS, FFTW); off: stub, and `tests/test_geo_vilma2.f90` is not built (`test_skip`), `tests/test_geo_vilma2_stub.f90` is |
-| `plastic` | 0 | ice backend `plastic` (docs/dev/plastic-backend.md): adapter, `INC_PLASTIC`/`LIB_PLASTIC` (`PlasticIceSheet/libplastic/include/libplastic.a`, built with `make plastic-static`); off: stub, and `tests/test_ice_plastic.f90` is not built (`test_skip`) |
+| `plastic` | 0 | ice backend `plastic` (docs/dev/plastic-backend.md): adapter, `INC_PLASTIC`/`LIB_PLASTIC` (`PlasticIceSheet/libplastic/include/libplastic.a`, built by `make kryos` with `lis=1`); off: stub, and `tests/test_ice_plastic.f90` is not built (`test_skip`) |
 | `cism`, `pism`, `rembo` | 0 | stop with the phase in which the adapter arrives |
 
 Objects are stamped with the switch settings
@@ -102,10 +102,10 @@ For backend `foo` of component `ice`:
 4. `config/common.mk`: `FOOROOT`, `INC_FOO`, `LIB_FOO`, `FOO_ARCHIVE`, a
    `foo ?= 0` switch whose `ifeq` block sets `kryos_ice_foo_obj` to the
    adapter or the stub and, when on, appends to `INC_BACKENDS`,
-   `LIB_BACKENDS`, `dep_archives`, `backend_roots`, `backend_static`; add
+   `LIB_BACKENDS`, `dep_archives`, `backend_roots`; add
    `foo` to `backend_config`.
-5. `config/Makefile`: a missing-archive rule for `$(FOO_ARCHIVE)` and a
-   `foo-static` target; add `foo` to `usage`.
+5. `config/Makefile`: a rule for `$(FOO_ARCHIVE)` that runs the library's make (prerequisites
+   `$(FESMUTILS_ARCHIVE) FORCE`); add `foo` to `usage`.
 6. `configme config` (or `make depend`), then `make check foo=0` and
    `make check foo=1`.
 

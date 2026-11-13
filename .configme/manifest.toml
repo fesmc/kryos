@@ -1,12 +1,13 @@
 # configme manifest for kryos.
-# Pins: stable (== main) for every dependency (vilma2: main, the host-resolved
-# terms and output precision of its README are on it), except fesm-utils at
-# phase0-kryos (the fesm-utils additions kryos needs, design section 12, not
-# yet merged to dev); a tagged release pins the dependency tags.
+# Pins: stable (== main) for every dependency (vilma2, PlasticIceSheet: main),
+# except fesm-utils at phase0-kryos (the fesm-utils additions kryos needs,
+# design section 12, not yet merged to dev) and yelmo at dev (the till_cf
+# fields of the Yelmo adapter; input/ is synchronised with it, make
+# input-check); a tagged release pins the dependency tags.
 package = "kryos"
 deps = [
     "fesm-utils:phase0-kryos",
-    "yelmo:stable",
+    "yelmo:dev",
     "FastIsostasy:stable",
     "chion:stable",
     "insol:stable",
