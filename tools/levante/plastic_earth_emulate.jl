@@ -111,7 +111,7 @@ function plot_nroi(Xs01, keep, pn, lo, hi, idx, file, title; nb = 20)
     end
     Colorbar(fig[1:d-1, d], hm, label = "fraction not ruled out", height = Relative(0.6))
     Label(fig[0, :], title * @sprintf(" (%.2f %% of the sample)", 100mean(keep)), fontsize = 18)
-    save(file, fig)
+    save(file, fig; px_per_unit = 1)          # about 100-200 kB: the docs figures
 end
 
 # --- the Latin hypercube of the dense sample, in [0, 1]^d -----------------------------------------------------------------------
