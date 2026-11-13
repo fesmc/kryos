@@ -9,6 +9,14 @@
 # Every dependency is a sibling checkout (or symlink) at the repo root, as in
 # yelmox: fesm-utils, yelmo, FastIsostasy, chion, insol, ...
 
+# Floating point: kryos checks conservation to round-off (test_globe_ice, test_wiring) and must keep IEEE
+# semantics, while the machine fragments optimise with -Ofast (dkrz_levante). The value-safe flag of the compiler is
+# appended (the last one wins), as in PlasticIceSheet.
+FPSAFE_ifx      = -fp-model precise
+FPSAFE_ifort    = -fp-model precise
+FPSAFE_gfortran = -fno-fast-math
+DFLAGS_NODEBUG += $(FPSAFE_$(COMPILER))
+
 # fesm-utils: the only mandatory dependency (serial build by default here;
 # swapped to the OpenMP variant below).
 FESMUTILSROOT = fesm-utils
