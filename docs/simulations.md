@@ -5,7 +5,7 @@ page-layout: full
 ---
 
 A working table of the glacial-cycle simulations: what each one changes, and how well it fits the GAPSLIP 2.1 RSL index
-points. The page is not linked from the navigation. Status as of 2026-11-13. How each simulation is made and scored, and
+points. Status as of 2026-11-13. How each simulation is made and scored, and
 the concepts behind the ladder: [the workflow](plastic-workflow.md).
 
 The bar is not a perfect fit. It is the published reconstructions, PaleoMIST 1.0 (Gowan et al. 2021) and GLAC-1D

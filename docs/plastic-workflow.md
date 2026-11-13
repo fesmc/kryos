@@ -4,7 +4,7 @@ toc: true
 ---
 
 The working procedure behind [Simulations and scores](simulations.md): what we are trying to show, how each simulation
-is made and scored, and where to continue. The page is not linked from the navigation. Status as of 2026-11-13.
+is made and scored, and where to continue. Status as of 2026-11-13.
 
 ## The question
 
