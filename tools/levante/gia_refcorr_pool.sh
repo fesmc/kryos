@@ -35,10 +35,10 @@ echo "== pool $SLURM_JOB_ID on $(hostname): $NWORK workers x $per cores, list $L
 finished() { tail -1 $1/iter.log 2> /dev/null | grep -q "^== done\|^not converged\|failed"; }
 claim() {   # claim the case folder $1: the link <case>/claim -> <job id> (atomic); a claim of a job that no longer runs is taken over
     local c=$1/claim j
-    mkdir -p $1; ln -s $SLURM_JOB_ID $c 2> /dev/null && return 0
+    mkdir -p $1; ln -sT $SLURM_JOB_ID $c 2> /dev/null && return 0
     [ -L $c ] || return 1
     j=$(readlink $c) && squeue -h -j $j 2> /dev/null | grep -q . && return 1
-    rm -f $c; ln -s $SLURM_JOB_ID $c 2> /dev/null
+    rm -f $c; ln -sT $SLURM_JOB_ID $c 2> /dev/null
 }
 worker() {
     local w=$1 set case par vars
