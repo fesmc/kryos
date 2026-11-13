@@ -44,7 +44,7 @@ make kryos plastic=1 vilma=1 yelmo=0      # -> libkryos/bin/kryos.x
 make check plastic=1 vilma=1 yelmo=0      # the tests
 ```
 
-`configme install` takes 20-40 min, most of it the external libraries of fesm-utils (LIS, FFTW, SHTns). `make kryos`
+`configme install` takes about 45 min on Levante, most of it the external libraries of fesm-utils (LIS, FFTW, SHTns), serial and OpenMP. `make kryos`
 first builds every backend library switched on, each with its own make, then kryos. Add `-d https` to clone without
 a GitHub SSH key. To update later: `configme upgrade` in the kryos folder.
 
