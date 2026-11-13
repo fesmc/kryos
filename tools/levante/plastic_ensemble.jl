@@ -239,7 +239,8 @@ end
 #   topo     a FesmData IceHistory file with the topography relative to the sea level of the time (GLAC1D: its own GIA, PM.rsl_topo)
 #   run      a standalone VILMA2 run under a reconstruction's ice: a gia_refcorr.sh case (its converged iteration, r.nc -> r_<n>.nc:
 #            it<n>) or a folder with vilma_out.nc ($VAR in the path from the environment)
-# The RSL at the index points (npoints x nages), NaN at the ages the reference does not have; nothing (and why) when it is missing.
+# The RSL at the index points (npoints x nages), NaN at the ages the reference does not have (a run: no record there; a window
+# with such an age leaves the reference out); nothing (and why) when it is missing.
 expandenv(p) = replace(p, r"\$\{?(\w+)\}?" => m -> ENV[strip(m, ['$', '{', '}'])])
 # the folder of a run reference: a gia_refcorr.sh case's converged iteration, or the folder itself
 function ref_dir(ref)
@@ -253,8 +254,11 @@ function reference_series(ref, fes, obs, A)
         d = ref_dir(ref)
         PM.run_done(d) || return nothing, "$d: not finished (no status 0)"
         r = PM.read_run(d); r === nothing && return nothing, "no run in $d"
-        all(a -> any(x -> abs(x - PM.trun(r, a)) < 0.01, r.t), A) || return nothing, "$d: records missing"
-        return PM.series_run(r, plon, plat, A; rec = a -> PM.trun(r, a)), ""
+        k = findall(a -> any(x -> abs(x - PM.trun(r, a)) < 0.01, r.t), A)     # the ages it has records at (GLAC1D_80k: 1 kyr before
+        isempty(k) && return nothing, "$d: no records at the ages"           # 30 ka, none at 32.5, 37.5, ... ka)
+        S = fill(NaN, length(obs), length(A))
+        S[:, k] = PM.series_run(r, plon, plat, A[k]; rec = a -> PM.trun(r, a))
+        return S, ""
     end
     f = joinpath(fes, haskey(ref, "product") ? ref["product"] : ref["topo"]); isfile(f) || return nothing, "no $f"
     lon, lat, ages, sl = haskey(ref, "product") ? NCDataset(ds -> (Float64.(ds["lon"][:]), Float64.(ds["lat"][:]), Float64.(ds["time"][:]),
