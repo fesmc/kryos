@@ -31,6 +31,7 @@
 # box, exclude, min_years (pm_compare.jl read_gnss), judge (default true; false: reported only, not in the default use_groups);
 # several entries of one name: one group of their stations, each once (gnss_data); every [[gnss]] group is a data group (after
 # obs_groups: data_groups); [likelihood."<name>"]: sigma_m [mm/yr], corr_dist_km (no time term).
+# [rate] (optional): a limit on how fast each scale group's ice may change, from the published reconstructions (rate_spec).
 # [earth] (optional): the Earth as parameters, sampled with tau_b: shifts of log10(eta) of VILMA2's 3-D field, global in the upper
 # and lower mantle and per region in the upper mantle (plastic_earth_shift.jl): sigma (prior sd [dex]), theta_max, boundary_km,
 # regions_file (the masks, earth-regions), [[earth.regions]] (name, groups: scale groups), exclude_codes (REGIONS areas without a regional shift),
@@ -185,6 +186,67 @@ function gnss_residuals(gd, G)
     end
     out
 end
+
+# --- the rate of ice change -------------------------------------------------------------------------------------------------------
+# [rate] (optional): a one-sided limit on how fast the ice of each scale group grows or shrinks. The plastic ice follows tau_b at
+# once, so a member's tau_b can move ice faster than any ice sheet could; the limit rules such members out. Per scale group g: the
+# cells whose tau_b domain is in g (domain_map of the grid, default its IceHistory-PaleoMIST_taub), on the grids of [[rate.grids]]
+# (ice: the run's file without .nc, e.g. "ice_nor"; domain, grid: its FesmData folder), the ice volume V_g [m sea-level equivalent:
+# rho_i / rho_w / 3.618e14 m2, no floatation] every step_kyr (2.5) from max_age_ka ([ensemble] compare_max_age_ka) to 0, linear in
+# time, and its rate over each step. The bound b_g = tolerance (1.5) times the largest |rate| of the published reconstructions of
+# `references` (FesmData IceHistory-<ref> on the grid). A series passes when max_t |rate_g| <= b_g in every group with b_g > 0
+# (groups no reconstruction has ice in are not limited); with judge (default true) a member that fails is not plausible (weights).
+const RHO_I_W = 910.0 / 1028.0; const OCEAN_M2 = 3.618e14
+function rate_spec(cfg)
+    haskey(cfg, "rate") || return nothing
+    r = cfg["rate"]; tmax = Float64(get(r, "max_age_ka", get(cfg["ensemble"], "compare_max_age_ka", 25.0)))
+    step = Float64(get(r, "step_kyr", 2.5)); fes = cfg["score"]["fesmdata"]
+    sg = ES.scale_groups(cfg["scale"]); gid = Dict(d => g for (d, g) in zip(sg.domain_id, sg.group))
+    grids = map(r["grids"]) do gr
+        dir = joinpath(fes, gr["domain"], gr["grid"])
+        cells, area = NCDataset(joinpath(dir, get(gr, "domain_map", gr["grid"] * "_IceHistory-PaleoMIST_taub.nc"))) do ds
+            x = Float64.(ds["xc"][:]); u = get(ds["xc"].attrib, "units", "m") == "km" ? 1000.0 : 1.0
+            [get(gid, Int(d), 0) for d in nomissing(ds["taub_domain"][:, :], -9999)], (u * (x[2] - x[1]))^2
+        end
+        (ice = String(gr["ice"]), dir = dir, grid = String(gr["grid"]), cells = cells, area = area)
+    end
+    (names = sg.names, refs = String.(get(r, "references", ["PaleoMIST", "GLAC1D", "ICE6G_C", "ICE5G"])), tol = Float64(get(r, "tolerance", 1.5)),
+     ages = collect(1000 .* (tmax:-step:0.0)), step = step, judge = Bool(get(r, "judge", true)), grids = grids)
+end
+# V_g at the ages [m SLE] from one file of H_ice(time, yc, xc), time in years ago or (negative) years; an age the file does not
+# cover is an error, or with partial (a reconstruction that starts later, ICE-5G at 21 ka) NaN
+function group_volume!(V, file, gr, ages; partial = false)
+    NCDataset(file) do ds
+        t = Float64.(ds["time"][:]); occursin("ago", get(ds["time"].attrib, "units", "")) && (t = -t)
+        p = sortperm(t); t = t[p]; H = ds["H_ice"]
+        size(H, 1) == size(gr.cells, 1) && size(H, 2) == size(gr.cells, 2) || error("$file: not on the grid of $(gr.grid)")
+        for (j, a) in enumerate(-ages)
+            if a < t[1] - 1 || a > t[end] + 1
+                partial || error("$file: no ice at $(-a) years ago")
+                V[:, j] .= NaN; continue
+            end
+            k = clamp(searchsortedlast(t, a), 1, length(t) - 1); w = clamp((a - t[k]) / (t[k+1] - t[k]), 0.0, 1.0)
+            h = (1 - w) .* coalesce.(Float64.(H[:, :, p[k]]), 0.0) .+ w .* coalesce.(Float64.(H[:, :, p[k+1]]), 0.0)
+            for c in eachindex(h); g = gr.cells[c]; g > 0 && (V[g, j] += h[c] * gr.area * RHO_I_W / OCEAN_M2); end
+        end
+    end
+    V
+end
+# per group the largest |dV/dt| over the steps the files cover [m SLE per kyr], of the files file(gr) on every grid
+function max_rate(rs, file; partial = false)
+    V = zeros(length(rs.names), length(rs.ages))
+    for gr in rs.grids; group_volume!(V, file(gr), gr, rs.ages; partial = partial); end
+    D = abs.(diff(V; dims = 2)) ./ rs.step
+    [maximum(filter(!isnan, D[g, :]); init = 0.0) for g in axes(D, 1)]
+end
+# the bounds b_g and the reconstructions' rates (ref => per group)
+function rate_bounds(rs)
+    rr = Dict(r => max_rate(rs, gr -> joinpath(gr.dir, "$(gr.grid)_IceHistory-$r.nc"); partial = true) for r in rs.refs)
+    rs.tol .* [maximum(rr[r][g] for r in rs.refs) for g in eachindex(rs.names)], rr
+end
+# a run's max |rate_g| / b_g (NaN where b_g = 0)
+rate_ratio(rs, b, dir) = (r = max_rate(rs, gr -> joinpath(dir, gr.ice * ".nc")); [b[g] > 0 ? r[g] / b[g] : NaN for g in eachindex(b)])
+rate_ok(x) = all(v -> isnan(v) || v <= 1, x)
 
 # --- likelihood ---------------------------------------------------------------------------------------------------------------------
 # the misfit of a member per data group: the index points with a finite score, d = model - obs and the scorer's 1 sigma
@@ -426,7 +488,11 @@ function weights(C, k)
     best = Dict(g => (b = [(s[g][4], nm) for (nm, s) in rsc if nm in bar && haskey(s, g) && !(g in fixed)]; isempty(b) ? (-Inf, "") : minimum(b))
                 for g in og)
     cut = Dict(g => max(cut0, best[g][1]) for g in og)
-    plaus = [m for m in ok if all(sc[m][g][4] <= cut[g] for g in ug)]
+    rs = rate_spec(cfg)                        # [rate]: the limit on the rate of ice change, per scale group
+    rb, rref = rs === nothing ? (Float64[], Dict()) : rate_bounds(rs)
+    rr = rs === nothing ? Dict() : Dict(m => rate_ratio(rs, rb, ES.mdir(C, k, m)) for m in ok)
+    rpass(m) = rs === nothing || !rs.judge || rate_ok(rr[m])
+    plaus = [m for m in ok if all(sc[m][g][4] <= cut[g] for g in ug) && rpass(m)]
     # tempering: the scale factor of each group's error covariance (the groups with a score)
     sf = Dict(g => max(1.0, minimum(s[g][2] / s[g][3] for s in [[sc[m] for m in ok]; last.(rsc)] if haskey(s, g)))
               for g in og if any(m -> haskey(sc[m], g), ok) || any(r -> haskey(r[2], g), rsc))
@@ -442,12 +508,14 @@ function weights(C, k)
     I(m, g) = sv(sc[m], g, 4)
     open(joinpath(It, "weights.csv"), "w") do io
         println(io, "member,ok,", join(["logL_$g" for g in og], ","), ",logL,logL_tempered,", join(["chi2n_$g" for g in og], ","), ",",
-                join(["I_$g" for g in og], ","), ",plausible,esl_20ka,weight")
+                join(["I_$g" for g in og], ","), ",plausible,esl_20ka,weight", rs === nothing ? "" : "," * join(["rate_$g" for g in rs.names], ","))
+        nr = rs === nothing ? 0 : length(rs.names)
         for m in ids
-            haskey(res, m) || (println(io, m, ",0", repeat(",NaN", 3length(og) + 5)); continue)
+            haskey(res, m) || (println(io, m, ",0", repeat(",NaN", 3length(og) + 5 + nr)); continue)
             println(io, m, ",1,", join([@sprintf("%.2f", sv(sc[m], g, 1)) for g in og], ","), ",", @sprintf("%.2f,%.2f", LL[m], LLt[m]), ",",
                     join([@sprintf("%.3f", sv(sc[m], g, 2) / sv(sc[m], g, 3)) for g in og], ","), ",", join([@sprintf("%.2f", I(m, g)) for g in og], ","),
-                    ",", m in plaus ? 1 : 0, ",", @sprintf("%.2f", res[m].esl), ",", @sprintf("%.6g", w[m]))
+                    ",", m in plaus ? 1 : 0, ",", @sprintf("%.2f", res[m].esl), ",", @sprintf("%.6g", w[m]),
+                    rs === nothing ? "" : "," * join([@sprintf("%.2f", x) for x in rr[m]], ","))
         end
     end
     open(joinpath(It, "plausible.txt"), "w") do io
@@ -470,7 +538,18 @@ function weights(C, k)
             println(io, "| ", g, " | ", m1 === nothing ? "-" : sc[ok[m1]][g][3], " | ", @sprintf("%.2f", cut[g]), " | ", cut[g] > cut0 ? best[g][2] : "-",
                     " | ", haskey(sf, g) ? @sprintf("%.2f", sf[g]) : "-", " |")
         end
-        println(io, "\nPlausible (I_g <= cut in every group that judges): $(length(plaus)) members", isempty(plaus) ? "" :
+        if rs !== nothing
+            println(io, "\nRate of ice change ([rate]): per scale group the largest |dV/dt| over $(rs.step) kyr steps, ",
+                    @sprintf("%g", rs.ages[1] / 1000), "-0 ka [m SLE / kyr]; the bound is ", rs.tol, " times the fastest reconstruction; ",
+                    rs.judge ? "a member above it in a group is not plausible" : "reported only", ":\n")
+            println(io, "| group | ", join(rs.refs, " | "), " | bound | members above |\n|---|", repeat("---|", length(rs.refs) + 2))
+            for (g, n) in enumerate(rs.names)
+                println(io, "| ", n, " | ", join([@sprintf("%.2f", rref[r][g]) for r in rs.refs], " | "), " | ",
+                        rb[g] > 0 ? @sprintf("%.2f", rb[g]) : "none", " | ", count(m -> !isnan(rr[m][g]) && rr[m][g] > 1, ok), " |")
+            end
+        end
+        println(io, "\nPlausible (I_g <= cut in every group that judges", rs !== nothing && rs.judge ? ", the rate of ice change within its bound" : "",
+                "): $(length(plaus)) members", isempty(plaus) ? "" :
                 @sprintf(", ESL at 20 ka %.1f to %.1f m; effective sample size of their weights %.2f", minimum(eslp), maximum(eslp), ess), ".\n")
         println(io, "Ruled out by group (I_g > cut): ", join([@sprintf("%s %d", g, count(m -> haskey(sc[m], g) && I(m, g) > cut[g], ok)) for g in og], ", "), "\n")
         println(io, "| member | plausible | weight | log L | log L tempered | ", join(["I $g" for g in og], " | "), " | ESL 20 ka [m] |\n|---|---|---|---|---|",
