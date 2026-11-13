@@ -24,153 +24,72 @@ module load intel-oneapi-compilers/2023.2.1-gcc-11.2.0 \
     python3/2023.01-gcc-11.2.0 git/2.43.7-gcc-11.2.0
 ```
 
-configme's machine file `dkrz_levante` hardcodes the matching netCDF prefixes (checked 2026-11-10). The
-production compiler is Intel `ifx` (configme machine `dkrz_levante`, compiler `ifx`).
+## Install
 
-configme writes the Makefiles; install it once, from its `fortdeps` branch (its `main` has no kryos package):
+[configme](https://github.com/fesmc/configme) clones kryos and its dependencies, writes their Makefiles for the
+machine and compiler, and builds the dependency libraries. Install it once:
 
 ```bash
-pip install git+https://github.com/fesmc/configme@fortdeps
+pip install git+https://github.com/fesmc/configme
 export PATH="${PATH}:${HOME}/.local/bin"      # if `configme` is not found
 ```
 
-## The code
-
-The dependencies are checkouts, or symlinks to checkouts, at the kryos root (the slots are gitignored). The pins are in
-[.configme/manifest.toml](https://github.com/fesmc/kryos/blob/main/.configme/manifest.toml):
-
-| Checkout | Repository | Ref | Needed for |
-|---|---|---|---|
-| `kryos` | [fesmc/kryos](https://github.com/fesmc/kryos) | `main` | everything |
-| `fesm-utils` | [fesmc/fesm-utils](https://github.com/fesmc/fesm-utils) | `phase0-kryos` | always (ncio, grids, coupler, htopo; LIS, FFTW, SHTns) |
-| `vilma2` | [fesmc/vilma2](https://github.com/fesmc/vilma2) | `main` | `vilma=1`; and `make check` in any build (two `input/` copies come from it) |
-| `PlasticIceSheet` | [fesmc/PlasticIceSheet](https://github.com/fesmc/PlasticIceSheet) | `main` | `plastic=1` |
-| `yelmo` | [fesmc/yelmo](https://github.com/fesmc/yelmo) | `stable` | `yelmo=1`; and `make check` (the Yelmo copies in `input/`) |
-| `FastIsostasy` | [palma-ice/FastIsostasy](https://github.com/palma-ice/FastIsostasy) | `stable` | `fastisostasy=1` (default on) |
-| `chion` | [fesmc/chion](https://github.com/fesmc/chion) | `stable` | `chion=1` (default on) |
-| `insol` | [fesmc/insol](https://github.com/fesmc/insol) | `stable` | `insol=1` (default on; chion needs it) |
-
-FastHydrology, elsa and tracer live inside the yelmo checkout.
-
-Clone kryos and its dependencies at the refs of the table (`https://github.com/...` without a GitHub SSH key):
+Then install kryos (into `./kryos`) and build it:
 
 ```bash
 cd ~/models
-git clone git@github.com:fesmc/kryos.git
+configme install kryos -m dkrz_levante -c ifx --build-deps
 cd kryos
-git clone -b phase0-kryos git@github.com:fesmc/fesm-utils.git
-git clone git@github.com:fesmc/vilma2.git
-git clone git@github.com:fesmc/PlasticIceSheet.git
-git clone -b stable git@github.com:fesmc/yelmo.git
-git clone -b stable git@github.com:palma-ice/FastIsostasy.git
-git clone -b stable git@github.com:fesmc/chion.git
-git clone -b stable git@github.com:fesmc/insol.git
-```
-
-For checkouts that already exist, or clones next to kryos, symlink them instead (`ln -s ../fesm-utils fesm-utils`
-at the kryos root).
-
-`configme install kryos` covers only part of this: it clones the seed set insol, fesm-utils, yelmo, FastIsostasy,
-FastHydrology and chion and builds fesm-utils, insol and chion, but does not clone vilma2 or PlasticIceSheet (the
-manifest only pins refs).
-
-## Configure
-
-```bash
-cd ~/models/kryos
-configme config kryos --only -m dkrz_levante -c ifx
-```
-
-This writes the root `Makefile` (the template
-[config/Makefile](https://github.com/fesmc/kryos/blob/main/config/Makefile), the compiler and machine fragments and
-netCDF) and `config/deps.mk`, the per-object dependency rules generated from the `module`, `use` and `include`
-statements under `src/` (configme >= 0.16). `--only` leaves the dependencies' own Makefiles alone. Rerun it, or
-`make depend`, after adding a source file or a `use`. The dependency wiring is in
-[config/common.mk](https://github.com/fesmc/kryos/blob/main/config/common.mk).
-
-Each dependency's Makefile is written the same way, in its checkout, from its own template; e.g. PlasticIceSheet
-(no machine files in its repository: the flags of the machine come from configme):
-
-```bash
-cd ~/models/kryos/PlasticIceSheet && configme config PlasticIceSheet --only -m dkrz_levante -c ifx
-```
-
-## Build
-
-`make` alone lists the targets and the current switches. `openmp=1` is the default; fesm-utils, VILMA2,
-PlasticIceSheet and kryos must all use the same `openmp=`.
-
-### Dependencies (once)
-
-fesm-utils' external libraries, one variant, serially (no `-j`; SHTns links the FFTW built here, so FFTW comes
-first):
-
-```bash
-cd ~/models/kryos/fesm-utils
-make fftw  openmp=1
-make lis   openmp=1
-make shtns openmp=1
-```
-
-Then fesm-utils and the backend libraries the build links, from the kryos root:
-
-```bash
-cd ~/models/kryos
-make deps-static vilma=1 yelmo=0
-```
-
-`deps-static` runs `fesmutils-static` and the `<backend>-static` target of every backend switched on:
-here FastIsostasy, chion, insol (on by default) and VILMA2 (`make -C vilma2 vilma-static openmp=1`). With
-`plastic=1` it also runs `plastic-static`: PlasticIceSheet with the same `openmp=` and `lis=1` against the LIS of
-kryos' fesm-utils (`make -C PlasticIceSheet static openmp=1 lis=1 FESMUTILSROOT=<kryos>/fesm-utils`). Its tests:
-
-```bash
-make -C PlasticIceSheet check openmp=1 lis=1 FESMUTILSROOT=$PWD/fesm-utils
-```
-
-- `make static` writes `libplastic/include/libplastic.a` and the `.mod` files; `make check` builds and runs the
-  library's tests (`test_core`, `test_closures`, `test_surface`, `test_steady`, `test_inversion`).
-- Pass the same switches to `check` as to `static`: with `lis=1` the tests link `-llis`.
-- `make clean` between compilers: the `.mod` files are compiler-specific.
-- API, options and tests: PlasticIceSheet
-  [docs/fortran-port.md](https://github.com/fesmc/PlasticIceSheet/blob/main/docs/fortran-port.md).
-
-`make deps-check plastic=1 vilma=1 yelmo=0` fails, naming the command that builds it, for every archive that is
-missing (e.g. SHTns: `make -C fesm-utils shtns openmp=1`).
-
-### kryos
-
-```bash
-cd ~/models/kryos
 make kryos plastic=1 vilma=1 yelmo=0      # -> libkryos/bin/kryos.x
 make check plastic=1 vilma=1 yelmo=0      # the tests
 ```
 
-- The driver target is `kryos`. It builds `libkryos/include/libkryos.a` and relinks
-  `libkryos/bin/kryos.x` on every call. `make libkryos/bin/kryos.x` does **not** relink the driver: the only rule for
-  `libkryos/bin/%.x` builds the test programs from `tests/%.f90`.
+`configme install` takes 20-40 min, most of it the external libraries of fesm-utils (LIS, FFTW, SHTns). `make kryos`
+first builds every backend library switched on, each with its own make, then kryos. Add `-d https` to clone without
+a GitHub SSH key. To update later: `configme upgrade` in the kryos folder.
+
+What it installs, at the refs pinned in
+[.configme/manifest.toml](https://github.com/fesmc/kryos/blob/main/.configme/manifest.toml), as checkouts at the kryos
+root:
+
+| Checkout | Repository | Needed for |
+|---|---|---|
+| `fesm-utils` | [fesmc/fesm-utils](https://github.com/fesmc/fesm-utils) | always (ncio, grids, coupler, htopo; LIS, FFTW, SHTns) |
+| `vilma2` | [fesmc/vilma2](https://github.com/fesmc/vilma2) | `vilma=1` |
+| `PlasticIceSheet` | [fesmc/PlasticIceSheet](https://github.com/fesmc/PlasticIceSheet) | `plastic=1` |
+| `yelmo` | [fesmc/yelmo](https://github.com/fesmc/yelmo) (with FastHydrology, elsa, tracer) | `yelmo=1` |
+| `FastIsostasy` | [palma-ice/FastIsostasy](https://github.com/palma-ice/FastIsostasy) | `fastisostasy=1` (default on) |
+| `chion` | [fesmc/chion](https://github.com/fesmc/chion) | `chion=1` (default on) |
+| `insol` | [fesmc/insol](https://github.com/fesmc/insol) | `insol=1` (default on; chion needs it) |
+
+`make check` needs every checkout whatever the switches: it first compares the synchronised copies in `input/` with
+their sources (`make input-check`).
+
+## Build
+
+`make` alone lists the targets and the current switches. `openmp=1` is the default, and every library is built with
+the same `openmp=`.
+
 - `yelmo=0` is enough for the plastic runs: the Yelmo adapter becomes its stub, and the factory stops with "rebuild
-  kryos with yelmo=1" if a par file asks for it. The other switches stay at their defaults.
-- One binary built with `plastic=1 vilma=1` runs every plastic par file, the fixed-bed one too.
+  kryos with yelmo=1" if a par file asks for it. One binary built with `plastic=1 vilma=1` runs every plastic par file.
 - Objects are stamped with the switches (`libkryos/include/.build-openmp1-...`): changing any switch rebuilds every
   object. Pass the same switches to `make kryos` and `make check`.
-- `make check` first runs `make input-check`, which compares the synchronised copies in `input/` with their sources
-  in the yelmo, chion, insol, fesm-utils and vilma2 checkouts: those must be present whatever the switches.
-- With `plastic=1` and `vilma=1` it runs, among the others, `test_plastic_margin`, `test_ice_plastic` and
-  `test_geo_vilma2`. The long tests (`make check-long`) need `yelmo=1`: with `yelmo=0` all three are skipped.
+- `make libkryos/bin/kryos.x` does **not** relink the driver; `make kryos` does.
+- With `plastic=1` and `vilma=1`, `make check` runs, among the others, `test_plastic_margin`, `test_ice_plastic` and
+  `test_geo_vilma2`. The long tests (`make check-long`) need `yelmo=1`.
+- After adding a source file or a `use`: `make depend` (or `configme config kryos --only -m dkrz_levante -c ifx`).
 
 Targets:
 
 | Target | Builds |
 |---|---|
-| `make kryos` | `libkryos/bin/kryos.x`, the driver ([drivers/kryos.f90](https://github.com/fesmc/kryos/blob/main/drivers/kryos.f90)) |
+| `make kryos` | the enabled dependencies, then `libkryos/bin/kryos.x`, the driver ([drivers/kryos.f90](https://github.com/fesmc/kryos/blob/main/drivers/kryos.f90)) |
 | `make kryos-static` | `libkryos/include/libkryos.a` and the `.mod`/`.smod` files in `libkryos/include` |
 | `make check` | `make input-check`, then every `tests/test_*.f90` but the long ones, linked against libkryos, and runs them; fails if one exits non-zero |
 | `make check-long` | the long tests: `test_run_sequence` (GRL-16KM, every backend, restart round trips, about 4.5 min), `test_run_domains` (GRL-16KM + ANT-32KM, about 8 min; needs Julia with the project of `tools/`, else it reports OPEN and passes), `test_gia_sequence` (VILMA2 with GRL-16KM + ANT-32KM at lmax 16, about 6 min; needs `vilma=1`) |
 | `make sync-input` | copies the library sources over the synchronised copies in `input/` (`input/sync.txt`) |
 | `make input-check` | fails naming every copy in `input/` that differs from its source |
-| `make deps-check` | fails with instructions if a dependency archive is missing |
-| `make deps-static` | builds fesm-utils and the enabled backend libraries in their own trees |
+| `make deps-static` | builds fesm-utils and the enabled backend libraries in their own trees, without kryos |
 | `make depend` | regenerates `config/deps.mk` (`configme deps .`) |
 | `make clean` / `make cleanall` | kryos objects and executables / also the dependencies |
 
@@ -193,8 +112,6 @@ Build notes:
 - All backend include dirs are on every compile line, after `libkryos/include` and fesm-utils, so a module name
   that exists in two libraries (`precision` in fesm-utils and FastIsostasy) resolves to fesm-utils. kryos' own modules
   are prefixed `kryos_`.
-- `kryos-static` does not descend into the dependencies: it builds against what is built, and a missing archive stops
-  the build with the command that builds it.
 - A host links kryos as yelmox links yelmo: `-Ikryos/libkryos/include -Lkryos/libkryos/include -lkryos` plus the
   backend libraries. The archive is rewritten from scratch, so its mtime changes only when an object does.
 - The marine_shelf and pico code of yelmox is compiled in kryos (`src/backends/shelf/marine_shelf/`); it needs no
