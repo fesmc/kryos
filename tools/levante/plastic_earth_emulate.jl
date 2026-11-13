@@ -8,7 +8,8 @@
 # The cases: the references named "ice-<ICE> | E1D-ES1-E<nnn>" (member E<nnn> of members.csv under the ice <ICE>), scored on the
 # judging window (scores.csv window = "window": the index points of age <= compare_max_age_ka). The groups that judge and the cut
 # of the config as plastic_ensemble.jl weights: [ensemble] use_groups (default all but [[gnss]]/[esl] judge = false); cut_g the
-# larger of [ensemble] implausibility (3) and the lowest I_g of the [ensemble] bar references in scores.csv.
+# larger of [ensemble] implausibility (3) and the lowest I_g of the [ensemble] bar references in scores.csv ([ensemble] fixed_cut:
+# the plain cut).
 # Emulated: y = log(chi2/n) per group, not I_g = (chi2 - n)/sqrt(2n). Both are monotone in chi2, so the cut is the same
 # (y_cut = log(1 + cut sqrt(2/n))), but I_g spans orders of magnitude over the space (a few near the cut, thousands for a stiff
 # lithosphere on a soft mantle): a stationary GP of I_g follows the worst Earths and smooths the region of the cut away; log(chi2/n)
@@ -120,7 +121,8 @@ lhs01(d, n, rng) = permutedims(hcat([(randperm(rng, n) .- rand(rng, n)) ./ n for
 function cut_setup(sc, cfg)
     en = cfg["ensemble"]; ug = String.(get(en, "use_groups", judging_groups(cfg)))
     cut0 = get(en, "implausibility", 3.0); bar = String.(get(en, "bar", String[]))
-    cut = Dict(g => max(cut0, minimum([sc[(b, g)].I for b in bar if haskey(sc, (b, g))]; init = Inf)) for g in ug)
+    fixed = String.(get(en, "fixed_cut", String[]))           # groups that keep the plain cut (plastic_ensemble.jl weights)
+    cut = Dict(g => g in fixed ? cut0 : max(cut0, minimum([sc[(b, g)].I for b in bar if haskey(sc, (b, g))]; init = Inf)) for g in ug)
     for g in ug; isfinite(cut[g]) || (cut[g] = cut0); end
     ngrp = Dict(g => first([v.n for ((s, gg), v) in sc if gg == g]) for g in ug if any(k -> k[2] == g, keys(sc)))
     (ug = ug, cut0 = cut0, bar = bar, cut = cut, ngrp = ngrp, ycut = Dict(g => log(1 + cut[g] * sqrt(2 / ngrp[g])) for g in keys(ngrp)))
