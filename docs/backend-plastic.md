@@ -14,8 +14,8 @@ PlasticIceSheet.jl.
 
 - **Build:** `plastic=1`. `config/common.mk` expects a sibling checkout or symlink
   `PlasticIceSheet` with `libplastic/include` (`libplastic.a` and the `.mod` files),
-  configured by configme and built with the same `openmp=` as kryos and with `lis=1` against the same LIS:
-  `make plastic-static`.
+  installed and configured by configme (`configme install kryos`); `make kryos` builds it with the same `openmp=` as
+  kryos and with `lis=1` against the same LIS.
   Without it the stub stops the run ("rebuild kryos with plastic=1"). `yelmo=0` is
   enough; with VILMA2 add `vilma=1`. See [Getting started](getting-started.md).
 - **Select:** `backend = "plastic"` in the ice instance group of a domain; the keys
