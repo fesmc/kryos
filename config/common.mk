@@ -98,7 +98,7 @@ VILMA_ARCHIVE = $(VILMAROOT)/libvilma/include/libvilma.a
 
 # PlasticIceSheet (ice = plastic): the Fortran library libplastic.a (module plastic_ice, dp), a
 # sibling checkout or symlink `PlasticIceSheet`, configured by configme. Built with the same openmp= as
-# kryos and with lis=1 against the LIS of kryos' fesm-utils (its steady SMB-driven solve): make plastic-static.
+# kryos and with lis=1 against the LIS of kryos' fesm-utils (its steady SMB-driven solve; config/Makefile).
 PLASTICROOT = PlasticIceSheet
 INC_PLASTIC = -I${PLASTICROOT}/libplastic/include
 LIB_PLASTIC = -L${PLASTICROOT}/libplastic/include -lplastic ${LIB_LIS}
@@ -136,7 +136,6 @@ INC_BACKENDS   =
 LIB_BACKENDS   =
 dep_archives   = $(FESMUTILS_ARCHIVE)
 backend_roots  =
-backend_static =
 test_skip      =
 need_lis_fftw  = 0
 
@@ -155,7 +154,6 @@ ifeq ($(yelmo), 1)
     dep_archives   += $(YELMO_ARCHIVE)
     backend_roots  += $(YELMOROOT)
     build_info_libs += yelmo:$(YELMOROOT)
-    backend_static += yelmo-static
     need_lis_fftw   = 1
 else
     kryos_ice_yelmo_obj = $(objdir)/kryos_ice_yelmo_stub.o
@@ -173,7 +171,6 @@ ifeq ($(fastisostasy), 1)
     dep_archives   += $(ISOSTASY_ARCHIVE)
     backend_roots  += $(ISOSTASYROOT)
     build_info_libs += fastisostasy:$(ISOSTASYROOT)
-    backend_static += isostasy-static
     need_lis_fftw   = 1
 else
     kryos_geo_fastisostasy_obj = $(objdir)/kryos_geo_fastisostasy_stub.o
@@ -191,7 +188,6 @@ ifeq ($(chion), 1)
     dep_archives   += $(CHION_ARCHIVE)
     backend_roots  += $(CHIONROOT)
     build_info_libs += chion:$(CHIONROOT)
-    backend_static += chion-static
 else
     kryos_surface_chion_obj = $(objdir)/kryos_surface_chion_stub.o
     test_skip += $(testdir)/test_run_sequence.f90
@@ -203,7 +199,6 @@ ifeq ($(insol), 1)
     dep_archives   += $(INSOL_ARCHIVE)
     backend_roots  += $(INSOLROOT)
     build_info_libs += insol:$(INSOLROOT)
-    backend_static += insol-static
 endif
 
 ifeq ($(vilma), 1)
@@ -213,7 +208,6 @@ ifeq ($(vilma), 1)
     dep_archives   += $(VILMA_ARCHIVE) $(SHTNS_ARCHIVE)
     backend_roots  += $(VILMAROOT)
     build_info_libs += vilma:$(VILMAROOT)
-    backend_static += vilma-static
     need_lis_fftw   = 1
     LIB_SHTNS_USED  = $(LIB_SHTNS)
     test_skip += $(testdir)/test_geo_vilma2_stub.f90
@@ -229,7 +223,6 @@ ifeq ($(plastic), 1)
     dep_archives   += $(PLASTIC_ARCHIVE)
     backend_roots  += $(PLASTICROOT)
     build_info_libs += plastic:$(PLASTICROOT)
-    backend_static += plastic-static
 else
     kryos_ice_plastic_obj = $(objdir)/kryos_ice_plastic_stub.o
     test_skip += $(testdir)/test_ice_plastic.f90

@@ -110,80 +110,51 @@ $(kryos_objs): $(dep_archives)
 
 ###############################################
 ##
-## Dependency checks and builds
+## Dependency builds
 ##
 ###############################################
 
-# Sanity check: a missing dependency archive fails early, with instructions,
-# instead of as a missing .mod deep in the compile. Each archive has a rule
-# that only runs when the file is absent.
-dep_missing = echo ""; \
-	echo "*** ERROR: $(1) is not built: $@ is missing."; \
-	echo "    Build it (openmp=$(openmp) selects the serial or omp variant):"; \
-	echo "      $(2)"; \
-	echo "    or build every enabled dependency with: make deps-static openmp=$(openmp)"; \
-	echo "    (configure it first if needed: configme config <package> -m <machine> -c <compiler>)"; \
-	echo ""; \
-	exit 1
+# Every enabled dependency is built by its own make before kryos compiles, as
+# yelmox does (configme install clones and configures them; the slow external
+# libraries of fesm-utils it builds too). Each archive's rule runs its
+# library's make on every call (FORCE): a no-op when the library is up to date,
+# and the archive is newer only when a source changed, which then rebuilds the
+# kryos objects (the prerequisite above). openmp= selects the variant.
+FORCE:
 
-$(FESMUTILS_ARCHIVE):
-	@$(call dep_missing,fesm-utils,make -C $(FESMUTILSROOT) fesmutils-static openmp=$(openmp))
-
-$(LIS_ARCHIVE) $(FFTW_ARCHIVE):
-	@$(call dep_missing,fesm-utils external libs (LIS + FFTW; slow, one-time),make -C $(FESMUTILSROOT) libs openmp=$(openmp))
-
-$(YELMO_ARCHIVE):
-	@$(call dep_missing,yelmo,make -C $(YELMOROOT) yelmo-static openmp=$(openmp))
-
-$(ISOSTASY_ARCHIVE):
-	@$(call dep_missing,FastIsostasy,make -C $(ISOSTASYROOT) isostasy-static openmp=$(openmp))
-
-$(CHION_ARCHIVE):
-	@$(call dep_missing,chion,make -C $(CHIONROOT) chion-static openmp=$(openmp))
-
-$(INSOL_ARCHIVE):
-	@$(call dep_missing,insol,make -C $(INSOLROOT) static)
-
-$(VILMA_ARCHIVE):
-	@$(call dep_missing,VILMA2,make -C $(VILMAROOT) vilma-static openmp=$(openmp))
-
-$(PLASTIC_ARCHIVE):
-	@$(call dep_missing,PlasticIceSheet,make -C $(PLASTICROOT) static openmp=$(openmp) lis=1 FESMUTILSROOT=$(abspath $(FESMUTILSROOT)))
-
-$(SHTNS_ARCHIVE):
-	@$(call dep_missing,SHTns of fesm-utils (one-time),make -C $(FESMUTILSROOT) shtns openmp=$(openmp))
-
-deps-check: $(dep_archives)
-	@echo "    dependencies present: $(dep_archives)"
-
-# Recursive builds of the dependencies, as in yelmox. Not prerequisites of
-# kryos-static: kryos builds against whatever is already built, and the checks
-# above say what is missing.
-fesmutils-static:
+$(FESMUTILS_ARCHIVE): FORCE
 	$(MAKE) -C $(FESMUTILSROOT) fesmutils-static openmp=$(openmp) pic=$(pic)
 
-yelmo-static: fesmutils-static
+# fesm-utils' external libraries: slow, built once (configme install builds them)
+$(LIS_ARCHIVE) $(FFTW_ARCHIVE):
+	$(MAKE) -C $(FESMUTILSROOT) libs openmp=$(openmp)
+
+$(SHTNS_ARCHIVE):
+	$(MAKE) -C $(FESMUTILSROOT) shtns openmp=$(openmp)
+
+$(YELMO_ARCHIVE): $(FESMUTILS_ARCHIVE) FORCE
 	$(MAKE) -C $(YELMOROOT) yelmo-static openmp=$(openmp) pic=$(pic)
 
-isostasy-static: fesmutils-static
+$(ISOSTASY_ARCHIVE): $(FESMUTILS_ARCHIVE) FORCE
 	$(MAKE) -C $(ISOSTASYROOT) isostasy-static openmp=$(openmp)
 
-chion-static: fesmutils-static
+$(CHION_ARCHIVE): $(FESMUTILS_ARCHIVE) FORCE
 	$(MAKE) -C $(CHIONROOT) chion-static openmp=$(openmp)
 
 # insol is serial (no OpenMP)
-insol-static:
+$(INSOL_ARCHIVE): FORCE
 	$(MAKE) -C $(INSOLROOT) static
 
-# VILMA2 links fesm-utils and its SHTns (make -C fesm-utils shtns, one-time; deps-check names it)
-vilma-static: fesmutils-static
+# VILMA2 links fesm-utils and its SHTns
+$(VILMA_ARCHIVE): $(FESMUTILS_ARCHIVE) $(SHTNS_ARCHIVE) FORCE
 	$(MAKE) -C $(VILMAROOT) vilma-static openmp=$(openmp)
 
-# PlasticIceSheet (configured by configme like the others): dp, no dependencies but the Lis of kryos' fesm-utils
-plastic-static: fesmutils-static
+# PlasticIceSheet: no dependencies but the Lis of kryos' fesm-utils
+$(PLASTIC_ARCHIVE): $(FESMUTILS_ARCHIVE) $(LIS_ARCHIVE) FORCE
 	$(MAKE) -C $(PLASTICROOT) static openmp=$(openmp) lis=1 FESMUTILSROOT=$(abspath $(FESMUTILSROOT))
 
-deps-static: fesmutils-static $(backend_static)
+# The dependencies alone, without kryos
+deps-static: $(dep_archives)
 
 # Regenerate config/deps.mk without reconfiguring (needs configme >= 0.16).
 CONFIGME ?= configme
@@ -256,20 +227,18 @@ sync-input:
 input-check:
 	@sh config/sync_input.sh check input/sync.txt $(input_roots)
 
-.PHONY : build-info usage kryos-static kryos check check-long clean cleanall depend deps-check deps-static \
-         fesmutils-static yelmo-static isostasy-static chion-static insol-static vilma-static plastic-static \
+.PHONY : build-info usage kryos-static kryos check check-long clean cleanall depend deps-static FORCE \
          sync-input input-check
 usage:
 	@echo ""
 	@echo "    * USAGE * "
 	@echo ""
 	@echo " make kryos-static : $(objdir)/libkryos.a and the .mod files in $(objdir)"
-	@echo " make kryos        : $(bindir)/kryos.x, the driver"
+	@echo " make kryos        : $(bindir)/kryos.x, the driver (builds the enabled dependencies first)"
 	@echo " make check        : input-check, then builds and runs every tests/test_*.f90 except the long ones"
 	@echo " make check-long   : the long tests (test_run_domains: two domains, about 8 min; test_gia_sequence: VILMA2 with two domains, about 6 min)"
 	@echo " make sync-input   : copies the library sources over the input/ copies (input/sync.txt)"
 	@echo " make input-check  : fails if an input/ copy differs from its source"
-	@echo " make deps-check   : fails with instructions if a dependency is not built"
 	@echo " make deps-static  : builds fesm-utils and the enabled backend libraries"
 	@echo " make depend       : regenerates config/deps.mk (configme deps .)"
 	@echo " make clean        : removes kryos objects, modules, library and executables"
