@@ -119,39 +119,40 @@ $(kryos_objs): $(dep_archives)
 # libraries of fesm-utils it builds too). Each archive's rule runs its
 # library's make on every call (FORCE): a no-op when the library is up to date,
 # and the archive is newer only when a source changed, which then rebuilds the
-# kryos objects (the prerequisite above). openmp= selects the variant.
+# kryos objects (the prerequisite above). openmp= selects the variant. Each library builds serially (-j1:
+# fesm-utils' Makefile races under -j), whatever -j kryos gets; the libraries can still build side by side.
 FORCE:
 
 $(FESMUTILS_ARCHIVE): FORCE
-	$(MAKE) -C $(FESMUTILSROOT) fesmutils-static openmp=$(openmp) pic=$(pic)
+	$(MAKE) -j1 -C $(FESMUTILSROOT) fesmutils-static openmp=$(openmp) pic=$(pic)
 
 # fesm-utils' external libraries: slow, built once (configme install builds them)
 $(LIS_ARCHIVE) $(FFTW_ARCHIVE):
-	$(MAKE) -C $(FESMUTILSROOT) libs openmp=$(openmp)
+	$(MAKE) -j1 -C $(FESMUTILSROOT) libs openmp=$(openmp)
 
 $(SHTNS_ARCHIVE):
-	$(MAKE) -C $(FESMUTILSROOT) shtns openmp=$(openmp)
+	$(MAKE) -j1 -C $(FESMUTILSROOT) shtns openmp=$(openmp)
 
 $(YELMO_ARCHIVE): $(FESMUTILS_ARCHIVE) FORCE
-	$(MAKE) -C $(YELMOROOT) yelmo-static openmp=$(openmp) pic=$(pic)
+	$(MAKE) -j1 -C $(YELMOROOT) yelmo-static openmp=$(openmp) pic=$(pic)
 
 $(ISOSTASY_ARCHIVE): $(FESMUTILS_ARCHIVE) FORCE
-	$(MAKE) -C $(ISOSTASYROOT) isostasy-static openmp=$(openmp)
+	$(MAKE) -j1 -C $(ISOSTASYROOT) isostasy-static openmp=$(openmp)
 
 $(CHION_ARCHIVE): $(FESMUTILS_ARCHIVE) FORCE
-	$(MAKE) -C $(CHIONROOT) chion-static openmp=$(openmp)
+	$(MAKE) -j1 -C $(CHIONROOT) chion-static openmp=$(openmp)
 
 # insol is serial (no OpenMP)
 $(INSOL_ARCHIVE): FORCE
-	$(MAKE) -C $(INSOLROOT) static
+	$(MAKE) -j1 -C $(INSOLROOT) static
 
 # VILMA2 links fesm-utils and its SHTns
 $(VILMA_ARCHIVE): $(FESMUTILS_ARCHIVE) $(SHTNS_ARCHIVE) FORCE
-	$(MAKE) -C $(VILMAROOT) vilma-static openmp=$(openmp)
+	$(MAKE) -j1 -C $(VILMAROOT) vilma-static openmp=$(openmp)
 
 # PlasticIceSheet: no dependencies but the Lis of kryos' fesm-utils
 $(PLASTIC_ARCHIVE): $(FESMUTILS_ARCHIVE) $(LIS_ARCHIVE) FORCE
-	$(MAKE) -C $(PLASTICROOT) static openmp=$(openmp) lis=1 FESMUTILSROOT=$(abspath $(FESMUTILSROOT))
+	$(MAKE) -j1 -C $(PLASTICROOT) static openmp=$(openmp) lis=1 FESMUTILSROOT=$(abspath $(FESMUTILSROOT))
 
 # The dependencies alone, without kryos
 deps-static: $(dep_archives)
