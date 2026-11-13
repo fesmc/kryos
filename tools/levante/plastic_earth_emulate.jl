@@ -293,6 +293,9 @@ function emulate_b(membersA, membersB, scoresf, cfgf, basis, outdir; npts = 100_
     P = ES.earth3d_params(basis); pn = [p.name for p in P]; d = length(P); lo = [p.lo for p in P]; hi = [p.hi for p in P]
     std01(θ) = (θ .- lo) ./ (hi .- lo); il = 6:d; ir = 1:5
     mem, _ = read_members(membersB, pn); sc = A.sc; C = A.C; ug = C.ug
+    of = joinpath(dirname(membersB), "origin.csv")      # earth-search-sample3d: the ice histories wave A kept the radial part under
+    orig = isfile(of) ? Dict(String(r[1]) => String(r[2]) for r in eachrow(readdlm(of, ',', Any; skipstart = 1))) : Dict{String,String}()
+    og(m) = get(orig, m, "-")
     c3 = cases_by(sc, CASE3_RX, mem, membersB); c1 = cases_by(sc, CASE1B_RX, mem, membersB)
     ices = sort([i for i in keys(c3) if haskey(c1, i) && i in A.ices]); isempty(ices) && error("no 3-D cases with their 1-D run")
     println("wave B cases: ", join(["$i $(length(c3[i])) 3-D, $(length(c1[i])) 1-D" for i in ices], "; "))
@@ -333,10 +336,10 @@ function emulate_b(membersA, membersB, scoresf, cfgf, basis, outdir; npts = 100_
     refs = [s for s in unique(first.(collect(keys(sc)))) if s in C.bar || s in ("ice-PMIST | E1D-PMIST", "ice-PMIST | E3D-B21-6", "ice-GLAC1D | E1D-PMIST", "ice-GLAC1D | E3D-B21-6")]
     fmtθ(m) = (t = mem[m]; @sprintf("%.0f km, %.2f/%.2f/%.2f/%.2f; α %.2f, c2 %+.2f, c3 %+.2f; s %+.1f/%+.1f/%+.1f/%+.1f/%+.1f", t...))
     open(joinpath(outdir, "cases.csv"), "w") do io
-        println(io, "ice,member,", join(pn, ","), ",", join(["I_$g" for g in ug], ","), ",logL,passed,logL_1d,passed_1d")
+        println(io, "ice,member,origin,", join(pn, ","), ",", join(["I_$g" for g in ug], ","), ",logL,passed,logL_1d,passed_1d")
         for ice in ices, (m, s) in sort(c3[ice])
             s1 = get(Dict(c1[ice]), m, "")
-            println(io, ice, ",", m, ",", join(mem[m], ","), ",", join([haskey(sc, (s, g)) ? @sprintf("%.2f", sc[(s, g)].I) : "NaN" for g in ug], ","), ",",
+            println(io, ice, ",", m, ",", og(m), ",", join(mem[m], ","), ",", join([haskey(sc, (s, g)) ? @sprintf("%.2f", sc[(s, g)].I) : "NaN" for g in ug], ","), ",",
                     @sprintf("%.1f", LLs(s)), ",", nps(s), ",", isempty(s1) ? "NaN" : @sprintf("%.1f", LLs(s1)), ",", isempty(s1) ? "NaN" : nps(s1))
         end
     end
@@ -366,7 +369,7 @@ function emulate_b(membersA, membersB, scoresf, cfgf, basis, outdir; npts = 100_
             for s in refs; println(io, "| ", esc(s), " | | ", @sprintf("%.1f", LLs(s)), " | ", nps(s), "/", length(ug), " | | ", join([fI(s, g) for g in ug], " | "), " |"); end
             s1 = Dict(c1[ice])
             for (m, s) in first(sort(c3[ice], by = x -> (-nps(x[2]), -LLs(x[2]))), 10)
-                println(io, "| ", esc(s), " | ", fmtθ(m), " | ", @sprintf("%.1f", LLs(s)), " | ", nps(s), "/", length(ug), " | ",
+                println(io, "| ", esc(s), " | ", fmtθ(m), " (", og(m), ") | ", @sprintf("%.1f", LLs(s)), " | ", nps(s), "/", length(ug), " | ",
                         haskey(s1, m) ? @sprintf("%.1f", LLs(s1[m])) : "-", " | ", join([fI(s, g) for g in ug], " | "), " |")
             end
         end
@@ -376,10 +379,10 @@ function emulate_b(membersA, membersB, scoresf, cfgf, basis, outdir; npts = 100_
             println(io, "\n### Both ice histories, and the distance from the experts\n\nRanked by the groups passed summed over the ice histories, then the ",
                     "summed log L. Distance: radial, the volume-weighted RMS of log10 eta of the profile from the nearest expert's radial mean (and from ",
                     "Gowan's 1-D Earth) [dex]; lateral, the distance of (α, c2, c3) from the nearest expert's (1, c2, c3); shifts, their RMS [dex].\n")
-            println(io, "| Earth | parameters | log L (", join(ices, " + "), ") | passed | radial (nearest) | from Gowan | lateral (nearest) | shifts |\n|---|---|---|---|---|---|---|---|")
+            println(io, "| Earth | wave A kept under | parameters | log L (", join(ices, " + "), ") | passed | radial (nearest) | from Gowan | lateral (nearest) | shifts |\n|---|---|---|---|---|---|---|---|---|")
             for m in best
                 x = expert_distance(mem[m], basis)
-                println(io, "| ", m, " | ", fmtθ(m), " | ", @sprintf("%.1f", sum(LLs(S3[i][m]) for i in ices)), " (", join([@sprintf("%.1f", LLs(S3[i][m])) for i in ices], " + "), ") | ",
+                println(io, "| ", m, " | ", og(m), " | ", fmtθ(m), " | ", @sprintf("%.1f", sum(LLs(S3[i][m]) for i in ices)), " (", join([@sprintf("%.1f", LLs(S3[i][m])) for i in ices], " + "), ") | ",
                         join([string(nps(S3[i][m])) for i in ices], " + "), " | ", @sprintf("%.2f (%s) | %.2f | %.2f (%s) | %.2f", x.radial, x.radial_to, x.gowan, x.lateral, x.lateral_to, x.shifts), " |")
             end
         end
