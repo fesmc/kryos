@@ -94,8 +94,8 @@
     beta_p       = 0.0            ! [K-1] lapse rows: 0, the emulator's dlogpr already holds the ice sheets' response
     beta_adj     = 0.05           ! [K-1] precipitation per K of the adjustments (scale_dtas, bias)
     scale_dtas   = 1.0            ! the emulator's temperature anomaly times this (a colder/warmer climate, its pattern)
-    bias         = "kryos_data/paleoemu/bias/bias_pmip4_mean.nc"   ! the PMIP4 mean LGM bias (NH ice-volume weighted)
-    bias_scale   = 1.5            ! the reference: x1 to x2 bracket the LGM budgets (balanced Laurentide at x2)
+    bias         = "kryos_data/paleoemu/bias/bias_pmip34pc_mean.nc" ! the LGM bias of 7 PMIP3 + 4 PMIP4 + CESM2-PaleoCalibr (NH ice-volume weighted)
+    bias_scale   = 1.25           ! the reference: NH land basins near balance at 20 ka (x1.0 -846, x1.5 +508 Gt/yr)
     scale_dto    = 1.0            ! the ocean: dto_lev = scale_dto dto + dto_nsd dto_sd (clim_glob.nc)
     dto_nsd      = 0.0
 /

@@ -92,10 +92,13 @@ and the floating surface `z_sl + (1 − ρ_i/ρ_sw) H` elsewhere.
 - `bias` (default "", none) adds a bias correction, `bias_scale` (default 1) times the
   NH ice-volume weight `w` = (dV North America + Eurasia) / `dV_ref`: it follows the
   glacial state and vanishes at present. PaleoEmulator's
-  `scripts/prep_bias_pmip4.jl` makes it from PMIP4: per model, the LGM minus piControl
-  temperature at the reference surface (the lapse effect of its ice sheets removed)
-  minus the emulator's 21 ka state, in `kryos_data/paleoemu/bias/`
-  (`bias_pmip4_<model>.nc`, and `bias_pmip4_mean.nc` with the spread).
+  `scripts/prep_bias_pmip.jl` makes it from PMIP3 and PMIP4 (FesmData's monthly
+  climatologies): per model, the LGM minus piControl temperature at the reference surface
+  (the lapse effect of its ice sheets removed) minus the emulator's 21 ka state, in
+  `kryos_data/paleoemu/bias/` (`bias_pmip{3,4}_<model>.nc`, and means of chosen sets with
+  their spread). The reference is `bias_pmip34pc_mean.nc` (7 PMIP3, 4 PMIP4 and
+  CESM2-PaleoCalibr; CNRM-CM5 has no ice surface) times 1.25, where the NH land basins are
+  near balance at 20 ka.
 - `beta_adj` (default 0.05, 5 %/K) carries both into the precipitation, exp(beta_adj ΔT).
 
 **Filter start.** The emulator also sees CO2 and the regional ice volumes through
