@@ -27,6 +27,7 @@
 #            but the converged iteration's vilma_out.nc, what the scores read (a 1-D case: about 0.3 instead of 3 GB)
 #   R0       a present-day correction r to run with, once and without iterating (the members of an Earth-only ensemble: the r of a
 #            nearby Earth); the run is it0, no reference files are written
+# Provenance: <case>/provenance.txt, appended at every start (env, git commits, md5 of the par file and vilma.x, the inputs).
 # Restartable: an iteration whose status is 0 is not rerun. The folder is a PaleoMIST runme project (pm_project.sh): the
 # iterations it<n> are runs of its case vilma_rc.nml, staged by runme.
 set -uo pipefail
@@ -52,6 +53,18 @@ DOMAINS=${DOMAINS:-"North:NH-16KM:North/NH-16KM/NH-16KM_TOPO-GEBCO2026.nc North:
 VX=$VILMA2/bin/vilma.x
 [ -x $VX ] || { echo "no $VX (VILMA2)"; exit 1; }
 O=$KD/refcorr/$CASE; mkdir -p $O/data
+# provenance of the case, appended at every start (a restart too): the env, the checkouts (dirty: tracked files changed), the
+# par file and vilma.x, the inputs with their version and history attributes
+{
+    echo "== $(date -Is) on $(hostname)"
+    for v in CASE PAR HIST XHIST ZREF XZREF R0 DOMAINS NCPU NTHR TOL NMAX INTERP RHOI RHOW KEEP; do echo "$v=${!v:-}"; done
+    for d in $KRYOS $VILMA2; do echo "git $d $(git -C $d rev-parse HEAD 2> /dev/null) dirty $(git -C $d status --porcelain -uno 2> /dev/null | wc -l)"; done
+    md5sum $PAR $VX
+    for v in HIST XHIST ZREF R0; do
+        f=${!v:-}; [ -n "$f" ] || continue; echo "$v $f"
+        command -v ncdump > /dev/null && ncdump -h $f 2> /dev/null | grep -E '^[[:space:]]*:(version|history) = ' | sed 's/^[[:space:]]*/    /; s/\\n.*/ (first line)/'
+    done
+} >> $O/provenance.txt
 cp $PAR $O/par.nml
 # the &vilma group of the par file (the geo = vilma2 backend reads it over the stack's defaults)
 awk '/^&vilma[ \t]*$/{f=1} f{print} f&&/^\//{exit}' $PAR | sed '1d;$d' > $O/vilma.nml
