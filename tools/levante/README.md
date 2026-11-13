@@ -50,7 +50,7 @@ folder), the standalone VILMA2 runs runme runs of the cases in `paleomist/` from
 | scoring | `plastic_score.sh` (a run against GAPSLIP 2.1 beside the standalone B1), `pm_compare.jl` |
 | Gowan et al. (2021) with standalone VILMA2 | `pm_prep.jl` (inputs), `pm_project.sh` (a folder of runs as a runme project), `paleomist/` (the runme cases, one per Earth), `pm_iterref.sh` (the iterated reference), `pm_visc1d.sh`, `pm_selen.sh`, `pm_maps.jl` |
 | reference correction of the 3-D Earth | `gia_refcorr.sh`, `gia_refcorr.jl`, `gia_refcorr_plot.jl` |
-| SMB tuning on imposed ice (data backend) | `smb_basin_budget.jl`, `smb_fit.jl`, `smb_ensemble.sh`, `smb_margins.jl`, `smb_pd_compare.jl`, `mar_ice16.jl` (the Greenland PD target) |
+| SMB tuning on imposed ice (data backend) | `smb_basin_budget.jl`, `smb_fit.jl`, `smb_ensemble.sh`, `smb_margins.jl`, `smb_pd_compare.jl`, `mar_ice16.jl` (the Greenland PD target), `nh_slices.jl` (NH time slices of temperature, precipitation and SMB) |
 | calibration | `taub_fit/` (Stage 1 namelists, runme runs of `taub_fit`), `plastic_taub_fit_report.jl`, `plastic_taub_scale.jl`, `plastic_esmda.sh` / `.jl` / `*.toml`, `plastic_ensemble.sh` / `.jl` / `_v1.toml` / `_v2.toml`, `plastic_earth_shift.jl` (the Earth parameters), `members.sh` (the member job array) |
 | analysis and figures | `plastic_lgm_map.jl`, `plastic_mapkit.jl`, `plastic_earth_compare.jl`, `plastic_residual_corr.jl`, `plastic_ensemble_sd_map.jl`, `plastic_ensemble_misfit.jl`, `plastic_ensemble_spread.jl`, `plastic_esmda_report.jl`, `plastic_esmda_diag.jl`, `plastic_pd_regions.jl`, `plastic_maps.jl`, `plastic_implied_pd.jl`, `plastic_closure_maps.jl` |
 
