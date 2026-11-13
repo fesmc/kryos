@@ -16,7 +16,8 @@
 #   julia --project=tools/levante plastic_ensemble.jl earth-search-sample3d <sample.csv> <basis.nc> <regions.nc> <3-D par> <1-D par> <outdir> [n=50] [seed=1] [space=either|both]
 #       wave B: 3-D Earths of 13 parameters, the radial ones from the space wave A did not rule out (under either ice history)
 # The folder, the members and the scale groups are those of plastic_esmda.jl (prepare, write_iteration, member_series). Config:
-# [scale], [prior] (sigma, ramp_ka, corr_time_kyr, theta_max), [run], [score] as plastic_esmda_v2.toml; [ensemble]: n (members
+# [scale], [prior] (kind: exponential with sigma, ramp_ka, corr_time_kyr, or random_walk with step_sigma, step_kyr, level_sigma
+# (plastic_esmda.jl prior_cov); theta_max), [run], [score] as plastic_esmda_v2.toml; [ensemble]: n (members
 # besides the prior mean, m000), seed, obs_groups, compare_max_age_ka (the window of the judging and of the comparison with the
 # references, 25), bar (the references whose best I_g per group sets the cut, weights), fixed_cut (groups that keep the plain cut),
 # implausibility, use_groups;
@@ -101,7 +102,7 @@ function init(cfgfile, C)
     ES.write_iteration(C, 1, cfg, sg, P, ids, hcat(zeros(nP + nE), Θ), ids)
     open(joinpath(C, "ensemble.md"), "w") do io
         println(io, "# Weighted ensemble of tau_b (plastic backend)\n\nconfig: ", cfgfile, "; ", ES.ngroups(sg), " groups x ", ES.nnodes(sg),
-                " nodes, ", length(P), " parameters; prior sigma ", pr["sigma"], ", wave 1: ", en["n"], " members (Latin hypercube) and m000 ",
+                " nodes, ", length(P), " parameters; prior: ", ES.prior_summary(pr), "; wave 1: ", en["n"], " members (Latin hypercube) and m000 ",
                 "(the prior mean)\n\n```\n", join(ES.groups_summary(sg), "\n"), "\n```\n\nparameters (prior sd): ",
                 join([@sprintf("%s (%.2f)", p.name, sqrt(Cθ[q, q])) for (q, p) in enumerate(P)], ", "),
                 nE == 0 ? "" : "\n\nEarth (log10 viscosity shifts [dex], prior sd $(E.sigma), |shift| <= $(E.theta_max); " *
