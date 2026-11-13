@@ -170,16 +170,16 @@ It checks the paths and the builds, and sets up the checkout:
 
 It is safe to rerun.
 
-**albedo.** [tools/albedo/stack.sh](https://github.com/fesmc/kryos/blob/main/tools/albedo/stack.sh) builds a stack from
-scratch: the kryos checkout and the dependencies of the backends that `BUILD` turns on, at the refs of
-`.configme/manifest.toml`, configured with configme for `awi_albedo` and ifx, built, then `tools/levante/setup.sh`.
-The default is the plastic ice backend with VILMA2 (`yelmo=0 fastisostasy=0 vilma=1 plastic=1 openmp=1`):
+**albedo.** The same install, for `awi_albedo` (`configme install kryos -m awi_albedo -c ifx --build-deps`), then
+`make kryos`, VILMA2's standalone driver and `tools/levante/setup.sh`, in one script,
+[tools/albedo/stack.sh](https://github.com/fesmc/kryos/blob/main/tools/albedo/stack.sh). The default is the plastic ice
+backend with VILMA2 (`BUILD="yelmo=0 fastisostasy=0 vilma=1 plastic=1 openmp=1"`):
 
 ```bash
 tools/albedo/stack.sh /albedo/work/user/$USER/kryos-plastic
 ```
 
-It needs a configme that knows kryos (`CONFIGME`, see the script). On albedo, git is a module (`module load git`;
+On albedo, git is a module (`module load git`;
 `env.sh` loads it), and FesmData's store is kept current with FesmData's own `julia fesmdata.jl mirror`
 (`source shared/machines/albedo.env` first). Model runs: runme's `awi_albedo` queues (`30min`, `12h`, `48h`, ...).
 
