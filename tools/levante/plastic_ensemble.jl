@@ -31,7 +31,9 @@
 # box, exclude, min_years (pm_compare.jl read_gnss), judge (default true; false: reported only, not in the default use_groups);
 # several entries of one name: one group of their stations, each once (gnss_data); every [[gnss]] group is a data group (after
 # obs_groups: data_groups); [likelihood."<name>"]: sigma_m [mm/yr], corr_dist_km (no time term).
-# [rate] (optional): a limit on how fast each scale group's ice may change, from the published reconstructions (rate_spec).
+# [[ice_grids]]: the grids of the ice runs for [rate] and [[volume]] (ice_grids). [rate] (optional): a limit on how fast each scale
+# group's ice may change, from the published reconstructions (rate_spec). [[volume]] (optional): windows on the excess ice volume of
+# scale groups at an age (volume_spec).
 # [earth] (optional): the Earth as parameters, sampled with tau_b: shifts of log10(eta) of VILMA2's 3-D field, global in the upper
 # and lower mantle and per region in the upper mantle (plastic_earth_shift.jl): sigma (prior sd [dex]), theta_max, boundary_km,
 # regions_file (the masks, earth-regions), [[earth.regions]] (name, groups: scale groups), exclude_codes (REGIONS areas without a regional shift),
@@ -188,21 +190,19 @@ function gnss_residuals(gd, G)
 end
 
 # --- the rate of ice change -------------------------------------------------------------------------------------------------------
+# [[ice_grids]]: the grids of the ice runs, ice (the run's file without .nc, e.g. "ice_nor"), domain and grid (its FesmData folder),
+# domain_map (default <grid>_IceHistory-PaleoMIST_taub.nc). A cell belongs to the scale group of its tau_b domain (ice_grids).
 # [rate] (optional): a one-sided limit on how fast the ice of each scale group grows or shrinks. The plastic ice follows tau_b at
-# once, so a member's tau_b can move ice faster than any ice sheet could; the limit rules such members out. Per scale group g: the
-# cells whose tau_b domain is in g (domain_map of the grid, default its IceHistory-PaleoMIST_taub), on the grids of [[rate.grids]]
-# (ice: the run's file without .nc, e.g. "ice_nor"; domain, grid: its FesmData folder), the ice volume V_g [m sea-level equivalent:
-# rho_i / rho_w / 3.618e14 m2, no floatation] every step_kyr (2.5) from max_age_ka ([ensemble] compare_max_age_ka) to 0, linear in
-# time, and its rate over each step. The bound b_g = tolerance (1.5) times the largest |rate| of the published reconstructions of
+# once, so a member's tau_b can move ice faster than any ice sheet could; the limit rules such members out. Per scale group g the
+# ice volume V_g [m sea-level equivalent: rho_i / rho_w / 3.618e14 m2, no floatation] every step_kyr (2.5) from max_age_ka
+# ([ensemble] compare_max_age_ka) to 0, linear in time, and its rate over each step. The bound b_g = tolerance (1.5) times the largest |rate| of the published reconstructions of
 # `references` (FesmData IceHistory-<ref> on the grid). A series passes when max_t |rate_g| <= b_g in every group with b_g > 0
 # (groups no reconstruction has ice in are not limited); with judge (default true) a member that fails is not plausible (weights).
 const RHO_I_W = 910.0 / 1028.0; const OCEAN_M2 = 3.618e14
-function rate_spec(cfg)
-    haskey(cfg, "rate") || return nothing
-    r = cfg["rate"]; tmax = Float64(get(r, "max_age_ka", get(cfg["ensemble"], "compare_max_age_ka", 25.0)))
-    step = Float64(get(r, "step_kyr", 2.5)); fes = cfg["score"]["fesmdata"]
+function ice_grids(cfg)
+    fes = cfg["score"]["fesmdata"]
     sg = ES.scale_groups(cfg["scale"]); gid = Dict(d => g for (d, g) in zip(sg.domain_id, sg.group))
-    grids = map(r["grids"]) do gr
+    grids = map(cfg["ice_grids"]) do gr
         dir = joinpath(fes, gr["domain"], gr["grid"])
         cells, area = NCDataset(joinpath(dir, get(gr, "domain_map", gr["grid"] * "_IceHistory-PaleoMIST_taub.nc"))) do ds
             x = Float64.(ds["xc"][:]); u = get(ds["xc"].attrib, "units", "m") == "km" ? 1000.0 : 1.0
@@ -210,7 +210,13 @@ function rate_spec(cfg)
         end
         (ice = String(gr["ice"]), dir = dir, grid = String(gr["grid"]), cells = cells, area = area)
     end
-    (names = sg.names, refs = String.(get(r, "references", ["PaleoMIST", "GLAC1D", "ICE6G_C", "ICE5G"])), tol = Float64(get(r, "tolerance", 1.5)),
+    sg.names, grids
+end
+function rate_spec(cfg)
+    haskey(cfg, "rate") || return nothing
+    r = cfg["rate"]; tmax = Float64(get(r, "max_age_ka", get(cfg["ensemble"], "compare_max_age_ka", 25.0)))
+    step = Float64(get(r, "step_kyr", 2.5)); names, grids = ice_grids(cfg)
+    (names = names, refs = String.(get(r, "references", ["PaleoMIST", "GLAC1D", "ICE6G_C", "ICE5G"])), tol = Float64(get(r, "tolerance", 1.5)),
      ages = collect(1000 .* (tmax:-step:0.0)), step = step, judge = Bool(get(r, "judge", true)), grids = grids)
 end
 # V_g at the ages [m SLE] from one file of H_ice(time, yc, xc), time in years ago or (negative) years; an age the file does not
@@ -247,6 +253,44 @@ end
 # a run's max |rate_g| / b_g (NaN where b_g = 0)
 rate_ratio(rs, b, dir) = (r = max_rate(rs, gr -> joinpath(dir, gr.ice * ".nc")); [b[g] > 0 ? r[g] / b[g] : NaN for g in eachindex(b)])
 rate_ok(x) = all(v -> isnan(v) || v <= 1, x)
+
+# [[volume]] (optional): windows on the excess ice volume of scale groups at an age: name, groups (scale group names), age_ka,
+# min_m, max_m [m sea-level equivalent], source (the reference of the window, shown in weights.md), judge (default true). The
+# excess volume: the volume above floatation, sum of max(0, H - max(0, z_sl - z_bed) rho_w / rho_i) rho_i / rho_w / 3.618e14 m2 over
+# the groups' cells (ice_grids) at age_ka, minus that at 0 ka, from the run's H_ice, z_bed and z_sl at those records.
+# A member outside a window that judges is not plausible (weights).
+function volume_spec(cfg)
+    haskey(cfg, "volume") || return nothing
+    names, grids = ice_grids(cfg)
+    ws = map(cfg["volume"]) do v
+        gs = [findfirst(==(String(n)), names) for n in v["groups"]]
+        any(isnothing, gs) && error("[[volume]] $(v["name"]): groups $(v["groups"]) not all in the scale groups $(names)")
+        (name = String(v["name"]), groups = Int.(gs), age = 1000.0 * v["age_ka"], lo = Float64(v["min_m"]), hi = Float64(v["max_m"]),
+         source = String(get(v, "source", "")), judge = Bool(get(v, "judge", true)))
+    end
+    (names = names, grids = grids, windows = ws)
+end
+# the volume above floatation per scale group at a record of a run [m SLE]
+function volume_af(dir, vs, age)
+    V = zeros(length(vs.names))
+    for gr in vs.grids
+        NCDataset(joinpath(dir, gr.ice * ".nc")) do ds
+            t = abs.(Float64.(ds["time"][:])); k = argmin(abs.(t .- age))
+            abs(t[k] - age) < 1 || error("$(gr.ice).nc of $dir: no record at $age years ago")
+            r(v) = coalesce.(Float64.(ds[v][:, :, k]), 0.0)
+            H = r("H_ice"); h = max.(0.0, H .- max.(0.0, r("z_sl") .- r("z_bed")) ./ RHO_I_W)
+            for c in eachindex(h); g = gr.cells[c]; g > 0 && (V[g] += h[c] * gr.area * RHO_I_W / OCEAN_M2); end
+        end
+    end
+    V
+end
+# per window the run's excess volume [m SLE]
+function volume_excess(dir, vs)
+    map(vs.windows) do w
+        sum(volume_af(dir, vs, w.age)[w.groups]) - sum(volume_af(dir, vs, 0.0)[w.groups])
+    end
+end
+volume_ok(vs, x) = all(!w.judge || w.lo <= v <= w.hi for (w, v) in zip(vs.windows, x))
 
 # --- likelihood ---------------------------------------------------------------------------------------------------------------------
 # the misfit of a member per data group: the index points with a finite score, d = model - obs and the scorer's 1 sigma
@@ -492,7 +536,10 @@ function weights(C, k)
     rb, rref = rs === nothing ? (Float64[], Dict()) : rate_bounds(rs)
     rr = rs === nothing ? Dict() : Dict(m => rate_ratio(rs, rb, ES.mdir(C, k, m)) for m in ok)
     rpass(m) = rs === nothing || !rs.judge || rate_ok(rr[m])
-    plaus = [m for m in ok if all(sc[m][g][4] <= cut[g] for g in ug) && rpass(m)]
+    vs = volume_spec(cfg)                      # [[volume]]: windows on the excess ice volume
+    vx = vs === nothing ? Dict() : Dict(m => volume_excess(ES.mdir(C, k, m), vs) for m in ok)
+    vpass(m) = vs === nothing || volume_ok(vs, vx[m])
+    plaus = [m for m in ok if all(sc[m][g][4] <= cut[g] for g in ug) && rpass(m) && vpass(m)]
     # tempering: the scale factor of each group's error covariance (the groups with a score)
     sf = Dict(g => max(1.0, minimum(s[g][2] / s[g][3] for s in [[sc[m] for m in ok]; last.(rsc)] if haskey(s, g)))
               for g in og if any(m -> haskey(sc[m], g), ok) || any(r -> haskey(r[2], g), rsc))
@@ -508,14 +555,16 @@ function weights(C, k)
     I(m, g) = sv(sc[m], g, 4)
     open(joinpath(It, "weights.csv"), "w") do io
         println(io, "member,ok,", join(["logL_$g" for g in og], ","), ",logL,logL_tempered,", join(["chi2n_$g" for g in og], ","), ",",
-                join(["I_$g" for g in og], ","), ",plausible,esl_20ka,weight", rs === nothing ? "" : "," * join(["rate_$g" for g in rs.names], ","))
-        nr = rs === nothing ? 0 : length(rs.names)
+                join(["I_$g" for g in og], ","), ",plausible,esl_20ka,weight", rs === nothing ? "" : "," * join(["rate_$g" for g in rs.names], ","),
+                vs === nothing ? "" : "," * join(["volume_$(w.name)" for w in vs.windows], ","))
+        nr = (rs === nothing ? 0 : length(rs.names)) + (vs === nothing ? 0 : length(vs.windows))
         for m in ids
             haskey(res, m) || (println(io, m, ",0", repeat(",NaN", 3length(og) + 5 + nr)); continue)
             println(io, m, ",1,", join([@sprintf("%.2f", sv(sc[m], g, 1)) for g in og], ","), ",", @sprintf("%.2f,%.2f", LL[m], LLt[m]), ",",
                     join([@sprintf("%.3f", sv(sc[m], g, 2) / sv(sc[m], g, 3)) for g in og], ","), ",", join([@sprintf("%.2f", I(m, g)) for g in og], ","),
                     ",", m in plaus ? 1 : 0, ",", @sprintf("%.2f", res[m].esl), ",", @sprintf("%.6g", w[m]),
-                    rs === nothing ? "" : "," * join([@sprintf("%.2f", x) for x in rr[m]], ","))
+                    rs === nothing ? "" : "," * join([@sprintf("%.2f", x) for x in rr[m]], ","),
+                    vs === nothing ? "" : "," * join([@sprintf("%.2f", x) for x in vx[m]], ","))
         end
     end
     open(joinpath(It, "plausible.txt"), "w") do io
@@ -548,7 +597,16 @@ function weights(C, k)
                         rb[g] > 0 ? @sprintf("%.2f", rb[g]) : "none", " | ", count(m -> !isnan(rr[m][g]) && rr[m][g] > 1, ok), " |")
             end
         end
+        if vs !== nothing
+            println(io, "\nExcess ice volume ([[volume]], above floatation, m SLE relative to 0 ka):\n\n| window | groups | age [ka] | range [m] | source | members outside | members (min-median-max) |\n|---|---|---|---|---|---|---|")
+            for (i, w) in enumerate(vs.windows)
+                v = sort([vx[m][i] for m in ok])
+                println(io, "| ", w.name, " | ", join(vs.names[w.groups], ", "), " | ", w.age / 1000, " | ", w.lo, "-", w.hi, w.judge ? "" : " (reported only)",
+                        " | ", w.source, " | ", count(x -> !(w.lo <= x <= w.hi), v), " | ", @sprintf("%.1f-%.1f-%.1f", v[1], v[(end+1)÷2], v[end]), " |")
+            end
+        end
         println(io, "\nPlausible (I_g <= cut in every group that judges", rs !== nothing && rs.judge ? ", the rate of ice change within its bound" : "",
+                vs !== nothing ? ", the excess volumes within their windows" : "",
                 "): $(length(plaus)) members", isempty(plaus) ? "" :
                 @sprintf(", ESL at 20 ka %.1f to %.1f m; effective sample size of their weights %.2f", minimum(eslp), maximum(eslp), ess), ".\n")
         println(io, "Ruled out by group (I_g > cut): ", join([@sprintf("%s %d", g, count(m -> haskey(sc[m], g) && I(m, g) > cut[g], ok)) for g in og], ", "), "\n")
