@@ -48,7 +48,6 @@ s = open(E + "/config.toml").read(); s = s[:s.index("[[references]]")]
 s = re.sub(r'^obs_groups = .*$', 'obs_groups = ["Laurentide", "Greenland", "Fennoscandia", "Barents", "Antarctica", "far field"]', s, flags=re.M)
 s = s.replace("[ensemble]\n", "[ensemble]\nfixed_cut = []                           # ESL keeps the bar: a property of the imposed ice, not the Earth\n", 1)
 s = s.replace('[likelihood."Fennoscandia/Barents"]', '[likelihood.Fennoscandia]', 1)
-s = s.replace('[score]\nfesmdata = ', '[score]\ngnss_dir = "/albedo/work/user/alrobi001/fesmdata-gnss/Records/GPS"\nfesmdata = ', 1)
 v2 = open(V2).read()
 lk = re.findall(r'^\[likelihood\."(?:GNSS [^"]+|ESL|Barents)"\].*?(?=^\[|\Z)', v2, flags=re.M | re.S)
 esl = re.search(r'^\[esl\].*?(?=^\[)', v2, flags=re.M | re.S).group(0)
