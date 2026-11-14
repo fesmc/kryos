@@ -189,7 +189,7 @@ likelihood (`experiments/ens.sh v1|v2`). The rows report the best members and th
 | T1, D1 | `kryos-work/runs/pm-online/gowan`, `.../pdfac` |
 | D2, E2 | `kryos-plastic/kryos/runs/ens-v2/iter_01/<m>` (m000; all members) |
 | D3 | `kryos-work/runs/res16/m000-NH16` |
-| E1 | Levante `/work/ba1442/robinson/kryos-ice-plastic/runs/ens-v1` |
+| E1 | `/albedo/work/projects/p_forclima/kryos-work/levante/ens-v1` (copied from Levante; its input links point to Levante) |
 
 The best members beat P2 on log L but not the imposed references (I1, I5), and Fennoscandia limits most of them: 4 of
 the 50 pass it on structure 6 (best m013, I 0.2). E3-E5 move the ensemble onto other Earths; the Earth search below
@@ -206,7 +206,7 @@ The scored runs, on albedo under `/albedo/work/user/alrobi001` (the scores: `kry
 | T1, D1 | `kryos-work/runs/pm-online/gowan`, `.../pdfac` |
 | D2, E2 | `kryos-plastic/kryos/runs/ens-v2/iter_01/<m>` (m000; all members) |
 | D3 | `kryos-work/runs/res16/m000-NH16` |
-| E1 | Levante `/work/ba1442/robinson/kryos-ice-plastic/runs/ens-v1` |
+| E1 | `/albedo/work/projects/p_forclima/kryos-work/levante/ens-v1` (copied from Levante; its input links point to Levante) |
 
 ## The Earth search
 
@@ -284,4 +284,4 @@ The figures of the Earth search (`docs/figures/earth-search/`) are those of `pla
 | B1, B3 (2026-10-31, `kryos_data/paleomist`) | `ice-PMIST \| E1D-PMIST`, `ice-PMIST \| E3D-B21-6` | VILMA2 523b660, 931 kg m⁻³, 2.5 kyr steps, no r; RMS z of B1 30.9 |
 | plastic online test (2026-11-09) | about `tau-PMIST \| E1D-PMIST` | RMS z 25.9 against PaleoMIST 29.5 (RMS z of P1 on all points today: 29.5) |
 | esmda-v1, -v2 (Levante) | calibrated τ_b on `E1D-PMIST` | ES-MDA calibrations, retired |
-| ens-v1 (Levante) | `tau-ENS1 \| E3D-B21-6` | E1 above, scored under the ens-v1 error model |
+| ens-v1 (Levante, copied to albedo) | `tau-ENS1 \| E3D-B21-6` | E1 above, scored under the ens-v1 error model |
