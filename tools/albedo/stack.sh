@@ -6,7 +6,7 @@
 #
 #   tools/albedo/stack.sh <dir> [<kryos ref>]      (from a kryos checkout; or curl it and run it anywhere)
 #
-#   <dir>        a new folder, e.g. /albedo/work/user/$USER/kryos-plastic; it gets kryos/ (<kryos ref>, default main) with
+#   <dir>        a new folder, e.g. $KRYOS_WORK/plastic (the shared folder of env.sh); it gets kryos/ (<kryos ref>, default main) with
 #                the dependency checkouts inside. An existing install is updated by configme, not replaced.
 #   BUILD        the make flags of the backends (default "yelmo=0 fastisostasy=0 vilma=1 plastic=1 openmp=1": the plastic
 #                ice backend with VILMA2)
