@@ -9,8 +9,8 @@
 #                                                emulators (all groups; without GNSS), with b the wave-B emulator too
 #   experiments/earth-search.sh sample-b         the 50 3-D Earths from the space wave A left under either ice: $W/earthsB
 #   experiments/earth-search.sh run-b 1d [njob]  wave B: the 1-D runs of the 50 profiles (pools of 4 x 8 cores, default 25 jobs)
-#   experiments/earth-search.sh run-b 3d [njob]  wave B: the 3-D runs, one pass with the r of the 1-D run (pools of 2 x 32 cores,
-#                                                default 35 jobs, my jobs kept below 50); after run-b 1d is done
+#   experiments/earth-search.sh run-b 3d [njob]  wave B: the 3-D runs, one pass with the r of the 1-D run, 6-11 h on 32 cores
+#                                                (pools of 2 x 32 cores for 36 h, default 35 jobs, my jobs kept below 50); after run-b 1d
 #
 # Env: W (default $KRYOS_WORK/earth-search; the search of 2026-11-13 is /albedo/work/user/alrobi001/kryos-search), KD (the
 # cases: default $W/kryos_data, so $KD/refcorr/<case>), ENS (the ens-v2 folder whose members and config the scores use: linked
@@ -113,7 +113,7 @@ run-b)
     1d) NCPU=32 NWORK=4 MEM=24G pools "$W/casesB1.txt" ${3:-25} ;;
     3d) for j in $(seq 1 ${3:-35}); do
             while [ $(squeue -u $USER -h | wc -l) -ge 49 ]; do sleep 120; done
-            NCPU=64 NWORK=2 MEM=48G MARGIN=330 pools "$W/casesB3.txt" 1
+            NCPU=64 NWORK=2 MEM=48G PART="$KRYOS_PART_LONG" TIME=36:00:00 pools "$W/casesB3.txt" 1
         done ;;
     esac ;;
 *)  sed -n '2,22p' "$0"; exit 1 ;;
