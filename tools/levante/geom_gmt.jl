@@ -7,7 +7,7 @@
 #             the reference's; Gamma = 6.5e-3 K/m)
 # all against the pre-industrial reference. Check: dGMT* from clim_glob.nc (tas on GLOBAL-0.5DEG, after the bias)
 # minus the reference file's tas_ref. Geometry: the emulator's dV per region (m SLE) and global-mean dz, and from ice_nor.nc and
-# ice_ant.nc the ice area and the mean surface elevation of the ice.
+# ice_ant.nc the ice area and the mean surface elevation of the ice (weighted by its thickness).
 #   kryos_jl tools/levante/geom_gmt.jl <out prefix> <label>=<run dir> ...        (tools/levante/env.sh)
 # Writes <out prefix>.csv (every output time of every run), <out prefix>.png and prints the table at 20 ka.
 using NCDatasets, CairoMakie, Printf, Statistics
@@ -55,7 +55,9 @@ function analyse(R)
         f = joinpath(R, "ice_$d.nc"); ti = rd(f, "time"); H = rd(f, "H_ice"); zs = rd(f, "z_srf"); x = rd(f, "xc")
         A = ((x[2] - x[1]) * 1e3)^2
         area = [count(H[:, :, k] .> 0) * A / 1e12 for k in eachindex(ti)]
-        zice = [(m = H[:, :, k] .> 0; any(m) ? mean(zs[:, :, k][m]) : NaN) for k in eachindex(ti)]
+        # thickness weighted: the thin ice of a margin interpolated between slices weighs little
+        zice = [(m = H[:, :, k] .> 0; any(m) ? sum((H[:, :, k] .* zs[:, :, k])[m]) / sum(H[:, :, k][m]) : NaN)
+                for k in eachindex(ti)]
         idx = [argmin(abs.(ti .- tv)) for tv in t]        # the ice output nearest each climate time
         dom[d] = (area=area[idx], zice=zice[idx])
     end
@@ -98,7 +100,7 @@ ax1 = panel((1, 1), "ΔGMT [K]", [(:dG, :solid), (:dGs, :dash)]; ttl="ΔGMT at t
 axislegend(ax1, unique=true, position=:lb)
 panel((1, 2), "contribution [K]", [(:dTs_emu, :solid), (:dTb, :dash), (:dTl, :dot)]; ttl="emulator dT* (solid), bias (dashed), lapse −Γ dz (dotted)")
 panel((2, 1), "ΔV [m SLE]", [(:dV_NA, :solid), (:dV_EU, :dash), (:dV_ANT, :dot)]; ttl="emulator ice volume: North America (solid), Eurasia (dashed), Antarctica (dotted)")
-panel((2, 2), "z [m]", [(:z_nor, :solid), (:z_ant, :dash)]; ttl="mean surface elevation of the ice: North (solid), Antarctica (dashed)")
+panel((2, 2), "z [m]", [(:z_nor, :solid), (:z_ant, :dash)]; ttl="thickness-weighted mean surface elevation of the ice: North (solid), Antarctica (dashed)")
 panel((3, 1), "area [10⁶ km²]", [(:A_nor, :solid), (:A_ant, :dash)]; ttl="ice area: North (solid), Antarctica (dashed)")
 ax6 = Axis(fig[3, 2], xlabel="ΔV North America + Eurasia [m SLE]", ylabel="ΔGMT [K]", title="ΔGMT against NH ice volume")
 for (i, (lab, r)) in enumerate(res)
