@@ -7,6 +7,8 @@
 !   runme -r -s -q 12h -w 01:30:00 --omp 32 -m 60G -o <run> -n par/kryos_NH-ANT_data_paleoemu_run.nml \
 !     -p geom_H_nor.filename=<src>/ice_nor.nc geom_zb_nor.filename=<src>/ice_nor.nc geom_zsl_nor.filename=<src>/ice_nor.nc \
 !        geom_H_ant.filename=<src>/ice_ant.nc geom_zb_ant.filename=<src>/ice_ant.nc geom_zsl_ant.filename=<src>/ice_ant.nc
+! and, when the run's Antarctica was on ANT-16KM (e.g. ens-v2, pm-online), geom_{H,zb,zsl}_ant.grid_src=ANT-16KM and
+! geom_{H,zb,zsl}_ant.remap=con (onto ANT-32KM, the grid of P1 and of chion here).
 
 &kryos
     domains         = "North" "Antarctica"
@@ -197,6 +199,8 @@
 &geom_H_nor
     filename     = ""           ! <src>/ice_nor.nc (-p)
     time_units   = "years since 1950-01-01"   ! kryos model time (yr, 0 = 1950 CE; the file says only "year")
+    grid_src     = ""           ! the run's grid when it is not this domain's (e.g. ANT-16KM), with remap
+    remap        = "auto"       ! "con" for a grid_src (conservative: H_ice, z_bed, z_sl)
     name         = "H_ice"
     mode         = "transient"
     out_of_range = "error"
@@ -205,6 +209,8 @@
 &geom_zb_nor
     filename     = ""           ! <src>/ice_nor.nc (-p)
     time_units   = "years since 1950-01-01"   ! kryos model time (yr, 0 = 1950 CE; the file says only "year")
+    grid_src     = ""           ! the run's grid when it is not this domain's (e.g. ANT-16KM), with remap
+    remap        = "auto"       ! "con" for a grid_src (conservative: H_ice, z_bed, z_sl)
     name         = "z_bed"
     mode         = "transient"
     out_of_range = "error"
@@ -213,6 +219,8 @@
 &geom_zsl_nor
     filename     = ""           ! <src>/ice_nor.nc (-p)
     time_units   = "years since 1950-01-01"   ! kryos model time (yr, 0 = 1950 CE; the file says only "year")
+    grid_src     = ""           ! the run's grid when it is not this domain's (e.g. ANT-16KM), with remap
+    remap        = "auto"       ! "con" for a grid_src (conservative: H_ice, z_bed, z_sl)
     name         = "z_sl"
     mode         = "transient"
     out_of_range = "error"
@@ -221,6 +229,8 @@
 &geom_H_ant
     filename     = ""           ! <src>/ice_ant.nc (-p)
     time_units   = "years since 1950-01-01"   ! kryos model time (yr, 0 = 1950 CE; the file says only "year")
+    grid_src     = ""           ! the run's grid when it is not this domain's (e.g. ANT-16KM), with remap
+    remap        = "auto"       ! "con" for a grid_src (conservative: H_ice, z_bed, z_sl)
     name         = "H_ice"
     mode         = "transient"
     out_of_range = "error"
@@ -229,6 +239,8 @@
 &geom_zb_ant
     filename     = ""           ! <src>/ice_ant.nc (-p)
     time_units   = "years since 1950-01-01"   ! kryos model time (yr, 0 = 1950 CE; the file says only "year")
+    grid_src     = ""           ! the run's grid when it is not this domain's (e.g. ANT-16KM), with remap
+    remap        = "auto"       ! "con" for a grid_src (conservative: H_ice, z_bed, z_sl)
     name         = "z_bed"
     mode         = "transient"
     out_of_range = "error"
@@ -237,6 +249,8 @@
 &geom_zsl_ant
     filename     = ""           ! <src>/ice_ant.nc (-p)
     time_units   = "years since 1950-01-01"   ! kryos model time (yr, 0 = 1950 CE; the file says only "year")
+    grid_src     = ""           ! the run's grid when it is not this domain's (e.g. ANT-16KM), with remap
+    remap        = "auto"       ! "con" for a grid_src (conservative: H_ice, z_bed, z_sl)
     name         = "z_sl"
     mode         = "transient"
     out_of_range = "error"
