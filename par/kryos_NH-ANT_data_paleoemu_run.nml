@@ -196,6 +196,7 @@
 
 &geom_H_nor
     filename     = ""           ! <src>/ice_nor.nc (-p)
+    time_units   = "years since 1950-01-01"   ! kryos model time (yr, 0 = 1950 CE; the file says only "year")
     name         = "H_ice"
     mode         = "transient"
     out_of_range = "error"
@@ -203,6 +204,7 @@
 
 &geom_zb_nor
     filename     = ""           ! <src>/ice_nor.nc (-p)
+    time_units   = "years since 1950-01-01"   ! kryos model time (yr, 0 = 1950 CE; the file says only "year")
     name         = "z_bed"
     mode         = "transient"
     out_of_range = "error"
@@ -210,6 +212,7 @@
 
 &geom_zsl_nor
     filename     = ""           ! <src>/ice_nor.nc (-p)
+    time_units   = "years since 1950-01-01"   ! kryos model time (yr, 0 = 1950 CE; the file says only "year")
     name         = "z_sl"
     mode         = "transient"
     out_of_range = "error"
@@ -217,6 +220,7 @@
 
 &geom_H_ant
     filename     = ""           ! <src>/ice_ant.nc (-p)
+    time_units   = "years since 1950-01-01"   ! kryos model time (yr, 0 = 1950 CE; the file says only "year")
     name         = "H_ice"
     mode         = "transient"
     out_of_range = "error"
@@ -224,6 +228,7 @@
 
 &geom_zb_ant
     filename     = ""           ! <src>/ice_ant.nc (-p)
+    time_units   = "years since 1950-01-01"   ! kryos model time (yr, 0 = 1950 CE; the file says only "year")
     name         = "z_bed"
     mode         = "transient"
     out_of_range = "error"
@@ -231,6 +236,7 @@
 
 &geom_zsl_ant
     filename     = ""           ! <src>/ice_ant.nc (-p)
+    time_units   = "years since 1950-01-01"   ! kryos model time (yr, 0 = 1950 CE; the file says only "year")
     name         = "z_sl"
     mode         = "transient"
     out_of_range = "error"
