@@ -6,7 +6,7 @@
 #   dGMT    = dGMT* - Gamma dz, at the surface of the time (dz the emulator's elevation change, max(z_srf, 0) minus
 #             the reference's; Gamma = 6.5e-3 K/m)
 # all against the pre-industrial reference. Check: dGMT* from clim_glob.nc (tas on GLOBAL-0.5DEG, after the bias)
-# minus the reference file's tas_ref. Geometry: the emulator's dV per region (m SLE) and global-mean dz, and from ice_nor.nc and
+# minus the reference file's tas_ref. Geometry: the emulator's dV per region (North America, Eurasia, Greenland; m SLE) and global-mean dz, and from ice_nor.nc and
 # ice_ant.nc the ice area and the mean surface elevation of the ice (weighted by its thickness).
 #   kryos_jl tools/levante/geom_gmt.jl <out prefix> <label>=<run dir> ...        (tools/levante/env.sh)
 # Writes <out prefix>.csv (every output time of every run), <out prefix>.png and prints the table at 20 ka.
@@ -62,13 +62,13 @@ function analyse(R)
         dom[d] = (area=area[idx], zice=zice[idx])
     end
     (t=t, dTs_emu=dTs, dTb=dTb, dTl=dTl, dGs=dTs .+ dTb, dG=dTs .+ dTb .+ dTl, chk=chk, w=wgt,
-     dV_NA=dV[1, :], dV_EU=dV[2, :], dV_ANT=dV[3, :], dz=dzm,
+     dV_NA=dV[1, :], dV_EU=dV[2, :], dV_GRL=dV[3, :], dz=dzm,
      A_nor=dom["nor"].area, z_nor=dom["nor"].zice, A_ant=dom["ant"].area, z_ant=dom["ant"].zice)
 end
 
 res = [(lab, analyse(R)) for (lab, R) in runs]
 
-cols = [:t, :dG, :dGs, :dTs_emu, :dTb, :dTl, :chk, :w, :dV_NA, :dV_EU, :dV_ANT, :dz, :A_nor, :z_nor, :A_ant, :z_ant]
+cols = [:t, :dG, :dGs, :dTs_emu, :dTb, :dTl, :chk, :w, :dV_NA, :dV_EU, :dV_GRL, :dz, :A_nor, :z_nor, :A_ant, :z_ant]
 open(out * ".csv", "w") do io
     println(io, "run,", join(string.(cols), ","))
     for (lab, r) in res, k in eachindex(r.t)
@@ -78,12 +78,12 @@ end
 
 println("At 20 ka (K against pre-industrial; dV in m SLE, A in 1e6 km2, z in m):")
 @printf("%-10s %7s %7s %7s %7s %7s %7s %6s %7s %7s %7s %6s %6s %6s %6s\n", "run", "dGMT", "dGMT*", "emu", "bias",
-        "lapse", "check", "w", "dV_NA", "dV_EU", "dV_ANT", "dz", "A_NH", "zi_NH", "zi_ANT")
+        "lapse", "check", "w", "dV_NA", "dV_EU", "dV_GRL", "dz", "A_NH", "zi_NH", "zi_ANT")
 for (lab, r) in res
     k = argmin(abs.(r.t .+ 20e3))
     @printf("%-10s %7.2f %7.2f %7.2f %7.2f %7.2f %7.2f %6.2f %7.1f %7.1f %7.1f %6.1f %6.2f %6.0f %6.0f\n", lab,
             r.dG[k], r.dGs[k], r.dTs_emu[k], r.dTb[k], r.dTl[k], r.chk[k], r.w[k], r.dV_NA[k], r.dV_EU[k],
-            r.dV_ANT[k], r.dz[k], r.A_nor[k], r.z_nor[k], r.z_ant[k])
+            r.dV_GRL[k], r.dz[k], r.A_nor[k], r.z_nor[k], r.z_ant[k])
 end
 
 palette = Makie.wong_colors()
@@ -99,7 +99,7 @@ end
 ax1 = panel((1, 1), "ΔGMT [K]", [(:dG, :solid), (:dGs, :dash)]; ttl="ΔGMT at the surface (solid) and at the reference surface (dashed)")
 axislegend(ax1, unique=true, position=:lb)
 panel((1, 2), "contribution [K]", [(:dTs_emu, :solid), (:dTb, :dash), (:dTl, :dot)]; ttl="emulator dT* (solid), bias (dashed), lapse −Γ dz (dotted)")
-panel((2, 1), "ΔV [m SLE]", [(:dV_NA, :solid), (:dV_EU, :dash), (:dV_ANT, :dot)]; ttl="emulator ice volume: North America (solid), Eurasia (dashed), Antarctica (dotted)")
+panel((2, 1), "ΔV [m SLE]", [(:dV_NA, :solid), (:dV_EU, :dash), (:dV_GRL, :dot)]; ttl="emulator ice volume: North America (solid), Eurasia (dashed), Greenland (dotted)")
 panel((2, 2), "z [m]", [(:z_nor, :solid), (:z_ant, :dash)]; ttl="thickness-weighted mean surface elevation of the ice: North (solid), Antarctica (dashed)")
 panel((3, 1), "area [10⁶ km²]", [(:A_nor, :solid), (:A_ant, :dash)]; ttl="ice area: North (solid), Antarctica (dashed)")
 ax6 = Axis(fig[3, 2], xlabel="ΔV North America + Eurasia [m SLE]", ylabel="ΔGMT [K]", title="ΔGMT against NH ice volume")
