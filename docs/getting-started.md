@@ -130,7 +130,7 @@ below as Levante's / albedo's:
 | Variable | Default | |
 |---|---|---|
 | `KRYOS` | the checkout the script is in | |
-| `KRYOS_WORK` | `/work/ba1442/$USER/kryos-work` / `/albedo/work/user/$USER/kryos-work` | your writable work folder: runs, scores, calibrations |
+| `KRYOS_WORK` | `/work/ba1442/kryos-work` / `/albedo/work/projects/p_forclima/kryos-work` | the project's shared work folder: runs, scores, calibrations. `env.sh` sets `umask 002`, so the group can write what you write |
 | `FESMDATA`, `FESMDATA_SOURCES` | `/work/ba1442/fesmdata` / `/albedo/work/projects/p_forclima/fesmdata`, and `$FESMDATA-sources` | FesmData and its original data, read-only; `FESMDATA` is linked as `$KRYOS/fesmdata` |
 | `KRYOS_DATA` | `/work/ba1442/kryos_data` / `/albedo/work/projects/p_forclima/kryos_data` | kryos reference data, read-only: refcorr topographies, the released tau_b products (`plastic/`), the inputs of the climate backend paleoemu (`paleoemu/`), the shared remapping weights (`maps/`); linked as `$KRYOS/kryos_data`. albedo's is a copy of Levante's |
 | `KRYOS_PART`, `KRYOS_PART_LONG` | `-p shared` / `-p smp --qos=12h` and `--qos=48h` | the sbatch partition of the tools' small jobs (up to 12 h), and of their jobs of days |
@@ -176,7 +176,7 @@ It is safe to rerun.
 backend with VILMA2 (`BUILD="yelmo=0 fastisostasy=0 vilma=1 plastic=1 openmp=1"`):
 
 ```bash
-tools/albedo/stack.sh /albedo/work/user/$USER/kryos-plastic
+tools/albedo/stack.sh /albedo/work/projects/p_forclima/kryos-work/plastic
 ```
 
 On albedo, git is a module (`module load git`;
