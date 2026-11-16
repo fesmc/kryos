@@ -269,6 +269,7 @@ end
 # 3-D effect Δ = y_3D - y_1D of the same radial profile (known at the design points: both were run) from a GP in the 8 lateral and
 # regional parameters θ_l. Variances add. The split assumes the lateral effect does not depend on the radial profile within the
 # space wave A left: the check is the prediction of y_3D at the design points (wave-A emulator + LOO of Δ) against the runs.
+# Writes in outdir: summary.md, cases.csv, sample.csv (the dense sample with the max I_emu per ice), the figures, waveA/.
 const CASE3_RX = r"^ice-(\S+) \| E3D-ES2-(E\d+)$"
 const CASE1B_RX = r"^ice-(\S+) \| E1D-ES2-(E\d+)$"
 # the distance of a 3-D Earth from the expert fields (the second axis of the design): radial, the RMS difference of log10 eta of P
@@ -327,6 +328,10 @@ function emulate_b(membersA, membersB, scoresf, cfgf, basis, outdir; npts = 100_
     sets = [(ice, nroi[ice]) for ice in ices]
     length(ices) > 1 && (push!(sets, ("both", reduce((a, b) -> a .& b, values(nroi)))); push!(sets, ("either", reduce((a, b) -> a .| b, values(nroi)))))
     Θs = lo .+ Xs01 .* (hi .- lo)
+    open(joinpath(outdir, "sample.csv"), "w") do io      # the dense sample: parameters and per ice the max I_emu (3-D) over the groups
+        println(io, join(pn, ","), ",", join(["Imax_$ice" for ice in ices], ","))
+        for i in 1:npts; println(io, join([@sprintf("%.4f", x) for x in Θs[:, i]], ","), ",", join([@sprintf("%.2f", Imax[ice][i]) for ice in ices], ",")); end
+    end
     for (nm, keep) in sets
         plot_nroi(Xs01, keep, pn, lo, hi, il, joinpath(outdir, "nroi_lateral_$nm.png"), "Earth search wave B: not ruled out, $nm")
         plot_nroi(Xs01, keep, pn, lo, hi, ir, joinpath(outdir, "nroi_radial_$nm.png"), "Earth search wave B: not ruled out, $nm")
