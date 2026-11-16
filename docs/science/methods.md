@@ -21,6 +21,22 @@ domains times factors that we calibrate or sample. Northern Hemisphere on 32 km,
 each domain. Outside the domains the Earth sees an ice history read from file
 ([Global hub and regional domains](https://fesmc.github.io/kryos/global-hub.html)).
 
+## How PaleoMIST was made
+
+PaleoMIST 1.0 (Gowan et al. 2021) is a set of 2.5 kyr slices. Each is a plastic solution (ICESHEET) on the slice's margin,
+τ_b and bed; there is no time integration. The margins come from geological data. τ_b per domain was raised or lowered
+by hand, without a quantitative misfit, toward:
+
+- the largest LGM ice volume (the far-field lowstand at 20 ka) that near-field Holocene RSL allows;
+- today's ice surface, for Greenland and Antarctica;
+- qualitative constraints: ice-flow indicators and the tilt of proglacial-lake strandlines.
+
+τ_b was lowered during the deglaciation to match the GIA response (attributed to basal meltwater and warming). The bed
+and sea level come from SELEN on a 1-D Earth, alternated with the ice: the final reconstruction was iterated twice. The
+lithosphere (120 km) and upper mantle (4×10^20^ Pa s) follow earlier North American work; the lower mantle was chosen
+in 10^21^-10^23^ (4×10^22^ Pa s; 4×10^21^ gave too high postglacial sea level). PaleoMIST's τ_b history and its Earth
+were therefore tuned together against RSL.
+
 ## Two kinds of simulation
 
 - **Imposed ice.** A published ice history forced onto VILMA2. The ice does not respond to the Earth. This isolates the
