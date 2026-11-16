@@ -6,8 +6,9 @@
 #   dGMT    = dGMT* - Gamma dz, at the surface of the time (dz the emulator's elevation change, max(z_srf, 0) minus
 #             the reference's; Gamma = 6.5e-3 K/m)
 # all against the pre-industrial reference. Check: dGMT* from clim_glob.nc (tas on GLOBAL-0.5DEG, after the bias)
-# minus the reference file's tas_ref. Geometry: the emulator's dV per region (North America, Eurasia, Greenland; m SLE) and global-mean dz, and from ice_nor.nc and
-# ice_ant.nc the ice area and the mean surface elevation of the ice (weighted by its thickness).
+# minus the reference file's tas_ref. Geometry: the emulator's dV per region (North America, Eurasia; m SLE) and global-mean dz, and from ice_nor.nc and
+# ice_ant.nc the ice area and the mean surface elevation of the ice (weighted by its thickness). Extrapolation: the largest
+# input_excess (how far an input lies outside the emulator's training range, in training sd) and its input.
 #   kryos_jl tools/levante/geom_gmt.jl <out prefix> <label>=<run dir> ...        (tools/levante/env.sh)
 # Writes <out prefix>.csv (every output time of every run), <out prefix>.png and prints the table at 20 ka.
 using NCDatasets, CairoMakie, Printf, Statistics
@@ -29,6 +30,8 @@ function analyse(R)
     t = rd(e, "time"); lat = rd(e, "lat"); w = repeat(cosd.(lat)', length(rd(e, "lon")), 1)
     dV = rd(e, "dV")                                      # [region, time]
     dz = rd(e, "dz"); dtas = rd(e, "dtas")                # [lon, lat, time], [lon, lat, month, time]
+    ex = rd(e, "input_excess")                            # [input, time]
+    names = split(NCDataset(ds -> ds["inputs"].attrib["names"], e), ",")
     nt = length(t)
     dTs = [amean(dropdims(mean(dtas[:, :, :, k]; dims=3); dims=3), w) for k in 1:nt]
     dzm = [amean(dz[:, :, k], w) for k in 1:nt]
@@ -62,13 +65,14 @@ function analyse(R)
         dom[d] = (area=area[idx], zice=zice[idx])
     end
     (t=t, dTs_emu=dTs, dTb=dTb, dTl=dTl, dGs=dTs .+ dTb, dG=dTs .+ dTb .+ dTl, chk=chk, w=wgt,
-     dV_NA=dV[1, :], dV_EU=dV[2, :], dV_GRL=dV[3, :], dz=dzm,
+     dV_NA=dV[1, :], dV_EU=dV[2, :], dz=dzm, xmax=vec(maximum(ex; dims=1)),
+     xin=[names[argmax(ex[:, k])] for k in 1:nt],
      A_nor=dom["nor"].area, z_nor=dom["nor"].zice, A_ant=dom["ant"].area, z_ant=dom["ant"].zice)
 end
 
 res = [(lab, analyse(R)) for (lab, R) in runs]
 
-cols = [:t, :dG, :dGs, :dTs_emu, :dTb, :dTl, :chk, :w, :dV_NA, :dV_EU, :dV_GRL, :dz, :A_nor, :z_nor, :A_ant, :z_ant]
+cols = [:t, :dG, :dGs, :dTs_emu, :dTb, :dTl, :chk, :w, :dV_NA, :dV_EU, :dz, :xmax, :A_nor, :z_nor, :A_ant, :z_ant]
 open(out * ".csv", "w") do io
     println(io, "run,", join(string.(cols), ","))
     for (lab, r) in res, k in eachindex(r.t)
@@ -77,17 +81,17 @@ open(out * ".csv", "w") do io
 end
 
 println("At 20 ka (K against pre-industrial; dV in m SLE, A in 1e6 km2, z in m):")
-@printf("%-10s %7s %7s %7s %7s %7s %7s %6s %7s %7s %7s %6s %6s %6s %6s\n", "run", "dGMT", "dGMT*", "emu", "bias",
-        "lapse", "check", "w", "dV_NA", "dV_EU", "dV_GRL", "dz", "A_NH", "zi_NH", "zi_ANT")
+@printf("%-10s %7s %7s %7s %7s %7s %7s %6s %7s %7s %6s %6s %6s %6s %6s  %s\n", "run", "dGMT", "dGMT*", "emu", "bias",
+        "lapse", "check", "w", "dV_NA", "dV_EU", "dz", "A_NH", "zi_NH", "zi_ANT", "excess", "(input)")
 for (lab, r) in res
     k = argmin(abs.(r.t .+ 20e3))
-    @printf("%-10s %7.2f %7.2f %7.2f %7.2f %7.2f %7.2f %6.2f %7.1f %7.1f %7.1f %6.1f %6.2f %6.0f %6.0f\n", lab,
+    @printf("%-10s %7.2f %7.2f %7.2f %7.2f %7.2f %7.2f %6.2f %7.1f %7.1f %6.1f %6.2f %6.0f %6.0f %6.2f  %s\n", lab,
             r.dG[k], r.dGs[k], r.dTs_emu[k], r.dTb[k], r.dTl[k], r.chk[k], r.w[k], r.dV_NA[k], r.dV_EU[k],
-            r.dV_GRL[k], r.dz[k], r.A_nor[k], r.z_nor[k], r.z_ant[k])
+            r.dz[k], r.A_nor[k], r.z_nor[k], r.z_ant[k], r.xmax[k], r.xin[k])
 end
 
 palette = Makie.wong_colors()
-fig = Figure(size=(1300, 1150), fontsize=14)
+fig = Figure(size=(1300, 1500), fontsize=14)
 ka(r) = -r.t ./ 1e3
 function panel(pos, ylab, series; ttl="")
     ax = Axis(fig[pos...], xlabel="age [ka]", ylabel=ylab, title=ttl, xreversed=true)
@@ -99,9 +103,10 @@ end
 ax1 = panel((1, 1), "ΔGMT [K]", [(:dG, :solid), (:dGs, :dash)]; ttl="ΔGMT at the surface (solid) and at the reference surface (dashed)")
 axislegend(ax1, unique=true, position=:lb)
 panel((1, 2), "contribution [K]", [(:dTs_emu, :solid), (:dTb, :dash), (:dTl, :dot)]; ttl="emulator dT* (solid), bias (dashed), lapse −Γ dz (dotted)")
-panel((2, 1), "ΔV [m SLE]", [(:dV_NA, :solid), (:dV_EU, :dash), (:dV_GRL, :dot)]; ttl="emulator ice volume: North America (solid), Eurasia (dashed), Greenland (dotted)")
+panel((2, 1), "ΔV [m SLE]", [(:dV_NA, :solid), (:dV_EU, :dash)]; ttl="emulator ice volume: North America (solid), Eurasia (dashed)")
 panel((2, 2), "z [m]", [(:z_nor, :solid), (:z_ant, :dash)]; ttl="thickness-weighted mean surface elevation of the ice: North (solid), Antarctica (dashed)")
 panel((3, 1), "area [10⁶ km²]", [(:A_nor, :solid), (:A_ant, :dash)]; ttl="ice area: North (solid), Antarctica (dashed)")
+panel((4, 1), "excess [training sd]", [(:xmax, :solid)]; ttl="largest input_excess: extrapolation of the emulator (0: inside the training range)")
 ax6 = Axis(fig[3, 2], xlabel="ΔV North America + Eurasia [m SLE]", ylabel="ΔGMT [K]", title="ΔGMT against NH ice volume")
 for (i, (lab, r)) in enumerate(res)
     scatter!(ax6, r.dV_NA .+ r.dV_EU, r.dG, color=palette[i], markersize=5, label=lab)
