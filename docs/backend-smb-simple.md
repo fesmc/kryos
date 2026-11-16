@@ -71,7 +71,7 @@ temperature; only `T_srf` does. `tsl_const ≤ 0` (default -1) imports `tsl_ann`
 In `par/kryos_NH-ANT-PAT_plastic_vilma2_inv.nml` each of the three domains (North,
 Antarctica, PatagoniaPaleo) has a surface instance `smb_simple` whose `smb` is the
 prior of the plastic backend's joint inversion (`mass_balance = "inverted"`, see
-[Implied mass balance](experiment-implied-mb.md)): a rough first estimate, so the
+[Implied mass balance](implied-mb.md)): a rough first estimate, so the
 inversion gives it a large error (`inv_sigma_smb_rel = 0.5`, `inv_sigma_smb_min = 100`
 kg m-2 yr-1). The three instances share one parameter group:
 

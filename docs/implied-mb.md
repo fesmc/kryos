@@ -180,16 +180,16 @@ is `par/kryos_NH-ANT-PAT_plastic_vilma2.nml` with the following changes:
 | `slide_p` | 1.0 | 0.5 |
 | `slide_u0`, `slide_m`, `slide_umax` | 100 m yr-1, 2, 1000 m yr-1 | same |
 
-Build with `plastic=1 vilma=1`. The run setup is that of [Simulating our own ice](experiment-plastic.md). The closure
+Build with `plastic=1 vilma=1`. The run setup is that of [Online ice](howto/online-ice.md). The closure
 values come from the present-day scans of `runs/closure-cn` (the sets within the observed totals; section "Implied
-mass balance: present-day tests" of [docs/dev/plastic-backend.md](https://github.com/fesmc/kryos/blob/main/docs/dev/plastic-backend.md)). The first LGM run of this par file
-is queued on Levante (2026-11-10); no result yet.
+mass balance: present-day tests" of [docs/dev/plastic-backend.md](https://github.com/fesmc/kryos/blob/main/docs/dev/plastic-backend.md)). A first LGM run of this par file was
+queued on Levante on 2026-11-10; the work was paused before a result was analysed.
 
 ## Present-day closure fit: tests/plastic_closure_fit.f90
 
 [tests/plastic_closure_fit.f90](https://github.com/fesmc/kryos/blob/main/tests/plastic_closure_fit.f90) ("Stage 1b")
 fits the flow closure against the observed present-day surface speed, offline, on the present-day plastic geometry
-of Stage 1 (see [Calibration and ensembles](experiment-calibration.md)). That geometry is the 0 ka margin, with
+of Stage 1 (see [PlasticIceSheet, factors and multipliers](backend-plastic.md#factors-and-multipliers)). That geometry is the 0 ka margin, with
 Gowan's tau_b at 0 ka times the Stage 1 factors (`factor_file`), smoothed as `taub_smooth_km`, on the topography
 file's bed with z_sl = 0.
 
@@ -232,7 +232,7 @@ julia --project=tools/levante tools/levante/plastic_implied_pd.jl <run folder> <
 
 `plastic_closure_maps.jl` maps the fit's sets (`:inv` for the inversion). `plastic_implied_pd.jl` compares a coupled
 run's implied mass balance with MAR, RACMO and the observed speeds. `plastic_lgm_map.jl mode=smb` maps it at any age.
-See [Analysis and figures](experiment-analysis.md).
+See [Analysis and figures](howto/analysis.md#implied-mass-balance).
 
 ## Status and open issues
 
