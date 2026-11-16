@@ -1,5 +1,5 @@
 # Data-model maps of imposed-ice runs on VILMA2 (docs/science/maps.md): the GNSS uplift rates (the data, each run's present-day
-# rate, the residual), the RSL residuals at the GAPSLIP 2.1 index points in time windows, and RSL at the best-sampled sites.
+# rate, the residual), the RSL residuals at the GAPSLIP 2.1 index points in time windows, and RSL at key sites.
 #   julia --project=tools/levante tools/levante/plastic_data_maps.jl <out folder> <label>=<run folder> ...
 # The runs: gia_refcorr.sh cases (the converged iteration, r.nc -> it<n>: plastic_ensemble.jl ref_dir) or a folder with
 # vilma_out.nc (a one-pass case: its it0); each a row of the figures, the label its name (`ice-GLAC1D | E1D-PMIST`).
@@ -17,7 +17,7 @@
 # C_ocean = 0.5 of the first run's last record. Writes to <out>:
 #   gnss-<domain>.png   per GNSS group: the data over their GP mean (top), per run its rate field and the residuals
 #   rsl-<group>.png     per RSL group: the residuals at the index points over their GP per window (columns) and run (rows)
-#   sites-<group>.png   per RSL group: RSL at the NSITE sites with the most index points, the data and the runs
+#   sites-<group>.png   per RSL group: RSL at its key sites (KEY_SITES), the data and the runs
 #   maps.md             the GP hyperparameters, and n, mean and RMS of the residuals per panel
 using CairoMakie, KernelFunctions, LinearAlgebra, NCDatasets, Printf, Statistics, TOML
 
@@ -34,7 +34,16 @@ const MASK = 0.8                     # a GP field is drawn where its sd <= MASK 
 const WINDOWS = [("0-6 ka", 0.0, 6000.0), ("8 ± 1 ka", 7000.0, 9000.0), ("12 ± 1 ka", 11000.0, 13000.0),
                  ("16 ± 1 ka", 15000.0, 17000.0)]
 const MIN_WINDOW = 5                 # index points of a group for its window column
-const NSITE = 3
+# the key sites of the RSL curves per group, GAPSLIP 2.1 site_name => role: the ice centre, the margin, the forebulge or far
+# field (substitutes where the site asked for is missing or has few index points: docs/science/maps.md)
+const KEY_SITES = [
+    "Laurentide"   => ["Umiujaq" => "Hudson Bay", "Rimouski" => "St. Lawrence", "Outer_Delaware" => "forebulge"],
+    "Greenland"    => ["Kannala" => "west, Disko Bugt", "Paamiut" => "south-west", "Schuchert_Dal" => "east, Scoresby Sund"],
+    "Fennoscandia" => ["Angermanland" => "high coast", "Blekinge" => "margin", "Rotterdam" => "forebulge"],
+    "Barents"      => ["Proliv_Markama" => "Franz Josef Land", "Severny_Island_North" => "Novaya Zemlya", "Dvina_Gulf" => "White Sea"],
+    "Antarctica"   => ["Southern_Scott_Coast" => "Ross Sea", "Pine_Island_Bay" => "Amundsen Sea", "Vestfold_Hills" => "East Antarctica"],
+    "far field"    => ["Barbados" => "Caribbean", "Sunda_Shelf" => "Sunda Shelf", "Bonaparte_Gulf" => "north-west Australia",
+                       "Tahiti" => "Pacific"]]
 const GNSS_DOMAINS = ["GNSS Hudson Bay" => "hudson-bay", "GNSS Fennoscandia" => "fennoscandia",
                       "GNSS Greenland" => "greenland", "GNSS Antarctica" => "antarctica"]
 const GNSS_FIT = ["GNSS Greenland", "GNSS Antarctica"]      # their model error is not fitted in errmodel.toml (data-scores.md)
@@ -181,13 +190,11 @@ gdom = Dict(g => domain([gd.obs[i].lon for i in gidx[g]], [gd.obs[i].lat for i i
             for (g, _) in GNSS_DOMAINS)
 rdom = Dict(g => (lo = [obs[i].lon for i in ip if obs[i].group == g]; la = [obs[i].lat for i in ip if obs[i].group == g];
                  g == "far field" ? plate_domain(lo, la) : domain(lo, la; pole = g == "Antarctica", margin = 300.0)) for g in RSLG)
-# the sites per group: those with the most index points, at the mean position of their points
-sites = Dict(g => begin
-    names = unique(obs[i].site_name for i in ip if obs[i].group == g)
-    n = Dict(s => count(i -> obs[i].site_name == s, ip) for s in names)
-    top = sort(names, by = s -> -n[s])[1:min(NSITE, length(names))]
-    [(name = s, n = n[s], pos = sphere_mean([obs[i].lon for i in ip if obs[i].site_name == s], [obs[i].lat for i in ip if obs[i].site_name == s]))
-     for s in top]
+# the key sites per group, at the mean position of their index points
+sites = Dict(g => map(KEY_SITES[findfirst(p -> p.first == g, KEY_SITES)].second) do (s, role)
+    k = [i for i in ip if obs[i].site_name == s && obs[i].group == g]
+    isempty(k) && error("KEY_SITES: no index point of $s in $g")
+    (name = s, role = role, n = length(k), pos = sphere_mean([obs[i].lon for i in k], [obs[i].lat for i in k]))
 end for g in RSLG)
 
 # --- the runs: everything needed from each, read once -------------------------------------------------------------------------------
@@ -315,7 +322,7 @@ for g in RSLG
         so = [o for o in obs if o.site_name == st.name]
         ipo = [o for o in so if o.type == 0]
         tmax = min(TMAX, maximum(o.tmax for o in ipo)) / 1000 + 1.0
-        ax = Axis(fig[1, c], title = "$(replace(st.name, '_' => ' ')) ($(st.n) index points)", xlabel = "age [ka]",
+        ax = Axis(fig[1, c], title = "$(replace(st.name, '_' => ' ')) ($(st.role); $(st.n) index points)", xlabel = "age [ka]",
                   ylabel = c == 1 ? "RSL [m]" : "", xreversed = true, titlesize = 12, titlefont = :regular)
         poly!(ax, [Rect2f(o.tmin / 1000, o.rmin, (o.tmax - o.tmin) / 1000, o.rmax - o.rmin) for o in ipo], color = IPCOL,
               strokecolor = IPSTROKE, strokewidth = 0.4)

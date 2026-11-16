@@ -96,7 +96,7 @@ The simulations of the [results](science/results.md) are made by these scripts, 
 | [plastic_pd_regions.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_pd_regions.jl) | Present-day ice thickness of the plastic backend against the FesmData topography hubs, per region |
 | [plastic_residual_corr.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_residual_corr.jl) | Correlation of the index-point misfit in distance and age, and the model error sigma_m, per group, region and sector |
 | [plastic_earth_compare.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_earth_compare.jl) | Plastic runs on different Earths: GAPSLIP scores by group, region, marine-bed area and site, site maps, RSL curves, volume and ESL |
-| [plastic_data_maps.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_data_maps.jl) | Data-model maps of imposed-ice runs (docs/science/maps.md): GNSS rates (data, model, residual) and RSL residuals in time windows over their kriged fields (Gaussian processes on the sphere), RSL at the best-sampled sites |
+| [plastic_data_maps.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_data_maps.jl) | Data-model maps of imposed-ice runs (docs/science/maps.md): GNSS rates (data, model, residual) and RSL residuals in time windows over their kriged fields (Gaussian processes on the sphere), RSL at key sites per group (`KEY_SITES`) |
 
 ## Plots and reports
 
