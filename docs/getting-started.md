@@ -2,20 +2,31 @@
 title: "Getting started"
 ---
 
-From an empty folder on DKRZ Levante to a run of the plastic ice sheet (ice backend `plastic`, the Fortran
+From an empty folder on an HPC machine to a run of the plastic ice sheet (ice backend `plastic`, the Fortran
 library [PlasticIceSheet](https://github.com/fesmc/PlasticIceSheet)) coupled to the global VILMA2 Earth (geo
-backend `vilma2`). Everything here runs on Levante: builds, tests, runs and analysis. The data paths are those of
-project `ba1442`.
+backend `vilma2`). Two machines are set up the same way: DKRZ Levante (project `ba1442`) and AWI's albedo (project
+`p_forclima`). Builds, tests, runs and analysis all run there, not on a laptop. The glacial-cycle runs of 2026-11 are on
+albedo. Status as of 2026-11-16.
 
 - **Program:** `kryos.x`, built with `make kryos plastic=1 vilma=1 yelmo=0`.
 - **Config:** a par file of [par/](https://github.com/fesmc/kryos/tree/main/par), e.g.
   `par/kryos_North_plastic_vilma2_b1.nml` (see [Par files](reference-par-files.md)).
-- **Data:** FesmData products under `/work/ba1442/fesmdata` (read-only), kryos-made inputs under
-  `/work/ba1442/kryos_data`.
+- **Data and work folders** (the defaults of `tools/levante/env.sh`, [below](#the-hpc-tools)):
+
+| | Levante | albedo |
+|---|---|---|
+| FesmData (read-only) | `/work/ba1442/fesmdata` | `/albedo/work/projects/p_forclima/fesmdata` |
+| kryos reference data (read-only) | `/work/ba1442/kryos_data` | `/albedo/work/projects/p_forclima/kryos_data` (a copy of Levante's) |
+| the project's shared work folder `KRYOS_WORK` | `/work/ba1442/kryos-work` | `/albedo/work/projects/p_forclima/kryos-work` |
+| Slurm account | `ba1442` | `envi.p_forclima` |
+| jobs at a time | 30 (queued and running) | at most 50 of your own |
+
+Runs, scores and calibrations go in `KRYOS_WORK`, the project's shared folder, never in a personal folder, so that
+colleagues can read and continue the work.
 
 ## Environment
 
-Load the modules in every shell that builds (e.g. in `~/.bashrc`; they are not Levante's defaults):
+**Levante.** Load the modules in every shell that builds (e.g. in `~/.bashrc`; they are not Levante's defaults):
 
 ```bash
 export MODULEPATH=/sw/spack-workplace/spack-0.20.1/modules:$MODULEPATH
@@ -23,6 +34,18 @@ module load intel-oneapi-compilers/2023.2.1-gcc-11.2.0 \
     netcdf-c/4.9.3-openmpi-5.0.8-intel-2021.5.0 netcdf-fortran/4.6.2-openmpi-5.0.8-intel-2021.5.0 \
     python3/2023.01-gcc-11.2.0 git/2.43.7-gcc-11.2.0
 ```
+
+**albedo.** git is a module (`module load git`; `env.sh` loads it). Build with the Intel compiler 2024.0.0, not 2024.1.0:
+2024.1 miscompiles (an inlined function result passed as an argument loses a `WHERE`; it broke `test_geo_vilma2`), and
+`-Ofast` breaks the round-off conservation of `test_globe_ice`. Swap the module and build every package with value-safe
+flags, then submit from that environment:
+
+```bash
+module swap intel-oneapi-compilers intel-oneapi-compilers/2024.0.0
+make kryos plastic=1 vilma=1 yelmo=0 DFLAGS_NODEBUG="-O2 -fp-model precise -march=znver2 -traceback"
+```
+
+Run `make check` after every rebuild; never run production from a 2024.1 or `-Ofast` build.
 
 ## Install
 
@@ -38,7 +61,7 @@ Then install kryos (into `./kryos`) and build it:
 
 ```bash
 cd ~/models
-configme install kryos -m dkrz_levante -c ifx --build-deps
+configme install kryos -m dkrz_levante -c ifx --build-deps      # albedo: -m awi_albedo
 cd kryos
 make kryos plastic=1 vilma=1 yelmo=0      # -> libkryos/bin/kryos.x
 make check plastic=1 vilma=1 yelmo=0      # the tests
@@ -77,7 +100,7 @@ the same `openmp=`.
 - `make libkryos/bin/kryos.x` does **not** relink the driver; `make kryos` does.
 - With `plastic=1` and `vilma=1`, `make check` runs, among the others, `test_plastic_margin`, `test_ice_plastic` and
   `test_geo_vilma2`. The long tests (`make check-long`) need `yelmo=1`.
-- After adding a source file or a `use`: `make depend` (or `configme config kryos --only -m dkrz_levante -c ifx`).
+- After adding a source file or a `use`: `make depend` (or `configme config kryos --only -m <machine> -c ifx`).
 
 Targets:
 
@@ -120,12 +143,13 @@ Build notes:
 How the generated dependencies work and how to add a backend:
 [docs/dev/build.md](https://github.com/fesmc/kryos/blob/main/docs/dev/build.md).
 
-## The Levante tools
+## The HPC tools
 
-The scripts of [tools/levante/](https://github.com/fesmc/kryos/tree/main/tools/levante) share one environment,
-[env.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/env.sh), which every script sources. They run on
-Levante and on AWI's albedo: `KRYOS_MACHINE` (`levante` or `albedo`, from the host name) sets the defaults, given
-below as Levante's / albedo's:
+The scripts of [tools/levante/](https://github.com/fesmc/kryos/tree/main/tools/levante) and
+[experiments/](https://github.com/fesmc/kryos/tree/main/experiments) share one environment,
+[env.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/env.sh), which every script sources. The folder is named
+after Levante but serves both machines: `KRYOS_MACHINE` (`levante` or `albedo`, from the host name) sets the defaults,
+given below as Levante's / albedo's. This table is the reference of these variables for every page of this site:
 
 | Variable | Default | |
 |---|---|---|
@@ -179,9 +203,12 @@ backend with VILMA2 (`BUILD="yelmo=0 fastisostasy=0 vilma=1 plastic=1 openmp=1"`
 tools/albedo/stack.sh /albedo/work/projects/p_forclima/kryos-work/plastic
 ```
 
-On albedo, git is a module (`module load git`;
-`env.sh` loads it), and FesmData's store is kept current with FesmData's own `julia fesmdata.jl mirror`
-(`source shared/machines/albedo.env` first). Model runs: runme's `awi_albedo` queues (`30min`, `12h`, `48h`, ...).
+stack.sh uses the compiler of your environment: swap to 2024.0.0 first (Environment, above). On albedo FesmData's store
+is kept current with FesmData's own `julia fesmdata.jl mirror` (`source shared/machines/albedo.env` first). Model runs:
+runme's `awi_albedo` queues (`30min`, `12h`, `48h`, ...).
+
+**Job limits.** Levante: at most 30 jobs queued or running at a time. albedo: at most 50 of your own jobs; other users'
+jobs do not count. Throttle job arrays (runme `--array N`); the pool and ensemble scripts throttle themselves.
 
 ## Data
 
@@ -189,15 +216,15 @@ A run reads its inputs through links in the run directory; the par files name pa
 (`fesmdata/{domain}/{grid_name}/...`, with `{domain}` and `{grid_name}` replaced by kryos). runme makes the links
 from those of the checkout ([.runme/info.json](https://github.com/fesmc/kryos/blob/main/.runme/info.json) `links`):
 
-| Link | Target on Levante | What |
+| Link | Target | What |
 |---|---|---|
-| `fesmdata` | `/work/ba1442/fesmdata` | FesmData products, `<Domain>/<GRID>/<GRID>_<PRODUCT>.nc`: topography, regions, PaleoMIST ice history and tau_b domains, the Bagge et al. (2021) viscosity |
-| `kryos_data` | `/work/ba1442/kryos_data` | kryos-made inputs, e.g. `refcorr/PaleoMIST-sci/` (the present-day reference correction r, [tools/levante/gia_refcorr.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr.sh)), the released tau_b products `plastic/` |
+| `fesmdata` | `$FESMDATA` | FesmData products, `<Domain>/<GRID>/<GRID>_<PRODUCT>.nc`: topography, regions, PaleoMIST ice history and tau_b domains, the Bagge et al. (2021) viscosity |
+| `kryos_data` | `$KRYOS_DATA` | kryos-made inputs, e.g. `refcorr/PaleoMIST-sci/` (the present-day reference correction r, [tools/levante/gia_refcorr.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr.sh)), the released tau_b products `plastic/` |
 | `input` | the checkout's `input/` | defaults, variable tables, constants, synchronised copies (below) |
 | `maps` | the checkout's `maps/` | grid descriptions `grid_<GRID>.txt` and the cached remapping weights (`*.nc`) |
-| `ice_data`, `isostasy_data` | `/work/ba1442/ice_data`, `/work/ba1442/isostasy_data` | the yelmox data of the Yelmo configurations, linked when the checkout has them; the plastic par files do not read them |
+| `ice_data`, `isostasy_data` | e.g. `/work/ba1442/ice_data`, `/work/ba1442/isostasy_data` | the yelmox data of the Yelmo configurations, linked when the checkout has them; the plastic par files do not read them |
 
-**FesmData is read-only.** Never write into `/work/ba1442/fesmdata`, nor through a link into it (a copy of a link
+**FesmData is read-only.** Never write into `$FESMDATA`, nor through a link into it (a copy of a link
 is a link: copy with symlinks followed). It is shared by every run of the project; fetch or update products only with
 FesmData's own tool (`julia fesmdata.jl`, see the FesmData
 [download page](https://fesmc.github.io/FesmData/download.html)). FesmData products are the source of the inputs.
@@ -211,8 +238,8 @@ What the plastic par files read:
 | `fesmdata/{domain}/{grid_name}/{grid_name}_TOPO-GEBCO2026.nc`, `_TOPO-BedMachine-v4.nc` | the reference topography without correction (`kryos_North_plastic.nml`, the `_b1` runs) |
 | `fesmdata/{domain}/{grid_name}/{grid_name}_REGIONS.nc` | every plastic run |
 | `fesmdata/Global/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc` | the VILMA2 runs: the ice outside the plastic domains (`[globe_ice]`, GLOBAL-0.5DEG) |
-| `fesmdata/Global/GLOBAL-T170/GLOBAL-T170_SolidEarth-Bagge2021.nc` | the science-Earth runs (3-D viscosity) |
-| `kryos_data/refcorr/PaleoMIST-sci/...` | the science-Earth runs: the reference bed today's + r |
+| `fesmdata/Global/GLOBAL-T170/GLOBAL-T170_SolidEarth-Bagge2021.nc` | the 3-D par files (Bagge structure 6) |
+| `kryos_data/refcorr/PaleoMIST-sci/...` | the 3-D par files: the reference bed today's + r |
 
 The maps folder must hold `grid_<GRID>.txt` for every hub and instance grid of the run; the first run writes the
 remapping weights into it. kryos writes only VILMA2's Gauss grid file, `grid_GAUSS-L<lmax>.txt`. The repository's
@@ -264,15 +291,15 @@ input folders, writes the job script and submits it. The checkout's project:
   `./kryos.x <par file>` directly (one OpenMP task, no `srun`) in the run folder and then writes `status`, `<exit code> <seconds>`, which the
   calibration and ensemble tools read.
 - `.runme/config.toml` (from `config.default.toml`, by `tools/levante/setup.sh`): `hpc = "dkrz_levante"`,
-  `account = "ba1442"`, `omp = 16`.
+  `account = "ba1442"` (albedo: `awi_albedo`, `envi.p_forclima`), `omp = 16`.
 
-Run runme from the checkout. A run of the science Earth (NH-ANT-PAT, 3-D) and a short 1-D (`_b1`) run:
+Run runme from the checkout. A 3-D run (NH-ANT-PAT, Bagge structure 6) and a short 1-D (`_b1`) run:
 
 ```bash
 . $HOME/models/kryos/tools/levante/env.sh       # KRYOS, KRYOS_WORK
 cd $KRYOS
-runme -r -s -q shared -w 08:00:00 --omp 64 -m 60G -o $KRYOS_WORK/runs/sci-3d -n par/kryos_NH-ANT-PAT_plastic_vilma2.nml
-runme -r -s -q shared -w 01:00:00 --omp 16 -m 30G -o $KRYOS_WORK/runs/b1-short -n par/kryos_NH-ANT_plastic_vilma2_b1.nml \
+runme -r -s -q $KRYOS_QUEUE -w 08:00:00 --omp 64 -m 60G -o $KRYOS_WORK/runs/sci-3d -n par/kryos_NH-ANT-PAT_plastic_vilma2.nml
+runme -r -s -q $KRYOS_QUEUE -w 01:00:00 --omp 16 -m 30G -o $KRYOS_WORK/runs/b1-short -n par/kryos_NH-ANT_plastic_vilma2_b1.nml \
     -p clock.time_end=-60e3
 ```
 
@@ -284,13 +311,13 @@ runme -r -s -q shared -w 01:00:00 --omp 16 -m 30G -o $KRYOS_WORK/runs/b1-short -
 | `-p group.key=value ...` | keys written into the copied par file; the key must exist in the par file or in `input/kryos_defaults.nml` (a key only in the defaults is added to its group); a comma list makes an ensemble, `key==a,b,c` or `'key=[a,b,c]'` a vector |
 | `-s` | write the job script `job.submit` (with `-r`: submit it) |
 | `-r` | run: with `-s` submit the job, without it run in the background on the login node |
-| `-q`, `-w`, `--omp`, `-m` | the queue alias of `dkrz_levante` (`shared`, `compute`), the wall time, the OpenMP threads, the memory |
+| `-q`, `-w`, `--omp`, `-m` | the queue alias (Levante `shared`, `compute`; albedo `12h`, `48h`; `KRYOS_QUEUE` is the machine's default), the wall time, the OpenMP threads, the memory |
 | `-i <table>`, `-j <ids>`, `--array [N]` | an ensemble from a parameter table, a subset of its members, and (with `-s`) its submission as one Slurm job array with at most N tasks at once (runme >= 0.5.27; writes `array.submit`, `array.dirs` and `array.json`, the job id, into `-o`) |
 
 Without `-r` runme only stages the folder (and, with `-s`, writes `job.submit`: `sbatch job.submit` in the folder
 submits it later). A folder that exists is reused: runme removes its `*.nc` and par files first.
 
-Keep at most 30 jobs queued or running at a time on Levante; throttle job arrays (runme `--array N`).
+Keep within the job limit of the machine ([above](#the-hpc-tools)).
 
 ### The run directory
 
@@ -299,8 +326,8 @@ Keep at most 30 jobs queued or running at a time on Levante; throttle job arrays
   kryos.x                a copy of libkryos/bin/kryos.x
   <par file>.nml         the copy of the par file, with the -p values
   input      -> $KRYOS/input
-  fesmdata   -> /work/ba1442/fesmdata
-  kryos_data -> /work/ba1442/kryos_data
+  fesmdata   -> $FESMDATA
+  kryos_data -> $KRYOS_DATA
   maps       -> $KRYOS/maps
   job.submit             the Slurm job (-s)
   runme.json             runme's record: the command, the -p values, the git revision of the checkout, the state
@@ -310,21 +337,20 @@ Keep at most 30 jobs queued or running at a time on Levante; throttle job arrays
 ```
 
 Copying `kryos.x` keeps the run independent of later builds. `kryos.x` takes one argument, the par file. The members
-of a calibration or ensemble have the same layout, staged by runme from the calibration folder
-([Calibration and ensembles](experiment-calibration.md)).
+of an ensemble have the same layout, staged by runme from the ensemble folder ([Ensembles](howto/ensembles.md)).
 
 ### Which par file first
 
-| Par file | What | Cost (Levante) |
+| Par file | What | Cost |
 |---|---|---|
 | `par/kryos_North_plastic.nml` | NH-32KM plastic on a fixed bed (today's, `z_sl = 0`), no globe: the smoke run | 25 s on 4 cores (800 solves) |
 | `par/kryos_North_plastic_vilma2_b1.nml` | NH-32KM plastic with VILMA2 on Gowan's 1-D Earth and B1's reference | 13.6 min on 16 threads |
 | `par/kryos_NH-ANT_plastic_vilma2_b1.nml` | as `_b1` plus a plastic instance on ANT-16KM | 13.4 min on 16 threads; 11-25 min on 8 threads (calibration members, reduced output) |
-| `par/kryos_NH-ANT_plastic_vilma2.nml`, `par/kryos_NH-ANT-PAT_plastic_vilma2.nml` | the science Earth (Bagge et al. 2021 3-D viscosity, refcorr reference); `-PAT` adds PAT-PAL-8KM | |
+| `par/kryos_NH-ANT_plastic_vilma2.nml`, `par/kryos_NH-ANT-PAT_plastic_vilma2.nml` | the 3-D Earth of Bagge et al. (2021), structure 6, with the refcorr reference; `-PAT` adds PAT-PAL-8KM | about 3 h on 64 threads (albedo) |
 
 All run 80 ka to present (`[clock] time_init = -80e3`, `time_end = 0`, `dtt = 100`). Costs from
 [docs/dev/plastic-backend.md](https://github.com/fesmc/kryos/blob/main/docs/dev/plastic-backend.md). VILMA2
-dominates and barely scales: 8 threads per run is the cheapest per run on the shared partition.
+dominates and barely scales on the 1-D Earth: 8 threads per run is the cheapest per run on Levante's shared partition.
 
 ### Changing keys
 
@@ -420,7 +446,7 @@ Restart with `[kryos] restart` (a folder relative to the run directory, or absol
 a second chunk:
 
 ```bash
-runme -r -s -q shared -w 08:00:00 --omp 64 -m 60G -o $KRYOS_WORK/runs/chunk2 -n par/kryos_NH-ANT-PAT_plastic_vilma2.nml \
+runme -r -s -q $KRYOS_QUEUE -w 08:00:00 --omp 64 -m 60G -o $KRYOS_WORK/runs/chunk2 -n par/kryos_NH-ANT-PAT_plastic_vilma2.nml \
     -p clock.time_init=-40e3 kryos.restart=../chunk1/restart--40000
 ```
 
@@ -442,6 +468,7 @@ forcing instance.
 - How a run is put together: [Architecture](architecture.qmd), [Global hub and regional domains](global-hub.qmd).
 - The backends: [PlasticIceSheet](backend-plastic.md), [VILMA2](backend-vilma2.md),
   [smb_simple](backend-smb-simple.md).
-- The experiments: [Reproducing Gowan et al. (2021)](experiment-gowan.md),
-  [Simulating our own ice](experiment-plastic.md), [Calibration and ensembles](experiment-calibration.md).
-- The par files and the Levante tools: [Par files](reference-par-files.md), [Tools](reference-tools.md).
+- How to run the glacial-cycle simulations: [Imposed ice](howto/imposed-ice.md), [Online ice](howto/online-ice.md),
+  [Ensembles](howto/ensembles.md), [The Earth search](howto/earth-search.md), [Analysis and figures](howto/analysis.md).
+- The science they serve: [the reconstruction of the last glacial cycle](science/index.md).
+- The par files and the tools: [Par files](reference-par-files.md), [Tools](reference-tools.md).
