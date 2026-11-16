@@ -81,3 +81,4 @@ Three steps, each removing one unknown before the next:
 | [The Earth search](earth-search.md) | method and results of the Earth search |
 | [The ice: τ_b ensembles](ice-ensembles.md) | method and results of our ice, and the final ensemble |
 | [Results](results.md) | every scored simulation in one table |
+| [Maps: data and models](maps.md) | where in space and time the simulations miss the GNSS and RSL data |
