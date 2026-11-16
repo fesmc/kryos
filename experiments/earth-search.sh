@@ -11,17 +11,22 @@
 #   experiments/earth-search.sh run-b 1d [njob]  wave B: the 1-D runs of the 50 profiles (pools of 4 x 8 cores, default 25 jobs)
 #   experiments/earth-search.sh run-b 3d [njob]  wave B: the 3-D runs, one pass with the r of the 1-D run, 6-11 h on 32 cores
 #                                                (pools of 2 x 32 cores for 36 h, default 35 jobs, my jobs kept below 50); after run-b 1d
+#   experiments/earth-search.sh sample-b2        wave B2: 30 3-D Earths E101-E130 in the boxes of earth-search-b2-boxes.toml: $W2/earths
+#   experiments/earth-search.sh run-b2 1d|3d [njob]  wave B2 runs as run-b (3-D: 44 h pools; box S Earths are slow)
+#   experiments/earth-search.sh score b2         as score b, with the wave-B2 cases and the wave-B2 emulator (radial GPs of every
+#                                                1-D run, the union of the boxes): $W2/emulateB2
 #
-# Env: W (default $KRYOS_WORK/earth-search; the search of 2026-11-13 is /albedo/work/user/alrobi001/kryos-search), KD (the
+# Env: W (default $KRYOS_WORK/earth-search; the search of 2026-11-13 is /albedo/work/user/alrobi001/kryos-search), W2 (wave B2,
+# default $KRYOS_WORK/earth-search/waveB2, its cases in $W2/kryos_data/refcorr), KD (the
 # cases: default $W/kryos_data, so $KD/refcorr/<case>), ENS (the ens-v2 folder whose members and config the scores use: linked
 # read-only), ERRMODEL (the error model of the split RSL groups: refs-test's refit), GLAC1D (the folder of the GLAC1D_80k
 # IceHistory products, until FesmData has them). The 1-D cases do not count against the job limit; the 3-D ones do.
 # GLAC1D_80k has no z_bed: today's bed comes from PaleoMIST (ZREF; XZREF derived by gia_refcorr.sh).
 set -euo pipefail
 X=$(cd "$(dirname "$(readlink -f "$0")")" && pwd); T=$X/../tools/levante; . "$T/env.sh"
-[ $# -ge 1 ] || { sed -n '2,22p' "$0"; exit 1; }
+[ $# -ge 1 ] || { sed -n '2,28p' "$0"; exit 1; }
 J="$KRYOS_JULIA --project=$T"
-W=${W:-$KRYOS_WORK/earth-search}; export KD=${KD:-$W/kryos_data}
+W=${W:-$KRYOS_WORK/earth-search}; export KD=${KD:-$W/kryos_data}; W2=${W2:-$KRYOS_WORK/earth-search/waveB2}
 ENS=${ENS:-/albedo/work/user/alrobi001/kryos-plastic/kryos/runs/ens-v2}
 ERRMODEL=${ERRMODEL:-/albedo/work/user/alrobi001/kryos-work/refs-test/ens/errmodel.toml}
 GLAC1D=${GLAC1D:-/albedo/work/user/alrobi001/fesmdata-glac1d-80k/Global}
@@ -35,7 +40,7 @@ mkdir -p "$W" "$KD/refcorr"
 # and ESL of plastic_ensemble_v2.toml, ESL keeping the bar) and errmodel ($ERRMODEL; GNSS refitted by score), and as references
 # the bar, I1/I5, the 3-D Bagge references and every case of the lists; config_nognss.toml: the same without GNSS in the cut
 score_folder() {
-    W=$W KD=$KD ENS=$ENS ERRMODEL=$ERRMODEL V2=$T/plastic_ensemble_v2.toml python3 - <<'EOF'
+    W=$W W2=$W2 KD=$KD ENS=$ENS ERRMODEL=$ERRMODEL V2=$T/plastic_ensemble_v2.toml python3 - <<'EOF'
 import os, re
 W, KD, E, V2 = os.environ["W"], os.environ["KD"] + "/refcorr", os.environ["ENS"], os.environ["V2"]
 C = W + "/score/ens"; os.makedirs(C + "/iter_01", exist_ok=True)
@@ -59,11 +64,13 @@ refs = [("pub-PMIST", 'esl     = "PaleoMIST"\nproduct = "Global/GLOBAL-0.5DEG/GL
         ("ice-PMIST | E1D-PMIST", 'run  = "/albedo/work/user/alrobi001/kryos-gnss/kryos_data/refcorr/ice-PMIST_E1D-PMIST"'),
         ("ice-GLAC1D | E1D-PMIST", 'run  = "%s/GLAC1D-1D"' % w), ("ice-PMIST | E3D-B21-6", 'run  = "%s/PaleoMIST-3D"' % w),
         ("ice-GLAC1D | E3D-B21-6", 'run  = "%s/GLAC1D-3D"' % w)]
-for f in ("cases.txt", "casesB1.txt", "casesB3.txt"):
-    if os.path.exists(W + "/" + f):
-        for l in open(W + "/" + f):
+W2 = os.environ["W2"]
+for d, kd, f in [(W, KD, "cases.txt"), (W, KD, "casesB1.txt"), (W, KD, "casesB3.txt"), (W2, W2 + "/kryos_data/refcorr", "cases1.txt"),
+                 (W2, W2 + "/kryos_data/refcorr", "cases3.txt")]:
+    if os.path.exists(d + "/" + f):
+        for l in open(d + "/" + f):
             c = l.split()[0]; ice, earth = c.split("_", 1)
-            refs.append((ice + " | " + earth, 'run  = "%s/%s%s"' % (KD, c, "/it0" if "E3D-ES2" in c else "")))
+            refs.append((ice + " | " + earth, 'run  = "%s/%s%s"' % (kd, c, "/it0" if "E3D-ES2" in c else "")))
 s += "".join('[[references]]\nname = "%s"\n%s\n' % r for r in refs)
 open(C + "/config.toml", "w").write(s)
 og = '["Laurentide", "Greenland", "Fennoscandia", "Barents", "Antarctica", "far field", "ESL"]'
@@ -97,7 +104,9 @@ score)
          $J $T/plastic_earth_emulate.jl $W/earths/members.csv $W/score/ens/iter_01/scores.csv $W/score/ens/config.toml $W/emulate
          $J $T/plastic_earth_emulate.jl $W/earths/members.csv $W/score/ens/iter_01/scores.csv $W/score/ens/config_nognss.toml $W/emulate-nognss
          [ '${2:-}' != b ] || $J $T/plastic_earth_emulate.jl wave-b $W/earths/members.csv $W/earthsB/members.csv $W/score/ens/iter_01/scores.csv \
-             $W/score/ens/config.toml $BASIS $W/emulateB" ;;
+             $W/score/ens/config.toml $BASIS $W/emulateB
+         [ '${2:-}' != b2 ] || $J $T/plastic_earth_emulate.jl wave-b $W/earths/members.csv $W/earthsB/members.csv,$W2/earths/members.csv \
+             $W/score/ens/iter_01/scores.csv $W/score/ens/config.toml $BASIS $W2/emulateB2 radial=all boxes=$X/earth-search-b2-boxes.toml" ;;
 sample-b)
     $J "$T/plastic_ensemble.jl" earth-search-sample3d "$W/emulate/sample.csv" "$BASIS" "$REGIONS" "$P3" "$P1" "$W/earthsB" n=50 seed=1 space=either
     : > "$W/casesB1.txt"; : > "$W/casesB3.txt"
@@ -107,6 +116,24 @@ sample-b)
         echo "ice-PMIST_E3D-ES2-E$m $W/earthsB/E$m.nml R0=$KD/refcorr/ice-PMIST_E1D-ES2-E$m/r.nc" >> "$W/casesB3.txt"
         echo "ice-GLAC1D_E3D-ES2-E$m $W/earthsB/E$m.nml R0=$KD/refcorr/ice-GLAC1D_E1D-ES2-E$m/r.nc $GH" >> "$W/casesB3.txt"
     done ;;
+sample-b2)
+    $J "$T/plastic_ensemble.jl" earth-search-sample3d-box "$X/earth-search-b2-boxes.toml" "$BASIS" "$REGIONS" "$P3" "$P1" "$W2/earths" seed=1 first=101
+    : > "$W2/cases1.txt"; : > "$W2/cases3.txt"
+    for m in $(seq 101 130); do
+        echo "ice-PMIST_E1D-ES2-E$m $W2/earths/E${m}_1d.nml" >> "$W2/cases1.txt"
+        echo "ice-GLAC1D_E1D-ES2-E$m $W2/earths/E${m}_1d.nml $GH" >> "$W2/cases1.txt"
+        echo "ice-PMIST_E3D-ES2-E$m $W2/earths/E$m.nml R0=$W2/kryos_data/refcorr/ice-PMIST_E1D-ES2-E$m/r.nc" >> "$W2/cases3.txt"
+        echo "ice-GLAC1D_E3D-ES2-E$m $W2/earths/E$m.nml R0=$W2/kryos_data/refcorr/ice-GLAC1D_E1D-ES2-E$m/r.nc $GH" >> "$W2/cases3.txt"
+    done ;;
+run-b2)
+    export KD=$W2/kryos_data
+    case ${2:?1d or 3d} in
+    1d) NCPU=32 NWORK=4 MEM=24G pools "$W2/cases1.txt" ${3:-8} ;;
+    3d) for j in $(seq 1 ${3:-30}); do
+            while [ $(squeue -u $USER -h | wc -l) -ge 50 ]; do sleep 120; done
+            NCPU=64 NWORK=2 MEM=48G PART="$KRYOS_PART_LONG" TIME=44:00:00 pools "$W2/cases3.txt" 1
+        done ;;
+    esac ;;
 run-b)
     case ${2:?1d or 3d} in
     1d) NCPU=32 NWORK=4 MEM=24G pools "$W/casesB1.txt" ${3:-25} ;;
@@ -115,5 +142,5 @@ run-b)
             NCPU=64 NWORK=2 MEM=48G PART="$KRYOS_PART_LONG" TIME=36:00:00 pools "$W/casesB3.txt" 1
         done ;;
     esac ;;
-*)  sed -n '2,22p' "$0"; exit 1 ;;
+*)  sed -n '2,28p' "$0"; exit 1 ;;
 esac

@@ -277,13 +277,13 @@ function earth3d_parts(basis, regions)
 end
 # the radial profile P at depth d [km]: 30 (elastic) above the lithosphere
 earth1d_profile(θ, d) = d < θ[1] ? EARTH3D_CLAMP[2] : d < 410 ? θ[2] : d < 670 ? θ[3] : d < 1500 ? θ[4] : θ[5]
-function earth3d_field(parts, out, θ)
+function earth3d_field(parts, out, θ; clamp = EARTH3D_CLAMP)
     P = parts; F = similar(P.A)
     for (kd, d) in enumerate(P.dep)
         rad = earth1d_profile(θ, d)
         sh = d < 670 ? sum(θ[8+j] .* view(P.W, :, :, j) for j in 1:5) : 0.0
-        F[:, :, kd] .= d < θ[1] ? EARTH3D_CLAMP[2] :
-                       clamp.(rad .+ θ[6] .* view(P.A, :, :, kd) .+ θ[7] .* view(P.p2, :, :, kd) .+ θ[8] .* view(P.p3, :, :, kd) .+ sh, EARTH3D_CLAMP...)
+        F[:, :, kd] .= d < θ[1] ? clamp[2] :
+                       Base.clamp.(rad .+ θ[6] .* view(P.A, :, :, kd) .+ θ[7] .* view(P.p2, :, :, kd) .+ θ[8] .* view(P.p3, :, :, kd) .+ sh, clamp...)
     end
     o = sortperm(P.dep, rev = true)                                     # radius ascending
     isfile(out) && rm(out)
@@ -292,13 +292,19 @@ function earth3d_field(parts, out, θ)
         defVar(ds, "lat", P.lat, ("lat",); attrib = ["units" => "degrees_north"])
         defVar(ds, "r", R_VILMA_KM * 1e3 .- 1e3 .* P.dep[o], ("r",); attrib = ["units" => "m", "long_name" => "radius"])
         defVar(ds, "eta", Float32.(F[:, :, o]), ("lon", "lat", "r"); attrib = ["units" => "log10(Pa s)"], deflatelevel = 4)
-        ds.attrib["parameters"] = join([@sprintf("%.4f", x) for x in θ], " ")
+        ds.attrib["parameters"] = join([@sprintf("%.4f", x) for x in θ], " "); ds.attrib["clamp"] = "$(clamp[1]) $(clamp[2])"
     end
     out
 end
+# set key of group grp in the par file f, adding the line at the end of the group when the file does not have it
+function nml_ensure!(f, grp, key, val)
+    haskey(nml_group(f, grp), lowercase(key)) && return Base.run(`python3 $(joinpath(@__DIR__, "set_nml.py")) $f $grp.$key=$val`)
+    t = read(f, String)
+    write(f, replace(t, Regex("(^&" * grp * "\\b.*?)(^\\s*/\\s*\$)", "ms") => SubstitutionString("\\1    $key = $val\n\\2"); count = 1))
+end
 # the 3-D par file of θ: the template (a 3-D par file: visc_3d_file, visc_3d_structure, l_visc_3d and its spin-up) with the layers
 # of P on the layering of the 1-D template (earth1d_layers: the same layers as the 1-D run of P whose r the 3-D run takes)
-function earth3d_par(tmpl3, tmpl1, field, out, θ; note = "")
+function earth3d_par(tmpl3, tmpl1, field, out, θ; note = "", clamp = EARTH3D_CLAMP)
     v = nml_group(tmpl3, "vilma"); get(v, "l_visc_3d", ".false.") == ".true." || error("$tmpl3: not a 3-D par file")
     top, bot, eta, rh = earth1d_layers(θ[1:5], R_VILMA_KM .- nml_reals(nml_group(tmpl1, "vilma")["r_top"]) ./ 1e3)
     fr(d) = @sprintf("%.3fe3", R_VILMA_KM - d); fe(x) = x == 0 ? "0.0" : @sprintf("%.4e", x)
@@ -306,6 +312,8 @@ function earth3d_par(tmpl3, tmpl1, field, out, θ; note = "")
     kv = ["vilma.n_layer=$(length(top))", "vilma.r_top=" * join(fr.(top), ", "), "vilma.r_bot=" * join(fr.(bot), ", "),
           "vilma.eta=" * join(fe.(eta), ", "), "vilma.rheology=" * join(rh, ", "), "vilma.visc_3d_file=\"$(abspath(field))\"", "vilma.visc_3d_structure=0"]
     Base.run(`python3 $(joinpath(@__DIR__, "set_nml.py")) $out $kv`)
+    # a clamp other than VILMA2's default [19.5, 30] (input/vilma_defaults.nml): VILMA2's clamp of the field set to it
+    clamp == EARTH3D_CLAMP || (nml_ensure!(out, "vilma", "visc_log10_min", string(clamp[1])); nml_ensure!(out, "vilma", "visc_log10_max", string(clamp[2])))
     write(out, "! A 3-D Earth of the broad search (plastic_ensemble.jl earth-search-sample3d$(isempty(note) ? "" : ", " * note)): " *
                join([@sprintf("%.3f", x) for x in θ], " ") * "\n! (earth3d_field: P + α A + c2 pc2' + c3 pc3' + regional shifts; the layers of P)\n" * read(out, String))
     out
@@ -351,4 +359,34 @@ function earth_search_sample3d(samplef, basis, regions, tmpl3, tmpl1, outdir; n 
     println("wrote ", n, " 3-D Earths in ", outdir, " (radial: ", count(keep), " of ", size(S, 1), " points not ruled out ($space); origin ",
             join(["$o $(count(==(o), orig[pick]))" for o in unique(orig[pick])], ", "), "; ",
             join([@sprintf("%s [%.2f, %.2f]", p.name, p.lo, p.hi) for p in P[6:end]], ", "), ")")
+end
+
+# Wave B2: 3-D Earths in boxes of the 13 parameters, a Latin hypercube within each box. boxes: (name, n, bounds) with bounds a
+# Dict of parameter name => (lo, hi); a parameter without bounds keeps its wave-B range (earth3d_params). Members E<first>,
+# E<first+1>, ... over the boxes in order; the field clamped to clamp (VILMA2's clamp set to it in the par file when it is not the
+# default). Writes in outdir per member E<nnn>.nc, E<nnn>.nml, E<nnn>_1d.nml, members.csv and origin.csv (member, box).
+#   julia --project=tools/levante tools/levante/plastic_ensemble.jl earth-search-sample3d-box <boxes.toml> <basis.nc> <regions.nc> <3-D par> <1-D par> <outdir> [seed=1] [first=101] [clamp=19.0,30.0]
+# boxes.toml: [[box]] name, n, and [box.bounds] <parameter> = [lo, hi].
+function earth_search_sample3d_box(boxes, basis, regions, tmpl3, tmpl1, outdir; seed = 1, first = 101, clamp = (19.0, 30.0))
+    P = earth3d_params(basis); rng = MersenneTwister(seed); np = length(P)
+    for (nm, n, b) in boxes; bad = setdiff(keys(b), [p.name for p in P]); isempty(bad) || error("box $nm: no parameter $(bad)"); end
+    parts = earth3d_parts(basis, regions); mkpath(outdir); m = first - 1
+    open(joinpath(outdir, "members.csv"), "w") do io
+        open(joinpath(outdir, "origin.csv"), "w") do oo
+            println(io, "member,", join([p.name for p in P], ",")); println(oo, "member,box")
+            for (bn, n, b) in boxes
+                lo = [haskey(b, p.name) ? b[p.name][1] : p.lo for p in P]; hi = [haskey(b, p.name) ? b[p.name][2] : p.hi for p in P]
+                U = hcat([(randperm(rng, n) .- rand(rng, n)) ./ n for _ in 1:np]...)
+                for i in 1:n
+                    m += 1; θ = lo .+ U[i, :] .* (hi .- lo); θ = [round(θ[1], digits = 2); round.(θ[2:end], digits = 3)]; e = @sprintf("E%03d", m)
+                    f = earth3d_field(parts, joinpath(outdir, e * ".nc"), θ; clamp = clamp)
+                    earth3d_par(tmpl3, tmpl1, f, joinpath(outdir, e * ".nml"), θ; note = "$e, box $bn, seed $seed", clamp = clamp)
+                    earth1d_par(tmpl1, joinpath(outdir, e * "_1d.nml"), θ[1:5]; note = "the radial profile of $e (box $bn)")
+                    println(io, e, ",", @sprintf("%.2f", θ[1]), ",", join([@sprintf("%.3f", x) for x in θ[2:end]], ",")); println(oo, e, ",", bn)
+                end
+                println("box ", bn, ": ", n, " Earths, ", join([@sprintf("%s [%g, %g]", p.name, lo[k], hi[k]) for (k, p) in enumerate(P) if haskey(b, p.name)], ", "))
+            end
+        end
+    end
+    println("wrote ", m - first + 1, " 3-D Earths E", @sprintf("%03d", first), "-E", @sprintf("%03d", m), " in ", outdir, " (clamp ", clamp, ")")
 end
