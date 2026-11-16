@@ -12,25 +12,35 @@ derived from and the build it needs.
 Hand-written; keys left out take the templates of `input/kryos_defaults.nml`. All run 80 ka to present
 (`time_init = -80e3`, `time_end = 0`, `dtt = 100` yr), with the PaleoMIST margins (`f_ice > 0.5`, signed-distance
 interpolation) and Gowan's time-dependent tau_b domains of FesmData IceHistory. Build: `plastic=1`, and `vilma=1`
-where geo is `vilma2` (`yelmo=0` is enough). See [Simulating our own ice](experiment-plastic.md) and
-[PlasticIceSheet](backend-plastic.md).
+where geo is `vilma2` (`yelmo=0` is enough). See [Online ice](howto/online-ice.md) and
+[PlasticIceSheet](backend-plastic.md). The standalone VILMA2 runs of imposed ice ([Imposed ice](howto/imposed-ice.md))
+read only the `&vilma` group of these files: their Earth. Status as of 2026-11-16.
 
 | Par file | Domains (hub) | Ice | Geo | What it sets up |
 |---|---|---|---|---|
 | [kryos_North_plastic.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_North_plastic.nml) | North (NH-32KM) | plastic | none | Smoke run on a fixed bed: today's bed (TOPO-GEBCO2026), `z_sl = 0`, no globe, no climate |
-| [kryos_North_plastic_vilma2.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_North_plastic_vilma2.nml) | North (NH-32KM) | plastic | vilma2 | The global VILMA2 Earth of the science case (3-D Bagge viscosity), reference bed today's + r (`kryos_data/refcorr/PaleoMIST-sci`), the ice outside NH from the PaleoMIST history; Earth cadence 100 yr |
-| [kryos_North_plastic_vilma2_b1.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_North_plastic_vilma2_b1.nml) | North (NH-32KM) | plastic | vilma2 | B1's Earth and reference: Gowan's 1-D Earth (120 km lithosphere, 4e20 / 4e22 Pa s, 12 layers, lmax 170), the relaxed present-day reference (no r); the run scored against GAPSLIP beside B1 |
-| [kryos_NH-ANT_plastic_vilma2_b1.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT_plastic_vilma2_b1.nml) | North (NH-32KM), Antarctica (ANT-16KM) | plastic, plastic | vilma2 | As `_b1` with a second plastic instance on ANT-16KM (BedMachine Antarctica v4, its own geo port); the par file of calibration v2 |
-| [kryos_NH-ANT_plastic_vilma2.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT_plastic_vilma2.nml) | North, Antarctica | plastic, plastic | vilma2 | Both hemispheres on the science Earth: PREM 11 layers, 80 km lithosphere, Bagge et al. (2021) 3-D viscosity (structure 6), lmax 170, 1-D pre-spin-up, 2e4 yr cap on the 3-D relaxation, refcorr reference |
-| [kryos_NH-ANT-PAT_plastic_vilma2.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT-PAT_plastic_vilma2.nml) | North, Antarctica, PatagoniaPaleo (PAT-PAL-8KM) | plastic x 3 | vilma2 | As the previous with a third plastic instance on PAT-PAL-8KM (Gowan's region 4 domains, IceHistory v2.4.0, GEBCO2026 + r); the maps folder needs `grid_PAT-PAL-8KM.txt` |
-| [kryos_NH-ANT-PAT_plastic_vilma2_inv.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT-PAT_plastic_vilma2_inv.nml) | North, Antarctica, PatagoniaPaleo | plastic x 3 | vilma2 | The implied mass balance by joint inversion (`mass_balance = "inverted"`, `slide_law = "coulomb_n"`) with a surface instance `smb_simple` per domain as the prior (no climate: `tsl_const`); see [Implied mass balance](experiment-implied-mb.md) |
+| [kryos_North_plastic_vilma2.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_North_plastic_vilma2.nml) | North (NH-32KM) | plastic | vilma2 | The global VILMA2 Earth in 3-D (Bagge structure 6), reference bed today's + r (`kryos_data/refcorr/PaleoMIST-sci`), the ice outside NH from the PaleoMIST history; Earth cadence 100 yr |
+| [kryos_North_plastic_vilma2_b1.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_North_plastic_vilma2_b1.nml) | North (NH-32KM) | plastic | vilma2 | B1's Earth and reference: Gowan's 1-D Earth (120 km lithosphere, 4e20 / 4e22 Pa s, 12 layers, lmax 170), the relaxed present-day reference (no r) |
+| [kryos_NH-ANT_plastic_vilma2_b1.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT_plastic_vilma2_b1.nml) | North (NH-32KM), Antarctica (ANT-16KM) | plastic, plastic | vilma2 | As `_b1` with a second plastic instance on ANT-16KM (BedMachine Antarctica v4, its own geo port). Its `&vilma` group is `E1D-PMIST` (I1, I5) and the 1-D template of the Earth search |
+| [kryos_NH-ANT_plastic_vilma2.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT_plastic_vilma2.nml) | North, Antarctica | plastic, plastic | vilma2 | Both hemispheres on Bagge's 3-D Earth: PREM 11 layers, 80 km lithosphere, Bagge et al. (2021) 3-D viscosity (structure 6), lmax 170, 1-D pre-spin-up, 2e4 yr cap on the 3-D relaxation, refcorr reference |
+| [kryos_NH-ANT-PAT_plastic_vilma2.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT-PAT_plastic_vilma2.nml) | North, Antarctica, PatagoniaPaleo (PAT-PAL-8KM) | plastic x 3 | vilma2 | As the previous with a third plastic instance on PAT-PAL-8KM (Gowan's region 4 domains, IceHistory v2.4.0, GEBCO2026 + r); the maps folder needs `grid_PAT-PAL-8KM.txt`. The par file of ens-v1 and ens-v2, `E3D-B21-6` of the imposed-ice runs, and the 3-D template of the Earth search |
+| [kryos_NH-ANT-PAT_plastic_vilma2_nh16.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT-PAT_plastic_vilma2_nh16.nml) | North (NH-16KM), Antarctica, PatagoniaPaleo | plastic x 3 | vilma2 | As the previous with the Northern Hemisphere on NH-16KM (D3; needs `grid_NH-16KM.txt` and the case's NH-16KM reference topography) |
+| [kryos_NH-ANT-PAT_plastic_vilma2_bagge1d.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT-PAT_plastic_vilma2_bagge1d.nml), [`_bagge1d_layers.nml`](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT-PAT_plastic_vilma2_bagge1d_layers.nml) | North, Antarctica, PatagoniaPaleo | plastic x 3 | vilma2 | The radial mean of Bagge's structure 6 as a 1-D Earth: VILMA2's 1Db (`visc_3d_tol = 99`), and the same as plain layer means (`E1D-B21-6`, `E1D-B21-6-layers`) |
+| [kryos_NH-ANT-PAT_plastic_vilma2_inv.nml](https://github.com/fesmc/kryos/blob/main/par/kryos_NH-ANT-PAT_plastic_vilma2_inv.nml) | North, Antarctica, PatagoniaPaleo | plastic x 3 | vilma2 | The implied mass balance by joint inversion (`mass_balance = "inverted"`, `slide_law = "coulomb_n"`) with a surface instance `smb_simple` per domain as the prior (no climate: `tsl_const`); see [Implied mass balance](implied-mb.md) |
 
 In the `_b1` files and the NH-ANT(-PAT) files, `taub_domain_factor_file` (the present-day factors per domain,
 Stage 1) is `"kryos_data/plastic/taub_domain_factor_v3.nc"` on every instance (the released factors; v3 is v2 plus
-Patagonia, identical on all NH and ANT domains), and `taub_scale_file` (the multipliers per scale group of the
-calibration) is `""`. `kryos_North_plastic.nml` and `kryos_North_plastic_vilma2.nml` list neither key (the default
-`""`: Gowan's tau_b as it is). The calibration tools set them per run
-([Calibration and ensembles](experiment-calibration.md)); for one run, `-p ice_nor.taub_scale_file=<file> ...`.
+Patagonia, identical on all NH and ANT domains), and `taub_scale_file` (the multipliers per scale group of an
+ensemble member) is `""`. `kryos_North_plastic.nml` and `kryos_North_plastic_vilma2.nml` list neither key (the default
+`""`: Gowan's tau_b as it is). The ensemble tools set them per member ([Ensembles](howto/ensembles.md)); for one run,
+`-p ice_nor.taub_scale_file=<file> ...`.
+
+**Generated par files of the Earth search.** `plastic_ensemble.jl earth-search-sample`, `earth-search-sample3d` and
+`earth-search-sample3d-box` write one par file per sampled Earth from the two templates (`_b1` for 1-D, `NH-ANT-PAT` for
+3-D): `earths/E<nnn>.nml` (wave A, 1-D), `earthsB/E<nnn>.nml` with its field `E<nnn>.nc` and `E<nnn>_1d.nml` (wave B, 3-D and
+its radial profile), and the same for wave B2 in `waveB2/earths/` (with `visc_log10_min = 19.0`). They live in the search's
+work folder, not in `par/` ([The Earth search](howto/earth-search.md)). `experiments/refs-ice.sh` writes the Bagge structures
+1-8 likewise (`$KRYOS_WORK/experiments/par/E3D-B21-<k>.nml`: the 3-D par file with `visc_3d_structure = k`).
 
 ## The Yelmo configurations
 
