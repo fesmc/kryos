@@ -2,12 +2,12 @@
 
 The launch scripts of the glacial-cycle simulations of
 [docs/science/results.md](../docs/science/results.md): every row of its ladder is made by one call of one script here, and
-scored by `scores.sh`. The workflow, the concepts and the open questions:
-[docs/science/index.md](../docs/science/index.md).
+scored by `scores.sh`. The question, the concepts and the open questions: [docs/science/index.md](../docs/science/index.md).
+How to run each block: [docs/howto/](../docs/howto/).
 
 All scripts run on Levante or albedo from a kryos checkout installed with `configme install kryos` and built with
 `make kryos plastic=1 vilma=1 yelmo=0` (docs/getting-started.md). They source `tools/levante/env.sh`, which sets
-`KRYOS_WORK` (your writable folder, where everything below goes), `FESMDATA`, `KRYOS_DATA`, `VILMA2` and the queues.
+`KRYOS_WORK` (the project's shared work folder, where everything below goes), `FESMDATA`, `KRYOS_DATA`, `VILMA2` and the queues.
 
 | ids | script | makes |
 |---|---|---|

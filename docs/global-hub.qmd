@@ -8,7 +8,7 @@ three plastic ice sheets (North on `NH-32KM`, Antarctica on `ANT-16KM`, Patagoni
 the global Earth `geo_glob` on its Gauss grid, with the rest of the world's ice from PaleoMIST's history. The general
 structure of a run (instances, wiring, lags, clock) is on [Architecture](architecture.qmd); the backends are on
 [VILMA2](backend-vilma2.md) and [PlasticIceSheet](backend-plastic.md); the runs themselves on
-[Simulating our own ice](experiment-plastic.md).
+[Online ice](howto/online-ice.md).
 
 The design is [`docs/dev/phase4-plan.md`](https://github.com/fesmc/kryos/blob/main/docs/dev/phase4-plan.md) (sections 2-8); the code is
 [`kryos_globe_ice.f90`](https://github.com/fesmc/kryos/blob/main/src/core/kryos_globe_ice.f90) (the global ice field),
@@ -193,58 +193,58 @@ ice grid). The hub follows through the ice (`domain_hub_update`).
 
 ## The reference topography (refcorr)
 
-A glacial-cycle run that starts from equilibrium under the initial load needs a reference bed that is today's bed plus
-the rebound still to come at the end of the run, so that the run ends on today's bed instead of one too deep under the
-former ice sheets ([`docs/dev/vilma2-paleomist.md`](https://github.com/fesmc/kryos/blob/main/docs/dev/vilma2-paleomist.md), "The iterated reference", "Present-day reference correction for
-kryos"). The correction `r` enters kryos only through the reference topography, shared by every component; no source
-code is involved.
+**What r is.** A glacial-cycle run starts in equilibrium with the load of 80 ka and must end on today's bed. VILMA2 deforms
+its bed relative to a *reference* bed. If the reference were today's bed, the run would end too deep wherever ice has left
+recently, because the Earth is still rebounding there at 0 ka. The present-day correction r is the rebound still to come at
+the end of the run: the reference bed is today's bed + r, and the run's 0 ka bed is then today's.
+
+- r depends on the ice history and on the Earth: every pair needs its own. It reaches about 400 m over Quebec-Labrador and
+  about 130 m under the Ronne-Filchner ice (PaleoMIST on Bagge's structure 6).
+- r is a fixed point. VILMA2 with `i_eq = 3` takes the reference bed z_bed_ref + r; its 0 ka bed is then that minus
+  rsl(0 ka), so the 0 ka bed misfit is r − rsl(0 ka). Iterating r_{n+1} = rsl_n(0 ka) from r_0 = 0 converges in 3-5 runs.
+- A run with a borrowed r (the r of another, nearby Earth) is one pass instead of 3-5, but ends near, not on, today's bed.
+- r is computed under the imposed ice history, with the history's own 0 ka bed; a coupled run with its own ice has a slightly
+  different r. One more step from the coupled run's 0 ka rsl refreshes it (`gia_refcorr.jl next`).
+
+**How kryos reads it.** r enters a kryos run only through the reference topography, shared by every component; no source
+code is involved:
 
 | Par group | File | Content |
 |---|---|---|
-| `[topo_nor]`, `[topo_ant]`, `[topo_pat]` `path` | `kryos_data/refcorr/PaleoMIST-sci/{domain}/{grid_name}/{grid_name}_TOPO-<source>-refcorr.nc` | the domain topography with `z_bed + r`, `z_srf` moved with it, the other variables unchanged |
-| `[X_z_bed]`, `[X_H_ice]` `filename` (`mode = "static"`) | `kryos_data/refcorr/PaleoMIST-sci/{grid_name}/{grid_name}_REFCORR.nc` | the history's 0 ka bed + `r`, its 0 ka ice |
+| `[topo_nor]`, `[topo_ant]`, `[topo_pat]` `path` | `kryos_data/refcorr/<case>/{domain}/{grid_name}/{grid_name}_TOPO-<source>-refcorr.nc` | the domain topography with `z_bed + r`, `z_srf` moved with it, the other variables unchanged |
+| `[X_z_bed]`, `[X_H_ice]` `filename` (`mode = "static"`) | `kryos_data/refcorr/<case>/{grid_name}/{grid_name}_REFCORR.nc` | the history's 0 ka bed + `r`, its 0 ka ice |
 
-`H_ice` stays present-day. The hub prepares the corrected reference; every instance grid's reference comes from it,
-and the global reference is the merge of the domains' references with X.
+`H_ice` stays present-day. The hub prepares the corrected reference; every instance grid's reference comes from it, and the
+global reference is the merge of the domains' references with X. The 3-D par files use the case PaleoMIST-sci (PaleoMIST's ice,
+Bagge 6, 80 → 0 ka linear in time, ρ_i 910, ρ_w 1028): it converged in 4 runs to a 0 ka bed misfit of 0.23 m, 24 m RMS of r
+globally.
 
-The tool is [`tools/levante/gia_refcorr.sh`](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr.sh)
-(with `gia_refcorr.jl`, `gia_refcorr_plot.jl`): standalone VILMA2 (`$VILMA2/bin/vilma.x`; the published cases used the
-gate stack S11) with the `&vilma` group of a
-kryos par file and the run's densities, under a FesmData ice history, iterated with `i_eq = 3` as
-`r_{n+1} = rsl_n(0 ka)` from `r_0 = 0` until `max |r_n − rsl_n(0 ka)| < TOL` (default 1.5 m, at most `NMAX = 8` runs).
-It writes the reference files under `$KRYOS_WORK/kryos_data/refcorr/<CASE>/` (`KD` overrides the parent; domains from
-`DOMAINS`, `"<domain>:<hub grid>:<topo file under fesmdata> ..."`, default North and Antarctica), and is restartable per
-iteration (the case folder is a PaleoMIST runme project, `tools/levante/pm_project.sh` with `pm_data` -> its
-`data/`; each iteration `it<n>` is a runme run of its `vilma_rc.nml`, rerun unless its `status` is 0). It submits
-itself (shared partition, 2 days, 128 cpus, 60 GB) and runs the iterations within that job:
+**How r is made.** [`tools/levante/gia_refcorr.sh`](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr.sh)
+(with `gia_refcorr.jl`): standalone VILMA2 (`$VILMA2/bin/vilma.x`) with the `&vilma` group of a kryos par file and the run's
+densities, under a FesmData ice history, iterated until `max |r_n − rsl_n(0 ka)| < TOL` (1.5 m, at most `NMAX = 8` runs). It
+submits itself and writes the reference files under `$KD/refcorr/<CASE>/` (`KD` default `$KRYOS_WORK/kryos_data`):
 
 ```bash
 CASE=PaleoMIST-sci PAR=<kryos par file> tools/levante/gia_refcorr.sh
 ```
 
-A run reads the case through its `kryos_data` link, runme's copy of the checkout's: point that link at
-`$KRYOS_WORK/kryos_data` (remove it, set `KRYOS_DATA` and rerun `tools/levante/setup.sh`), or copy the case into the
-shared `/work/ba1442/kryos_data`, where the published cases are.
+Every imposed-ice run of the glacial-cycle work is such a case; its options, outputs and the pools that run many of them:
+[Imposed ice](howto/imposed-ice.md).
 
-For the science case (3-D Earth, PaleoMIST 80 → 0 ka linear in time, ρ_i 910, ρ_w 1028) it converged in 4 runs to a
-0 ka bed misfit of 0.23 m; `r` reaches 396 m over Quebec-Labrador and 126 m under the Ronne-Filchner ice, 24 m RMS
-globally ([`docs/dev/vilma2-paleomist.md`](https://github.com/fesmc/kryos/blob/main/docs/dev/vilma2-paleomist.md)). Limits: `r` is computed with the history's own 0 ka bed as VILMA2's
-reference, not with the kryos merge of the domain topographies, and with the history's ice, not the ice the coupled
-run produces; one more fixed-point step from the coupled run's own 0 ka `rsl` refreshes it (`gia_refcorr.jl next`).
-Another Earth or history needs its own case.
+A run reads the case through its `kryos_data` link (runme links `kryos_data` into every run folder from the checkout's link,
+which `tools/levante/setup.sh` points at `$KRYOS_DATA`). To use a case of your own, point that link at `$KRYOS_WORK/kryos_data`
+(remove it, set `KRYOS_DATA` and rerun `setup.sh`), or copy the case into the shared `$KRYOS_DATA/refcorr`
+(`/work/ba1442/kryos_data` on Levante, `/albedo/work/projects/p_forclima/kryos_data` on albedo), where the published cases are.
 
-The PatagoniaPaleo topography `[topo_pat]` names,
-`kryos_data/refcorr/PaleoMIST-sci/PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_TOPO-GEBCO2026-refcorr.nc`, was made on
-2026-11-09 with `gia_refcorr.jl write` on the converged `r.nc` of PaleoMIST-sci (no new GIA run), domain spec
-`PatagoniaPaleo:PAT-PAL-8KM:<fesmdata>/PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_TOPO-GEBCO2026.nc`. Any domain can be
-added to a case this way, or with `DOMAINS` when running `gia_refcorr.sh`:
+Any domain can be added to a converged case without a new GIA run (the PatagoniaPaleo topography of PaleoMIST-sci was made
+this way on 2026-11-09), or with `DOMAINS` when running `gia_refcorr.sh`:
 
 ```bash
 julia --project=tools/levante tools/levante/gia_refcorr.jl write <r.nc> <out folder> <X grid>:<history on that grid> <domain>:<hub grid>:<topo file> ...
 ```
 
-runme links `kryos_data` into every run folder from the checkout's link (`.runme/info.json` links input, fesmdata,
-kryos_data, maps, ice_data and isostasy_data; `tools/levante/setup.sh` makes `kryos_data -> $KRYOS_DATA`).
+The derivation and the first tests: [`docs/dev/vilma2-paleomist.md`](https://github.com/fesmc/kryos/blob/main/docs/dev/vilma2-paleomist.md),
+"The iterated reference", "Present-day reference correction for kryos".
 
 ## Cadence and time constraints
 

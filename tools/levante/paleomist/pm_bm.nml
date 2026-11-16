@@ -1,4 +1,4 @@
-! Standalone VILMA2 under the PaleoMIST ice history (Gowan et al. 2021; docs/experiment-gowan.md), a runme case of a
+! Standalone VILMA2 under the PaleoMIST ice history (Gowan et al. 2021; docs/howto/imposed-ice.md), a runme case of a
 ! PaleoMIST project (tools/levante/pm_project.sh). Earth "bm": the science setting collapsed to 1-D: the profile of its
 ! pre_spinup_1d (lateral mean of log10 eta at the FE nodes, pm_visc1d.sh) as a laterally uniform field
 ! (pm_data/pm_visc_bm.nc): bm - l80 = the radial profile, 3d - bm = the lateral structure.

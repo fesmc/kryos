@@ -1,4 +1,4 @@
-! Standalone VILMA2 under the PaleoMIST ice history (Gowan et al. 2021; docs/experiment-gowan.md), a runme case of a
+! Standalone VILMA2 under the PaleoMIST ice history (Gowan et al. 2021; docs/howto/imposed-ice.md), a runme case of a
 ! PaleoMIST project (tools/levante/pm_project.sh). Earth "l80": Gowan's viscosities on the science layers (80 km elastic
 ! lithosphere): l80 - 1d = the lithosphere.
 ! Options (runme -p): ctl.file_forcing = "pm_data/pm_force_<F>.nc" (pm_prep.jl: B 80 -> 0 ka steps, A 22.5 ka held, S smoke,

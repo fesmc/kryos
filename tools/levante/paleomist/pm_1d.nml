@@ -1,4 +1,4 @@
-! Standalone VILMA2 under the PaleoMIST ice history (Gowan et al. 2021; docs/experiment-gowan.md), a runme case of a
+! Standalone VILMA2 under the PaleoMIST ice history (Gowan et al. 2021; docs/howto/imposed-ice.md), a runme case of a
 ! PaleoMIST project (tools/levante/pm_project.sh). Earth "1d": Gowan et al. (2021): 120 km elastic lithosphere, upper
 ! mantle 4e20 Pa s to 670 km, lower mantle 4e22 Pa s; the layers split on the PREM boundaries 80, 220, 400, 600, 670 km
 ! and the lower mantle in four.

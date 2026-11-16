@@ -5,7 +5,7 @@
 # pm_prep.jl: <data folder>, default $PM_DIR/data if it exists, else the reference inputs $PM_REF/data). Then, in the folder,
 #   runme -r -s -e vilma -n $KRYOS/tools/levante/paleomist/pm_1d.nml -o B1_l170 -q compute -w 08:00:00 --omp 64 \
 #         -p vilma.rho_ice=931.0 vilma.equil_time_max=2.0e6
-# (docs/experiment-gowan.md: the runs of Gowan et al. (2021) as cases, tools/levante/paleomist/pm_<earth>.nml).
+# (docs/howto/imposed-ice.md: the runs of Gowan et al. (2021) as cases, tools/levante/paleomist/pm_<earth>.nml).
 set -euo pipefail
 _h=$(dirname "$(readlink -f "$0")"); . "$_h/env.sh"
 P=${1:-$PM_DIR}

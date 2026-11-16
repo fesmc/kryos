@@ -64,7 +64,7 @@ level from SELEN on a 1-D Earth. The FesmData products used here are
 2.5 kyr slices, each reconstructed on its own (`margin_interp = "nearest"` reproduces
 that); online, kryos interpolates the margin in time and solves on the bed and sea
 level of its own Earth at every step. See
-[Reproducing Gowan et al. (2021)](experiment-gowan.md).
+[Imposed ice](howto/imposed-ice.md) and [Online ice](howto/online-ice.md).
 
 ## What a step does
 
@@ -178,14 +178,28 @@ its scale group. `taub_default` is scaled by neither.
 | Key | File | What |
 |---|---|---|
 | `taub_domain_factor_file` | dimension `domain`: `domain_id(domain)`, `log_factor(domain)` (natural log $u_d$) | a factor per domain, constant in time: the present-day fit (Stage 1, `tests/plastic_taub_fit.f90`, written by `tools/levante/plastic_taub_fit_report.jl` as `taub_domain_factor.nc`; released as `$KRYOS_DATA/plastic/taub_domain_factor_v2.nc`, `_v3.nc`). An id of the product missing from the file keeps factor 1; an id of the file without τ_b stops unless its log_factor is 0. |
-| `taub_scale_file` | dimensions `domain`, `scale_group`, `node`: `domain_id(domain)`, `group(domain)` (1 to the number of groups, 0 = unscaled), `time(node)` (any order, units as the margin's), `log_factor(scale_group, node)` ($v_g$) | multipliers per scale group, time dependent: the calibration (`tools/levante/plastic_taub_scale.jl`, `plastic_esmda.jl`; the v2 posterior mean: `$KRYOS_DATA/plastic/taub_scale_esmda_v2_posterior.nc`). $v_g$ is linear in time between the nodes and held outside them. An id of the product missing from the file is unscaled; an id of the file with a group but no τ_b stops. |
+| `taub_scale_file` | dimensions `domain`, `scale_group`, `node`: `domain_id(domain)`, `group(domain)` (1 to the number of groups, 0 = unscaled), `time(node)` (any order, units as the margin's), `log_factor(scale_group, node)` ($v_g$) | multipliers per scale group, time dependent: the parameters of a weighted-ensemble member (`tools/levante/plastic_taub_scale.jl`, written by `plastic_ensemble.jl` as `<ensemble>/iter_01/scale/mNNN.nc`). $v_g$ is linear in time between the nodes and held outside them. An id of the product missing from the file is unscaled; an id of the file with a group but no τ_b stops. |
 
-Stage 1 fits one factor per domain to today's ice thickness of the hub (a cold solve
-at 0 ka on PaleoMIST's 0 ka margin, Levenberg-Marquardt with a smoothness penalty
-across domain boundaries); the scale groups (Laurentide, Greenland, Eurasia,
-Antarctica) are calibrated with VILMA2 in the loop against GAPSLIP sea-level data by
-ES-MDA. See [Calibration and ensembles](experiment-calibration.md). A file of zeros
-gives the unscaled τ_b bit for bit, and so does leaving the key out.
+A file of zeros gives the unscaled τ_b bit for bit, and so does leaving the key out.
+This page is the reference for how τ_b is composed; the other pages link here.
+
+**The present-day factors (Stage 1)** are fitted offline by `tests/plastic_taub_fit.f90`
+to today's ice thickness of the topography hub: the backend at t = 0 on the history's
+0 ka margin and the hub's bed (z_sl = 0), τ_b = Gowan's 0 ka value × e^{u_d}, a cold
+solve. The misfit is χ²(u) = Σ ((H(u) − H_obs)/σ)² over the grounded ice cells of the
+margin, σ = max(`sigma_min`, `sigma_rel` H_obs) (50 m, 0.1), plus λ Σ w (u_d − u_d')²
+over adjacent free domains (w the length of their shared boundary). It is minimised by
+Levenberg-Marquardt (|u| ≤ `u_max` = 2.3: factors 0.1-10) for a list of λ; the report
+`plastic_taub_fit_report.jl` picks λ per grid (the largest with χ²/n ≤ 1, else the
+corner of the L-curve). Released: `taub_domain_factor_v3.nc` (NH-32KM, ANT-16KM,
+PAT-PAL-8KM), the file of the par files and the ensembles. How to run it:
+[Ensembles, Stage 1](howto/ensembles.md#stage-1-the-present-day-factors).
+
+**The multipliers** are the parameters of the weighted ensembles: one log factor per
+scale group (Laurentide, Greenland, Fennoscandia, Barents-Kara, British-Irish, West
+and East Antarctica, Patagonia) and time node, sampled from a prior and weighted by
+the sea-level data ([Our ice: the τ_b ensembles](science/ice-ensembles.md)). The
+ES-MDA calibrations that first set them (v1, v2) are retired.
 
 ### Smoothing
 
@@ -302,7 +316,7 @@ margin cells and to the ocean calved; `mb_smooth_km` smooths it conservatively.
 `mass_balance = "inverted"` (`drive = "taub"`) inverts jointly for the speed and the
 mass balance against the closure's speed and the imported `smb` as the prior (e.g.
 from [smb_simple](backend-smb-simple.md)), with the `inv_*` keys. Both are in
-development: see [Implied mass balance](experiment-implied-mb.md).
+development: see [Implied mass balance](implied-mb.md).
 
 ## Keys
 
@@ -375,13 +389,3 @@ at their defaults left out here):
 
 The clock of these runs steps 100 yr from -80 ka to 0 (one plastic solve and one
 VILMA2 step per 100 yr). On NH-32KM a `"surface"` solve takes about 10 ms.
-
-## Status
-
-With the `f_ice > 0.5` margin, `margin_position = "sdist"` and Gowan's τ_b, the NH ice
-of the offline check (each slice on PaleoMIST's own bed) is 7-10 % larger in volume
-than PaleoMIST; most of the remainder is the grid resolution (32 km against Gowan's
-5 km). With the Stage 1 factors the present-day volume per region is within about 1 %
-of the observations. Details: [Reproducing Gowan et al. (2021)](experiment-gowan.md),
-[Calibration and ensembles](experiment-calibration.md).
-These numbers are from runs before the default `taub_smooth_km = 50` (unsmoothed tau_b, 2026-11-09).
