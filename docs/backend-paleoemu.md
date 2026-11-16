@@ -113,9 +113,9 @@ At a cold start (the first update, PASS_BOUNDARY) the key `filter_start` sets th
   CO2 series' value at 0) reproduces the reference climate, `dtas`, `dlogpr`, `dto` 0.
   Outside 0-3 Ma the filters start in equilibrium.
 - `"equilibrium"`: the run's input, as if it had been constant forever. At present day
-  this lacks the deglacial memory: `dtas` −0.56 K over Greenland's ice and −0.58 K over
-  Antarctica's (annual means; JJA +0.23 and −0.45 K), `dlogpr` +0.8 %, `dto` −2.8 to
-  +1.5 K.
+  this lacks the deglacial memory: `dtas` −0.76 K over Greenland's ice and −0.42 K over
+  Antarctica's (annual means; JJA +0.25 and −0.35 K), `dlogpr` −3.6 % and −0.9 %, `dto`
+  −3.4 to +0.6 K.
 
 A restart restores the filters of the bundle, whatever `filter_start`.
 
