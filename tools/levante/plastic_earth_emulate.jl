@@ -3,8 +3,8 @@
 # plastic_ensemble.jl scores: scores.csv), per ice history and data group a Gaussian process of the score in the standardized
 # parameters, then the history-matching cut of a dense sample of the parameter space.
 #   julia --project=tools/levante tools/levante/plastic_earth_emulate.jl <members.csv> <scores.csv> <config.toml> <outdir> [npts=100000] [seed=2]
-#   julia --project=tools/levante tools/levante/plastic_earth_emulate.jl wave-b <members A.csv> <members B.csv> <scores.csv> <config.toml> <basis.nc> <outdir> [npts=100000] [seed=3]
-#       wave B (3-D Earths, earth-search-sample3d): see emulate_b
+#   julia --project=tools/levante tools/levante/plastic_earth_emulate.jl wave-b <members A.csv> <members B.csv[,members B2.csv]> <scores.csv> <config.toml> <basis.nc> <outdir> [npts=100000] [seed=3] [radial=waveA|all] [boxes=<boxes.toml>]
+#       wave B (3-D Earths, earth-search-sample3d and -box): see emulate_b; wave B2: radial=all boxes=experiments/earth-search-b2-boxes.toml
 # The cases: the references named "ice-<ICE> | E1D-ES1-E<nnn>" (member E<nnn> of members.csv under the ice <ICE>), scored on the
 # judging window (scores.csv window = "window": the index points of age <= compare_max_age_ka). The groups that judge and the cut
 # of the config as plastic_ensemble.jl weights: [ensemble] use_groups (default all but [[gnss]]/[esl] judge = false); cut_g the
@@ -269,6 +269,9 @@ end
 # 3-D effect Δ = y_3D - y_1D of the same radial profile (known at the design points: both were run) from a GP in the 8 lateral and
 # regional parameters θ_l. Variances add. The split assumes the lateral effect does not depend on the radial profile within the
 # space wave A left: the check is the prediction of y_3D at the design points (wave-A emulator + LOO of Δ) against the runs.
+# Wave B2 (members outside wave A's box, several member files): radial = "all" fits the radial GPs to every 1-D run (waves A, B and
+# B2) and boxes (earth-search-sample3d-box's file) widens the ranges to the union of the boxes: the inputs scaled to it, the dense
+# sample over it (the check then takes the radial part in-sample).
 # Writes in outdir: summary.md, cases.csv, sample.csv (the dense sample with the max I_emu per ice), the figures, waveA/.
 const CASE3_RX = r"^ice-(\S+) \| E3D-ES2-(E\d+)$"
 const CASE1B_RX = r"^ice-(\S+) \| E1D-ES2-(E\d+)$"
@@ -290,35 +293,64 @@ function expert_distance(θ, basis)
          shifts = sqrt(mean(abs2, θ[9:13])))
     end
 end
-function emulate_b(membersA, membersB, scoresf, cfgf, basis, outdir; npts = 100_000, seed = 3, cutI = 3.0)
+function emulate_b(membersA, membersB, scoresf, cfgf, basis, outdir; npts = 100_000, seed = 3, cutI = 3.0, radial = "waveA", boxes = nothing)
     mkpath(outdir)
-    A = emulate(membersA, scoresf, cfgf, joinpath(outdir, "waveA"); npts = 20_000, cutI = cutI)    # the wave-A emulators, refitted
     P = ES.earth3d_params(basis); pn = [p.name for p in P]; d = length(P); lo = [p.lo for p in P]; hi = [p.hi for p in P]
+    if boxes !== nothing          # wave B2: the ranges are the union of wave B's and the boxes'
+        radial == "all" || error("boxes outside wave A's ranges need radial = all")
+        for b in TOML.parsefile(boxes)["box"], (k, v) in b["bounds"]
+            j = findfirst(==(k), pn); lo[j] = min(lo[j], v[1]); hi[j] = max(hi[j], v[2])
+        end
+    end
     std01(θ) = (θ .- lo) ./ (hi .- lo); il = 6:d; ir = 1:5
-    mem, _ = read_members(membersB, pn); sc = A.sc; C = A.C; ug = C.ug
-    of = joinpath(dirname(membersB), "origin.csv")      # earth-search-sample3d: the ice histories wave A kept the radial part under
-    orig = isfile(of) ? Dict(String(r[1]) => String(r[2]) for r in eachrow(readdlm(of, ',', Any; skipstart = 1))) : Dict{String,String}()
+    mfs = String.(membersB isa AbstractString ? split(membersB, ",") : membersB)
+    mem = merge([read_members(f, pn)[1] for f in mfs]...)
+    orig = Dict{String,String}()          # earth-search-sample3d(-box): wave A's ice histories or the box of each member
+    for f in mfs
+        of = joinpath(dirname(f), "origin.csv"); isfile(of) || continue
+        for r in eachrow(readdlm(of, ',', Any; skipstart = 1)); orig[String(r[1])] = String(r[2]); end
+    end
     og(m) = get(orig, m, "-")
-    c3 = cases_by(sc, CASE3_RX, mem, membersB); c1 = cases_by(sc, CASE1B_RX, mem, membersB)
-    ices = sort([i for i in keys(c3) if haskey(c1, i) && i in A.ices]); isempty(ices) && error("no 3-D cases with their 1-D run")
-    println("wave B cases: ", join(["$i $(length(c3[i])) 3-D, $(length(c1[i])) 1-D" for i in ices], "; "))
+    sc = read_scores(scoresf); C = cut_setup(sc, TOML.parsefile(cfgf)); ug = C.ug
     y(s, g) = haskey(sc, (s, g)) && sc[(s, g)].chi2n > 0 ? log(sc[(s, g)].chi2n) : NaN
-    rng = MersenneTwister(seed); Xs01 = lhs01(d, npts, rng)
+    # the radial emulator: wave A's GPs on wave A's ranges (radial = "waveA"), or GPs of every 1-D run, waves A and B, on the
+    # union of the ranges (radial = "all": profiles outside wave A's box)
+    memA, _ = read_members(membersA)
+    if radial == "waveA"
+        A = emulate(membersA, scoresf, cfgf, joinpath(outdir, "waveA"); npts = 20_000, cutI = cutI)    # the wave-A emulators, refitted
+        loA = [p.lo for p in ES.EARTH1D_PARAMS]; hiA = [p.hi for p in ES.EARTH1D_PARAMS]
+        rad01 = θr -> (θr .- loA) ./ (hiA .- loA); REMU = A.EMU; rices = A.ices
+    else
+        rad01 = θr -> (θr .- lo[ir]) ./ (hi[ir] .- lo[ir]); REMU = Dict{Tuple{String,String},Emu}()
+        cA = cases_by(sc, CASE_RX, memA, membersA); cB = cases_by(sc, CASE1B_RX, mem, join(mfs, ","))
+        rices = sort(collect(intersect(keys(cA), keys(cB))))
+        for ice in rices, g in ug
+            haskey(C.ngrp, g) || continue
+            pts = [(t, s) for (t, s) in [[(memA[m], s) for (m, s) in cA[ice]]; [(mem[m][ir], s) for (m, s) in cB[ice]]] if isfinite(y(s, g))]
+            e, st = gp_fit(hcat([rad01(t) for (t, _) in pts]...), [y(s, g) for (_, s) in pts], C.ycut[g], cutI); REMU[(ice, g)] = e
+            @printf("radial %s %-18s n %3d  LOO RMSE %.3f R2 %.3f within 2 sd %.2f  ℓ %s\n", ice, g, st.n, st.rmse, st.r2, st.cov2,
+                    join([@sprintf("%.2f", x) for x in st.h.ℓ], " "))
+        end
+    end
+    c3 = cases_by(sc, CASE3_RX, mem, join(mfs, ",")); c1 = cases_by(sc, CASE1B_RX, mem, join(mfs, ","))
+    ices = sort([i for i in keys(c3) if haskey(c1, i) && i in rices]); isempty(ices) && error("no 3-D cases with their 1-D run")
+    println("wave B cases: ", join(["$i $(length(c3[i])) 3-D, $(length(c1[i])) 1-D" for i in ices], "; "), "; radial emulator: ", radial)
+    rng = MersenneTwister(seed); Xs01 = lhs01(d, npts, rng); Xr = rad01(lo[ir] .+ Xs01[ir, :] .* (hi[ir] .- lo[ir]))
     Imax = Dict(ice => fill(-Inf, npts) for ice in ices); Imax1 = Dict(ice => fill(-Inf, npts) for ice in ices)
     gp = []; chk = []
     for ice in ices, g in ug
-        haskey(A.EMU, (ice, g)) || continue
+        haskey(REMU, (ice, g)) || continue
         s1 = Dict(c1[ice]); pairs = [(m, s, s1[m]) for (m, s) in c3[ice] if haskey(s1, m) && isfinite(y(s, g)) && isfinite(y(s1[m], g))]
         length(pairs) < 10 && (println("$ice $g: $(length(pairs)) pairs, no GP"); continue)
         Δ = [y(s, g) - y(s1m, g) for (_, s, s1m) in pairs]
         e, st = gp_fit(hcat([std01(mem[m])[il] for (m, _, _) in pairs]...), Δ, Inf, cutI)
         push!(gp, (ice = ice, g = g, st..., meanΔ = mean(Δ), sdΔ = std(Δ)))
         # the check: y_3D at the design points from the wave-A emulator and the LOO of Δ
-        μa, σa = predict(A.EMU[(ice, g)], hcat([std01(mem[m])[ir] for (m, _, _) in pairs]...))
+        μa, σa = predict(REMU[(ice, g)], hcat([rad01(mem[m][ir]) for (m, _, _) in pairs]...))
         y3 = [y(s, g) for (_, s, _) in pairs]; μ3 = μa .+ st.μl; σ3 = sqrt.(σa .^ 2 .+ st.σl .^ 2)
         push!(chk, (ice = ice, g = g, rmse = sqrt(mean(abs2, y3 .- μ3)), cov2 = mean(abs.(y3 .- μ3) ./ σ3 .< 2),
                     out = count(y3 .> C.ycut[g]), wrong = count(((μ3 .- C.ycut[g]) ./ σ3 .> cutI) .& (y3 .<= C.ycut[g]))))
-        μr, σr = predict(A.EMU[(ice, g)], Xs01[ir, :]); μl, σl = predict(e, Xs01[il, :])
+        μr, σr = predict(REMU[(ice, g)], Xr); μl, σl = predict(e, Xs01[il, :])
         Imax[ice] = max.(Imax[ice], (μr .+ μl .- C.ycut[g]) ./ sqrt.(σr .^ 2 .+ σl .^ 2))
         Imax1[ice] = max.(Imax1[ice], (μr .- C.ycut[g]) ./ σr)
         @printf("%s %-18s n %2d  Δ mean %+.3f sd %.3f  LOO RMSE %.3f R2 %.3f  ℓ %s  check: y3 RMSE %.3f within 2 sd %.2f\n", ice, g, st.n, mean(Δ), std(Δ),
@@ -352,7 +384,8 @@ function emulate_b(membersA, membersB, scoresf, cfgf, basis, outdir; npts = 100_
     end
     open(joinpath(outdir, "summary.md"), "w") do io
         println(io, "# Earth search, wave B: 3-D Earths\n\nCases: ", join(["$(length(c3[i])) 3-D and $(length(c1[i])) 1-D under ice-$i" for i in ices], ", "),
-                ". Groups that judge and their cut as wave A (", joinpath(outdir, "waveA", "summary.md"), "): ", join([@sprintf("%s %.2f", g, C.cut[g]) for g in ug], ", "), ".\n")
+                ". Radial emulator: ", radial == "waveA" ? "wave A's GPs (waveA/summary.md)" : "GPs of every 1-D run (waves A and B, union of the ranges)",
+                ". Groups that judge and their cut as wave A: ", join([@sprintf("%s %.2f", g, C.cut[g]) for g in ug], ", "), ".\n")
         println(io, "## The emulator\n\ny_3D = y_1D(radial; the wave-A GP) + Δ(lateral; a GP of Δ = y_3D - y_1D of the same profile in the 8 lateral and ",
                 "regional parameters). Δ: its mean and sd over the runs, the LOO RMSE and R² of its GP. Check: y_3D of the runs against the wave-A ",
                 "emulator plus the LOO of Δ (RMSE, within 2 sd, runs failing the cut, runs the prediction would rule out though they pass).\n")
@@ -400,7 +433,8 @@ end
 function emulate_main(args)
     if args[1] == "wave-b"
         kv = Dict(split(x, "=") for x in args[8:end])
-        return emulate_b(args[2:7]...; npts = parse(Int, get(kv, "npts", "100000")), seed = parse(Int, get(kv, "seed", "3")))
+        return emulate_b(args[2:7]...; npts = parse(Int, get(kv, "npts", "100000")), seed = parse(Int, get(kv, "seed", "3")),
+                         radial = String(get(kv, "radial", "waveA")), boxes = haskey(kv, "boxes") ? String(kv["boxes"]) : nothing)
     end
     length(args) >= 4 || error("plastic_earth_emulate.jl <members.csv> <scores.csv> <config.toml> <outdir> [npts=100000] [seed=2]")
     kv = Dict(split(x, "=") for x in args[5:end])
