@@ -7,7 +7,7 @@ The climate backend `paleoemu` couples the CESM-3Ma climate emulator of
 returns monthly 2-m temperature and precipitation anomalies against pre-industrial,
 and the annual ocean temperature change at 8 levels between 4 and 1475 m.
 Its inputs are the orbit, CO2 and the Northern Hemisphere ice sheets: the regional
-grounded ice volumes, their slow filters and the surface-elevation change. It was
+grounded ice volumes of North America and Eurasia, their slow filters and the surface-elevation change. It was
 trained on the 3-Myr transient CESM simulation of Yun et al. (2023), and its
 uncertainty is calibrated.
 
