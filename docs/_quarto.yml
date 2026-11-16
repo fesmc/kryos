@@ -40,6 +40,8 @@ website:
             href: science/ice-ensembles.md
           - text: "Results"
             href: science/results.md
+          - text: "Maps: data and models"
+            href: science/maps.md
       - text: "How-to"
         menu:
           - text: "Imposed ice on VILMA2"
