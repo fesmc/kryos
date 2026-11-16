@@ -107,26 +107,38 @@ least under PaleoMIST's ice. Most points are on the Great Barrier Reef and in So
 
 ## RSL at sites
 
-Per group the three sites with the most index points: each index point as a box of its age and RSL range, the limiting
-points as open triangles (marine, RSL above: up; terrestrial, RSL below: down), the four simulations as lines. The
-PaleoMIST run has records every 2.5 kyr, the GLAC-1D runs every 100 yr.
+Per group three key sites (four in the far field): the ice centre, the margin, and the forebulge or the far field. Each
+index point is a box of its age and RSL range, the limiting points open triangles (marine, RSL above: up; terrestrial,
+RSL below: down), the four simulations lines. The PaleoMIST run has records every 2.5 kyr, the GLAC-1D runs every 100
+yr. Where GAPSLIP 2.1 has no site at the place asked for, or fewer than about 8 index points, the nearest one stands in
+(the site table `KEY_SITES` of the script).
 
-![Laurentide: Cumberland, Rimouski, Southern Maine.](figures/maps/sites-laurentide.png)
+![Laurentide: Umiujaq (eastern Hudson Bay; Churchill has 6 index points, all younger than 3.2 ka), Rimouski (St.
+Lawrence), Outer Delaware (the forebulge). PaleoMIST's ice lies tens of m above the index points at Rimouski from 12 to
+7 ka. At Outer Delaware the two runs on Gowan's Earth lie below the index points before 2 ka, E014 and E165 through
+them.](figures/maps/sites-laurentide.png)
 
-![Greenland: Schuchert Dal, Bessel Fjord, Hall Land. GLAC-1D's ice on Gowan's Earth stays tens of m below the early
-Holocene points at all three.](figures/maps/sites-greenland.png)
+![Greenland: Kannala (Disko Bugt, west), Paamiut (south-west; Nuuk has no site of its own, Kapisillit in its fjord one
+index point), Schuchert Dal (Scoresby Sund, east). At Kannala and Paamiut the two runs on Gowan's Earth lie tens of m
+below the early Holocene index points; E165 is the closest at both.](figures/maps/sites-greenland.png)
 
-![Fennoscandia: Rotterdam, Norderney, Bremerhaven, the best-sampled sites of the group, all on the North Sea coast. The
-three GLAC-1D runs lie above the index points before about 3 ka, PaleoMIST's run below them at
-Rotterdam.](figures/maps/sites-fennoscandia.png)
+![Fennoscandia: Ångermanland (the high coast of the Gulf of Bothnia), Blekinge (the margin; the Oslo fjord has no
+GAPSLIP site, the nearest, Bohuslän, 5 index points), Rotterdam (the forebulge). At Ångermanland the GLAC-1D runs follow
+the index points and PaleoMIST's run lies below those older than 9 ka. At Blekinge E165 is closest; at Rotterdam the GLAC-1D
+runs lie above the index points and PaleoMIST's run below them.](figures/maps/sites-fennoscandia.png)
 
-![Barents: Proliv Markama, Dvina Gulf, Zemlya Georga. E014 stays near 10 m at Proliv Markama and Zemlya Georga where the
-index points reach 20-45 m at 6-10 ka.](figures/maps/sites-barents.png)
+![Barents: Proliv Markama (Franz Josef Land), Severny Island North (Novaya Zemlya), Dvina Gulf (the White Sea); GAPSLIP
+2.1 has no Svalbard site. At Proliv Markama E014 stays near 10 m where the index points reach 20-35 m at 6-11 ka, and
+E165 lies above those older than 7 ka.](figures/maps/sites-barents.png)
 
-![Antarctica: Pine Island Bay, Vestfold Hills, Southern Scott Coast.](figures/maps/sites-antarctica.png)
+![Antarctica: Southern Scott Coast (Ross Sea, 7 index points), Pine Island Bay (Amundsen Sea; the Antarctic Peninsula has
+one index point, at King George Island), Vestfold Hills (East Antarctica, 8 index points). At Pine Island Bay the
+GLAC-1D runs on Gowan's Earth and E014 stay below the index points older than 2 ka, E165 follows them; at the Vestfold
+Hills every run lies below the index points of 6-8 ka.](figures/maps/sites-antarctica.png)
 
-![Far field: Townsville, Cairns, Hydrographers Passage (the Great Barrier Reef). Before 15 ka the GLAC-1D runs lie above
-most index points at Cairns and Hydrographers Passage.](figures/maps/sites-far-field.png)
+![Far field: Barbados, the Sunda Shelf, the Bonaparte Gulf, Tahiti. At Barbados, the Sunda Shelf and the Bonaparte Gulf
+every run lies above most index points from 20 to 12 ka, the GLAC-1D runs more than PaleoMIST's near 20
+ka.](figures/maps/sites-far-field.png)
 
 ## Reproducing the figures
 
