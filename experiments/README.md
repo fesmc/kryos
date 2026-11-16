@@ -1,9 +1,9 @@
 # experiments
 
 The launch scripts of the glacial-cycle simulations of
-[docs/simulations.md](../docs/simulations.md): every row of its ladder is made by one call of one script here, and
+[docs/science/results.md](../docs/science/results.md): every row of its ladder is made by one call of one script here, and
 scored by `scores.sh`. The workflow, the concepts and the open questions:
-[docs/plastic-workflow.md](../docs/plastic-workflow.md).
+[docs/science/index.md](../docs/science/index.md).
 
 All scripts run on Levante or albedo from a kryos checkout installed with `configme install kryos` and built with
 `make kryos plastic=1 vilma=1 yelmo=0` (docs/getting-started.md). They source `tools/levante/env.sh`, which sets

@@ -1,5 +1,5 @@
 #!/bin/bash
-# The Earth-only ensemble earth-pca-v1 (docs/simulations.md: ice-PMIST | E3D-PCA-E<nnn>; docs/dev/earth-search-design.md):
+# The Earth-only ensemble earth-pca-v1 (docs/science/results.md: ice-PMIST | E3D-PCA-E<nnn>; docs/dev/earth-search-design.md):
 # PaleoMIST's ice imposed on 30 3-D Earths sampled from a PCA basis of the expert viscosity fields (the 8 structures of
 # Bagge et al. 2021, Lloyd et al. 2024, Pan et al. 2022), each run once with the present-day correction r of PaleoMIST-sci.
 #

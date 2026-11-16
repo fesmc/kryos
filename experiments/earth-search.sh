@@ -1,5 +1,5 @@
 #!/bin/bash
-# The broad Earth search (docs/dev/earth-search-design.md; docs/simulations.md: ice-<ICE> | E1D-ES1-E<nnn>, E1D-ES2-E<nnn>,
+# The broad Earth search (docs/dev/earth-search-design.md; docs/science/results.md: ice-<ICE> | E1D-ES1-E<nnn>, E1D-ES2-E<nnn>,
 # E3D-ES2-E<nnn>): PaleoMIST's and GLAC-1D's ice imposed on sampled Earths, wave A 200 1-D Earths of 5 radial parameters, wave B
 # 50 3-D Earths of 13 parameters, each scored and emulated (plastic_earth_emulate.jl).
 #

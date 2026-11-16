@@ -1,5 +1,5 @@
 #!/bin/bash
-# The weighted ensembles of tau_b (docs/simulations.md: E1 ens-v1, E2 ens-v2; docs/dev/plastic-ensemble-design.md): the
+# The weighted ensembles of tau_b (docs/science/results.md: E1 ens-v1, E2 ens-v2; docs/dev/plastic-ensemble-design.md): the
 # members, their runs and the weights, from the config in tools/levante (plastic_ensemble_v<k>.toml).
 #
 #   experiments/ens.sh <v1|v2> [<folder>]      default folder $KRYOS_WORK/ens-<v>; it must not exist

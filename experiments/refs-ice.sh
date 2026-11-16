@@ -1,10 +1,10 @@
 #!/bin/bash
-# The imposed-ice rungs of the ladder (docs/simulations.md, I1-I8): an ice history imposed on VILMA2 with one Earth, its
+# The imposed-ice rungs of the ladder (docs/science/results.md, I1-I8): an ice history imposed on VILMA2 with one Earth, its
 # present-day correction r iterated until the 0 ka bed is today's (tools/levante/gia_refcorr.sh: one job per case).
 #
 #   experiments/refs-ice.sh <id> ...        ids: I1 ... I8, or all
 #
-# A case is <ice>_<earth> (the simulation `<ice> | <earth>` of docs/simulations.md) under $KRYOS_WORK/kryos_data/refcorr; the
+# A case is <ice>_<earth> (the simulation `<ice> | <earth>` of docs/science/results.md) under $KRYOS_WORK/kryos_data/refcorr; the
 # scores read its converged run (the reference `run` of tools/levante/plastic_ensemble_v2.toml). Restartable: rerunning a
 # finished case only redoes its reference files. Run times on albedo: 1-D 3-5 min per iteration, VILMA2's 1Db about 17 min,
 # 3-D about 2 h; 3-5 iterations.
