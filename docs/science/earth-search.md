@@ -47,6 +47,12 @@ third components (the first is mostly radial and so belongs to P). No published 
 established approaches are 1-D inversions, factorial ensembles of 3-D structures, or one scaling of a tomographic
 model.
 
+![Radial viscosity profiles: the prior range per layer (shaded), Gowan's 1-D Earth, the area means of Bagge's 8
+structures, and sampled Earths. Wave A: E165 and E117, the best 1-D Earths on RSL under GLAC-1D's and PaleoMIST's ice;
+E050 and E120, which pass at least 8 of 9 groups under both. Wave B: E014, its radial profile P and the area mean of its
+3-D field (the lateral pattern stiffens it below the lithosphere). The elastic lithosphere is drawn at the right edge.
+`tools/levante/plastic_earth_profiles.jl`.](figures/earth-search/profiles.png)
+
 ## Waves, emulator and cut
 
 The search runs in waves, each focused by the emulator of the last:

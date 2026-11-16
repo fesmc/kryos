@@ -84,6 +84,7 @@ The simulations of the [results](science/results.md) are made by these scripts, 
 |---|---|
 | [plastic_earth_basis.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_earth_basis.jl) | Included by `plastic_esmda.jl`: the PCA basis of the expert viscosity fields (`earth-basis`), fields from it (`earth-field`), the 1-D and 3-D Earths of the search (`earth-search-sample`, `-sample3d`, `-sample3d-box`, `earth-search-par`; `earth3d_field` with its clamp) |
 | [plastic_earth_basis_plot.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_earth_basis_plot.jl) | The basis in a figure: profiles of each field and the mean, the components at three depths |
+| [plastic_earth_profiles.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_earth_profiles.jl) | Radial viscosity profiles: the prior ranges, Gowan, Bagge's area means, chosen wave A and wave B Earths |
 | [plastic_earth_emulate.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_earth_emulate.jl) | The emulators (a Gaussian process per ice history and data group of log χ²/n), their leave-one-out check and the history-matching cut; `wave-b`: the 3-D emulator (radial GP plus a GP of the lateral effect) |
 
 ## Scoring
