@@ -1,0 +1,163 @@
+---
+title: "Results"
+toc: false
+page-layout: full
+---
+
+Every scored simulation, on one scale: what each changes against its parent ([Methods](methods.md#the-ladder)) and how
+well it fits ([Data and scores](data-scores.md)). Status 2026-11-16.
+
+**Columns.** **log L**, the log-likelihood over the six RSL groups, higher is better (differences of a few tens are
+large); **passed**, the groups within the bar, of 7 (RSL and ESL) or of 9 with the GNSS rates; **RMSE** over all RSL
+points [m]; **RMS z** of the normalized residuals; **I** per group, ≤ 3 passes (Greenland ≤ 7.9; ESL ≤ 3 for our ice,
+≤ 7.04 in the Earth search): **Laur.** Laurentide, **Greenl.** Greenland, **Fenn.** Fennoscandia, **Bar.** Barents,
+**Antarc.** Antarctica, **FF** far field, **ESL** the eustatic sea level.
+
+![Every reference simulation of the ladder: log L (left) and I per data group against the bar (right; blue within it,
+red beyond it, the colour the distance from the cut).](figures/simulations/ladder.png)
+
+## Published reconstructions
+
+The bar: their own ice, Earth and GIA solver, and the RSL they published; nothing is run. P2 has no ESL score (the
+published topography has no ice volume).
+
+| id | simulation | changes against | status | log L | passed | RMSE [m] | RMS z | I Laur. | I Greenl. | I Fenn. | I Bar. | I Antarc. | I FF | I ESL |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **P1** | `pub-PMIST` | published | done | −9311 | 3/7 | 20.0 | 30.1 | 6.7 | 7.9 | 0.4 | 2.6 | 3.4 | 6.4 | 7.0 |
+| **P2** | `pub-GLAC1D` | published | done | −9117 | 4/6 | 19.0 | 18.6 | −0.3 | 9.8 | 1.8 | 5.6 | −0.2 | −0.6 | – |
+
+## Imposed ice on our solver
+
+A published ice history forced onto VILMA2: the ice is fixed, so a change of score is the solver's or the Earth's. I1
+and I5 put each publication's ice on our solver with PaleoMIST's Earth; I2-I4 and I6-I8 change the Earth: Bagge's
+radial mean, then his lateral structure, then the strength of that structure.
+
+| id | simulation | changes against | status | log L | passed | RMSE [m] | RMS z | I Laur. | I Greenl. | I Fenn. | I Bar. | I Antarc. | I FF | I ESL |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| I1 | `ice-PMIST \| E1D-PMIST` | P1: the solver (SELEN → VILMA2, 931 → 910 kg m⁻³, 2.5 kyr steps → linear, r) | done | −8860 | 6/7 | 16.2 | 28.5 | −3.5 | 6.8 | 1.0 | 0.7 | 0.4 | −0.6 | 5.9 |
+| I2 | `ice-PMIST \| E1D-B21-6` | I1: the radial profile (PaleoMIST's → Bagge's mean) | done | −8833 | 5/7 | **14.5** | 21.2 | −3.9 | 3.5 | 3.3 | 1.5 | 0.6 | −0.7 | 5.9 |
+| | `ice-PMIST \| E1D-B21-6-layers` | the same radial mean as plain 1-D layer means | done | −8884 | 5/7 | **14.5** | 21.2 | −3.4 | 3.0 | 5.0 | 1.9 | 0.7 | −0.6 | 5.9 |
+| I3 | `ice-PMIST \| E3D-B21-6` | I2: the lateral structure | done | −9243 | 3/7 | 19.6 | 35.3 | 3.1 | 5.3 | 15.2 | 3.5 | 0.9 | −1.0 | 6.0 |
+| I4 | `ice-PMIST \| E3D-B21-1` | I3: Bagge's structure 1 (weakest lateral contrast) | done | −8902 | 5/7 | 15.0 | 20.1 | −3.3 | 2.7 | 5.7 | 1.8 | 0.5 | −0.6 | 5.9 |
+| | `ice-PMIST \| E3D-B21-2` | structure 2 | done | −8913 | 5/7 | 15.1 | 20.1 | −3.0 | 2.7 | 6.0 | 1.9 | 0.5 | −0.6 | 5.9 |
+| | `ice-PMIST \| E3D-B21-3` | structure 3, Bagge's reference | done | −8992 | 5/7 | 16.1 | 21.1 | −1.5 | 3.3 | 8.1 | 2.2 | 0.6 | −0.6 | 6.0 |
+| | `ice-PMIST \| E3D-B21-4` | structure 4 | done | −9059 | 5/7 | 17.0 | 22.6 | −0.4 | 3.8 | 9.8 | 2.5 | 0.6 | −0.6 | 6.0 |
+| | `ice-PMIST \| E3D-B21-5` | structure 5 | done | −9174 | 4/7 | 18.5 | 29.0 | 1.6 | 4.7 | 13.0 | 3.1 | 0.8 | −0.6 | 6.0 |
+| | `ice-PMIST \| E3D-B21-7` | structure 7 (sc06 profile) | done | −9128 | 4/7 | 18.9 | 33.5 | 1.8 | 8.9 | 7.0 | 1.2 | 0.6 | −1.1 | 6.0 |
+| | `ice-PMIST \| E3D-B21-8` | structure 8 (sc06b profile) | done | −9097 | 5/7 | 17.8 | 26.5 | 0.8 | 6.2 | 8.1 | 1.7 | 0.6 | −0.6 | 6.0 |
+| I5 | `ice-GLAC1D \| E1D-PMIST` | I1: the ice (PaleoMIST → GLAC-1D) | done | −8835 | 6/7 | 17.8 | 28.2 | −3.0 | 5.7 | 0.5 | 1.2 | −0.2 | −0.8 | 3.3 |
+| I6 | `ice-GLAC1D \| E1D-B21-6-layers` | I5: the radial profile (Bagge's mean as layers) | done | −8871 | 5/7 | 15.4 | **18.8** | −1.2 | 1.7 | 3.7 | 1.2 | −1.2 | −0.9 | 3.3 |
+| I7 | `ice-GLAC1D \| E3D-B21-6` | I6: the lateral structure | done | −9226 | 3/7 | 20.4 | 26.1 | 4.0 | 6.4 | 14.6 | 3.0 | −0.4 | −0.7 | 3.4 |
+| I8 | `ice-GLAC1D-9927 \| E1D-PMIST` | I5: North America nn9927 | done | **−8825** | 6/7 | 17.9 | 26.3 | −3.2 | 5.3 | 0.6 | 1.3 | −0.2 | −1.0 | 5.0 |
+| | `ice-GLAC1D-9927 \| E3D-B21-6` | I7: North America nn9927 | done | −9196 | 4/7 | 20.5 | 27.1 | 4.6 | 6.1 | 14.7 | 3.0 | −0.5 | −2.0 | 5.0 |
+| | `ice-PMIST \| E3D-PCA-E001` ... `E030` | I3: 30 Earths sampled from the expert basis | run, not scored | | | | | | | | | | | |
+
+![PaleoMIST's ice on Bagge's structures 1-6, ordered by their lateral factor, and on the radial mean of structure 6 as a
+1-D Earth (left). Dashed: the cut, I = 3.](figures/simulations/bagge.png)
+
+- **Our solver beats both publications with their own ice:** I1 −8860 against P1 −9311, I5 −8835 against P2 −9117,
+  both passing every RSL group. GLAC-1D's ice with nn9927 (I8) is the best of the ladder.
+- **ESL separates the ice histories.** PaleoMIST's ice fails ESL on every Earth (I 5.9-6.0, about 7 m short at 20 ka);
+  GLAC-1D's ice is close (3.3), nn9927 further off (5.0).
+- **Bagge's radial profile is as good as Gowan's, his lateral structure is not.** The radial mean of structure 6 (I2)
+  gives the lowest RMSE. With lateral structure Fennoscandia fails, the more the larger the lateral contrast (structure
+  1: 5.7, structure 6: 15.2), under either ice (I3, I7). Laurentide and Greenland degrade the same way, more slowly.
+
+## Our ice, PaleoMIST's τ_b
+
+PlasticIceSheet online on VILMA2 from PaleoMIST's τ_b. T1 against I1 is the ice model: the same τ_b, but our ice is
+computed every step on the deforming bed. D adds the present-day factors.
+
+| id | simulation | changes against | status | log L | passed | RMSE [m] | RMS z | I Laur. | I Greenl. | I Fenn. | I Bar. | I Antarc. | I FF | I ESL |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| T1 | `tau-PMIST \| E1D-PMIST` | I1: the ice model (ICESHEET 5 km offline → PlasticIceSheet 32 km online) | done | −9309 | 5/7 | 17.9 | 26.9 | −1.1 | 7.9 | −0.1 | 1.4 | 0.1 | 17.1 | 1.7 |
+| D1 | `tau-PMIST-PD \| E1D-PMIST` | T1: the present-day factors | done | −9030 | 5/7 | 17.8 | 27.7 | −0.9 | 8.8 | −0.1 | 1.1 | 0.7 | 5.0 | 2.3 |
+| D2 | `tau-PMIST-PD \| E3D-B21-6` | D1: the 3-D Earth (m000 of ens-v2) | done | −9261 | 4/7 | 20.3 | 34.7 | 3.2 | 7.0 | 14.3 | 3.3 | 0.5 | 1.4 | 2.7 |
+| D3 | `tau-PMIST-PD \| E3D-B21-6 @NH16` | D2: Northern Hemisphere 32 → 16 km | done | −9275 | 3/7 | 20.6 | 35.4 | 3.1 | 7.8 | 14.4 | 3.4 | 0.5 | 1.4 | 3.1 |
+
+The present-day factors remove most of the far-field misfit (T1 17.1 → D1 5.0). On structure 6 (D2) Fennoscandia
+fails as it does under imposed ice (I3). 16 km in the north (D3) changes the scores little and costs 2 m of ESL; 32 km
+stays the default.
+
+## Ensembles
+
+τ_b sampled per scale group and node, in ens-v2 the Earth too (shifts of structure 6); members weighted by their
+likelihood ([The ice: τ_b ensembles](ice-ensembles.md)).
+
+| id | simulation | changes against | status | log L | passed | RMSE [m] | RMS z | I Laur. | I Greenl. | I Fenn. | I Bar. | I Antarc. | I FF | I ESL |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| E1 | `tau-ENS1 \| E3D-B21-6` | D2: sampled τ_b (ens-v1, 25 members) | done, not rescored | | | | | | | | | | | |
+| E2 | `tau-ENS2 \| E3D-B21-6-ENS2` | E1: the Earth sampled too (ens-v2, 50 members) | done | | | | | | | | | | | |
+| | best log L: `tau-ENS2-E048 \| E3D-B21-6-E048` | | | −9017 | 4/7 | 19.7 | 32.2 | −0.5 | 13.0 | 4.5 | 1.1 | 0.9 | −0.6 | 3.0 |
+| | most groups passed: `tau-ENS2-E036 \| E3D-B21-6-E036` | | | −9063 | 6/7 | 18.5 | 27.3 | 1.3 | 6.2 | 6.8 | 1.2 | 2.9 | 0.4 | 0.2 |
+| | median of the 50 | | | −9474 | | | | | | | | | | |
+| E3 | the final ensemble: our τ_b on the Earths of the Earth search | E2: the Earth chosen without our ice, a wide τ_b prior | proposed | | | | | | | | | | | |
+
+The best members beat P2 but not the imposed references (I1, I5); Fennoscandia limits most of them (4 of the 50 pass
+it on structure 6, best m013, I 0.2).
+
+## The Earth search
+
+Imposed ice on sampled Earths ([The Earth search](earth-search.md)), scored on 9 groups: the six RSL groups, GNSS
+Fennoscandia and Hudson Bay, and ESL (the bar 7.04). Earth: lithosphere [km], log10 η UM / TZ / LM1 / LM2 [Pa s].
+
+| id | simulation | Earth | log L | passed | I L / G / F / B / A / FF | I GNSS F / HB | I ESL |
+|---|---|---|---|---|---|---|---|
+| S0 | `ice-PMIST \| E1D-ES1-PMIST` | Gowan's, in the search's parameters (the check: I1 again) | −8860 | 7/9 | −3.5 / 6.8 / 1.0 / 0.7 / 0.4 / −0.6 | 7.4 / 3.5 | 5.9 |
+| | `ice-GLAC1D \| E1D-PMIST` | I5 on this scale | −8835 | 8/9 | −3.0 / 5.7 / 0.5 / 1.2 / −0.2 / −0.8 | 7.1 / 2.7 | 3.3 |
+| S1 | `ice-PMIST \| E1D-ES1-E<nnn>` | wave A, 200 1-D Earths: 20.2 % of the space not ruled out | | | | | |
+| | best log L: `ice-PMIST \| E1D-ES1-E117` | 111, 20.13 / 21.75 / 23.15 / 21.69 | −8801 | 7/9 | −3.2 / 2.0 / 1.6 / 1.4 / 0.2 / −0.7 | 5.7 / 6.4 | 5.9 |
+| | most groups: `ice-PMIST \| E1D-ES1-E017` | 87, 20.56 / 20.61 / 21.68 / 21.02 | −8906 | 8/9 | −0.7 / 2.5 / 0.6 / 1.0 / 0.8 / −1.6 | 4.9 / 2.1 | 6.0 |
+| S2 | `ice-GLAC1D \| E1D-ES1-E<nnn>` | wave A: 13.5 % not ruled out; under either ice 28.8 %, both 4.9 % | | | | | |
+| | best log L: `ice-GLAC1D \| E1D-ES1-E165` | 67, 20.77 / 20.08 / 22.54 / 21.88 | −8709 | 7/9 | −3.5 / 2.6 / 0.8 / 3.3 / −1.4 / −4.4 | 3.6 / 2.9 | 3.3 |
+| | all groups: `ice-GLAC1D \| E1D-ES1-E033` (14 Earths pass all 9) | 106, 20.84 / 21.43 / 21.08 / 22.08 | −8746 | 9/9 | −2.4 / 1.7 / 2.2 / 0.7 / −1.1 / −4.4 | 0.5 / 1.1 | 3.4 |
+| S3 | `ice-<ICE> \| E1D-ES2-E<nnn>` | wave B, the radial profiles of the 50 3-D Earths, under each ice | done, scored (in the emulator of S4) | | | | | |
+| S4 | `ice-PMIST \| E3D-ES2-E<nnn>` | wave B, 50 3-D Earths: 42 % of the 13-D space not ruled out (96 of 100 runs) | | | | | |
+| | best: `ice-PMIST \| E3D-ES2-E014` | 55, 19.68 / 22.47 / 21.13 / 21.09; α 0.74 (Lloyd-like) | −8836 | 8/9 | −2.5 / 2.6 / 1.4 / 0.8 / 2.6 / −1.3 | 5.6 / 1.0 | 6.0 |
+| | `ice-PMIST \| E3D-ES2-E043` | 157, 20.98 / 20.60 / 22.09 / 21.02; α 0.59 | −8966 | 8/9 | 2.9 / 1.4 / 4.9 / 1.3 / 0.6 / −1.7 | 2.3 / 0.9 | 6.0 |
+| S5 | `ice-GLAC1D \| E3D-ES2-E<nnn>` | wave B: 45 % not ruled out; under both 36 % | | | | | |
+| | best: `ice-GLAC1D \| E3D-ES2-E014` | as above | **−8717** | 8/9 | −3.0 / 3.2 / 0.7 / 2.0 / −0.3 / −3.2 | 7.8 / 1.2 | 3.4 |
+| | `ice-GLAC1D \| E3D-ES2-E036` | 124, 21.39 / 20.64 / 21.24 / 21.75; α 0.08 (nearly 1-D) | −8893 | 8/9 | 2.1 / 6.7 / 3.8 / 0.7 / −0.8 / −4.5 | 0.5 / 2.1 | 3.4 |
+| S6 | `ice-<ICE> \| E3D-ES2-E1<nn>` | wave B2, 30 3-D Earths in two widened boxes | running | | | | | |
+
+No 3-D Earth passes all 9 groups. E014 is the only one that beats Gowan's Earth under both ice histories.
+
+## Misfit common to every simulation
+
+West Greenland (Sisimiut, −100 m), the St. Lawrence (+16 to +56 m) and +10 to +20 m in the far field (Barbados, the Great
+Barrier Reef, the Bonaparte Gulf) fail for every good series, the published ones included. Lateral Earth structure
+cannot remove them (Milne et al. 2018 for west Greenland; Pan et al. 2022 for the far field, where its effect at
+Barbados has the wrong sign), so they point to the ice: too little LGM ice in the far field, too thick local ice in the
+St. Lawrence.
+
+## Reproducing the tables
+
+Each row is made by a script of [experiments/](https://github.com/fesmc/kryos/tree/main/experiments) (refs-ice.sh,
+refs-tau.sh, ens.sh, earth-search.sh) and scored by `experiments/scores.sh`. Every imposed-ice case writes
+`provenance.txt` (its inputs, the commits of kryos and VILMA2, the md5 of the par file and the binary). The figures come
+from `tools/levante/plastic_sim_figures.jl` (the ladder and Bagge figures) and `tools/levante/plastic_earth_emulate.jl`
+(the Earth search).
+
+The runs are on AWI's albedo:
+
+| id | where |
+|---|---|
+| P1, P2 | FesmData `IceHistory-PaleoMIST` (`dz_sl`), `IceHistory-GLAC1D` (topography) |
+| I1-I8 | `/albedo/work/user/alrobi001/kryos-work/kryos_data/refcorr/<ice>_<earth>`; scores `kryos-work/refs-test/ens/iter_01/scores.csv` |
+| T1, D1 | `/albedo/work/user/alrobi001/kryos-work/runs/pm-online/gowan`, `.../pdfac` |
+| D2, E2 | `/albedo/work/user/alrobi001/kryos-plastic/kryos/runs/ens-v2/iter_01/<m>` |
+| D3 | `/albedo/work/user/alrobi001/kryos-work/runs/res16/m000-NH16` |
+| E1 | `/albedo/work/projects/p_forclima/kryos-work/levante/ens-v1` (copied from Levante) |
+| S0-S5 | `/albedo/work/user/alrobi001/kryos-search` (`kryos_data/refcorr/`, `score/ens/`); the emulators in `/albedo/work/projects/p_forclima/kryos-work/earth-search/emulateB` |
+| S6 | `/albedo/work/projects/p_forclima/kryos-work/earth-search/waveB2` |
+
+The runs under `/albedo/work/user/alrobi001` move to the project's shared folder
+(`/albedo/work/projects/p_forclima/kryos-work`) once their last jobs end.
+
+## Earlier runs, not on this scale
+
+| run | in this language | note |
+|---|---|---|
+| B1, B3 (2026-10-31) | `ice-PMIST \| E1D-PMIST`, `ice-PMIST \| E3D-B21-6` | VILMA2 523b660, 931 kg m⁻³, 2.5 kyr steps, no r; RMS z of B1 30.9 |
+| plastic online test (2026-11-09) | about `tau-PMIST \| E1D-PMIST` | RMS z 25.9 against PaleoMIST 29.5 |
+| esmda-v1, -v2 (Levante) | calibrated τ_b on `E1D-PMIST` | ES-MDA calibrations, retired |
