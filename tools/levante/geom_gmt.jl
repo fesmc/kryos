@@ -36,13 +36,17 @@ function analyse(R)
     dTs = [amean(dropdims(mean(dtas[:, :, :, k]; dims=3); dims=3), w) for k in 1:nt]
     dzm = [amean(dz[:, :, k], w) for k in 1:nt]
     bfile = nml_value(R, "bias"); bs = parse(Float64, nml_value(R, "bias_scale"))
-    B, dVref = NCDataset(joinpath(R, bfile)) do ds
-        b = Float64.(coalesce.(Array(ds["dtas_b"]), NaN))
-        blat = Float64.(ds["lat"][:]); bw = repeat(cosd.(blat)', size(b, 1), 1)
-        amean(dropdims(mean(b; dims=3); dims=3), bw), Float64(ds.attrib["dV_ref"])
+    if isempty(bfile)                                     # no bias correction: no weight, no contribution
+        wgt, dTb = fill(NaN, nt), zeros(nt)
+    else
+        B, dVref = NCDataset(joinpath(R, bfile)) do ds
+            b = Float64.(coalesce.(Array(ds["dtas_b"]), NaN))
+            blat = Float64.(ds["lat"][:]); bw = repeat(cosd.(blat)', size(b, 1), 1)
+            amean(dropdims(mean(b; dims=3); dims=3), bw), Float64(ds.attrib["dV_ref"])
+        end
+        wgt = max.(0.0, (dV[1, :] .+ dV[2, :]) ./ dVref)
+        dTb = bs .* wgt .* B
     end
-    wgt = max.(0.0, (dV[1, :] .+ dV[2, :]) ./ dVref)
-    dTb = bs .* wgt .* B
     dTl = -GAMMA .* dzm
     # check: tas of clim_glob.nc (after the bias) minus the reference's tas_ref, area means of the annual means
     ann(X) = ndims(X) == 3 ? dropdims(mean(X; dims=3); dims=3) : X
