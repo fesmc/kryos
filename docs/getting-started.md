@@ -37,13 +37,20 @@ module load intel-oneapi-compilers/2023.2.1-gcc-11.2.0 \
 
 **albedo.** git is a module (`module load git`; `env.sh` loads it). Build with the Intel compiler 2024.0.0, not 2024.1.0:
 2024.1 miscompiles (an inlined function result passed as an argument loses a `WHERE`; it broke `test_geo_vilma2`), and
-`-Ofast` breaks the round-off conservation of `test_globe_ice`. Swap the module and build every package with value-safe
-flags, then submit from that environment:
+`-Ofast` breaks the round-off conservation of `test_globe_ice`. Swap the module, clean, and build with value-safe flags,
+then submit from that environment:
 
 ```bash
 module swap intel-oneapi-compilers intel-oneapi-compilers/2024.0.0
+make cleanall plastic=1 vilma=1 yelmo=0
 make kryos plastic=1 vilma=1 yelmo=0 DFLAGS_NODEBUG="-O2 -fp-model precise -march=znver2 -traceback"
 ```
+
+`DFLAGS_NODEBUG` on the command line reaches every Fortran package: `make kryos` builds fesm-utils, VILMA2 and
+PlasticIceSheet with `$(MAKE) -C`, which passes command-line variables on, and each of them compiles with
+`DFLAGS = $(DFLAGS_NODEBUG)`. It overrides the value-safe flag that `config/common.mk` appends, so give
+`-fp-model precise` yourself, as above. `cleanall` is needed after a compiler or flag change: a package whose objects
+are up to date is not rebuilt. The external libraries of fesm-utils (LIS, FFTW, SHTns) keep their configure flags.
 
 Run `make check` after every rebuild; never run production from a 2024.1 or `-Ofast` build.
 
