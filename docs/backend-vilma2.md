@@ -28,7 +28,7 @@ coastline).
   the gather and the reference in `src/core/kryos_run_gia.f90` and
   `src/core/kryos_globe_ice.f90`.
 - **Par files:** `par/kryos_NH-ANT_plastic_vilma2_b1.nml` (Gowan's 1-D Earth),
-  `par/kryos_NH-ANT_plastic_vilma2.nml` (the 3-D Earth), the Yelmo science case
+  `par/kryos_NH-ANT_plastic_vilma2.nml` (3-D, Bagge structure 6), the Yelmo science case
   `par/kryos_NH-ANT_vilma2.nml`; see [Par files](reference-par-files.md).
 
 ## Global instance and regional ports
@@ -84,11 +84,14 @@ The `&vilma` keys used by the runs (defaults from `input/vilma_defaults.nml`):
 | `n_layer`, `r_top`, `r_bot` | 5, ... | layers, surface first [m] |
 | `eta` | ... | [Pa s] viscosity per layer |
 | `rheology` | ... | per layer: 0 elastic, 1 Maxwell, 2 fluid |
-| `rotation` | `.true.` | rotational feedback (true polar wander) |
+| `l_rotation` | `.true.` | rotational feedback (true polar wander) |
 | `l_visc_3d` | `.false.` | load a lateral log10(η) field |
 | `visc_3d_file` | `"fesmdata/Global/GLOBAL-T170/GLOBAL-T170_SolidEarth-Bagge2021.nc"` | the 3-D field |
-| `visc_3d_structure` | 6 | ≥ 1: the file is in the FesmData layout and this is the structure (6 = `v_1.0_s16`) |
-| `visc_log10_min`, `visc_log10_max` | 19.5, 30.0 | [dex] floor and ceiling of log10(η) |
+| `visc_3d_structure` | 6 | ≥ 1: the file is in the FesmData layout and this is the structure (6 = `v_1.0_s16`); 0: a lon-lat-r field (`name_visc` = `eta`, log10 Pa s), as the sampled Earths |
+| `visc_shift_file` | `""` | a field of Δlog10(η) added to the 3-D field before the clamp (the Earth parameters of ens-v2) |
+| `visc_log10_min`, `visc_log10_max` | 19.5, 30.0 | [dex] floor and ceiling of log10(η) of the 3-D field (after the shift); the 1-D layers are not clamped |
+| `visc_3d_tol` | 1.0e-3 | [dex] a layer whose lateral spread is below it runs 1-D on its lateral mean |
+| `l_toroidal` | `.true.` | the toroidal field of the genuinely 3-D elements (`.false.` is about 1.5 times faster but changes local sea level by up to about 90 m) |
 | `pre_spinup_1d` | `.false.` | a cheap 1-D pre-equilibration before the full model |
 | `equil_time_max` | 0.0 | [yr] > 0: cap of the full-model spin-up |
 | `equil_rate_tol` | 1.0e-3 | [m yr-1] mean bed speed over a pass that ends the spin-up |
@@ -97,22 +100,35 @@ The `&vilma` keys used by the runs (defaults from `input/vilma_defaults.nml`):
 
 ## Earth structure: 1-D and 3-D
 
-Two Earths are in use; both are `earth = "PREM"` at `lmax = 170` with rotation.
+Every Earth is `earth = "PREM"` (density and rigidity from PREM's shell means) at `lmax = 170` with rotation. What varies is the
+viscosity, in three ways:
 
-- **Gowan's 1-D Earth** (`_b1` par files, as the standalone run B1 of
-  `docs/dev/vilma2-paleomist.md`): 12 layers, elastic 0-80-120 km, Maxwell
-  4×10²⁰ Pa s to 670 km (split at 220, 400, 600 km), 4×10²² Pa s to the core-mantle
-  boundary, fluid core. The radial profile of Gowan et al. (2021) (120 km lithosphere,
-  upper mantle 4×10²⁰, lower mantle 4×10²² Pa s), on which PaleoMIST was built.
-- **The 3-D science Earth** (as `par/kryos_NH-ANT_vilma2.nml`, the CLIMBER-X set):
-  11 layers, 80 km elastic lithosphere, the 1-D radial reference (upper mantle
-  4×10²⁰, lower mantle 10²² Pa s) and the lateral viscosity of Bagge et al. (2021)
-  from FesmData (`GLOBAL-T170_SolidEarth-Bagge2021.nc`, structure 6 = `v_1.0_s16`,
-  floored at 10^19.5 Pa s). With `l_visc_3d = .true.` the file's log10 η (bilinear
-  onto the Gauss grid, linear in radius onto the FE nodes, clamped to
-  `visc_log10_min`, `visc_log10_max`) replaces the radial viscosity of every Maxwell
-  layer; the elastic lithosphere (80 km) and the fluid core are kept. A layer whose
-  lateral spread is below `visc_3d_tol` runs 1-D on its lateral mean.
+- **A 1-D profile:** the layers `n_layer`, `r_top`, `r_bot`, their `eta` and `rheology` (elastic lithosphere, Maxwell mantle, fluid
+  core), `l_visc_3d = .false.`. Gowan's Earth (`_b1` par files): 12 layers, elastic 0-80-120 km, 4×10²⁰ Pa s to 670 km (split at
+  220, 400, 600 km), 4×10²² Pa s to the core-mantle boundary: the profile on which PaleoMIST was built. The Earth search writes
+  1-D par files of 5 parameters (lithosphere thickness; upper mantle, transition zone, upper and lower part of the lower mantle)
+  on the same layering (`plastic_ensemble.jl earth-search-par`).
+- **A Bagge structure:** `l_visc_3d = .true.`, `visc_3d_file` the FesmData product `GLOBAL-T170_SolidEarth-Bagge2021.nc`,
+  `visc_3d_structure = k` (1-8; 6 = `v_1.0_s16`, the largest lateral contrast, the default of the 3-D par files; 3 is Bagge's
+  reference). The 3-D par files have 11 layers, an 80 km elastic lithosphere and the radial reference 4×10²⁰ / 10²² Pa s, which
+  the field replaces in every Maxwell layer.
+- **A sampled field:** `visc_3d_file = <E<nnn>.nc>`, `visc_3d_structure = 0`, a lon-lat-r field of log10 η. The Earth search
+  builds it from a radial profile, the lateral pattern of the expert fields and regional shifts (`plastic_earth_basis.jl
+  earth3d_field`):
+
+  log10 η(x, z) = P(z) + α A(x, z) + c₂ φ₂′(x, z) + c₃ φ₃′(x, z) + Σ_j s_j w_j(x) [z < 670 km]
+
+  P the 5-parameter profile, A the mean lateral anomaly of the expert fields of the basis `earth_basis_v2.nc` (a PCA of Bagge's
+  8 structures, Lloyd et al. 2024 and Pan et al. 2022, each clamped to [19.5, 24]), φ₂′, φ₃′ the lateral part of its components
+  2 and 3, w_j the masks of five regions (`earth_regions_v2.nc`), and log10 η = 30 (elastic) above the lithosphere. The field is
+  clamped to [19.5, 30]; wave B2 lowers the floor to 19.0, and its par files set `visc_log10_min = 19.0` so that VILMA2 does not
+  clamp it again at its default. The parameters, their ranges and why: [The Earth search](science/earth-search.md).
+
+With `l_visc_3d = .true.` the file's log10 η (bilinear onto the Gauss grid, linear in radius onto the FE nodes, plus
+`visc_shift_file`, clamped to `visc_log10_min`, `visc_log10_max`) replaces the radial viscosity of every Maxwell layer; the
+elastic lithosphere and the fluid core are kept. A layer whose lateral spread is below `visc_3d_tol` runs 1-D on its lateral
+mean. A 3-D run costs far more: 2-30 h on 32 cores for the glacial cycle against minutes in 1-D, the soft upper mantles the
+slowest.
 
 The `&vilma` groups of the two par files, `par/kryos_NH-ANT_plastic_vilma2_b1.nml`
 (1-D) and `par/kryos_NH-ANT_plastic_vilma2.nml` (3-D):
@@ -162,10 +178,8 @@ same.
 | `[topo_nor]` `path` | `{grid_name}_TOPO-GEBCO2026.nc`: today's topography | `{grid_name}_TOPO-GEBCO2026-refcorr.nc`: today's + r |
 | `[topo_ant]` `path` | `{grid_name}_TOPO-BedMachine-v4.nc` | `{grid_name}_TOPO-BedMachine-v4-refcorr.nc` |
 
-r is the present-day reference correction: the rebound still to come at 0 ka after the
-glacial cycle, computed once per Earth and ice history by iterating standalone VILMA2
-under the history (`tools/levante/gia_refcorr.sh`), so that the coupled run ends on
-today's bed instead of one 100-300 m too deep under the former ice sheets. The 1-D
+r is the present-day reference correction, the rebound still to come at 0 ka, computed once per
+Earth and ice history ([Global hub, the reference topography](global-hub.qmd#the-reference-topography-refcorr)). The 1-D
 runs take the present-day bed without correction as the relaxed reference, as B1.
 In both, the reference ice is present-day: inside the domains the ice backend's
 `H_ice_pd` (see [PlasticIceSheet](backend-plastic.md#exports)), outside them X.
@@ -235,11 +249,11 @@ indicator is rsl(t) − rsl(0 ka) (relative to present, as Gowan's), bilinear in
 and linear in time between the records, against GAPSLIP 2.1 (Gowan 2023; FesmData
 `Records/RSL/RSL-GAPSLIP_global.nc`). Index points give z = (model − obs)/σ, limiting
 data are violated or not, by group (Laurentide, Greenland, Fennoscandia/Barents,
-Antarctica, far field). The same reading drives `tools/levante/plastic_score.sh`, the
-comparison across Earths (`plastic_earth_compare.jl`) and the τ_b calibration
-(`plastic_esmda.jl`), whose members write only `geo_glob_vilma.nc` and the 1-D series.
-See [Calibration and ensembles](experiment-calibration.md) and
-[Analysis and figures](experiment-analysis.md).
+Antarctica, far field). The same reading drives the ensemble scores (`plastic_ensemble.jl`), whose
+members write only `geo_glob_vilma.nc` and the 1-D series, `tools/levante/plastic_score.sh` and the comparison
+across Earths (`plastic_earth_compare.jl`). The GNSS scores read `dz_bed_rate` of the last record. The groups and
+the likelihood: [Data and scores](science/data-scores.md); the tools: [Ensembles](howto/ensembles.md),
+[Analysis and figures](howto/analysis.md).
 
 ## Configuration
 
