@@ -15,6 +15,8 @@
 #   julia --project=tools/levante plastic_ensemble.jl earth-search-par <1-D par.nml> <out par.nml> L um tz lm1 lm2   one of them
 #   julia --project=tools/levante plastic_ensemble.jl earth-search-sample3d <sample.csv> <basis.nc> <regions.nc> <3-D par> <1-D par> <outdir> [n=50] [seed=1] [space=either|both]
 #       wave B: 3-D Earths of 13 parameters, the radial ones from the space wave A did not rule out (under either ice history)
+#   julia --project=tools/levante plastic_ensemble.jl earth-search-sample3d-box <boxes.toml> <basis.nc> <regions.nc> <3-D par> <1-D par> <outdir> [seed=1] [first=101] [clamp=19.0,30.0]
+#       wave B2: 3-D Earths in boxes of the 13 parameters (experiments/earth-search-b2-boxes.toml)
 # The folder, the members and the scale groups are those of plastic_esmda.jl (prepare, write_iteration, member_series). Config:
 # [scale], [prior] (kind: exponential with sigma, ramp_ka, corr_time_kyr, or random_walk with step_sigma, step_kyr, level_sigma
 # (plastic_esmda.jl prior_cov); theta_max), [run], [score] as plastic_esmda_v2.toml; [ensemble]: n (members
@@ -758,6 +760,13 @@ function main(args)
         kv = Dict(split(x, "=") for x in args[8:end])
         return ES.earth_search_sample3d(args[2:7]...; n = parse(Int, get(kv, "n", "50")), seed = parse(Int, get(kv, "seed", "1")),
                                         cut = parse(Float64, get(kv, "cut", "3")), space = String(get(kv, "space", "either")))
+    end
+    if args[1] == "earth-search-sample3d-box"
+        kv = Dict(split(x, "=") for x in args[8:end])
+        boxes = [(String(b["name"]), Int(b["n"]), Dict(String(k) => (Float64(v[1]), Float64(v[2])) for (k, v) in b["bounds"]))
+                 for b in TOML.parsefile(args[2])["box"]]
+        cl = Tuple(parse.(Float64, split(get(kv, "clamp", "19.0,30.0"), ",")))
+        return ES.earth_search_sample3d_box(boxes, args[3:7]...; seed = parse(Int, get(kv, "seed", "1")), first = parse(Int, get(kv, "first", "101")), clamp = cl)
     end
     args[1] == "earth-search-par" && return println("wrote ", ES.earth1d_par(args[2], args[3], parse.(Float64, args[4:8])))
     args[1] == "weights" && return weights(args[2], length(args) >= 3 ? parse(Int, args[3]) : 1)

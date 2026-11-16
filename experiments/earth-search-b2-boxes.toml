@@ -1,0 +1,34 @@
+# Wave B2 of the Earth search (docs/dev/earth-search-design.md): two boxes at the ends of the UM-TZ ridge that wave B found pressing
+# against the prior (plastic_ensemble.jl earth-search-sample3d-box; members E101-E130). A parameter without bounds keeps its wave-B
+# range: c2, c3 over the experts' coefficients of basis v2.
+[[box]]
+name = "S"                       # the soft end, around E014: soft UM, stiff TZ, soft lower mantle, thin lithosphere
+n    = 16
+[box.bounds]
+litho_km      = [50.0, 90.0]
+log10_eta_um  = [19.0, 20.3]
+log10_eta_tz  = [21.5, 23.5]
+log10_eta_lm1 = [20.5, 21.8]
+log10_eta_lm2 = [20.5, 22.5]
+alpha         = [0.0, 1.5]
+s_fenno       = [-1.5, 0.5]
+s_wais        = [-0.5, 1.5]
+s_barents     = [-1.0, 1.0]
+s_laurentide  = [-1.0, 1.0]
+s_greenland   = [-1.0, 1.0]
+
+[[box]]
+name = "H"                       # the stiff-UM end: stiff UM, soft TZ
+n    = 14
+[box.bounds]
+litho_km      = [50.0, 200.0]
+log10_eta_um  = [20.8, 21.5]
+log10_eta_tz  = [19.5, 20.5]
+log10_eta_lm1 = [20.5, 22.0]
+log10_eta_lm2 = [20.5, 23.5]
+alpha         = [0.0, 1.5]
+s_fenno       = [-1.5, 0.5]
+s_wais        = [-0.5, 1.5]
+s_barents     = [-1.0, 1.0]
+s_laurentide  = [-1.0, 1.0]
+s_greenland   = [-1.0, 1.0]
