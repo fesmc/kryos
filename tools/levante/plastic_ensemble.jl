@@ -688,7 +688,7 @@ function compare_references(It, cfg, res, og, obs, A, em, ug, cut, refs; gd = no
     close(io); close(csv)
 end
 
-# The scores of every series, references and members, for tables (docs/simulations.md): per window (the index points of age <=
+# The scores of every series, references and members, for tables (docs/science/results.md): per window (the index points of age <=
 # compare_max_age_ka; all points) and data group, and over all groups: n, the RMSE of d [m], the RMS of z = d / sigma_i (the classic
 # score), chi2/n, I_g and log L under the error model. Writes iter_kk/scores.csv. A reference without records in a window is left out.
 # GNSS groups (the same in both windows): their rows after the RSL groups' row "all" (the RSL groups only), rmse_m then in mm/yr, and

@@ -1,4 +1,4 @@
-# A basis of 3-D Earths from expert viscosity fields (docs/simulations.md: E3D-PCA): the mean and the principal components of
+# A basis of 3-D Earths from expert viscosity fields (docs/science/results.md: E3D-PCA): the mean and the principal components of
 # log10 eta over the fields of FesmData's SolidEarth-Bagge2021 (its 8 structures), SolidEarth-Lloyd2024 and Pan et al. (2022),
 # on Bagge's grid (GLOBAL-T170, its 164 depths to the core-mantle boundary). Each field is clamped to [lo, hi] first (the
 # cratonic roots near 30 dex would dominate the spread; above about 23 dex the mantle is elastic over a glacial cycle, which the
@@ -139,7 +139,7 @@ function earth_field(basis, out, c)
     out
 end
 
-# An Earth-only ensemble of the basis (docs/simulations.md: E3D-PCA-E<nnn>): n members, the first K coefficients in a Latin hypercube
+# An Earth-only ensemble of the basis (docs/science/results.md: E3D-PCA-E<nnn>): n members, the first K coefficients in a Latin hypercube
 # uniform over the range of the experts' coefficients extended by `ext` of it on each side (so the members span the experts, not a
 # prior centred on the more numerous Bagge structures), and the lid threshold (VILMA2 visc_3d_lid_log10max: Maxwell elements wholly
 # above lid_depth km stiffer than it are elastic) uniform in `lid`. Writes in outdir: E<nnn>.nc (earth-field), E<nnn>.nml (the 3-D

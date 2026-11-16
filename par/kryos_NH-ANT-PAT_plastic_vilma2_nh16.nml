@@ -1,4 +1,4 @@
-! kryos_NH-ANT-PAT_plastic_vilma2.nml with the Northern Hemisphere on NH-16KM (docs/simulations.md: @NH16; D3 scored as 32 km with
+! kryos_NH-ANT-PAT_plastic_vilma2.nml with the Northern Hemisphere on NH-16KM (docs/science/results.md: @NH16; D3 scored as 32 km with
 ! 2 m less ESL). Needs maps/grid_NH-16KM.txt (kryos_data/maps) and the refcorr case's North/NH-16KM reference topography.
 ! kryos par file: Gowan et al. (2021) PaleoMIST online on the science Earth with three plastic instances (docs/dev/plastic-backend.md,
 ! "The 3-D Earth"): par/kryos_NH-ANT_plastic_vilma2.nml (NH-32KM, ANT-16KM; Bagge et al. (2021) 3-D viscosity, refcorr reference)

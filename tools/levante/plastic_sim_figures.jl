@@ -1,4 +1,4 @@
-# The figures of docs/simulations.md, from the scores of its tables.
+# The figures of docs/science/results.md, from the scores of its tables.
 #   julia --project=tools/levante tools/levante/plastic_sim_figures.jl <scores.csv> <outdir>
 # scores.csv: plastic_ensemble.jl scores of the references and the ens-v2 members (refs-test: experiments/scores.sh).
 # The figures of the Earth search come from plastic_earth_emulate.jl. Writes in outdir:
@@ -8,7 +8,7 @@ using CairoMakie, DelimitedFiles, Printf
 
 const GROUPS = ["Laurentide", "Greenland", "Fennoscandia", "Barents", "Antarctica", "far field", "ESL"]
 const SHORT  = ["Laur.", "Greenl.", "Fenn.", "Bar.", "Antarc.", "FF", "ESL"]
-const CUT    = Dict(g => (g == "Greenland" ? 7.88 : 3.0) for g in GROUPS)     # the bar of simulations.md
+const CUT    = Dict(g => (g == "Greenland" ? 7.88 : 3.0) for g in GROUPS)     # the bar of docs/science/results.md
 const LADDER = [                      # (label, series), top to bottom
     ("P1 pub-PMIST", "pub-PMIST"), ("P2 pub-GLAC1D", "pub-GLAC1D"),
     ("I1 ice-PMIST | E1D-PMIST", "ice-PMIST | E1D-PMIST"), ("I2 ice-PMIST | E1D-B21-6", "ice-PMIST | E1D-B21-6"),
