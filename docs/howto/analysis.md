@@ -3,14 +3,14 @@ title: "Analysis and figures"
 ---
 
 The analysis of the plastic and VILMA2 runs is written in Julia, with CairoMakie for the figures, in
-`tools/levante/`. Everything runs on Levante, next to the runs. This page lists, for each tool, what it shows, its
-command line (from the file header) and the run output it reads.
+`tools/levante/`. They run on albedo or Levante, next to the runs. This page lists, for each tool, what it shows, its
+command line (from the file header) and the run output it reads. Status as of 2026-11-16.
 
 ## Environment
 
 All tools share one Julia project, `tools/levante` (`Project.toml`, `Manifest.toml`: CairoMakie, NCDatasets,
 DelimitedFiles on Julia 1.13), instantiated once by `tools/levante/setup.sh` (see
-[Getting started](getting-started.md#the-levante-tools)). From the kryos root:
+[Getting started](../getting-started.md#the-hpc-tools)). From the kryos root:
 
 ```bash
 julia --project=tools/levante tools/levante/<tool>.jl ...      # or kryos_jl tools/levante/<tool>.jl ... after sourcing env.sh
@@ -22,12 +22,13 @@ python module puts an old julia first on `PATH`).
 
 Some conventions are shared by the tools:
 
-- **Data paths:** the tools read FesmData at `FESMDATA` (`env.sh`, default `/work/ba1442/fesmdata`). The GAPSLIP 2.1
+- **Data paths:** the tools read FesmData at `FESMDATA` (`env.sh`: `/work/ba1442/fesmdata` on Levante,
+  `/albedo/work/projects/p_forclima/fesmdata` on albedo). The GAPSLIP 2.1
   indicators are read through `pm_compare.jl` (`read_indicators`).
 - **Includes:** several tools include `pm_compare.jl` or `plastic_mapkit.jl` from the same folder, so they must stay
   together.
 - **z_m:** the tools that report z_m use z_m = d / sqrt(sigma^2 + sigma_m^2) with sigma_m = 5 m, as
-  `plastic_esmda_report.jl` does.
+  the older site tools do (the likelihood of the ensembles uses the fitted error model instead).
 
 The run output the tools read:
 
@@ -39,7 +40,7 @@ The run output the tools read:
 | `<instance>_ts.nc` | the 1-D series | ice volume per instance |
 
 Calibration and ensemble members write the 2-D ice product every 2.5 kyr (see
-[Calibration and ensembles](experiment-calibration.md)).
+[Ensembles](ensembles.md)).
 
 ## Maps of a run
 
@@ -97,9 +98,22 @@ julia --project=tools/levante tools/levante/plastic_ensemble_sd_map.jl <out.png>
 **Inputs:** member folders with `status` 0, `geo_glob_vilma.nc` and, for the ice, `<instance>.nc` with 2-D output at
 the age.
 
+### plastic_ensemble_misfit.jl
+
+Where and when the members of a wave miss the index points of a data group, against the references of the config: is the
+misfit the ice, which the members vary, or the Earth and the data, which they share?
+
+```bash
+julia --project=tools/levante tools/levante/plastic_ensemble_misfit.jl <ensemble folder> <out folder> [wave=1] \
+      [groups=Greenland,Fennoscandia,Barents,Laurentide] [members=36,28] [refs=PaleoMIST,PaleoMIST-3D,PaleoMIST-1D] [top=5]
+```
+
+It maps the shared misfit of the best members (the misfit common to every good series, published ones included).
+
 ### plastic_ensemble_spread.jl
 
-Where the sea-level data constrain the ice and where they do not. It compares the spread of the surface elevation
+Written for an ES-MDA calibration folder (retired; it reads `iter_kk/members.csv`). Where the sea-level data constrain the ice
+and where they do not. It compares the spread of the surface elevation
 z_srf - z_sl across the members of one iteration of a calibration (`plastic_esmda.jl`) with the spread across the
 `ngood` members of lowest chi2/n (the members that fit about equally well). The comparison is on the cells with ice
 in every member.
@@ -127,8 +141,8 @@ julia --project=tools/levante tools/levante/plastic_ensemble_spread.jl <calibrat
 ### pm_compare.jl
 
 The scorer. It was written for the PaleoMIST test of the standalone VILMA2 (the runme cases of
-`tools/levante/paleomist/`, [Reproducing Gowan et al. (2021)](experiment-gowan.md)), and its scoring functions
-are used by every tool below and by `plastic_esmda.jl`. A `key=folder` argument points a run key at any folder, and
+`tools/levante/paleomist/`, [Imposed ice](imposed-ice.md#history)), and its scoring functions
+are used by every tool below and by `plastic_ensemble.jl`. A `key=folder` argument points a run key at any folder, and
 `read_run` also reads a kryos run's VILMA2 stream `geo_glob_vilma.nc` in place.
 
 ```bash
@@ -212,9 +226,51 @@ For each run, it takes d = model - obs and the scorer's 1 sigma per index point.
 
 Applied to the v2 posterior on the 1-D Earth, this gave the `[likelihood]` values of the weighted ensemble.
 
+## Scores and the figures of the results
+
+`plastic_ensemble.jl scores` (`experiments/scores.sh`) writes `scores.csv`: per series (member or reference), data group and
+window, `n`, RMSE, RMS z, χ²/n, I and log L ([Ensembles](ensembles.md#start-monitor-score)). The ladder figures of the
+[results](../science/results.md) are made from it:
+
+```bash
+julia --project=tools/levante tools/levante/plastic_sim_figures.jl <scores.csv> <out folder>
+```
+
+`ladder.png` (per simulation log L and I per data group against the bar; ens-v2: every member) and `bagge.png` (PaleoMIST's ice
+on Bagge's structures 1-6 against their lateral factor).
+
+## The Earth search
+
+### plastic_earth_emulate.jl
+
+The emulators and the cut of the Earth search ([running it](earth-search.md)): per ice history and data group a Gaussian process
+of log(χ²/n) in the Earth parameters, its leave-one-out check, and the history-matching cut of a dense sample.
+
+```bash
+julia --project=tools/levante tools/levante/plastic_earth_emulate.jl <members.csv> <scores.csv> <config.toml> <out folder> [npts=100000] [seed=2]
+julia --project=tools/levante tools/levante/plastic_earth_emulate.jl wave-b <members A.csv> <members B.csv[,members B2.csv]> <scores.csv> \
+      <config.toml> <basis.nc> <out folder> [npts=100000] [seed=3] [radial=waveA|all] [boxes=<boxes.toml>]
+```
+
+**Output:** `summary.md`, `gp.csv` (hyperparameters and leave-one-out per GP), `loo.csv`, `cases.csv` (per case and group the
+score), `sample.csv` (the dense sample with the maximum I_emu per ice history) and `nroi_<set>.png` (per parameter pair, the
+fraction of the space not ruled out; wave B: `nroi_radial_<set>.png`, `nroi_lateral_<set>.png`).
+
+### plastic_earth_basis_plot.jl
+
+The Earth basis of `plastic_earth_basis.jl` (the PCA of the expert viscosity fields) in a figure: the area-mean profile of each
+field and of the mean, and the mean and the components at three depths.
+
+```bash
+julia --project=tools/levante tools/levante/plastic_earth_basis_plot.jl <basis.nc> <out.png>
+```
+
+`plastic_earth_basis.jl` itself is a module (included by `plastic_ensemble.jl`): the basis (`earth-basis`), fields from it
+(`earth-field`), and the samples of the Earth search (`earth-search-sample`, `-sample3d`, `-sample3d-box`, `earth-search-par`).
+
 ## Implied mass balance
 
-See [Implied mass balance](experiment-implied-mb.md) for the method.
+See [Implied mass balance](../implied-mb.md) for the method (in development, paused).
 
 ### plastic_implied_pd.jl
 
@@ -267,9 +323,9 @@ ablation area (the fraction of ice cells with smoothed SMB < 0). It prints the s
 
 | Tool | Command | What |
 |---|---|---|
-| `plastic_esmda_report.jl` | `julia --project=tools/levante tools/levante/plastic_esmda_report.jl <calibration folder> <out folder> [<prior slices.nc> <posterior slices.nc>]` | a calibration: per-iteration scores, factor curves (`theta_factors.png`), ice volume of the mean members, present-day thickness per region, an offline Greenland check from `plastic_slices` output; `report.md` |
-| `plastic_esmda_diag.jl` | `julia --project=tools/levante tools/levante/plastic_esmda_diag.jl <calibration folder> <out folder> <prior run> <posterior run>` | where the posterior moves the ice: volumes by scale group and ESL, the prior-ensemble sensitivity, residuals by age, the Antarctic sites, ANT-16KM maps at 20 ka |
-| `plastic_taub_fit_report.jl` | see [Calibration and ensembles](experiment-calibration.md) | Stage 1: L-curves, lambda, the factor file, maps |
+| `plastic_esmda_report.jl` | `julia --project=tools/levante tools/levante/plastic_esmda_report.jl <calibration folder> <out folder> [<prior slices.nc> <posterior slices.nc>]` | an ES-MDA calibration (retired): per-iteration scores, factor curves (`theta_factors.png`), ice volume of the mean members, present-day thickness per region, an offline Greenland check from `plastic_slices` output; `report.md` |
+| `plastic_esmda_diag.jl` | `julia --project=tools/levante tools/levante/plastic_esmda_diag.jl <calibration folder> <out folder> <prior run> <posterior run>` | ES-MDA (retired): where the posterior moves the ice: volumes by scale group and ESL, the prior-ensemble sensitivity, residuals by age, the Antarctic sites, ANT-16KM maps at 20 ka |
+| `plastic_taub_fit_report.jl` | see [Ensembles, Stage 1](ensembles.md#stage-1-the-present-day-factors) | Stage 1: L-curves, lambda, the factor file, maps |
 | `plastic_pd_regions.jl` | `julia --project=tools/levante tools/levante/plastic_pd_regions.jl <run dir> [<fesmdata>]` | present-day thickness per region against the FesmData topography hubs |
 | `plastic_maps.jl` | `julia --project=tools/levante tools/levante/plastic_maps.jl <out.png> <ages ka, comma separated> <label>=<slices.nc> ...` | the offline check (`tests/plastic_slices.f90`): H - PaleoMIST H_ice at given ages |
 | `pm_maps.jl` | `julia --project=tools/levante tools/levante/pm_maps.jl <compare folder>` | figures from `pm_compare.jl` output (the standalone VILMA2 PaleoMIST test) |

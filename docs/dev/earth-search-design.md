@@ -2,7 +2,7 @@
 
 Status: decided, being implemented. Follows the literature review (`solid-earth-literature.md`), the Earth basis from
 expert fields (`plastic_ensemble.jl earth-basis`) and the first scores against the published reconstructions
-(`docs/simulations.md`).
+(`docs/science/results.md`).
 
 ## Why
 
@@ -120,7 +120,7 @@ core-s per PaleoMIST pass); 32 cores cost 7000. In all about 12,000 core-hours, 
 claim (`ln -s` into an existing claim folder succeeds), which ran 141 cases twice at once; those were deleted and rerun. 400 of
 402 cases scored (two converged late, scored with wave B). The GLAC-1D output is 2.6 GB per case (all 351 records).
 
-**Scores.** As the references of `docs/simulations.md`: the window ≤ 25 ka, the error model of refs-test
+**Scores.** As the references of `docs/science/results.md`: the window ≤ 25 ka, the error model of refs-test
 (`kryos-work/refs-test/ens/errmodel.toml`, Fennoscandia and Barents refitted after the split), the GNSS groups refitted on the
 wave-A runs (top 6 per group: GNSS Fennoscandia σ_m 0.7 mm/yr, L_x 750 km; GNSS Hudson Bay 1.5 mm/yr, 500 km; the starting
 value 1 mm/yr ruled out every Earth under PaleoMIST), ESL at its starting values. Groups that judge: the 6 RSL groups, GNSS

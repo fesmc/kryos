@@ -1,4 +1,4 @@
-! Standalone VILMA2 under the PaleoMIST ice history (Gowan et al. 2021; docs/experiment-gowan.md), a runme case of a
+! Standalone VILMA2 under the PaleoMIST ice history (Gowan et al. 2021; docs/howto/imposed-ice.md), a runme case of a
 ! PaleoMIST project (tools/levante/pm_project.sh). Earth "t3": SELEN's Earth of PaleoMIST (calc_sl/data.inc of the
 ! PANGAEA bundle, model ehgr: 120 km, UM 3.9811e20, LM 3.9811e22 Pa s): three homogeneous layers 0-120, 120-670 km, 670
 ! km-CMB and the core, rho and mu the volume means of TABOO's 200 s PREM table (pm_prep.jl taboo); vilma.eta==

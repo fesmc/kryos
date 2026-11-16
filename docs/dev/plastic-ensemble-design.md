@@ -1,7 +1,9 @@
 # Weighted ensemble of plastic ice histories on the 3-D Earth (design draft, 2026-11-10)
 
-Status: draft for discussion, nothing implemented. Follows calibration v2 (ES-MDA, docs/dev/plastic-backend.md) and the
-residual and spread diagnostics of 2026-11-09/10.
+Status (2026-11-16): implemented and run. ens-v1 (25 members, Levante) and ens-v2 (50 members with Earth shifts, albedo) use it
+(plastic_ensemble.jl); the constraints on the ice were added on 2026-11-13. The final ensemble on sampled Earths is designed in
+`final-ensemble-design.md`. Follows calibration v2 (ES-MDA, docs/dev/plastic-backend.md, retired) and the residual and spread
+diagnostics of 2026-11-09/10.
 
 ## Goal
 

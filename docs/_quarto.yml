@@ -4,6 +4,8 @@ project:
   render:
     - "*.md"
     - "*.qmd"
+    - "science/*.md"
+    - "howto/*.md"
     - "!README.md"
     - "!design.md"
     - "!dev/"
@@ -11,7 +13,7 @@ project:
 
 website:
   title: "kryos"
-  description: "Documentation for kryos, the component-based ice-sheet and solid-Earth modelling framework"
+  description: "Documentation for kryos, the component-based ice-sheet and solid-Earth modelling framework, and the glacial-cycle reconstructions made with it"
   repo-url: https://github.com/fesmc/kryos
   repo-subdir: docs
   repo-actions: [edit, issue]
@@ -24,36 +26,45 @@ website:
         href: index.md
       - text: "Getting started"
         href: getting-started.md
-      - text: "How kryos works"
+      - text: "Science"
+        menu:
+          - text: "Reconstructing the last glacial cycle"
+            href: science/index.md
+          - text: "Methods"
+            href: science/methods.md
+          - text: "Data and scores"
+            href: science/data-scores.md
+          - text: "The Earth search"
+            href: science/earth-search.md
+          - text: "The ice: τ_b ensembles"
+            href: science/ice-ensembles.md
+          - text: "Results"
+            href: science/results.md
+      - text: "How-to"
+        menu:
+          - text: "Imposed ice on VILMA2"
+            href: howto/imposed-ice.md
+          - text: "Our ice online"
+            href: howto/online-ice.md
+          - text: "Ensembles"
+            href: howto/ensembles.md
+          - text: "The Earth search"
+            href: howto/earth-search.md
+          - text: "Analysis and figures"
+            href: howto/analysis.md
+      - text: "Model"
         menu:
           - text: "Architecture"
             href: architecture.qmd
           - text: "Global hub and regional domains"
             href: global-hub.qmd
-      - text: "Backends"
-        menu:
+          - text: "---"
           - text: "PlasticIceSheet (ice)"
             href: backend-plastic.md
           - text: "VILMA2 (solid Earth)"
             href: backend-vilma2.md
           - text: "smb_simple (surface)"
             href: backend-smb-simple.md
-      - text: "Experiments"
-        menu:
-          - text: "Reproducing Gowan et al. (2021)"
-            href: experiment-gowan.md
-          - text: "Simulating our own ice"
-            href: experiment-plastic.md
-          - text: "Glacial-cycle reconstructions: the workflow"
-            href: plastic-workflow.md
-          - text: "Simulations and scores"
-            href: simulations.md
-          - text: "Calibration and ensembles"
-            href: experiment-calibration.md
-          - text: "Analysis and figures"
-            href: experiment-analysis.md
-          - text: "Implied mass balance (in development)"
-            href: experiment-implied-mb.md
       - text: "Reference"
         menu:
           - text: "Par files"
@@ -62,6 +73,9 @@ website:
             href: reference-tools.md
           - text: "Developer notes"
             href: developer-notes.md
+          - text: "---"
+          - text: "In development: implied mass balance"
+            href: implied-mb.md
 
 format:
   html:

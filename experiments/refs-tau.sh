@@ -1,5 +1,5 @@
 #!/bin/bash
-# The online rungs of the ladder (docs/simulations.md, T1, D1, D3): kryos with PlasticIceSheet every step on the bed that
+# The online rungs of the ladder (docs/science/results.md, T1, D1, D3): kryos with PlasticIceSheet every step on the bed that
 # VILMA2 deforms, from the par file of ens-v2's member m000 (D2: Gowan et al. (2021)'s tau_b times the present-day factors,
 # Bagge 6, the refcorr reference of PaleoMIST-sci).
 #

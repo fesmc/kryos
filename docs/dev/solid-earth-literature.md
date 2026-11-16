@@ -1,6 +1,6 @@
 # Solid-Earth structure for GIA: a literature review for kryos
 
-This review supports one decision: which Earth structures, and which parameter ranges, to use for the next kryos Earth ensemble. That ensemble is an Earth basis built from the principal components of expert 3-D viscosity fields, with the lithosphere as an extra parameter and GNSS uplift rates as a second constraint. Our runs couple the plastic ice-sheet model to VILMA2 (3-D viscosity, degree 170) and score them against GAPSLIP 2.1 RSL index points in five groups (see [vilma2-paleomist.md](vilma2-paleomist.md) and [simulations.md](../simulations.md)).
+This review supports one decision: which Earth structures, and which parameter ranges, to use for the next kryos Earth ensemble. That ensemble is an Earth basis built from the principal components of expert 3-D viscosity fields, with the lithosphere as an extra parameter and GNSS uplift rates as a second constraint. Our runs couple the plastic ice-sheet model to VILMA2 (3-D viscosity, degree 170) and score them against GAPSLIP 2.1 RSL index points in five groups (see [vilma2-paleomist.md](vilma2-paleomist.md) and [results.md](../science/results.md)).
 
 Each source is marked by how much of it was read:
 

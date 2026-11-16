@@ -202,7 +202,7 @@ product = "MartinEspanol2016"            # Martín-Español et al. 2016, ITRF200
 rate    = "corrected"
 judge   = false
 
-# The reconstructions the members are compared with (plastic_ensemble.jl reference_series), named as in docs/simulations.md: each with its own GIA, and its ice under
+# The reconstructions the members are compared with (plastic_ensemble.jl reference_series), named as in docs/science/results.md: each with its own GIA, and its ice under
 # VILMA2 (toroidal flow) with the members' 3-D Earth (prior mean), its radial mean (Bagge1D) and Gowan's 1-D Earth (gia_refcorr.sh
 # cases, rho_ice 910)
 [[references]]

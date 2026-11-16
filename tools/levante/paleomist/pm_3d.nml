@@ -1,4 +1,4 @@
-! Standalone VILMA2 under the PaleoMIST ice history (Gowan et al. 2021; docs/experiment-gowan.md), a runme case of a
+! Standalone VILMA2 under the PaleoMIST ice history (Gowan et al. 2021; docs/howto/imposed-ice.md), a runme case of a
 ! PaleoMIST project (tools/levante/pm_project.sh). Earth "3d": the science setting (par/kryos_NH-ANT_vilma2.nml): PREM,
 ! 80 km lithosphere, Bagge 2021 structure 6.
 ! Options (runme -p): ctl.file_forcing = "pm_data/pm_force_<F>.nc" (pm_prep.jl: B 80 -> 0 ka steps, A 22.5 ka held, S smoke,
