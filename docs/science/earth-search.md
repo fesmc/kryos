@@ -33,10 +33,10 @@ clamped to [19.5, 30] and elastic above the lithosphere.
 | part | parameter | prior range | note |
 |---|---|---|---|
 | radial profile P | lithosphere (elastic) thickness | 50-200 km | Gowan 120 km |
-| | upper mantle (UM, lithosphere to 410 km) | 10^19.5-10^21.5 Pa s | Gowan 4×10²⁰ |
-| | transition zone (TZ, 410-670 km) | 10^20-10^22.5 | |
-| | lower mantle 1 (LM1, 670-1500 km) | 10^21-10^23.5 | Gowan 4×10²² |
-| | lower mantle 2 (LM2, 1500-2891 km) | 10^21-10^23.5 | |
+| | upper mantle (UM, lithosphere to 410 km) | 10^19.5^-10^21.5^ Pa s | Gowan 4×10²⁰ |
+| | transition zone (TZ, 410-670 km) | 10^20^-10^22.5^ | |
+| | lower mantle 1 (LM1, 670-1500 km) | 10^21^-10^23.5^ | Gowan 4×10²² |
+| | lower mantle 2 (LM2, 1500-2891 km) | 10^21^-10^23.5^ | |
 | lateral | α, the amplitude of the experts' mean lateral anomaly A | 0-1.5 | α = 0: a 1-D Earth; the experts have α = 1 |
 | | c₂, c₃, two components of the expert basis (Lloyd against Pan; Bagge's reduction factor) | the experts' range | |
 | regional | s_j, upper-mantle shifts in Fennoscandia, Barents, Laurentide, Greenland, West Antarctica | ±1 dex | |
@@ -94,8 +94,8 @@ pair.](figures/earth-search/wave-a-nroi-either.png)
   and the upper mantle are constrained; the transition zone and the lower mantle are not, in 1-D.
 - **Fennoscandia rules out half of the space** (it wants a thin lithosphere and a soft UM and TZ), Greenland a quarter
   (a stiffer UM), the GNSS rates 23-62 %. The far field, Antarctica and ESL rule out nothing.
-- **The two ice histories want different Earths.** PaleoMIST's ice a soft UM (10^20.1-20.4) with a stiffer TZ,
-  GLAC-1D's a UM of 10^20.6-21. Requiring both would rule Earths out for the ice's sake, so wave B samples from
+- **The two ice histories want different Earths.** PaleoMIST's ice a soft UM (10^20.1^-10^20.4^) with a stiffer TZ,
+  GLAC-1D's a UM of 10^20.6^-10^21^. Requiring both would rule Earths out for the ice's sake, so wave B samples from
   "either".
 - **Gowan's Earth is not among the best under either ice.** The best 1-D Earths gain 60 (PaleoMIST) and 127 (GLAC-1D)
   in log L, mostly in Greenland and, under GLAC-1D, the far field. No 1-D Earth fits the GNSS rates of Fennoscandia and
@@ -117,15 +117,15 @@ marginalized.](figures/earth-search/wave-b-nroi-radial-both.png)
 ![Wave B: the same for the lateral and regional parameters.](figures/earth-search/wave-b-nroi-lateral-both.png)
 
 - **The upper mantle and the transition zone trade off.** The space left runs along a ridge from a soft UM over a stiff
-  TZ (10^19.7 over 10^22.4) to a stiffer UM over a soft TZ (10^21 over 10^20.2); a stiff UM over a stiff TZ is ruled
+  TZ (10^19.7^ over 10^22.4^) to a stiffer UM over a soft TZ (10^21^ over 10^20.2^); a stiff UM over a stiff TZ is ruled
   out. The data constrain a combined viscosity from the lithosphere to 670 km rather than the two layers.
 - **Of the lateral parameters, only the Fennoscandian shift is constrained**: −0.94 to +0.44 dex (5-95 %); a stiffer
   upper mantle there is ruled out. The amplitude α, the expert components and the other shifts keep their ranges.
 - **Lateral structure usually costs fit.** A 3-D Earth beats its own radial profile in 13 of 48 cases under GLAC-1D and
   15 of 48 under PaleoMIST. On average the lateral structure worsens Laurentide and Fennoscandia and leaves the other
   groups unchanged.
-- **The space presses against the prior** where the TZ is low (10^20) or high (10^22.5, the two ends of the ridge),
-  LM1 low (10^21), α low, the Fennoscandian shift low (−1) and the West Antarctic shift high (+1).
+- **The space presses against the prior** where the TZ is low (10^20^) or high (10^22.5^, the two ends of the ridge),
+  LM1 low (10^21^), α low, the Fennoscandian shift low (−1) and the West Antarctic shift high (+1).
 
 **The best 3-D Earths** (log L over the RSL groups, the 1-D run of the same profile in brackets; I per group: Laurentide /
 Greenland / Fennoscandia / Barents / Antarctica / far field | GNSS Fennoscandia / Hudson Bay | ESL; references: Gowan's
@@ -161,8 +161,8 @@ pattern correlation with E014).](figures/earth-search/e014-experts.png)
 
 Laterally E014 is close to Lloyd's field (c₂ −1.18 against Lloyd's −1.22; pattern correlation 0.86-0.97 at every depth)
 with 74 % of the experts' amplitude; Bagge's structures correlate at 0.5-0.7 in the upper mantle and transition zone.
-Radially it is unlike any expert: a soft upper mantle (10^19.8 as an area mean, the experts 10^20.2-20.9), a stiff
-transition zone (10^22.4, the experts 10^20.4-21.3) and a soft lower mantle (10^21.1, the experts 10^21.3-22.8), with a
+Radially it is unlike any expert: a soft upper mantle (10^19.8^ as an area mean, the experts 10^20.2^-10^20.9^), a stiff
+transition zone (10^22.4^, the experts 10^20.4^-10^21.3^) and a soft lower mantle (10^21.1^, the experts 10^21.3^-10^22.8^), with a
 55 km lithosphere.
 
 ![The transition zone in the wave-B emulator, the other parameters fixed at E014: I per group against the TZ (top; gray:
@@ -171,7 +171,7 @@ the experts' range; stars: the 3-D runs), and the groups passed against the TZ a
 
 **Is the stiff transition zone needed?** Not on its own. Along the transition zone alone most groups barely change; a
 stiff one helps Fennoscandia and Antarctica under PaleoMIST's ice. Against the upper mantle, E014 sits at one end of the
-UM-TZ ridge: a stiffer upper mantle (10^20.5-21) over a transition zone in the experts' range fits as well. E014 also
+UM-TZ ridge: a stiffer upper mantle (10^20.5^-10^21^) over a transition zone in the experts' range fits as well. E014 also
 sits at the edges of the prior (TZ 22.47 of 22.5; LM1 and LM2 near 21), which may be the spread of the sample rather
 than the data.
 
@@ -186,8 +186,8 @@ Wave B pressed against the prior at both ends of the UM-TZ ridge, so wave B2 (de
 | H, a stiff UM over a soft TZ | 14 | 50-200 | 20.8-21.5 | 19.5-20.5 | 20.5-22.0 | 20.5-23.5 |
 
 Both boxes: α 0-1.5 (down to 1-D Earths, which wave B favours), c₂ and c₃ over the experts' range, the Fennoscandian
-shift −1.5 to +0.5, the West Antarctic shift −0.5 to +1.5, the others ±1 dex. The field is clamped at 10^19.0 instead of
-10^19.5. The emulator is then refitted over waves A, B and B2 together: the radial GPs on every 1-D run (the B2 profiles
+shift −1.5 to +0.5, the West Antarctic shift −0.5 to +1.5, the others ±1 dex. The field is clamped at 10^19.0^ instead of
+10^19.5^. The emulator is then refitted over waves A, B and B2 together: the radial GPs on every 1-D run (the B2 profiles
 lie outside wave A's box), the lateral GP on 78 3-D Earths per ice history.
 
 The question it answers: does the best region lie outside the prior, and which 4-6 Earths carry into the final
