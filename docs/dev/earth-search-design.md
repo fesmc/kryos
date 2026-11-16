@@ -164,3 +164,71 @@ in Greenland and, under GLAC-1D, the far field. No 1-D Earth fits the GNSS rates
 ice. Files (Albedo, `/albedo/work/user/alrobi001/kryos-search`): `earths/` (members.csv, the par files), `kryos_data/refcorr/`
 (the cases), `score/ens/` (config, errmodel, `iter_01/scores.csv`), `emulate/` and `emulate-nognss/` (summary.md, gp.csv,
 loo.csv, sample.csv, the figures nroi_*.png).
+
+## Wave B (2026-11-13)
+
+**Earths.** `plastic_ensemble.jl earth-search-sample3d` (`plastic_earth_basis.jl`): 50 Earths of the 13 parameters. The radial
+part from the 100,000 points of the wave-A emulator's sample not ruled out under either ice history (28.8 %), spread by greedy
+maximin on [0, 1] of the ranges (`origin.csv`: 28 kept under PaleoMIST only, 15 under GLAC-1D only, 7 under both); the other 8 in a
+Latin hypercube: α ∈ [0, 1.5], c₂ ∈ [−1.22, 1.22] and c₃ ∈ [−2.21, 2.34] (the experts' coefficients of basis v2), and upper-mantle
+shifts ±1 dex in Fennoscandia, Barents, Laurentide, Greenland and West Antarctica. The field (`earth3d_field`, a VILMA2 lon-lat-r
+file on Bagge's grid):
+
+log10 η = P(z) + α A + c₂ pc₂′ + c₃ pc₃′ + Σ_j s_j w_j(x) [z < 670 km], clamped to [19.5, 30], 30 above the lithosphere,
+
+with A the basis mean minus its radial mean and pc′ the lateral part of a component (minus its area mean per depth): the radial
+profile is P's alone. The regions are the masks of `earth_regions_v2.nc`; its Fennoscandia/Barents region is split by
+s = max(clamp((lat − 69)/4), clamp((lon − 40)/10)), the Barents share north of 71-73°N or east of 40-50°E, the rest
+Fennoscandia, so the two groups can want different upper mantles. The 3-D par file (`earth3d_par`) is the 3-D template
+(`par/kryos_NH-ANT-PAT_plastic_vilma2.nml`) with the layers of P on the 1-D template's layering, the same as the 1-D run of P.
+
+**Runs.** Per Earth and ice history the 1-D run of P (`ice-<ICE> | E1D-ES2-E<nnn>`, iterated as wave A), then the 3-D run, one
+pass with the r of that 1-D run (`ice-<ICE> | E3D-ES2-E<nnn>`, `R0`).
+The 1-D runs: 8 cores each, in pools; the 3-D runs: 32 cores each, 2 per 64-core pool job on the 48 h QOS (a pass takes 3-30 h,
+mean 11.6 h; a pool claims a case only with 1.2 times the longest case so far left). About 46,000 core-hours.
+
+**The borrowed r.** The 3-D runs keep the r of their 1-D profile, which leaves today's bed off by up to 140-200 m around Hudson
+Bay for a large α (E002: Laurentide RMS 56 m; E004 with α = 0.42: 7 m). Iterating E002 to its own r (2 more passes,
+`ice-PMIST_E3D-ES2-E002-iter`) changes log L by −3.6 of the −186 that E002 loses against its 1-D profile, and no I_g by more than 0.1:
+the r error moves today's bed, not the RSL of the index points (≤ 25 ka) or the present-day rates. One pass with the borrowed r
+is enough for the scores.
+
+**Emulator.** 100 runs are too few for a GP in 13 dimensions: y_3D = y_1D(radial; the wave-A GP) + Δ(lateral), Δ = y_3D − y_1D of
+the same profile, known at the design points (both were run), a GP in the 8 lateral parameters; the variances add.
+`plastic_earth_emulate.jl wave-b`.
+
+**Results on 96 of 100 runs** (2026-11-16; `p_forclima/kryos-work/earth-search/emulateB`; the pass at 100 to follow). log L over
+the 9 groups that judge (on this scale I1 −8967.9, I5 −8931.9).
+
+- Δ, emulated weakly from 48 runs per ice in 8 dimensions: LOO R² 0.70 Fennoscandia, 0.5-0.6 Laurentide (PaleoMIST), Antarctica,
+  ESL, 0.2-0.45 elsewhere, about 0 for GNSS under PaleoMIST; the combined check keeps 92-100 % of the runs within 2 sd and rules
+  out none that passes. Δ averages +0.10 to +0.19 in log(χ²/n) in Laurentide and Fennoscandia (3-D worse), about 0 elsewhere.
+- Not ruled out: PaleoMIST 42 %, GLAC-1D 45 %, both 36 %, either 51 % of the 13-D space, more than wave A's 5-D fractions because
+  the Δ variance adds. Constrained beyond wave A: only the Fennoscandian upper-mantle shift (5-95 %: −0.94 to +0.44; a stiffer
+  upper mantle there is ruled out). α, c₂, c₃ and the other shifts keep their ranges.
+- 3-D against its own 1-D profile: better in 13 of 48 (GLAC-1D) and 15 of 48 (PaleoMIST), median Δ log L −121 and −59. Lateral
+  structure costs fit in general.
+- Best: E014 (55 km; UM 19.68, TZ 22.47, LM1 21.13, LM2 21.09; α 0.74, c₂ −1.18, c₃ −0.60; shifts F/B/L/G/W −0.6/+0.9/−1.0/+0.7/+0.1)
+  −8812 (GLAC-1D) and −8914 (PaleoMIST), 8 of 9 groups each, +596 and +206 on its 1-D profile, the only 3-D Earth above I1 and I5
+  under both ice histories. No 3-D run passes all 9 groups.
+- The space presses against the prior where TZ is low (20) or high (22.5, along the UM-TZ ridge down to UM ≈ 19.7), LM1 low (21),
+  α low, the Fennoscandian shift low (−1) and the West Antarctic one high (+1); E014 sits in the corner of a soft UM, a stiff TZ and
+  a soft lower mantle.
+
+## Wave B2 (2026-11-16)
+
+Decided with the results of wave B: 30 3-D Earths (E101-E130) in two boxes at the ends of the UM-TZ ridge, widened where wave B
+pressed against the prior (`experiments/earth-search-b2-boxes.toml`, `plastic_ensemble.jl earth-search-sample3d-box`, a Latin
+hypercube per box):
+
+| box | n | lithosphere [km] | UM | TZ | LM1 | LM2 |
+|---|---|---|---|---|---|---|
+| S, around E014 | 16 | 50-90 | 19.0-20.3 | 21.5-23.5 | 20.5-21.8 | 20.5-22.5 |
+| H, a stiff UM and a soft TZ | 14 | 50-200 | 20.8-21.5 | 19.5-20.5 | 20.5-22.0 | 20.5-23.5 |
+
+Both boxes: α 0-1.5, c₂ and c₃ over the experts' range, the Fennoscandian shift −1.5 to +0.5, the West Antarctic one −0.5 to +1.5,
+the others ±1. The field is clamped to [19.0, 30] (wave B: [19.5, 30]; VILMA2's own clamp, `visc_log10_min`, set to 19.0 in the
+par files); the 1-D profiles take the viscosity as it is (VILMA2 clamps only the 3-D field). Runs as wave B, the 3-D ones on
+44 h pools. Emulator (`wave-b radial=all boxes=...`): the radial GPs fitted to every 1-D run (waves A, B and B2: the B2 profiles
+lie outside wave A's box), the Δ GPs to the 48 + 30 3-D Earths per ice, the inputs, the dense sample and the bound densities over
+the union of the boxes.
