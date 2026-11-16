@@ -4,8 +4,9 @@
 # defaults, Levante's / albedo's:
 #
 #   KRYOS          the kryos checkout (the one this file is in)
-#   KRYOS_WORK     your writable work folder: run folders, scores, calibrations
-#                  (/work/ba1442/$USER/kryos-work / /albedo/work/user/$USER/kryos-work)
+#   KRYOS_WORK     the shared work folder of the project: run folders, scores, calibrations, writable by the project
+#                  group (/work/ba1442/kryos-work / /albedo/work/projects/p_forclima/kryos-work); never a personal folder,
+#                  so that colleagues can read and continue the work
 #   FESMDATA       the FesmData store, read-only: never write into it except with FesmData's own tools
 #                  (/work/ba1442/fesmdata / /albedo/work/projects/p_forclima/fesmdata); linked as $KRYOS/fesmdata by
 #                  setup.sh
@@ -48,15 +49,16 @@ fi
 export KRYOS_MACHINE
 case $KRYOS_MACHINE in
     albedo)
-        _store=/albedo/work/projects/p_forclima; _work=/albedo/work/user/$USER/kryos-work; _account=envi.p_forclima
+        _store=/albedo/work/projects/p_forclima; _work=$_store/kryos-work; _account=envi.p_forclima
         _part="-p smp --qos=12h"; _part_long="-p smp --qos=48h"; _queue=12h
         command -v git > /dev/null 2>&1 || module load git > /dev/null 2>&1 ;;
     levante)
-        _store=/work/ba1442; _work=/work/ba1442/$USER/kryos-work; _account=ba1442
+        _store=/work/ba1442; _work=$_store/kryos-work; _account=ba1442
         _part="-p shared"; _part_long="-p shared"; _queue=shared ;;
     *) echo "env.sh: unknown KRYOS_MACHINE '$KRYOS_MACHINE' (levante, albedo)" >&2; return 1 2> /dev/null || exit 1 ;;
 esac
 export KRYOS_WORK=${KRYOS_WORK:-$_work}
+umask 002                                # the files written by the tools and the runs: group-writable (the shared folder)
 export FESMDATA=${FESMDATA:-$_store/fesmdata}
 export FESMDATA_SOURCES=${FESMDATA_SOURCES:-$FESMDATA-sources}
 export KRYOS_DATA=${KRYOS_DATA:-$_store/kryos_data}

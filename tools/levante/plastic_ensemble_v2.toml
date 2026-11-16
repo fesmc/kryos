@@ -157,8 +157,8 @@ time       = "11:00:00"                  # within albedo's 12h queue
 throttle   = 25                          # 25 members + the weights job + one other run: within 30 jobs
 
 [score]
-# gnss_dir = "{fesmdata}/Records/GPS"   # the default; until FesmData's release with Records/GPS:
-#                                         "/albedo/work/user/alrobi001/fesmdata-gnss/Records/GPS"
+# gnss_dir = "{fesmdata}/Records/GPS"   # the default (FesmData GPS v2.2.0: Schumacher2018, MIDAS, BIFROST2015, GNET,
+#                                         MartinEspanol2016)
 
 # The GNSS data groups (pm_compare.jl read_gnss; plastic_ensemble.jl: each a data group after obs_groups): the present-day uplift
 # rate at the stations against dz_bed_rate of the member's last VILMA2 record. rate: gia = uplift_rate - uplift_rate_elastic

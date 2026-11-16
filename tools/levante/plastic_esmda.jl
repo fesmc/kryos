@@ -7,7 +7,8 @@
 # tied to one parameter (`tie` of [[scale.groups]], lists of node ages: the nodes without direct data), and the nodes of `pinned_ka`
 # ([scale]) are no parameter: log factor 0 in every group (the present day, fitted in Stage 1); prior N(0, C), C of a group
 # s(t_p) s(t_q) exp(-|t_p - t_q| / L) with t_p the mean age of a parameter's nodes and s(t) = sigma sin^2(pi t / (2 ramp_ka)) below
-# ramp_ka, sigma above (0 and flat at 0 ka, smooth), groups independent; every member clipped to |theta| <= theta_max after an
+# ramp_ka, sigma above (0 and flat at 0 ka, smooth), or with [prior] kind = "random_walk" a random walk back in time from the
+# present (prior_cov), groups independent; every member clipped to |theta| <= theta_max after an
 # update. Observations: the index points of pm_compare.jl's GROUPS in obs_groups, the model RSL at a point the scorer's (series_run:
 # the run's VILMA2 stream geo_glob_vilma.nc read by pm_compare.jl's read_run, bilinear, linear in time), so d = model - rsl is the d of the scores.
 # Their error covariance R = diag(sigma_i^2) + sigma_m^2 C, sigma_i the scorer's ip_sigma (elevation on the side of d, and the age
@@ -80,7 +81,7 @@ end
 
 # the parameters: (group, its node indices, name, mean age [ka]), group-major, nodes in the order of nodes_ka; `tie` joins nodes
 function params(cfg, sg)
-    P = NamedTuple{(:g, :ks, :name, :t),Tuple{Int,Vector{Int},String,Float64}}[]
+    P = NamedTuple{(:g, :ks, :name, :t, :tmin),Tuple{Int,Vector{Int},String,Float64,Float64}}[]
     pinned = Float64.(get(cfg["scale"], "pinned_ka", Float64[]))
     all(a -> a in sg.nodes_ka, pinned) || error("a pinned node is not in nodes_ka: $(pinned)")
     for (g, spec) in enumerate(cfg["scale"]["groups"])
@@ -94,7 +95,7 @@ function params(cfg, sg)
             any(isnothing, ks) && error("group $(sg.names[g]): a tied node is not in nodes_ka: $(ties[tset])")
             union!(seen, ks)
             push!(P, (g = g, ks = ks, name = sg.names[g] * "_" * join([@sprintf("%g", sg.nodes_ka[i]) for i in ks], "-"),
-                      t = mean(sg.nodes_ka[ks])))
+                      t = mean(sg.nodes_ka[ks]), tmin = minimum(sg.nodes_ka[ks])))
         end
     end
     P
@@ -111,11 +112,31 @@ logline(C, s...) = open(io -> println(io, s...), joinpath(C, "esmda.md"), "a")
 # --- prior --------------------------------------------------------------------------------------------------------------------------
 # the prior sd at age t [ka]: sigma, ramped smoothly from 0 at 0 ka to sigma at ramp_ka (sin^2; no ramp_ka: sigma)
 prior_sd(pr, t) = (r = get(pr, "ramp_ka", 0.0); r > 0 && t < r ? pr["sigma"] * sin(π * t / (2r))^2 : float(pr["sigma"]))
-# groups independent; within a group exponential in time, the group's corr_time_kyr ([[scale.groups]]) or the prior's
+# groups independent; within a group by [prior] kind:
+#   "exponential" (default): sd prior_sd at a parameter's mean node age, exponential correlation in time over the group's
+#       corr_time_kyr ([[scale.groups]]) or the prior's;
+#   "random_walk": the log factor walks back in time from the present, theta(t) = the sum of independent steps between 0 ka
+#       and t, of sd step_sigma per step_kyr (the group's step_sigma or the prior's), plus a level of sd level_sigma (default 0:
+#       the present pinned); Cov = level_sigma^2 + step_sigma^2 min(t_p, t_q) / step_kyr with t_p the youngest age of the
+#       parameter's nodes (a tied block holds the value of its youngest node back to its oldest). The change between two nodes
+#       Δt apart has sd step_sigma sqrt(Δt / step_kyr), whatever their ages: the plastic ice follows tau_b at once, so this
+#       bounds how fast the prior lets the ice change.
 function prior_cov(P, pr, specs)
-    L = [Float64(get(s, "corr_time_kyr", pr["corr_time_kyr"])) for s in specs]
-    [p.g == q.g ? prior_sd(pr, p.t) * prior_sd(pr, q.t) * exp(-abs(p.t - q.t) / L[p.g]) : 0.0 for p in P, q in P]
+    kind = get(pr, "kind", "exponential")
+    if kind == "exponential"
+        L = [Float64(get(s, "corr_time_kyr", pr["corr_time_kyr"])) for s in specs]
+        return [p.g == q.g ? prior_sd(pr, p.t) * prior_sd(pr, q.t) * exp(-abs(p.t - q.t) / L[p.g]) : 0.0 for p in P, q in P]
+    elseif kind == "random_walk"
+        σs = [Float64(get(s, "step_sigma", pr["step_sigma"])) for s in specs]
+        Δ = Float64(pr["step_kyr"]); l = Float64(get(pr, "level_sigma", 0.0))
+        return [p.g == q.g ? l^2 + σs[p.g]^2 * min(p.tmin, q.tmin) / Δ : 0.0 for p in P, q in P]
+    end
+    error("[prior] kind = \"$kind\": exponential or random_walk")
 end
+# one line on the prior of a config, for the logs
+prior_summary(pr) = get(pr, "kind", "exponential") == "random_walk" ?
+    @sprintf("random walk from the present, step sd %g per %g kyr, level sd %g", pr["step_sigma"], pr["step_kyr"], get(pr, "level_sigma", 0.0)) :
+    @sprintf("sigma %g (ramp from 0 at 0 ka to %g ka), correlation time %g kyr", pr["sigma"], get(pr, "ramp_ka", 0), pr["corr_time_kyr"])
 
 # --- observation error ------------------------------------------------------------------------------------------------------------
 const R_EARTH_KM = 6371.0
@@ -252,9 +273,8 @@ function init(cfgfile, C)
     σm, Ls, Lt = obs_err(es)
     logline(C, "# ES-MDA calibration of tau_b (plastic backend)\n\nconfig: ", cfgfile, "; ", length(sg.domain_id), " domains, ",
             ngroups(sg), " groups x ", nnodes(sg), " nodes (pinned at 0: ", get(cfg["scale"], "pinned_ka", "none"), " ka), ",
-            size(Cθ, 1), " parameters (", join(pnames(P), ", "), "); prior sigma ", cfg["prior"]["sigma"], " (ramp from 0 at 0 ka to ",
-            get(cfg["prior"], "ramp_ka", 0), " ka; prior sd of the parameters ", join([@sprintf("%.3f", sqrt(Cθ[q, q])) for q in axes(Cθ, 1)], ", "),
-            "), correlation time ", cfg["prior"]["corr_time_kyr"], " kyr, |theta| <= ", cfg["prior"]["theta_max"],
+            size(Cθ, 1), " parameters (", join(pnames(P), ", "), "); prior: ", prior_summary(cfg["prior"]), " (sd of the parameters ",
+            join([@sprintf("%.3f", sqrt(Cθ[q, q])) for q in axes(Cθ, 1)], ", "), "), |theta| <= ", cfg["prior"]["theta_max"],
             "; Ne = ", ne, ", alpha = ", es["alpha"], ", final: ", es["final"], "; model error sigma_m ", σm, " m, correlated over ", Ls,
             " km and ", Lt / 1000, " kyr; gross-error cut |z| > ", es["z_cut"], " at the prior mean member", 
             isempty(get(rn, "domain_factor_file", "")) ? "" : "; domain factors " * rn["domain_factor_file"], "\n")

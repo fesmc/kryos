@@ -17,11 +17,12 @@ the 1.13 channel and runme (`pip install --user git+https://github.com/fesmc/run
 
 ## The environment
 
-Every script sources `env.sh`: the kryos checkout (`KRYOS`, the one the script is in), your writable work folder
-(`KRYOS_WORK`, default `/work/ba1442/$USER/kryos-work`), the shared stores (`FESMDATA`, `KRYOS_DATA`, read-only), the
-VILMA2 checkout of the standalone runs (`VILMA2`), the reference standalone runs (`PM_REF`), the Slurm account of the
-small jobs of the tools (`ACCOUNT`, default that of `.runme/config.toml`), the runme command (`KRYOS_RUNME`) and the
-julia command (`KRYOS_JULIA`). Override any of them in the environment or in `~/.kryos.env`, e.g.
+Every script sources `env.sh`: the kryos checkout (`KRYOS`, the one the script is in), the project's shared work folder
+(`KRYOS_WORK`, default `/work/ba1442/kryos-work`, on albedo `/albedo/work/projects/p_forclima/kryos-work`), the shared
+stores (`FESMDATA`, `KRYOS_DATA`, read-only), the VILMA2 checkout of the standalone runs (`VILMA2`), the reference
+standalone runs (`PM_REF`), the Slurm account of the small jobs of the tools (`ACCOUNT`, default that of
+`.runme/config.toml`), the runme command (`KRYOS_RUNME`) and the julia command (`KRYOS_JULIA`). Override any of them in
+the environment or in `~/.kryos.env`, e.g.
 
 ```bash
 KRYOS_WORK=/work/ba1442/$USER/paleo

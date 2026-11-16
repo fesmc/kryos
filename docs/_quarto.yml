@@ -44,6 +44,10 @@ website:
             href: experiment-gowan.md
           - text: "Simulating our own ice"
             href: experiment-plastic.md
+          - text: "Glacial-cycle reconstructions: the workflow"
+            href: plastic-workflow.md
+          - text: "Simulations and scores"
+            href: simulations.md
           - text: "Calibration and ensembles"
             href: experiment-calibration.md
           - text: "Analysis and figures"
