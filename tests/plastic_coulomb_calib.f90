@@ -13,6 +13,8 @@ program plastic_coulomb_calib
     !     present-day c_f (or cf_other without pd_region); then per region the volume above flotation and the
     !     maximum thickness.
     !
+    ! The regions are the ids of the region file (region_id); pd_region and target_region name ids of it.
+    !
     ! mu = c_f(region) lambda (taub_mu; lambda_bed = "relaxed": on the present-day bed of topo_file relaxed by local
     ! isostasy, fixed, the backend's default), smoothing smooth_km. SLE = V_af rho_i / (rho_sw A_ocean), A_ocean =
     ! 3.618e14 m2. Output <out>: per pair the present-day fit, the c_f, volumes and maximum thickness per region at
@@ -31,7 +33,7 @@ program plastic_coulomb_calib
 
     implicit none
 
-    integer, parameter :: NMAX = 32, NREG = 5
+    integer, parameter :: NMAX = 32, MAXREG = 16
     real(dp), parameter :: RHO_I = 910.0_dp, RHO_SW = 1028.0_dp, GRAV = 9.81_dp, A_OC = 3.618e14_dp
     ! &calib
     character(len=512) :: hist = "", topo_file = "", region_file = "", out = ""
@@ -39,8 +41,8 @@ program plastic_coulomb_calib
     character(len=64)  :: mask_var = "mask", lambda_bed = "relaxed"
     real(dp) :: margin_min = 0.5_dp, smooth_km = 0.0_dp, time_ka = 20.0_dp
     real(dp) :: HN(NMAX) = -1.0_dp, lam_min(NMAX) = -1.0_dp, p = 1.0_dp, zb0 = -300.0_dp, zb1 = 200.0_dp
-    integer  :: pd_region = 0, target_region(NREG) = 0
-    real(dp) :: target_sle(NREG) = 0.0_dp, cf_other = 0.01_dp, cf_min = 1.0e-4_dp, cf_max = 3.0_dp
+    integer  :: pd_region = 0, target_region(MAXREG) = 0
+    real(dp) :: target_sle(MAXREG) = 0.0_dp, cf_other = 0.01_dp, cf_min = 1.0e-4_dp, cf_max = 3.0_dp
     real(dp) :: lcf_lo = -5.809142990314028_dp, lcf_hi = -3.506557897319982_dp, tol = 1.0e-3_dp
     real(dp) :: sigma_min = 50.0_dp, sigma_rel = 0.1_dp
     integer  :: n_grid = 13
@@ -54,11 +56,11 @@ program plastic_coulomb_calib
     real(dp), allocatable :: x(:), y(:), t(:), zt(:,:,:), zpd(:,:), zlgm(:,:), zsl(:,:), Hobs(:,:), sig(:,:), zrel(:,:)
     real(dp), allocatable :: sd0(:,:), sdl(:,:), fr0(:,:), frl(:,:)
     real(dp), allocatable :: lcf_pd(:,:), chi2n(:,:), sle_pd(:,:), lcf(:,:,:), sle(:,:,:), hmax(:,:,:)
-    integer,  allocatable :: reg(:,:), mobs(:,:), nwide(:,:), nbis(:,:)
+    integer,  allocatable :: reg(:,:), mobs(:,:), nwide(:,:), nbis(:,:), rid(:), tpos(:)
     logical,  allocatable :: m0(:,:), ml(:,:), isfit(:,:)
     character(len=256) :: arg, units
     real(dp) :: dx, dy, dA, sle_obs
-    integer  :: nx, ny, nh, nl, nt, nth, k, it, q, ih, il, th, u_nml, ios, stat, nfit
+    integer  :: nx, ny, nh, nl, nt, nth, k, it, q, ih, il, th, u_nml, ios, stat, nfit, nreg
 
     call get_command_argument(1, arg)
     open(newunit=u_nml, file=trim(arg), status="old", action="read")
@@ -95,6 +97,14 @@ program plastic_coulomb_calib
     zrel = relaxed_bed(zpd, Hobs, RHO_I)
     sig = max(sigma_min, sigma_rel*Hobs)
     call nc_read(region_file, "region", reg)
+    nreg = nc_size(region_file, "region")
+    allocate(rid(nreg), tpos(nt))
+    call nc_read(region_file, "region_id", rid)
+    do k = 1, nt
+        tpos(k) = findloc(rid, target_region(k), dim=1)
+        if (tpos(k) == 0) error stop "plastic_coulomb_calib: a target_region is not a region_id of the region file"
+    end do
+    if (pd_region > 0 .and. .not. any(rid == pd_region)) error stop "plastic_coulomb_calib: pd_region is not a region_id"
     if (count((m0 .or. ml) .and. reg <= 0) > 0) error stop "plastic_coulomb_calib: ice cells without a region"
     isfit = m0 .and. mobs /= 3 .and. reg == pd_region
     nfit = count(isfit)
@@ -120,7 +130,7 @@ program plastic_coulomb_calib
         trim(lambda_bed)//" bed"
     if (pd_region > 0) write(*,"(a,i0,a,f8.3,a)") "# observed present day, region ", pd_region, ": ", sle_obs, " m SLE"
 
-    allocate(lcf_pd(nh, nl), chi2n(nh, nl), sle_pd(nh, nl), lcf(NREG, nh, nl), sle(NREG, nh, nl), hmax(NREG, nh, nl))
+    allocate(lcf_pd(nh, nl), chi2n(nh, nl), sle_pd(nh, nl), lcf(nreg, nh, nl), sle(nreg, nh, nl), hmax(nreg, nh, nl))
     allocate(nwide(nh, nl), nbis(nh, nl))
     lcf_pd = log(cf_other);  chi2n = 0.0_dp;  sle_pd = 0.0_dp;  nwide = 0
     !$omp parallel do private(q, ih, il, th) schedule(dynamic)
@@ -137,13 +147,14 @@ program plastic_coulomb_calib
     write(*,"(a)") "#      H_N  lam_min   c_f(PD)  chi2/n  SLE_PD | per region: c_f, SLE, max H at time_ka"
     do il = 1, nl
         do ih = 1, nh
-            write(*,"(f10.0,f9.3,f10.4,f8.3,f8.2,' |',5(f8.4,f7.1,f7.0))") HN(ih), lam_min(il), exp(lcf_pd(ih, il)), &
-                chi2n(ih, il), sle_pd(ih, il), (exp(lcf(k, ih, il)), sle(k, ih, il), hmax(k, ih, il), k = 1, NREG)
+            write(*,"(f10.0,f9.3,f10.4,f8.3,f8.2,' |',*(f8.4,f7.1,f7.0))") HN(ih), lam_min(il), exp(lcf_pd(ih, il)), &
+                chi2n(ih, il), sle_pd(ih, il), (exp(lcf(k, ih, il)), sle(k, ih, il), hmax(k, ih, il), k = 1, nreg)
         end do
     end do
 
     call nc_create(trim(out))
-    call nc_write_dim(trim(out), "region", x=[(real(k, dp), k = 1, NREG)])
+    call nc_write_dim(trim(out), "region", x=real(rid, dp))
+    if (nt > 0) call nc_write_dim(trim(out), "target", x=[(real(k, dp), k = 1, nt)])
     call nc_write_dim(trim(out), "HN", x=HN(1:nh), units="m")
     call nc_write_dim(trim(out), "lam_min", x=lam_min(1:nl), units="1")
     call nc_write_dim(trim(out), "one", x=[1.0_dp])
@@ -160,8 +171,11 @@ program plastic_coulomb_calib
     call nc_write(trim(out), "pd_widened", nwide, dim1="HN", dim2="lam_min", long_name="widenings of the PD interval")
     call nc_write(trim(out), "n_bisect", nbis, dim1="HN", dim2="lam_min")
     call nc_write(trim(out), "pd_region", [pd_region], dim1="one")
-    call nc_write(trim(out), "target_region", target_region, dim1="region")
-    call nc_write(trim(out), "target_sle", target_sle, dim1="region", units="m")
+    call nc_write(trim(out), "region_id", rid, dim1="region", long_name="region id of the region file")
+    if (nt > 0) then
+        call nc_write(trim(out), "target_region", target_region(1:nt), dim1="target", long_name="region id of the target")
+        call nc_write(trim(out), "target_sle", target_sle(1:nt), dim1="target", units="m")
+    end if
     call nc_write(trim(out), "time_ka", [time_ka], dim1="one")
     write(*,"(a)") "# wrote "//trim(out)
 
@@ -176,14 +190,14 @@ contains
 
     subroutine solve(lc, jh, jl, tt, zb, mask, frac)
         ! the Coulomb solve with ln c_f per region lc on bed zb and mask, solver instance tt
-        real(dp), intent(in) :: lc(NREG), zb(:,:), frac(:,:)
+        real(dp), intent(in) :: lc(:), zb(:,:), frac(:,:)
         integer,  intent(in) :: jh, jl, tt
         logical,  intent(in) :: mask(:,:)
         type(taub_t) :: tb
         real(dp), allocatable :: mu(:,:)
-        integer :: i, st
+        integer :: st
         allocate(mu(nx, ny))
-        call taub_set_coulomb(tb, reg, [(i, i = 1, NREG)], lc, p, HN(jh), lam_min(jl), zb0, zb1, trim(region_file), &
+        call taub_set_coulomb(tb, reg, rid, lc, p, HN(jh), lam_min(jl), zb0, zb1, trim(region_file), &
                               "calibration c_f")
         if (trim(lambda_bed) == "relaxed") call taub_set_lambda_fixed(tb, zrel)
         call taub_set_smooth(tb, 1000.0_dp*smooth_km, dx, dy)
@@ -194,7 +208,7 @@ contains
     real(dp) function chi2_pd(lc, jh, jl, tt) result(c2)
         real(dp), intent(in) :: lc
         integer,  intent(in) :: jh, jl, tt
-        real(dp) :: v(NREG)
+        real(dp) :: v(nreg)
         v = lc
         call solve(v, jh, jl, tt, zpd, m0, fr0)
         c2 = sum(((ps(tt)%H - Hobs)/sig)**2, mask=isfit)/nfit
@@ -242,22 +256,22 @@ contains
     subroutine fit_lgm(jh, jl, tt)
         ! the targets' ln c_f by simultaneous bisection, then the volumes and maximum thickness per region
         integer, intent(in) :: jh, jl, tt
-        real(dp) :: lc(NREG), lo(NREG), hi(NREG)
+        real(dp) :: lc(nreg), lo(nreg), hi(nreg)
         integer  :: r, j, nb
         lc = lcf_pd(jh, jl)
         lo = log(cf_min);  hi = log(cf_max)
         nb = 0
         if (nt > 0) then
-            do while (maxval(hi - lo, mask=[(any(target_region == r), r = 1, NREG)]) > tol)
+            do while (maxval(hi - lo, mask=[(any(tpos == r), r = 1, nreg)]) > tol)
                 do j = 1, nt
-                    r = target_region(j)
+                    r = tpos(j)
                     lc(r) = 0.5_dp*(lo(r) + hi(r))
                 end do
                 call solve(lc, jh, jl, tt, zlgm, ml, frl)
                 nb = nb + 1
                 do j = 1, nt
-                    r = target_region(j)
-                    if (sle_of(ps(tt)%H, zlgm, reg == r) < target_sle(j)) then
+                    r = tpos(j)
+                    if (sle_of(ps(tt)%H, zlgm, reg == rid(r)) < target_sle(j)) then
                         lo(r) = lc(r)
                     else
                         hi(r) = lc(r)
@@ -265,15 +279,15 @@ contains
                 end do
             end do
             do j = 1, nt
-                lc(target_region(j)) = 0.5_dp*(lo(target_region(j)) + hi(target_region(j)))
+                lc(tpos(j)) = 0.5_dp*(lo(tpos(j)) + hi(tpos(j)))
             end do
         end if
         call solve(lc, jh, jl, tt, zlgm, ml, frl)
-        do r = 1, NREG
+        do r = 1, nreg
             lcf(r, jh, jl) = lc(r)
-            sle(r, jh, jl) = sle_of(ps(tt)%H, zlgm, reg == r)
-            hmax(r, jh, jl) = maxval(ps(tt)%H, mask=reg == r .and. ml)
-            if (.not. any(reg == r .and. ml)) hmax(r, jh, jl) = 0.0_dp
+            sle(r, jh, jl) = sle_of(ps(tt)%H, zlgm, reg == rid(r))
+            hmax(r, jh, jl) = maxval(ps(tt)%H, mask=reg == rid(r) .and. ml)
+            if (.not. any(reg == rid(r) .and. ml)) hmax(r, jh, jl) = 0.0_dp
         end do
         nbis(jh, jl) = nb
     end subroutine fit_lgm

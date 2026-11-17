@@ -38,7 +38,7 @@ program plastic_coulomb_pd
 
     implicit none
 
-    integer, parameter :: NMAX = 32, NREG = 5
+    integer, parameter :: NMAX = 32
     ! &pd
     character(len=512) :: hist = "", topo_file = "", region_file = "", taub_file = "", factor_file = "", out = ""
     character(len=64)  :: margin_var = "f_ice", margin_position = "sdist", mode = "surface"
@@ -63,7 +63,7 @@ program plastic_coulomb_pd
     real(dp), allocatable :: x(:), y(:), zb(:,:), zsl(:,:), sd(:,:), frac(:,:), Hobs(:,:), sig(:,:), tau_ref(:,:), zrel(:,:)
     real(dp), allocatable :: Href(:,:), Hbest(:,:), mubest(:,:), taubest(:,:)
     real(dp), allocatable :: lcf(:,:), chi2n(:,:), rms(:,:), vol(:,:)
-    integer,  allocatable :: mobs(:,:), reg(:,:), nwide(:,:), nsolve(:,:)
+    integer,  allocatable :: mobs(:,:), reg(:,:), nwide(:,:), nsolve(:,:), rid(:)
     logical,  allocatable :: mask(:,:), isfit(:,:)
     character(len=256) :: arg
     real(dp) :: dx, dy, c_ref, r_ref, v_ref, v_obs, best
@@ -89,6 +89,8 @@ program plastic_coulomb_pd
     call nc_read(topo_file, H_var, Hobs)
     call nc_read(topo_file, mask_var, mobs)
     call nc_read(region_file, "region", reg)
+    allocate(rid(nc_size(region_file, "region")))
+    call nc_read(region_file, "region_id", rid)             ! the region ids of the map (one uniform c_f for all)
     where (zb < -9000.0_dp) zb = 0.0_dp
     where (Hobs < 0.0_dp) Hobs = 0.0_dp
     zsl = 0.0_dp
@@ -208,7 +210,7 @@ contains
         real(dp), intent(out) :: Hout(:,:), muo(:,:), tauo(:,:)
         type(taub_t) :: tb
         integer :: st
-        call taub_set_coulomb(tb, reg, [(k, k = 1, NREG)], [(lc, k = 1, NREG)], p, HN(jh), lam_min(jl), zb0, zb1, &
+        call taub_set_coulomb(tb, reg, rid, [(lc, k = 1, size(rid))], p, HN(jh), lam_min(jl), zb0, zb1, &
                               trim(region_file), "uniform c_f")
         if (trim(lambda_bed) == "relaxed") call taub_set_lambda_fixed(tb, zrel)
         call taub_set_smooth(tb, 1000.0_dp*smooth_km, dx, dy)
@@ -229,7 +231,7 @@ contains
 
         allocate(H(nx, ny), mu1(nx, ny), mu(nx, ny), ta(nx, ny), g(n_grid), f(n_grid))
         ! lambda alone (c_f = 1, smoothed); mu = c_f mu1 (the smoothing is linear)
-        call taub_set_coulomb(tb, reg, [(i, i = 1, NREG)], [(0.0_dp, i = 1, NREG)], p, HN(jh), lam_min(jl), zb0, zb1, &
+        call taub_set_coulomb(tb, reg, rid, [(0.0_dp, i = 1, size(rid))], p, HN(jh), lam_min(jl), zb0, zb1, &
                               trim(region_file), "uniform c_f")
         if (trim(lambda_bed) == "relaxed") call taub_set_lambda_fixed(tb, zrel)
         call taub_set_smooth(tb, 1000.0_dp*smooth_km, dx, dy)
