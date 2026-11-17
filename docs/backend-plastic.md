@@ -216,8 +216,13 @@ $$
 
 N the effective pressure of Leguy et al. (2014) (H_f = (ρ_w/ρ_i) max(0, z_sl − z_b), N = 0
 at or below flotation), capped smoothly at ρ_i g `taub_HN`, and λ linear from
-`taub_lam_min` at a bed `taub_zb0` or more below the sea level of the time to 1 at `taub_zb1`
-or higher (`kryos_plastic_bed`, the same λ as `coulomb_n`). In the plastic equation this is
+`taub_lam_min` at a bed `taub_zb0` or more below sea level to 1 at `taub_zb1` or higher
+(`kryos_plastic_bed`, the same λ as `coulomb_n`). λ is geology, N (through H_f) the ocean
+connection: with `taub_lambda_bed = "relaxed"` (default) λ is a fixed field of the
+reference bed relaxed by local isostasy, z_b,ref + (ρ_i/ρ_m) H_ice,pd (ρ_m = 3300 kg m⁻³,
+relative to present sea level), computed at init and held in time, so that the
+isostatically depressed interior beds of today's ice sheets do not read as marine;
+`"current"` takes the bed and sea level of each solve. In the plastic equation this is
 a slope, |∇z_s| = c_f λ N_eff/(ρ_i g H): the constant c_f λ where H ≪ H_N on land (a wedge),
 0 at flotation, and for H ≫ H_N the Nye profile of τ_b = c_f λ ρ_i g H_N. Nothing depends on
 time explicitly. The backend computes μ = c_f λ on the bed and sea level of each solve and
@@ -383,6 +388,7 @@ the core keys of `[instance]` (`backend`, `grid`, `dt`, `out_2D`, ...).
 | `taub_region_file`, `taub_cf_file` | `""`, `""` | `"coulomb"`: the region map, c_f per region |
 | `taub_HN`, `taub_p` | 0.0, 1.0 | `"coulomb"`: [m] cap of N (required, > 0); exponent of N in [0, 1] |
 | `taub_lam_min`, `taub_zb0`, `taub_zb1` | 1.0, -300.0, 200.0 | `"coulomb"`: λ (1 = no bed dependence) |
+| `taub_lambda_bed` | `"relaxed"` | `"coulomb"`: the bed of λ, `"relaxed"` (fixed) or `"current"` |
 | `rheo_A`, `rheo_n` | 0.0, 3.0 | Glen rate factor [Pa-n yr-1] (0: no closure), exponent |
 | `slide_law` | `"none"` | see [Flow closure](#flow-closure) |
 | `slide_beta`, `slide_m` | 0.0, 1.0 | linear, weertman coefficient; stress exponent |
