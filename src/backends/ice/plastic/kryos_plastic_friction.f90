@@ -8,7 +8,7 @@ module kryos_plastic_friction
     !   "coulomb_n"  the library's regularised Coulomb law with C = tau_b lambda(z_bed - z_sl) N / (rho_i g Hc):
     !                N = rho_i g H (1 - H_f/H)^p the effective pressure (Leguy et al. 2014; H_f = rho_w/rho_i
     !                max(0, z_sl - z_bed) the flotation thickness; 0 at or below it), lambda linear from lam_min at
-    !                z_bed - z_sl <= zb0 to 1 at >= zb1. At tau = tau_b the speed u_0 x/(1-x), x = (Hc/(lambda N/
+    !                z_bed - z_sl <= zb0 to 1 at >= zb1 (kryos_plastic_bed). At tau = tau_b the speed u_0 x/(1-x), x = (Hc/(lambda N/
     !                (rho_i g)))^m, depends on N and the bed alone: slow under thick ice, fast where the ice thins
     !                below Hc/lambda or nears flotation; u_max where C <= tau.
     !
@@ -16,6 +16,7 @@ module kryos_plastic_friction
     ! coefficient of its ice cell).
 
     use precision, only: dp
+    use kryos_plastic_bed, only: bed_lambda
 
     implicit none
 
@@ -68,9 +69,7 @@ contains
             allocate(N(size(H, 1), size(H, 2)), lam(size(H, 1), size(H, 2)))
             N = 0.0_dp
             where (H > Hf) N = rho_i*g*H*(1.0_dp - Hf/H)**fr%p
-            lam = 1.0_dp
-            if (fr%lam_min < 1.0_dp) lam = fr%lam_min + (1.0_dp - fr%lam_min)* &
-                                           min(max((z_bed - z_sl - fr%zb0)/(fr%zb1 - fr%zb0), 0.0_dp), 1.0_dp)
+            lam = bed_lambda(z_bed, z_sl, fr%lam_min, fr%zb0, fr%zb1)
             where (mask .and. tau_b > 0.0_dp)
                 fric = tau_b*lam*N/(rho_i*g*fr%Hc)
             elsewhere
