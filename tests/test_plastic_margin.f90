@@ -8,6 +8,10 @@ program test_plastic_margin
     !     times, the footprint is the union; "nearest" takes the nearest slice;
     !   * a margin file with "years ago" (and a fill value) in model time, increasing;
     !   * outside the time range: hold, or stop with a named message (the program re-runs itself);
+    !   * a set of chronologies (margin_set_t): a patch identical to the base gives the base bit for bit;
+    !     a patch changes nothing outside its region and nothing outside its time range, and is
+    !     itself bit for bit in its region within it; the footprint is the base's and the patch's in its
+    !     region; a region map by id; overlapping regions and an id not in the map stop;
     !   * tau_b: domains with a series (either dimension order in the file), an override table, a
     !     default; a domain without a value stops;
     !   * tau_b scale (taub_scale_file): the groups mapped by domain id (not position, an id added by the
@@ -21,7 +25,9 @@ program test_plastic_margin
     use precision, only: dp
     use ncio,      only: nc_create, nc_write_dim, nc_write
     use kryos_plastic_margin, only: margin_t, margin_set, margin_init, margin_at, margin_footprint, &
-                                    margin_signed_distance, margin_edt2, model_time_axis, MARGIN_SDIST, MARGIN_NEAREST
+                                    margin_signed_distance, margin_edt2, model_time_axis, MARGIN_SDIST, MARGIN_NEAREST, &
+                                    margin_set_t, margin_set_init, margin_set_add, margin_set_at, margin_set_footprint, &
+                                    margin_region
     use kryos_plastic_taub,   only: taub_t, taub_set_domains, taub_read_domains, taub_at, taub_set_const, &
                                     taub_set_scale, taub_read_scale, taub_set_domain_factor, taub_read_domain_factor, &
                                     TAUB_M_DOMAINS
@@ -45,6 +51,7 @@ program test_plastic_margin
     call test_disks()
     call test_file()
     call test_out_of_range()
+    call test_set()
     call test_taub()
     call test_taub_scale()
     call test_taub_domain_factor()
@@ -232,6 +239,87 @@ contains
         call expect_abort("scale_badgrp", "a group is outside 0 (unscaled) to 2")
         call expect_abort("dfac_badid", "domain id 7 (log_factor")
     end subroutine test_out_of_range
+
+    subroutine test_set()
+        ! Base: disks R1 at 0, R2 at 100, R1 at 200 (sdist, hold). Patch: in the west half (i <= 31) or a
+        ! disk of radius 12 around (20, 31) (region map ids 1, 2), from 40 to 160, of three disks
+        ! centred at (25, 31): a chronology with other slices and other times.
+        type(margin_t)     :: base, pt, same
+        type(margin_set_t) :: ms
+        logical  :: ice(N, N, 3), pice(N, N, 3), mask(N, N), m0(N, N), mp(N, N), west(N, N), in(N, N)
+        real(dp) :: sd(N, N), s0(N, N), sp(N, N), r(N, N), rp(N, N), fp(N, N), x(N)
+        real(dp), parameter :: ts(9) = [-50.0_dp, 0.0_dp, 30.0_dp, 40.0_dp, 75.0_dp, 120.0_dp, 160.0_dp, 170.0_dp, 250.0_dp]
+        character(len=*), parameter :: f = dir//"/regions.nc"
+        integer  :: map(N, N), i, j, k
+        logical  :: ok, ok_out, ok_in, ok_time
+
+        write(*,"(a)") "a set of chronologies"
+        r = radius()
+        do j = 1, N
+            do i = 1, N
+                rp(i,j) = sqrt(real((i - 25)**2 + (j - 31)**2, dp))
+                west(i,j) = i <= 31
+            end do
+        end do
+        ice(:,:,1) = disk(R1);  ice(:,:,2) = disk(R2);  ice(:,:,3) = disk(R1)
+        call margin_set(base, [0.0_dp, 100.0_dp, 200.0_dp], ice, DX, DX, MARGIN_SDIST, .true., "base")
+
+        ! a patch identical to the base: the base bit for bit, everywhere and at every time
+        call margin_set(same, [0.0_dp, 100.0_dp, 200.0_dp], ice, DX, DX, MARGIN_SDIST, .false., "same")
+        call margin_set_init(ms, base)
+        call margin_set_add(ms, same, west)
+        ok = .true.
+        do k = 1, size(ts)
+            call margin_set_at(ms, ts(k), mask, sd)
+            call margin_at(base, ts(k), m0, s0)
+            ok = ok .and. all(sd == s0) .and. all(mask .eqv. m0)
+        end do
+        call check("set: a patch identical to the base gives the base bit for bit", ok)
+        call check("set: its footprint is the base's", all(margin_set_footprint(ms) == margin_footprint(base)))
+
+        ! a patch with other slices and times, in the region of ids 1 and 2 of a map
+        pice(:,:,1) = rp <= 6.0_dp;  pice(:,:,2) = rp <= 18.0_dp;  pice(:,:,3) = rp <= 3.0_dp
+        call margin_set(pt, [40.0_dp, 90.0_dp, 160.0_dp], pice, DX, DX, MARGIN_SDIST, .false., "patch")
+        do j = 1, N
+            do i = 1, N
+                map(i,j) = merge(1, 3, i <= 31)
+                if ((i - 20)**2 + (j - 31)**2 <= 144) map(i,j) = 2
+            end do
+        end do
+        x = [(real(i - 1, dp), i = 1, N)]
+        call nc_create(f)
+        call nc_write_dim(f, "xc", x=x, units="km")
+        call nc_write_dim(f, "yc", x=x, units="km")
+        call nc_write(f, "region", map, dim1="xc", dim2="yc")
+        in = margin_region(f, "region", [2, 1], N, N)
+        call check("region map: the cells of ids 1 and 2", all(in .eqv. (map == 1 .or. map == 2)))
+        call margin_set_init(ms, base)
+        call margin_set_add(ms, pt, in)
+        call check("set: owner 1 in the region, 0 elsewhere", all((ms%owner == 1) .eqv. in) .and. all(ms%owner >= 0) &
+                   .and. all(ms%owner <= 1))
+        ok_out = .true.;  ok_in = .true.;  ok_time = .true.
+        do k = 1, size(ts)
+            call margin_set_at(ms, ts(k), mask, sd)
+            call margin_at(base, ts(k), m0, s0)
+            ok_out = ok_out .and. all(pack(sd, .not. in) == pack(s0, .not. in)) .and. &
+                     all(pack(mask, .not. in) .eqv. pack(m0, .not. in))
+            if (ts(k) >= 40.0_dp .and. ts(k) <= 160.0_dp) then
+                call margin_at(pt, ts(k), mp, sp)
+                ok_in = ok_in .and. all(pack(sd, in) == pack(sp, in)) .and. all(pack(mask, in) .eqv. pack(mp, in))
+                ok_in = ok_in .and. any(pack(mask .neqv. m0, in))        ! (the patch differs from the base there)
+            else
+                ok_time = ok_time .and. all(sd == s0) .and. all(mask .eqv. m0)
+            end if
+        end do
+        call check("set: nothing changes outside the patch's region (sd bit for bit, 9 times)", ok_out)
+        call check("set: in its region within its time range (ends included) the patch bit for bit", ok_in)
+        call check("set: outside its time range the base everywhere", ok_time)
+        fp = margin_set_footprint(ms)
+        call check("set: footprint = the base's, or the patch's in its region", all((fp > 0.5_dp) .eqv. &
+                   (disk(R2) .or. (in .and. rp <= 18.0_dp))))
+        call expect_abort("set_overlap", "overlaps that of patch 1")
+        call expect_abort("region_badid", "region id 7 is not in the map")
+    end subroutine test_set
 
     subroutine test_taub()
         type(taub_t) :: tb
@@ -440,8 +528,9 @@ contains
         ! Child: build the situation that must stop.
         character(len=64) :: arg
         type(margin_t) :: mg
+        type(margin_set_t) :: ms
         type(taub_t)   :: tb
-        logical  :: ice(N, N, 2), mask(N, N)
+        logical  :: ice(N, N, 2), mask(N, N), west(N, N), reg(N, N)
         real(dp) :: sd(N, N)
         integer  :: dom(2, 2)
 
@@ -452,6 +541,16 @@ contains
             ice(:,:,2) = disk(R2)
             call margin_set(mg, [0.0_dp, 10.0_dp], ice, DX, DX, MARGIN_SDIST, .false., "disks")
             call margin_at(mg, 10.5_dp, mask, sd)
+        case ("set_overlap")
+            ice(:,:,1) = disk(R1)
+            ice(:,:,2) = disk(R2)
+            call margin_set(mg, [0.0_dp, 10.0_dp], ice, DX, DX, MARGIN_SDIST, .false., "disks")
+            west = .false.;  west(1:31,:) = .true.
+            call margin_set_init(ms, mg)
+            call margin_set_add(ms, mg, west)
+            call margin_set_add(ms, mg, .not. west .or. disk(R1))
+        case ("region_badid")
+            reg = margin_region(dir//"/regions.nc", "region", [1, 7], N, N)
         case ("taub_nodomain")
             dom = reshape([1, 2, 0, 1], [2, 2])
             call taub_set_domains(tb, dom, [1], [1.0e4_dp], 0.0_dp, "test")

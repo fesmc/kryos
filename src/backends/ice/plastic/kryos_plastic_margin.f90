@@ -15,6 +15,12 @@ module kryos_plastic_margin
     ! slices that bracket t and takes sd > 0 (the margin moves smoothly; a cell is ice only where it
     ! is ice in one of the two slices); "nearest" takes the nearest slice (Gowan et al. 2021 offline).
     ! Outside the time range of the slices: stop, or hold the first or last slice.
+    !
+    ! A set of chronologies (margin_set_t): the base everywhere and patches, each in its region (owner;
+    ! the regions disjoint). At t the base gives the mask and sd; in the region of a patch whose time
+    ! range holds t, the patch does. Each chronology interpolates between its own slices only, so
+    ! outside the patch regions, and in them outside the patches' time ranges, the set is the base bit
+    ! for bit.
 
     use precision, only: dp
     use fesm_log,  only: fesm_error, to_str
@@ -38,7 +44,14 @@ module kryos_plastic_margin
         character(len=512) :: src = ""               ! where the slices came from (messages)
     end type margin_t
 
+    type, public :: margin_set_t
+        type(margin_t)              :: base          ! margin_file, everywhere
+        type(margin_t), allocatable :: patch(:)      ! regional chronologies
+        integer,        allocatable :: owner(:,:)    ! 0 = base, k = patch k
+    end type margin_set_t
+
     public :: margin_init, margin_set, margin_at, margin_footprint, margin_interp_code
+    public :: margin_set_init, margin_set_add, margin_set_at, margin_set_footprint, margin_region
     public :: margin_signed_distance, margin_edt2, model_time_axis, time_order
 
 contains
@@ -212,6 +225,130 @@ contains
         end do
         a = (t - mg%time(k)) / (mg%time(k+1) - mg%time(k))
     end subroutine bracket
+
+    ! =========================================================================
+    ! A set of chronologies: the base and regional patches
+    ! =========================================================================
+
+    subroutine margin_set_init(ms, base)
+        ! The base alone (owner 0 everywhere, no patch).
+        type(margin_set_t), intent(out) :: ms
+        type(margin_t),     intent(in)  :: base
+
+        ms%base = base
+        allocate(ms%patch(0), ms%owner(base%nx, base%ny))
+        ms%owner = 0
+    end subroutine margin_set_init
+
+    subroutine margin_set_add(ms, mg, region)
+        ! Patch k = size(ms%patch) + 1: the chronology mg in the cells where region holds, within mg's
+        ! time range [time(1), time(n)]. Its grid must be the base's and its region non-empty and
+        ! outside the regions of the patches added before.
+        type(margin_set_t), intent(inout) :: ms
+        type(margin_t),     intent(in)    :: mg
+        logical,            intent(in)    :: region(:,:)
+
+        character(len=*), parameter :: proc = "kryos_plastic_margin::margin_set_add"
+        type(margin_t), allocatable :: tmp(:)
+        integer :: n, k
+
+        n = size(ms%patch)
+        if (mg%nx /= ms%base%nx .or. mg%ny /= ms%base%ny .or. mg%dx /= ms%base%dx .or. mg%dy /= ms%base%dy) then
+            call fesm_error(proc, "the patch is not on the grid of the base", trim(mg%src)//": "//to_str(mg%nx)// &
+                            " x "//to_str(mg%ny)//", the base "//trim(ms%base%src)//": "//to_str(ms%base%nx)//" x "// &
+                            to_str(ms%base%ny))
+        end if
+        if (size(region, 1) /= ms%base%nx .or. size(region, 2) /= ms%base%ny) then
+            call fesm_error(proc, "the region is not on the grid of the base", trim(mg%src))
+        end if
+        if (.not. any(region)) call fesm_error(proc, "the region of the patch is empty", trim(mg%src))
+        do k = 1, n
+            if (any(region .and. ms%owner == k)) then
+                call fesm_error(proc, "the region of the patch overlaps that of patch "//to_str(k), trim(mg%src)// &
+                                " and "//trim(ms%patch(k)%src)//": "//to_str(count(region .and. ms%owner == k))// &
+                                " cells in both")
+            end if
+        end do
+
+        allocate(tmp(n + 1))
+        tmp(1:n) = ms%patch
+        tmp(n + 1) = mg
+        call move_alloc(tmp, ms%patch)
+        where (region) ms%owner = n + 1
+    end subroutine margin_set_add
+
+    subroutine margin_set_at(ms, t, mask, sd)
+        ! The ice mask at model time t [yr] and its signed distance [m]: the base's, and in the region of
+        ! each patch whose time range holds t, the patch's.
+        type(margin_set_t), intent(in)  :: ms
+        real(dp),           intent(in)  :: t
+        logical,            intent(out) :: mask(:,:)
+        real(dp),           intent(out) :: sd(:,:)
+
+        logical,  allocatable :: mk(:,:)
+        real(dp), allocatable :: sk(:,:)
+        integer :: k
+
+        call margin_at(ms%base, t, mask, sd)
+        do k = 1, size(ms%patch)
+            if (t < ms%patch(k)%time(1) .or. t > ms%patch(k)%time(ms%patch(k)%n)) cycle
+            if (.not. allocated(mk)) allocate(mk(ms%base%nx, ms%base%ny), sk(ms%base%nx, ms%base%ny))
+            call margin_at(ms%patch(k), t, mk, sk)
+            where (ms%owner == k)
+                mask = mk
+                sd   = sk
+            end where
+        end do
+    end subroutine margin_set_at
+
+    function margin_set_footprint(ms) result(fp)
+        ! 1 where the base has ice in some slice, or a patch in its region; else 0: every mask
+        ! margin_set_at can give lies inside it.
+        type(margin_set_t), intent(in) :: ms
+        real(dp), allocatable :: fp(:,:)
+        integer :: k
+
+        fp = margin_footprint(ms%base)
+        do k = 1, size(ms%patch)
+            where (ms%owner == k .and. any(ms%patch(k)%sd > 0.0_dp, dim=3)) fp = 1.0_dp
+        end do
+    end function margin_set_footprint
+
+    function margin_region(file, var, ids, nx, ny) result(region)
+        ! The cells of a region map (`var`, integer ids on (x, y), the instance grid, in `file`) whose id
+        ! is one of `ids`; each id must occur in the map.
+        character(len=*), intent(in) :: file, var
+        integer,          intent(in) :: ids(:), nx, ny
+        logical, allocatable :: region(:,:)
+
+        character(len=*), parameter :: proc = "kryos_plastic_margin::margin_region"
+        character(len=64), allocatable :: names(:)
+        integer, allocatable :: dims(:), map(:,:)
+        logical :: exists
+        integer :: k
+
+        inquire(file=trim(file), exist=exists)
+        if (.not. exists) call fesm_error(proc, "the region file does not exist", trim(file))
+        if (size(ids) == 0) call fesm_error(proc, "no region id given", trim(file))
+        call nc_dims(file, var, names, dims)
+        if (size(dims) /= 2) call fesm_error(proc, "`"//trim(var)//"` is not a map (x, y)", "file "//trim(file))
+        if (dims(1) /= nx .or. dims(2) /= ny) then
+            call fesm_error(proc, "`"//trim(var)//"` is not on the instance grid", "file "//trim(file)//": "// &
+                            to_str(dims(1))//" x "//to_str(dims(2))//", the grid "//to_str(nx)//" x "//to_str(ny))
+        end if
+        allocate(map(nx, ny))
+        call nc_read(file, var, map)
+        do k = 1, size(ids)
+            if (.not. any(map == ids(k))) &
+                call fesm_error(proc, "region id "//to_str(ids(k))//" is not in the map", "file "//trim(file)// &
+                                ", variable "//trim(var))
+        end do
+        allocate(region(nx, ny))
+        region = .false.
+        do k = 1, size(ids)
+            region = region .or. map == ids(k)
+        end do
+    end function margin_region
 
     ! =========================================================================
     ! Distances
