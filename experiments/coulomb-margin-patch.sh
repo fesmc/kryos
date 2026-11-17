@@ -29,7 +29,8 @@ NAMES=(tau-CBS-H1000-pPM_E1D-ES1-E117 tau-CBS-H1000-pPG_E1D-ES1-E117 tau-CBS-H10
 FUTURE=$W/NH-32KM_IceHistory-PaleoGrIS-patch-future.nc
 
 setup() {
-    [ -f "$PATCH" ] || kryos_jl "$T/margin_patch.jl" "$PATCH"
+    [ -f "$PATCH" ] || kryos_jl "$T/margin_patch.jl" "$FESMDATA/GreenlandPaleo/GRL-PAL-1KM/GRL-PAL-1KM_IceHistory-PaleoGrIS.nc" \
+        age_deglac 2 15000 5000 "$PATCH"
     mkdir -p "$W"; cp "$PATCH" "$FUTURE"; chmod u+w "$FUTURE"
     kryos_jl -e 'using NCDatasets; NCDataset(ARGS[1], "a") do ds; ds["time"][:] = ds["time"][:] .- 20000; end' "$FUTURE"
     mkdir -p "$R"; cd "$R"
