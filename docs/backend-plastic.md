@@ -134,6 +134,44 @@ to present, in `years ago`.
 The static export `footprint` is 1 where some slice has ice: every interpolated mask
 lies in it.
 
+### Margin patches
+
+`margin_patches` names groups (template `[margin_patch]`), each a regional chronology
+that replaces `margin_file`'s in its region within its time range: `file`, `var`,
+`H_min` as `margin_file`, `margin_var`, `margin_H_min`, and the region: the cells of a
+region map (`region_file`, `region_var`, integer ids on the instance grid) whose id is
+one of `region_ids` (each id must occur in the map). At t the mask and signed distance
+are `margin_file`'s, and in the region of a patch whose slices span t (the ends
+included), the patch's (`margin_set_t` of `kryos_plastic_margin`). Each chronology
+interpolates between its own slices only (with the instance's `margin_interp`), so
+outside the patch regions, and inside them before and after a patch's slices, the
+margin is `margin_file`'s bit for bit; a patch whose first and last slices are the
+base's slices at those times hands over continuously. Regions must not overlap. The
+signed distance is discontinuous at a region's boundary by the two chronologies'
+difference there; `margin_position = "sdist"` clamps the fraction it gives. The
+footprint is `margin_file`'s, or a patch's in its region: a patch with ice where
+`margin_file` has none in any slice grows the static footprint, which changes the global
+gather (and so the run) from the start, before the patch's time range.
+
+```
+&ice_nor
+    ...
+    margin_patches = "margin_grl"
+/
+&margin_grl
+    file        = "/albedo/work/projects/p_forclima/kryos-work/margins/NH-32KM/NH-32KM_IceHistory-PaleoGrIS-patch.nc"
+    var         = "f_ice"
+    H_min       = 0.5
+    region_file = "kryos_data/plastic/{grid_name}_taub_regions_v2.nc"
+    region_var  = "region"
+    region_ids  = "2"
+/
+```
+
+Greenland from PaleoGrIS 1.0 (Leger et al. 2024): `tools/levante/margin_patch.jl` writes
+that patch on NH-32KM (PaleoGrIS's isochrones, 13.5 to 6.75 ka, and PaleoMIST's 15 and
+5 ka slices; used in region 2 of the maps v2, Greenland).
+
 ## Basal shear stress
 
 `taub_method` (with `drive = "taub"`):
@@ -286,7 +324,7 @@ The keys of the library's `plastic_par_t`, passed through:
 | `M_ice` | ρ_i Σ H dx dy [Gt] |
 | `z_bed_ref`, `H_ice_pd` | static: the domain's reference bed and present-day ice |
 | `H_ice_ref` | the present-day ice (`H_ice_pd`), put with the geometry at every update |
-| `footprint` | static: 1 where some margin slice has ice |
+| `footprint` | static: 1 where some margin slice has ice (a patch's slice in its region) |
 | `ux_s`, `uy_s`, `smb_tot`, `cmb_tot` | with `mass_balance = "implied"` or `"inverted"`: the surface velocity of the closure; smb and cmb summed over the grid [Gt yr-1] |
 
 `H_ice_ref` is not the ice the backend produces but a fixed reference: today's ice of
@@ -379,6 +417,7 @@ the core keys of `[instance]` (`backend`, `grid`, `dt`, `out_2D`, ...).
 | `margin_interp` | `"sdist"` | `"sdist"`, `"nearest"` |
 | `margin_extrapolate` | `"error"` | `"error"`, `"hold"` |
 | `margin_position` | `"sdist"` | `"sdist"`, `"face"`, `"centre"` |
+| `margin_patches` | `""` | groups of regional chronologies (template `[margin_patch]`: `file`, `var`, `H_min`, `region_file`, `region_var`, `region_ids`) |
 | `taub_method` | `"const"` | `"const"`, `"file"`, `"domains"`, `"coulomb"` |
 | `taub_const` | 0.0 | [Pa] `"const"` (> 0) |
 | `taub_file`, `taub_var` | `""`, `"taub"` | `"file"` |

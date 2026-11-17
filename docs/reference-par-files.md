@@ -120,6 +120,8 @@ A par file is a set of namelist groups. The run group `[kryos]` names the rest:
   `[surface_smb_simple]`).
 - **Schedules.** The `out_*` and `restart_out` keys name schedule groups (`[out_2D]`, `[out_rst]`, ...) of the
   template `[schedule]` (`method = none | const | times | file`); `"none"` is off.
+- **Margin patches.** A plastic instance's `margin_patches` names groups of the template `[margin_patch]`, each a
+  regional margin chronology (file, region map, region ids; [backend-plastic.md](backend-plastic.md#margin-patches)).
 - **Paths.** Relative to the run directory; `{domain}` and `{grid_name}` are replaced (e.g. the margin file
   `fesmdata/{domain}/{grid_name}/{grid_name}_IceHistory-PaleoMIST.nc`).
 

@@ -100,6 +100,7 @@ Greenland 7.9, ESL 7.04; under the bar of our ice, ESL ≤ 3, every Coulomb run 
 | C3 | `tau-CBS-H1000 \| E1D-ES1-E117` | C2 H1000: Eurasia split into Fennoscandia and BarentsKara | done | −8811 | 6/9 | 14.0 | −1.2 / 0.9 / 0.6 / 2.2 / 4.0 / −2.1 | 6.4 / 8.6 | 5.8 |
 | | `tau-CBS-H2000 \| E1D-ES1-E117` | H_N 2000 m, λ_min 1.0 | done | −8850 | 6/9 | 14.0 | −0.2 / 0.8 / 1.0 / 2.3 / 4.7 / −0.9 | 6.8 / 11.0 | 5.5 |
 | | `tau-CBS-H3000 \| E1D-ES1-E117` | H_N 3000 m, λ_min 1.0 | done | −8871 | 6/9 | 14.3 | 0.5 / 0.8 / 1.2 / 2.3 / 5.0 / −1.3 | 7.0 / 12.8 | 6.3 |
+| C4 | `tau-CBS-H1000-pPG \| E1D-ES1-E117` | C3 H1000: Greenland's margin from PaleoGrIS 1.0, 15-5 ka (a margin patch) | done | −8811 | 6/9 | 13.9 | −1.1 / 0.6 / 0.6 / 2.2 / 4.1 / −2.0 | 6.3 / 8.6 | 5.8 |
 
 The far field passes on every run (D1: 5.0) and log L rises with H_N on both Earths; Barents fails on all (too much
 Eurasian ice at 20 ka, 20-21 m against PaleoMIST's 18), Antarctica worsens with H_N. A larger H_N lowers τ_b where the
@@ -113,6 +114,22 @@ Fennoscandia's (H_N 1000: 0.0216 and 0.0106 against 0.0151); online they carry 7
 (I 3.9 → 2.2) and C3 at H_N 1000 has the best log L of the Coulomb runs (−8811, against −8801 for PaleoMIST's ice on
 the same Earth). H_N 2000 and 3000 (λ_min 1.0, the most the band allows) lose log L again: Antarctica and Hudson Bay's
 GNSS worsen, and the domes reach 5.0-5.3 km (NAIS) and 7.2-7.4 km (Antarctica).
+
+C4 takes Greenland's margin from PaleoGrIS 1.0 (Leger et al. 2024) as a margin patch (`margin_patches`,
+[backend-plastic.md](../backend-plastic.md#margin-patches)): in region 2 of the maps v2 from 15 to 5 ka, the slices of
+`tools/levante/margin_patch.jl` (PaleoGrIS's 13 isochrones, 13.5-6.75 ka, between PaleoMIST's 15 and 5 ka slices);
+PaleoMIST's margin elsewhere and at other times, bit for bit (every record: no mask cell differs outside Greenland, and
+none inside it before 15 or after 5 ka). C3's run is A; the same set-up with a patch equal to the base (PaleoMIST's own
+file in region 2) gives it back bit for bit. PaleoGrIS keeps more shelf ice until 12.5 ka and puts the margin on land
+about 1 kyr earlier: Greenland holds 0.18-0.30 m SLE more at 14-12.5 ka, 0.72-0.89 m less at 10-9 ka and 0.14-0.16 m
+more at 7.5-6 ka (A 10.52, 9.31, 7.08 m at 14, 10, 6 ka; C4 10.70, 8.59, 7.22 m). Greenland's RSL improves (log L
+−858.7 → −854.5, RMSE 21.7 → 21.0 m, I 0.9 → 0.6) and its GNSS do not change (I −2.0); the far field (−2.1) and
+Laurentide (−1.8, NAIS's ice the same) lose about as much, so the total stays at −8811 and ESL, the groups passed and the
+other ice sheets do not change (NAIS, Fennoscandia, BarentsKara within 0.003 m SLE at every record). The runs part
+before 15 ka by up to 0.08 m SLE in Greenland (19 ka) and by 0.125 m of thickness elsewhere from 26 ka: the static
+footprint (the base's, or the patch's in its region) gains 37 cells of PaleoGrIS's shelf ice, which changes what the
+global gather passes to VILMA2. A run with the patch's slices moved after 0 ka (never used: its footprint only, `pFP`)
+equals C4 bit for bit up to 15 ka.
 
 ## Ensembles
 
@@ -182,6 +199,7 @@ The runs are on AWI's albedo:
 | T1, D1 | `/albedo/work/user/alrobi001/kryos-work/runs/pm-online/gowan`, `.../pdfac` |
 | C1, C2 | `/albedo/work/projects/p_forclima/kryos-work/coulomb-taub/coupled/runs/tau-CB-H<H_N>_<Earth>`; scores `.../coupled/score/iter_01/scores.csv` |
 | C3 | `/albedo/work/projects/p_forclima/kryos-work/coulomb-taub/split/runs/tau-CBS-H<H_N>_E1D-ES1-E117`; scores `.../split/score/iter_01/scores.csv`; calibration `.../coulomb-taub/lgm-calib-v2` |
+| C4 | `/albedo/work/projects/p_forclima/kryos-work/coulomb-taub/margin-patch/runs/tau-CBS-H1000-{pPG,pPM,pFP}_E1D-ES1-E117`; scores `.../margin-patch/score/iter_01/scores.csv`; the patch `.../kryos-work/margins/NH-32KM/NH-32KM_IceHistory-PaleoGrIS-patch.nc` |
 | D2, E2 | `/albedo/work/user/alrobi001/kryos-plastic/kryos/runs/ens-v2/iter_01/<m>` |
 | D3 | `/albedo/work/user/alrobi001/kryos-work/runs/res16/m000-NH16` |
 | E1 | `/albedo/work/projects/p_forclima/kryos-work/levante/ens-v1` (copied from Levante) |
