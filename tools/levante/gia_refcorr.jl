@@ -9,6 +9,10 @@
 #       the mean of the last record interval (2.5 kyr: too high where the rebound decays); the GNSS scores read it. A history
 #       without z_bed (GLAC1D_80k: ice only) takes today's bed from <z_bed file>, an IceHistory product on the same grid (its 0 ka
 #       record; PaleoMIST's).
+#   julia --project=tools/levante tools/levante/gia_refcorr.jl join  <it folder>
+#       <it folder>/vilma_out.nc from the outputs of the chunks of the pass, <it folder>/c<k>/vilma_out.nc (k = 0, 1, ...;
+#       gia_refcorr.sh): chunk k+1 resumes the restart of chunk k, so its first slice is chunk k's last; it is checked to be the
+#       same bit for bit (an error otherwise) and dropped. Written as <file>.tmp and renamed.
 #   julia --project=tools/levante tools/levante/gia_refcorr.jl next  <vilma_out.nc> <r next.nc> [<r used.nc>]
 #       r_{n+1} = rsl(0 ka) of the run, on its own Gauss grid; prints the 0 ka bed misfit r_n - rsl_n(0 ka) (max, location, RMS).
 #   julia --project=tools/levante tools/levante/gia_refcorr.jl write <r.nc> <out folder> <X grid>:<history on that grid>[:<z_bed file on that grid>] <domain>:<hub grid>:<topo file> ...
@@ -93,6 +97,40 @@ function next(outnc, f, prev = "")
     end
 end
 
+function joinchunks(itdir)
+    cs = filter(d -> occursin(r"^c\d+$", d) && isdir(joinpath(itdir, d)), readdir(itdir))
+    sort!(cs; by = d -> parse(Int, d[2:end]))
+    isempty(cs) && error("$itdir: no chunk folders c<k>")
+    [parse(Int, c[2:end]) for c in cs] == 0:length(cs)-1 || error("$itdir: chunks $(cs), not c0, c1, ...")
+    files = [joinpath(itdir, c, "vilma_out.nc") for c in cs]
+    out = joinpath(itdir, "vilma_out.nc"); tmp = out * ".tmp"
+    cp(files[1], tmp; force = true)
+    nt = NCDataset(tmp, "a") do o
+        vars = collect(keys(o))
+        timed = [v for v in vars if "time" in dimnames(o[v])]
+        for f in files[2:end]
+            NCDataset(f) do d
+                sort(collect(keys(d))) == sort(vars) || error("$f: other variables than $(files[1])")
+                n0 = o.dim["time"]; n = d.dim["time"]
+                for v in vars
+                    a = d[v].var; b = o[v].var
+                    if v in timed
+                        c = ntuple(_ -> Colon(), ndims(a) - 1)      # the time dimension is the last
+                        isequal(a[c..., 1], b[c..., n0]) ||
+                            error("$f: the first slice of $v is not the last of the chunk before (bit for bit)")
+                        n > 1 && (b[c..., n0+1:n0+n-1] = a[c..., 2:n])
+                    else
+                        isequal(a[:], b[:]) || error("$f: $v is not that of $(files[1])")
+                    end
+                end
+            end
+        end
+        o.dim["time"]
+    end
+    mv(tmp, out; force = true)
+    println("joined ", length(files), " chunks into ", out, " (", nt, " slices)")
+end
+
 # bilinear from the Gauss grid (lon periodic, ascending after sorting) to points
 function sampler(file)
     lon, lat, r = NCDataset(file) do ds
@@ -174,8 +212,9 @@ end
 function main(args)
     c = args[1]
     c == "prep"  && return prep(args[2:end]...)
+    c == "join"  && return joinchunks(args[2:end]...)
     c == "next"  && return next(args[2:end]...)
     c == "write" && return write(args[2:end]...)
-    error("gia_refcorr.jl prep | next | write")
+    error("gia_refcorr.jl prep | join | next | write")
 end
 main(ARGS)

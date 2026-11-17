@@ -228,6 +228,10 @@ submits itself and writes the reference files under `$KD/refcorr/<CASE>/` (`KD` 
 CASE=PaleoMIST-sci PAR=<kryos par file> tools/levante/gia_refcorr.sh
 ```
 
+A pass longer than a job (a 3-D Earth: up to 30 h; albedo's longest QOS is 48 h) runs in chunks: `vilma.x` stops before the
+job's end with a restart, the next chunk resumes it, in the next job with `CHAIN=<m>` (m successors), and the chunks' outputs
+are joined bit for bit.
+
 Every imposed-ice run of the glacial-cycle work is such a case; its options, outputs and the pools that run many of them:
 [Imposed ice](howto/imposed-ice.md).
 

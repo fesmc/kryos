@@ -99,7 +99,8 @@ for both.
 - `gia_refcorr.sh`: `NCPU`, `MEM` (a 1-D Earth needs a fraction of a node), `KEEP=last` (only the converged iteration's
   `vilma_out.nc`), `ZREF`/`XZREF` (today's bed from PaleoMIST for GLAC1D_80k, which has no `z_bed`), `provenance.txt` per case.
 - `gia_refcorr_pool.sh`: many small cases in few jobs, a pool of workers per job (each on its own cores), each claiming the next
-  case of a list (an atomic link to the job id).
+  case of a list (an atomic link to the job id), with `TMIN` of the job left (since the restart chain, 2026-11-17: a pass
+  longer than a job goes on in the next, `CHAIN`; 4 h recommended for the 3-D cases).
 - `plastic_ensemble.jl errmodel ... refs=<regex> groups=<g;...>`: the error model of the point groups (GNSS, ESL) from run
   references, here the wave-A cases (no ensemble member has `dz_bed_rate`).
 - `plastic_earth_emulate.jl`: the emulators and the cut. Emulated per ice history and group: y = log(χ²/n), not I_g. Both are
