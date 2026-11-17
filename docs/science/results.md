@@ -100,6 +100,7 @@ Greenland 7.9, ESL 7.04; under the bar of our ice, ESL ≤ 3, every Coulomb run 
 | C3 | `tau-CBS-H1000 \| E1D-ES1-E117` | C2 H1000: Eurasia split into Fennoscandia and BarentsKara | done | −8811 | 6/9 | 14.0 | −1.2 / 0.9 / 0.6 / 2.2 / 4.0 / −2.1 | 6.4 / 8.6 | 5.8 |
 | | `tau-CBS-H2000 \| E1D-ES1-E117` | H_N 2000 m, λ_min 1.0 | done | −8850 | 6/9 | 14.0 | −0.2 / 0.8 / 1.0 / 2.3 / 4.7 / −0.9 | 6.8 / 11.0 | 5.5 |
 | | `tau-CBS-H3000 \| E1D-ES1-E117` | H_N 3000 m, λ_min 1.0 | done | −8871 | 6/9 | 14.3 | 0.5 / 0.8 / 1.2 / 2.3 / 5.0 / −1.3 | 7.0 / 12.8 | 6.3 |
+| C4 | `tau-CB-H1000-mPG \| E1D-ES1-E117` | C2 H1000: Greenland's margin from PaleoGrIS 1.0, 13.5-6.75 ka | done | −8825 | 5/9 | 15.8 | −1.1 / 0.6 / −1.0 / 3.9 / 4.1 / −1.0 | 6.9 / 8.6 | 5.6 |
 
 The far field passes on every run (D1: 5.0) and log L rises with H_N on both Earths; Barents fails on all (too much
 Eurasian ice at 20 ka, 20-21 m against PaleoMIST's 18), Antarctica worsens with H_N. A larger H_N lowers τ_b where the
@@ -113,6 +114,15 @@ Fennoscandia's (H_N 1000: 0.0216 and 0.0106 against 0.0151); online they carry 7
 (I 3.9 → 2.2) and C3 at H_N 1000 has the best log L of the Coulomb runs (−8811, against −8801 for PaleoMIST's ice on
 the same Earth). H_N 2000 and 3000 (λ_min 1.0, the most the band allows) lose log L again: Antarctica and Hudson Bay's
 GNSS worsen, and the domes reach 5.0-5.3 km (NAIS) and 7.2-7.4 km (Antarctica).
+
+C4 takes Greenland's margin from PaleoGrIS 1.0 (Leger et al. 2024) from 13.5 to 6.75 ka and PaleoMIST's elsewhere
+(`tools/levante/margin_merge.jl`), with C2's r (made for PaleoMIST's ice) and region map; C2 rerun with the same output
+gives C2 back bit for bit. PaleoGrIS keeps more ice on the shelf until 12.5 ka and puts the margin on land about 1 kyr
+earlier: Greenland holds 0.2-0.35 m SLE more at 14-12.5 ka and 0.9 m less at 10-9 ka. Greenland's RSL improves (log L
+−858.6 → −854.5, RMSE 21.8 → 21.1 m, I 0.9 → 0.6), the total by 4 (−8829 → −8825); ESL, Greenland's GNSS (I −2.0 → −2.1)
+and the groups passed do not change. Greenland's bed at 0 ka moves by less than 3 m (mean 0.8 m), so the r needs no
+recomputing. The merged slices also move the margin elsewhere by about a cell between PaleoMIST's slices (NAIS −1.1 m SLE
+at 14 ka), which is part of the other groups' small changes.
 
 ## Ensembles
 
@@ -182,6 +192,7 @@ The runs are on AWI's albedo:
 | T1, D1 | `/albedo/work/user/alrobi001/kryos-work/runs/pm-online/gowan`, `.../pdfac` |
 | C1, C2 | `/albedo/work/projects/p_forclima/kryos-work/coulomb-taub/coupled/runs/tau-CB-H<H_N>_<Earth>`; scores `.../coupled/score/iter_01/scores.csv` |
 | C3 | `/albedo/work/projects/p_forclima/kryos-work/coulomb-taub/split/runs/tau-CBS-H<H_N>_E1D-ES1-E117`; scores `.../split/score/iter_01/scores.csv`; calibration `.../coulomb-taub/lgm-calib-v2` |
+| C4 | `/albedo/work/projects/p_forclima/kryos-work/coulomb-taub/paleogris/runs/tau-CB-H1000{,-mPG}_E1D-ES1-E117`; scores `.../paleogris/score/iter_01/scores.csv`; margin `.../kryos-work/margins/NH-32KM/NH-32KM_IceHistory-PaleoMIST-PaleoGrIS.nc` |
 | D2, E2 | `/albedo/work/user/alrobi001/kryos-plastic/kryos/runs/ens-v2/iter_01/<m>` |
 | D3 | `/albedo/work/user/alrobi001/kryos-work/runs/res16/m000-NH16` |
 | E1 | `/albedo/work/projects/p_forclima/kryos-work/levante/ens-v1` (copied from Levante) |
