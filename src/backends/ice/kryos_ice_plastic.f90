@@ -35,7 +35,7 @@ module kryos_ice_plastic
     use kryos_plastic_taub,   only: taub_t, taub_method_code, TAUB_M_CONST, TAUB_M_FILE, TAUB_M_DOMAINS, TAUB_M_COULOMB, &
                                     taub_set_const, taub_read_field, taub_read_domains, taub_read_scale, taub_at, &
                                     taub_read_domain_factor, taub_set_smooth, taub_read_coulomb, taub_mu, &
-                                    taub_set_lambda_fixed
+                                    taub_set_lambda_fixed, taub_read_lambda_bed
     use kryos_plastic_bed,    only: relaxed_bed, RHO_M
     use kryos_plastic_friction, only: friction_t, friction_law, friction_map
     use plastic_ice,     only: plastic_par_t, plastic_t, plastic_glen_t, plastic_sliding_t, plastic_init, &
@@ -74,7 +74,8 @@ module kryos_ice_plastic
         real(dp), allocatable :: z_bed(:,:), z_sl(:,:)   ! [m] the bed and sea level of the last solve
         real(dp), allocatable :: tau_b(:,:), sd(:,:)     ! [Pa], [m] its basal shear stress and signed distance
         real(dp), allocatable :: mu(:,:)                 ! taub_method = "coulomb": c_f lambda of the last solve
-        character(len=8)  :: lambda_bed = "relaxed"      ! "coulomb": lambda on the relaxed present-day bed | "current"
+        character(len=8)  :: lambda_bed = "file"         ! "coulomb": lambda fixed, of the bed of taub_lambda_file |
+                                                         ! of the relaxed reference bed ("relaxed") | "current"
         logical,  allocatable :: mask(:,:)               ! its ice mask
         real(dp), allocatable :: mfrac(:,:)              ! margin_position = "sdist": the margin's distance from the
                                                          ! ice-free cell centres [fraction of the spacing]; else
@@ -150,7 +151,8 @@ contains
             allocate(self%mu(self%nx, self%ny))
             self%mu = 0.0_dp
             if (trim(self%lambda_bed) == "relaxed") then
-                ! lambda fixed in time on the reference bed relaxed by local isostasy (relative to present sea level)
+                ! lambda fixed in time on the reference bed relaxed by local isostasy (relative to present sea level):
+                ! it depends on the reference topography of the run (refcorr: the Earth)
                 call taub_set_lambda_fixed(self%tb, relaxed_bed(self%z_bed_ref, self%H_ice_pd, self%par%rho_i))
                 call log_msg(LOG_INFO, "kryos_ice_plastic", "taub_lambda_bed relaxed: lambda fixed on z_bed_ref + "// &
                              "(rho_i/"//to_str(RHO_M)//") H_ice_pd, "//to_str(count(self%tb%lam < 1.0_dp))// &
@@ -829,7 +831,7 @@ contains
 
         character(len=*), parameter :: proc = "kryos_ice_plastic::init"
         character(len=PATH_LEN) :: margin_file, taub_file, taub_domain_file, taub_scale_file, taub_domain_factor_file
-        character(len=PATH_LEN) :: taub_region_file, taub_cf_file
+        character(len=PATH_LEN) :: taub_region_file, taub_cf_file, taub_lambda_file
         character(len=NAME_LEN) :: margin_var, margin_interp, margin_extrapolate, mode, taub_method, taub_var
         character(len=NAME_LEN) :: taub_domain_var, taub_id_var, taub_value_var, taub_time_var, taub_override_grp
         character(len=NAME_LEN) :: slide_law, margin_position, mass_balance
@@ -850,7 +852,8 @@ contains
         taub_domain_file = "";  taub_domain_var = "taub_domain";  taub_id_var = "domain_id";  taub_value_var = "taub"
         taub_time_var = "taub_t";  taub_override_grp = "";  taub_default = 0.0_dp;  taub_scale_file = ""
         taub_domain_factor_file = "";  taub_smooth_km = 50.0_dp
-        taub_region_file = "";  taub_cf_file = "";  taub_HN = 0.0_dp;  taub_p = 1.0_dp;  taub_delta = 0.05_dp
+        taub_region_file = "";  taub_cf_file = "";  taub_lambda_file = "kryos_data/plastic/{grid_name}_lambda_bed.nc"
+        taub_HN = 0.0_dp;  taub_p = 1.0_dp;  taub_delta = 0.05_dp
         taub_lam_min = 1.0_dp;  taub_zb0 = -300.0_dp;  taub_zb1 = 200.0_dp
         mode = "surface"
         rheo_A = 0.0_dp;  rheo_n = 3.0_dp
@@ -904,6 +907,7 @@ contains
         call rd_r("taub_zb0", taub_zb0)
         call rd_r("taub_zb1", taub_zb1)
         call rd_s("taub_lambda_bed", self%lambda_bed)
+        call rd_s("taub_lambda_file", taub_lambda_file)
         ! rheology and sliding (drive = "smb"; mass_balance = "implied")
         call rd_r("rheo_A", rheo_A)
         call rd_r("rheo_n", rheo_n)
@@ -991,9 +995,12 @@ contains
                 if (trim(self%par%mode) /= "surface") &
                     call fesm_error(proc, "taub_method = 'coulomb' needs mode = 'surface'", who//": mode = '"// &
                                     trim(self%par%mode)//"' (the library's Coulomb kernel is a surface kernel)")
-                if (trim(self%lambda_bed) /= "relaxed" .and. trim(self%lambda_bed) /= "current") &
+                select case (trim(self%lambda_bed))
+                case ("file", "relaxed", "current")
+                case default
                     call fesm_error(proc, "taub_lambda_bed = '"//trim(self%lambda_bed)//"' is not recognised", &
-                                    who//"; use relaxed or current")
+                                    who//"; use file, relaxed or current")
+                end select
                 call substitute(taub_region_file, ctx)
                 call substitute(taub_cf_file, ctx)
                 call taub_read_coulomb(self%tb, trim(taub_region_file), trim(taub_cf_file), self%nx, self%ny, taub_p, &
@@ -1002,6 +1009,15 @@ contains
                              " to "//to_str(maxval(self%tb%cf))//" ("//to_str(size(self%tb%cf))//" regions), H_N "// &
                              to_str(taub_HN)//" m, p "//to_str(taub_p)//", delta "//to_str(taub_delta)//", lambda "//to_str(taub_lam_min)//" at "// &
                              to_str(taub_zb0)//" m to 1 at "//to_str(taub_zb1)//" m", who//": "//trim(taub_cf_file))
+                if (trim(self%lambda_bed) == "file") then
+                    ! lambda fixed in time on the bed of the file (relative to present sea level), whatever the Earth
+                    if (len_trim(taub_lambda_file) == 0) &
+                        call fesm_error(proc, "taub_lambda_bed = 'file' needs taub_lambda_file", who)
+                    call substitute(taub_lambda_file, ctx)
+                    call taub_set_lambda_fixed(self%tb, taub_read_lambda_bed(trim(taub_lambda_file), self%nx, self%ny))
+                    call log_msg(LOG_INFO, "kryos_ice_plastic", "taub_lambda_bed file: lambda fixed on z_lambda, "// &
+                                 to_str(count(self%tb%lam < 1.0_dp))//" cells below 1", who//": "//trim(taub_lambda_file))
+                end if
             case default
                 call fesm_error(proc, "taub_method = '"//trim(taub_method)//"' is not recognised", &
                                 who//"; use const, file, domains or coulomb")

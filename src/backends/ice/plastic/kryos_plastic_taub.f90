@@ -13,9 +13,10 @@ module kryos_plastic_taub
     !              with the geometry by the library (plastic_solve_coulomb: N_eff depends on H): here only its
     !              coefficient mu = c_f lambda (taub_mu), with c_f one value per region of a region map (0 =
     !              none: such a cell in the ice mask stops the solve), constant in time, and lambda the bed
-    !              factor of kryos_plastic_bed, either a fixed field (taub_set_lambda_fixed: on the relaxed
-    !              present-day bed, the backend's taub_lambda_bed = "relaxed") or on the bed and sea level of the
-    !              solve ("current"); and the law's p, H_N and floor delta (N >= delta rho_i g H).
+    !              factor of kryos_plastic_bed, either a fixed field (taub_set_lambda_fixed) of a bed relative to
+    !              present sea level: the field z_lambda of a file (taub_read_lambda_bed; the backend's
+    !              taub_lambda_bed = "file") or the run's relaxed reference bed ("relaxed"), or on the bed and sea
+    !              level of the solve ("current"); and the law's p, H_N and floor delta (N >= delta rho_i g H).
     !
     ! "domains" may be scaled. A factor per domain (taub_domain_factor_file, the present-day fit of
     ! tests/plastic_taub_fit.f90): the value of an id, after the override table, times exp(log_factor(id)),
@@ -80,7 +81,7 @@ module kryos_plastic_taub
     public :: taub_set_scale, taub_read_scale, taub_scale_at
     public :: taub_set_domain_factor, taub_read_domain_factor
     public :: taub_set_smooth
-    public :: taub_set_coulomb, taub_read_coulomb, taub_mu, taub_set_lambda_fixed
+    public :: taub_set_coulomb, taub_read_coulomb, taub_mu, taub_set_lambda_fixed, taub_read_lambda_bed
 
 contains
 
@@ -416,9 +417,31 @@ contains
         call taub_set_coulomb(tb, reg, ids, lcf, p, H_N, delta, lam_min, zb0, zb1, trim(region_file), trim(cf_file))
     end subroutine taub_read_coulomb
 
+    function taub_read_lambda_bed(file, nx, ny) result(z)
+        ! [m] The bed of a fixed lambda (taub_set_lambda_fixed), relative to present sea level: the field z_lambda
+        ! (x, y) of `file` on the nx x ny grid (tools/levante/plastic_lambda_bed.jl), every value finite. The backend
+        ! (taub_lambda_bed = "file") and the calibration programs (tests/plastic_coulomb_*.f90) read it with this.
+        character(len=*), intent(in) :: file
+        integer,          intent(in) :: nx, ny
+        real(dp), allocatable :: z(:,:)
+        character(len=*), parameter :: proc = "kryos_plastic_taub::taub_read_lambda_bed"
+        logical :: exists
+
+        inquire(file=trim(file), exist=exists)
+        if (.not. exists) call fesm_error(proc, "the lambda bed file does not exist", "taub_lambda_file = "//trim(file))
+        if (.not. nc_exists_var(file, "z_lambda")) &
+            call fesm_error(proc, "the lambda bed file has no `z_lambda`", trim(file))
+        call check_xy(file, "z_lambda", nx, ny)
+        allocate(z(nx, ny))
+        call nc_read(file, "z_lambda", z)
+        if (.not. all(abs(z) <= 1.0e5_dp)) call fesm_error(proc, "`z_lambda` is not finite and within 100 km everywhere", &
+                                                           trim(file))
+    end function taub_read_lambda_bed
+
     subroutine taub_set_lambda_fixed(tb, z_rel)
-        ! "coulomb" (set before): lambda fixed in time, of the bed z_rel [m] relative to present sea level (the
-        ! relaxed present-day bed, kryos_plastic_bed relaxed_bed); taub_mu then ignores its z_bed, z_sl.
+        ! "coulomb" (set before): lambda fixed in time, of the bed z_rel [m] relative to present sea level (the field
+        ! of taub_read_lambda_bed, or the relaxed present-day bed of kryos_plastic_bed relaxed_bed); taub_mu then
+        ! ignores its z_bed, z_sl.
         type(taub_t), intent(inout) :: tb
         real(dp),     intent(in)    :: z_rel(:,:)
         if (tb%method /= TAUB_M_COULOMB) call fesm_error("kryos_plastic_taub::taub_set_lambda_fixed", &

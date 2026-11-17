@@ -9,6 +9,9 @@ program test_plastic_coulomb
     !     allowed; the smoothing keeps a uniform mu; from the files (region map, c_f table);
     !   * a fixed lambda (taub_lambda_bed = "relaxed"): of the relaxed bed z_bed + (rho_i/3300) H, independent of the
     !     bed and sea level of the solve;
+    !   * a fixed lambda from a file (taub_lambda_bed = "file", taub_read_lambda_bed): bit for bit the lambda of the
+    !     file's z_lambda, independent of the bed and sea level of the solve; a missing file, a file without z_lambda
+    !     or off the grid stop;
     !   * a region of the map without c_f, p outside [0, 1], H_N <= 0, delta outside (0, 1] and taub_at stop (the
     !     program re-runs itself).
     ! Run from the repo root (files in tmp/test_plastic_coulomb).
@@ -18,7 +21,7 @@ program test_plastic_coulomb
     use kryos_plastic_bed,      only: bed_lambda, relaxed_bed
     use kryos_plastic_friction, only: friction_t, friction_map
     use kryos_plastic_taub,     only: taub_t, taub_set_coulomb, taub_read_coulomb, taub_mu, taub_set_smooth, taub_at, &
-                                      taub_set_lambda_fixed, &
+                                      taub_set_lambda_fixed, taub_read_lambda_bed, &
                                       TAUB_M_COULOMB
 
     implicit none
@@ -37,12 +40,16 @@ program test_plastic_coulomb
     call test_friction()
     call test_mu()
     call test_files()
+    call test_lambda_file()
     call expect_abort("noregion", "region 3 of the map has no c_f")
     call expect_abort("badp", "taub_p must be in [0, 1]")
     call expect_abort("badHN", "taub_HN must be positive")
     call expect_abort("baddelta0", "taub_delta must be in (0, 1]")
     call expect_abort("baddelta1", "taub_delta must be in (0, 1]")
     call expect_abort("taub_at", "has no tau_b before the solve")
+    call expect_abort("nolamfile", "the lambda bed file does not exist")
+    call expect_abort("nolamvar", "the lambda bed file has no `z_lambda`")
+    call expect_abort("lamgrid", "`z_lambda` is not on the instance grid")
 
     if (nfail > 0) then
         write(*,"(a,i0,a)") "test_plastic_coulomb: ", nfail, " check(s) FAILED"
@@ -171,6 +178,36 @@ contains
                    tb%H_N == 800.0_dp .and. tb%delta == 0.1_dp)
     end subroutine test_files
 
+    subroutine test_lambda_file()
+        ! taub_lambda_bed = "file": lambda of the file's z_lambda, as taub_set_lambda_fixed of the same field
+        integer, parameter :: nx = 6, ny = 4
+        character(len=*), parameter :: fl = dir//"/lambda_bed.nc"
+        type(taub_t) :: tb
+        integer  :: reg(nx, ny), i, j
+        real(dp) :: z(nx, ny), mu(nx, ny), zb(nx, ny), zsl(nx, ny)
+        write(*,"(a)") "lambda from a file"
+        do j = 1, ny
+            do i = 1, nx
+                z(i, j) = -437.3_dp + 113.7_dp*i + 41.9_dp*j
+            end do
+        end do
+        call nc_create(fl)
+        call nc_write_dim(fl, "xc", x=[(10.0_dp*i, i = 1, nx)], units="km")
+        call nc_write_dim(fl, "yc", x=[(10.0_dp*j, j = 1, ny)], units="km")
+        call nc_write(fl, "z_lambda", z, dim1="xc", dim2="yc", units="m")
+        reg = 1
+        call taub_set_coulomb(tb, reg, [1], [log(0.02_dp)], 1.0_dp, 1000.0_dp, 0.05_dp, 0.3_dp, -300.0_dp, 200.0_dp, &
+                              "map", "t")
+        call taub_set_lambda_fixed(tb, taub_read_lambda_bed(fl, nx, ny))
+        call check("the field of the file", all(taub_read_lambda_bed(fl, nx, ny) == z))
+        call check("lambda bit for bit of z_lambda, relative to present sea level", &
+                   all(tb%lam == bed_lambda(z, 0.0_dp, 0.3_dp, -300.0_dp, 200.0_dp)) .and. any(tb%lam < 1.0_dp) .and. &
+                   any(tb%lam == 1.0_dp) .and. any(tb%lam > 0.3_dp .and. tb%lam < 1.0_dp))
+        zb = -2000.0_dp;  zsl = 150.0_dp
+        call taub_mu(tb, zb, zsl, mu)
+        call check("mu = c_f lambda(z_lambda), not of the solve's bed", all(mu == 0.02_dp*tb%lam))
+    end subroutine test_lambda_file
+
     subroutine expect_abort(case_name, text)
         character(len=*), intent(in) :: case_name, text
         character(len=512) :: exe, line
@@ -198,6 +235,7 @@ contains
         type(taub_t) :: tb
         integer  :: reg(2, 2)
         real(dp) :: tau(2, 2)
+        real(dp), allocatable :: z(:,:)
 
         reg = reshape([1, 3, 0, 1], [2, 2])
         call get_command_argument(1, arg)
@@ -217,6 +255,12 @@ contains
         case ("baddelta1")
             call taub_set_coulomb(tb, reg, [1, 3], [0.0_dp, 0.0_dp], 1.0_dp, 1000.0_dp, 1.5_dp, 1.0_dp, -300.0_dp, &
                                   200.0_dp, "map", "table")
+        case ("nolamfile")
+            z = taub_read_lambda_bed(dir//"/none.nc", 6, 4)
+        case ("nolamvar")
+            z = taub_read_lambda_bed(dir//"/regions.nc", 6, 4)
+        case ("lamgrid")
+            z = taub_read_lambda_bed(dir//"/lambda_bed.nc", 5, 4)
         case ("taub_at")
             call taub_set_coulomb(tb, reg, [1, 3], [0.0_dp, 0.0_dp], 1.0_dp, 1000.0_dp, 0.05_dp, 1.0_dp, -300.0_dp, &
                                   200.0_dp, "map", "table")
