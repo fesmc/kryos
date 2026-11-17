@@ -6,7 +6,9 @@ program plastic_coulomb_pd
     !
     !   * the model is the backend at t = 0: the margin of the history's 0 ka slice (margin_var > margin_min,
     !     margin_position as the backend's), the topography file's bed with z_sl = 0, a cold solve; mu = c_f lambda
-    !     with one c_f for every region of the region map (taub_mu, with the smoothing smooth_km);
+    !     with one c_f for every region of the region map (taub_mu, with the smoothing smooth_km), lambda on the
+    !     relaxed bed z_bed + (rho_i/rho_m) H_obs (lambda_bed = "relaxed", as the backend's default) or on z_bed
+    !     ("current");
     !   * fit cells: the ice cells of the margin where the observation is not floating (mask /= 3), in region
     !     fit_region of the region map (0: all); chi2 = sum over them of ((H - H_obs) / sigma)^2, sigma =
     !     max(sigma_min, sigma_rel H_obs);
@@ -28,7 +30,8 @@ program plastic_coulomb_pd
     use ncio,      only: nc_read, nc_size, nc_create, nc_write_dim, nc_write
     use kryos_plastic_margin, only: margin_t, margin_init, margin_at, MARGIN_SDIST
     use kryos_plastic_taub,   only: taub_t, taub_read_domains, taub_read_domain_factor, taub_at, taub_set_smooth, &
-                                    taub_set_coulomb, taub_mu
+                                    taub_set_coulomb, taub_mu, taub_set_lambda_fixed
+    use kryos_plastic_bed,    only: relaxed_bed
     use plastic_ice, only: plastic_par_t, plastic_t, plastic_init, plastic_solve, plastic_solve_coulomb, &
                            plastic_margin_frac_from_sdist
     !$ use omp_lib, only: omp_get_max_threads, omp_get_thread_num
@@ -39,7 +42,7 @@ program plastic_coulomb_pd
     ! &pd
     character(len=512) :: hist = "", topo_file = "", region_file = "", taub_file = "", factor_file = "", out = ""
     character(len=64)  :: margin_var = "f_ice", margin_position = "sdist", mode = "surface"
-    character(len=64)  :: bed_var = "z_bed", H_var = "H_ice", mask_var = "mask"
+    character(len=64)  :: bed_var = "z_bed", H_var = "H_ice", mask_var = "mask", lambda_bed = "relaxed"
     real(dp) :: margin_min = 0.5_dp, taub_default = 5000.0_dp, smooth_km = 0.0_dp
     integer  :: fit_region = 0
     real(dp) :: HN(NMAX) = -1.0_dp, lam_min(NMAX) = -1.0_dp
@@ -50,13 +53,14 @@ program plastic_coulomb_pd
     real(dp), parameter :: RHO_I = 910.0_dp, RHO_SW = 1028.0_dp, GRAV = 9.81_dp    ! the kryos Earth
     namelist /pd/ hist, margin_var, margin_min, margin_position, mode, topo_file, bed_var, H_var, mask_var, &
                   region_file, fit_region, taub_file, factor_file, taub_default, smooth_km, HN, lam_min, p, zb0, zb1, &
+                  lambda_bed, &
                   lcf_lo, lcf_hi, n_grid, tol, sigma_min, sigma_rel, out
 
     type(margin_t)      :: mg
     type(taub_t)        :: tr
     type(plastic_par_t) :: par
     type(plastic_t), allocatable :: ps(:)
-    real(dp), allocatable :: x(:), y(:), zb(:,:), zsl(:,:), sd(:,:), frac(:,:), Hobs(:,:), sig(:,:), tau_ref(:,:)
+    real(dp), allocatable :: x(:), y(:), zb(:,:), zsl(:,:), sd(:,:), frac(:,:), Hobs(:,:), sig(:,:), tau_ref(:,:), zrel(:,:)
     real(dp), allocatable :: Href(:,:), Hbest(:,:), mubest(:,:), taubest(:,:)
     real(dp), allocatable :: lcf(:,:), chi2n(:,:), rms(:,:), vol(:,:)
     integer,  allocatable :: mobs(:,:), reg(:,:), nwide(:,:), nsolve(:,:)
@@ -88,6 +92,8 @@ program plastic_coulomb_pd
     where (zb < -9000.0_dp) zb = 0.0_dp
     where (Hobs < 0.0_dp) Hobs = 0.0_dp
     zsl = 0.0_dp
+    zrel = relaxed_bed(zb, Hobs, RHO_I)
+    if (trim(lambda_bed) /= "relaxed" .and. trim(lambda_bed) /= "current") error stop "plastic_coulomb_pd: lambda_bed"
     sig = max(sigma_min, sigma_rel*Hobs)
     isfit = mask .and. mobs /= 3
     if (fit_region > 0) isfit = isfit .and. reg == fit_region
@@ -110,7 +116,7 @@ program plastic_coulomb_pd
 
     write(*,"(a)") "# plastic_coulomb_pd: "//trim(hist)//", "//trim(topo_file)//", "//trim(region_file)
     write(*,"(a,i0,a,i0,a,i0,a,f6.1,a,i0,a)") "# margin cells ", count(mask), ", fit cells ", nfit, " (region ", &
-        fit_region, "), smooth_km ", smooth_km, ", ", nth, " threads"
+        fit_region, "), smooth_km ", smooth_km, ", ", nth, " threads, lambda on the "//trim(lambda_bed)//" bed"
 
     ! --- the reference: Gowan's tau_b at 0 ka x the domain factors ------------------------------------------------------
     allocate(tau_ref(nx, ny), Href(nx, ny))
@@ -204,6 +210,7 @@ contains
         integer :: st
         call taub_set_coulomb(tb, reg, [(k, k = 1, NREG)], [(lc, k = 1, NREG)], p, HN(jh), lam_min(jl), zb0, zb1, &
                               trim(region_file), "uniform c_f")
+        if (trim(lambda_bed) == "relaxed") call taub_set_lambda_fixed(tb, zrel)
         call taub_set_smooth(tb, 1000.0_dp*smooth_km, dx, dy)
         call taub_mu(tb, zb, zsl, muo)
         call plastic_solve_coulomb(ps(tt), zb, zsl, muo, mask, p, HN(jh), warm=.false., stat=st, margin_frac=frac)
@@ -224,6 +231,7 @@ contains
         ! lambda alone (c_f = 1, smoothed); mu = c_f mu1 (the smoothing is linear)
         call taub_set_coulomb(tb, reg, [(i, i = 1, NREG)], [(0.0_dp, i = 1, NREG)], p, HN(jh), lam_min(jl), zb0, zb1, &
                               trim(region_file), "uniform c_f")
+        if (trim(lambda_bed) == "relaxed") call taub_set_lambda_fixed(tb, zrel)
         call taub_set_smooth(tb, 1000.0_dp*smooth_km, dx, dy)
         call taub_mu(tb, zb, zsl, mu1)
         lo = lcf_lo;  hi = lcf_hi;  nw = 0;  ns = 0
