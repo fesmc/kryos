@@ -17,7 +17,8 @@ program plastic_coulomb_scan
     use kryos_plastic_margin, only: margin_t, margin_init, margin_at, MARGIN_SDIST, model_time_axis
     use kryos_plastic_taub,   only: taub_t, taub_set_coulomb, taub_set_smooth, taub_mu, taub_set_lambda_fixed
     use kryos_plastic_bed,    only: relaxed_bed
-    use plastic_ice, only: plastic_par_t, plastic_t, plastic_init, plastic_solve_coulomb, plastic_margin_frac_from_sdist
+    use plastic_ice, only: plastic_par_t, plastic_t, plastic_init, plastic_solve_coulomb, plastic_coulomb_law_t, &
+                           plastic_margin_frac_from_sdist
     !$ use omp_lib, only: omp_get_max_threads, omp_get_thread_num
 
     implicit none
@@ -29,10 +30,10 @@ program plastic_coulomb_scan
     character(len=64)  :: topo_bed_var = "z_bed", topo_H_var = "H_ice"
     real(dp) :: time_ka = 20.0_dp, margin_min = 0.5_dp, smooth_km = 0.0_dp
     real(dp) :: cf(NMAX) = -1.0_dp, HN(NMAX) = -1.0_dp, lam_min(NMAX) = -1.0_dp
-    real(dp) :: p = 1.0_dp, zb0 = -300.0_dp, zb1 = 200.0_dp
+    real(dp) :: p = 1.0_dp, delta = 0.05_dp, zb0 = -300.0_dp, zb1 = 200.0_dp
     real(dp), parameter :: RHO_I = 910.0_dp, RHO_SW = 1028.0_dp, GRAV = 9.81_dp    ! the kryos Earth
     namelist /scan/ hist, margin_var, margin_min, margin_position, bed_var, time_ka, region_file, smooth_km, cf, HN, &
-                    lam_min, p, zb0, zb1, lambda_bed, topo_file, topo_bed_var, topo_H_var, out
+                    lam_min, p, delta, zb0, zb1, lambda_bed, topo_file, topo_bed_var, topo_H_var, out
 
     type(margin_t)      :: mg
     type(plastic_par_t) :: par
@@ -138,15 +139,23 @@ contains
         real(dp), allocatable :: mu(:,:)
         integer :: i, st
         allocate(mu(nx, ny))
-        call taub_set_coulomb(tb, reg, rid, [(log(cf(jc)), i = 1, size(rid))], p, HN(jh), lam_min(jl), zb0, &
+        call taub_set_coulomb(tb, reg, rid, [(log(cf(jc)), i = 1, size(rid))], p, HN(jh), delta, lam_min(jl), zb0, &
                               zb1, trim(region_file), "uniform c_f")
         if (allocated(zrel)) call taub_set_lambda_fixed(tb, zrel)
         call taub_set_smooth(tb, 1000.0_dp*smooth_km, dx, dy)
         call taub_mu(tb, zb, zsl, mu)
-        call plastic_solve_coulomb(ps(tt), zb, zsl, mu, mask, p, HN(jh), warm=.false., stat=st, margin_frac=frac)
+        call plastic_solve_coulomb(ps(tt), zb, zsl, mu, mask, law(jh), warm=.false., stat=st, margin_frac=frac)
         if (st /= 0) write(*,"(a,3i4,a)") "# case ", jc, jh, jl, ": "//trim(ps(tt)%msg)
         H(:, :, jc + nc*(jh - 1) + nc*nh*(jl - 1)) = ps(tt)%H
         nsw(jc, jh, jl) = ps(tt)%n_sweeps
     end subroutine case_solve
+
+
+    function law(jh) result(lw)
+        ! The library's Coulomb law of H_N number jh (p and delta of the namelist).
+        integer, intent(in) :: jh
+        type(plastic_coulomb_law_t) :: lw
+        lw = plastic_coulomb_law_t(p=p, H_N=HN(jh), delta=delta)
+    end function law
 
 end program plastic_coulomb_scan

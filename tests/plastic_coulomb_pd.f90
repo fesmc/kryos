@@ -33,7 +33,7 @@ program plastic_coulomb_pd
                                     taub_set_coulomb, taub_mu, taub_set_lambda_fixed
     use kryos_plastic_bed,    only: relaxed_bed
     use plastic_ice, only: plastic_par_t, plastic_t, plastic_init, plastic_solve, plastic_solve_coulomb, &
-                           plastic_margin_frac_from_sdist
+                           plastic_coulomb_law_t, plastic_margin_frac_from_sdist
     !$ use omp_lib, only: omp_get_max_threads, omp_get_thread_num
 
     implicit none
@@ -46,13 +46,13 @@ program plastic_coulomb_pd
     real(dp) :: margin_min = 0.5_dp, taub_default = 5000.0_dp, smooth_km = 0.0_dp
     integer  :: fit_region = 0
     real(dp) :: HN(NMAX) = -1.0_dp, lam_min(NMAX) = -1.0_dp
-    real(dp) :: p = 1.0_dp, zb0 = -300.0_dp, zb1 = 200.0_dp
+    real(dp) :: p = 1.0_dp, delta = 0.05_dp, zb0 = -300.0_dp, zb1 = 200.0_dp
     real(dp) :: lcf_lo = -5.809142990314028_dp, lcf_hi = -3.506557897319982_dp      ! ln 0.003, ln 0.03
     integer  :: n_grid = 13
     real(dp) :: tol = 1.0e-3_dp, sigma_min = 50.0_dp, sigma_rel = 0.1_dp
     real(dp), parameter :: RHO_I = 910.0_dp, RHO_SW = 1028.0_dp, GRAV = 9.81_dp    ! the kryos Earth
     namelist /pd/ hist, margin_var, margin_min, margin_position, mode, topo_file, bed_var, H_var, mask_var, &
-                  region_file, fit_region, taub_file, factor_file, taub_default, smooth_km, HN, lam_min, p, zb0, zb1, &
+                  region_file, fit_region, taub_file, factor_file, taub_default, smooth_km, HN, lam_min, p, delta, zb0, zb1, &
                   lambda_bed, &
                   lcf_lo, lcf_hi, n_grid, tol, sigma_min, sigma_rel, out
 
@@ -210,12 +210,12 @@ contains
         real(dp), intent(out) :: Hout(:,:), muo(:,:), tauo(:,:)
         type(taub_t) :: tb
         integer :: st
-        call taub_set_coulomb(tb, reg, rid, [(lc, k = 1, size(rid))], p, HN(jh), lam_min(jl), zb0, zb1, &
+        call taub_set_coulomb(tb, reg, rid, [(lc, k = 1, size(rid))], p, HN(jh), delta, lam_min(jl), zb0, zb1, &
                               trim(region_file), "uniform c_f")
         if (trim(lambda_bed) == "relaxed") call taub_set_lambda_fixed(tb, zrel)
         call taub_set_smooth(tb, 1000.0_dp*smooth_km, dx, dy)
         call taub_mu(tb, zb, zsl, muo)
-        call plastic_solve_coulomb(ps(tt), zb, zsl, muo, mask, p, HN(jh), warm=.false., stat=st, margin_frac=frac)
+        call plastic_solve_coulomb(ps(tt), zb, zsl, muo, mask, law(jh), warm=.false., stat=st, margin_frac=frac)
         Hout = ps(tt)%H
         tauo = ps(tt)%tau_b
     end subroutine forward
@@ -231,7 +231,7 @@ contains
 
         allocate(H(nx, ny), mu1(nx, ny), mu(nx, ny), ta(nx, ny), g(n_grid), f(n_grid))
         ! lambda alone (c_f = 1, smoothed); mu = c_f mu1 (the smoothing is linear)
-        call taub_set_coulomb(tb, reg, rid, [(0.0_dp, i = 1, size(rid))], p, HN(jh), lam_min(jl), zb0, zb1, &
+        call taub_set_coulomb(tb, reg, rid, [(0.0_dp, i = 1, size(rid))], p, HN(jh), delta, lam_min(jl), zb0, zb1, &
                               trim(region_file), "uniform c_f")
         if (trim(lambda_bed) == "relaxed") call taub_set_lambda_fixed(tb, zrel)
         call taub_set_smooth(tb, 1000.0_dp*smooth_km, dx, dy)
@@ -267,7 +267,7 @@ contains
         lcf(jh, jl) = merge(c, d, fc < fd)
         if (f(m) < min(fc, fd)) lcf(jh, jl) = g(m)
         mu = exp(lcf(jh, jl))*mu1
-        call plastic_solve_coulomb(ps(tt), zb, zsl, mu, mask, p, HN(jh), warm=.false., stat=i, margin_frac=frac)
+        call plastic_solve_coulomb(ps(tt), zb, zsl, mu, mask, law(jh), warm=.false., stat=i, margin_frac=frac)
         H = ps(tt)%H
         call stats(H, chi2n(jh, jl), r, v)
         rms(jh, jl) = r;  vol(jh, jl) = v;  nwide(jh, jl) = nw;  nsolve(jh, jl) = ns + 1
@@ -282,7 +282,7 @@ contains
         real(dp) :: rr, vv
         integer  :: st
         mu = exp(lc)*mu1
-        call plastic_solve_coulomb(ps(tt), zb, zsl, mu, mask, p, HN(jh), warm=.false., stat=st, margin_frac=frac)
+        call plastic_solve_coulomb(ps(tt), zb, zsl, mu, mask, law(jh), warm=.false., stat=st, margin_frac=frac)
         call stats(ps(tt)%H, c2, rr, vv)
         ns = ns + 1
     end function chi2_at
@@ -295,5 +295,13 @@ contains
         rm  = sqrt(sum((HH - Hobs)**2, mask=isfit)/nfit)
         vv  = sum(HH, mask=isfit)*dx*dy
     end subroutine stats
+
+
+    function law(jh) result(lw)
+        ! The library's Coulomb law of H_N number jh (p and delta of the namelist).
+        integer, intent(in) :: jh
+        type(plastic_coulomb_law_t) :: lw
+        lw = plastic_coulomb_law_t(p=p, H_N=HN(jh), delta=delta)
+    end function law
 
 end program plastic_coulomb_pd
