@@ -13,7 +13,9 @@ module kryos_plastic_taub
     !              with the geometry by the library (plastic_solve_coulomb: N_eff depends on H): here only its
     !              coefficient mu = c_f lambda (taub_mu), with c_f one value per region of a region map (0 =
     !              none: such a cell in the ice mask stops the solve), constant in time, and lambda the bed
-    !              factor of kryos_plastic_bed on the bed and sea level of the solve; and the law's p, H_N.
+    !              factor of kryos_plastic_bed, either a fixed field (taub_set_lambda_fixed: on the relaxed
+    !              present-day bed, the backend's taub_lambda_bed = "relaxed") or on the bed and sea level of the
+    !              solve ("current"); and the law's p, H_N.
     !
     ! "domains" may be scaled. A factor per domain (taub_domain_factor_file, the present-day fit of
     ! tests/plastic_taub_fit.f90): the value of an id, after the override table, times exp(log_factor(id)),
@@ -59,6 +61,7 @@ module kryos_plastic_taub
         integer,  allocatable :: ridx(:,:)           ! its position in rids (0: none)
         integer,  allocatable :: rids(:)             ! the region ids with a c_f
         real(dp), allocatable :: cf(:)               ! their c_f (exp of the log)
+        real(dp), allocatable :: lam(:,:)            ! "coulomb": a fixed lambda (unallocated: on the current bed)
         real(dp) :: p = 1.0_dp                       ! "coulomb": N = rho_i g H (1 - H_f/H)^p
         real(dp) :: H_N = 0.0_dp                     ! [m] "coulomb": cap N_max = rho_i g H_N
         real(dp) :: lam_min = 1.0_dp                 ! "coulomb": lambda at a bed zb0 or lower
@@ -76,7 +79,7 @@ module kryos_plastic_taub
     public :: taub_set_scale, taub_read_scale, taub_scale_at
     public :: taub_set_domain_factor, taub_read_domain_factor
     public :: taub_set_smooth
-    public :: taub_set_coulomb, taub_read_coulomb, taub_mu
+    public :: taub_set_coulomb, taub_read_coulomb, taub_mu, taub_set_lambda_fixed
 
 contains
 
@@ -408,9 +411,20 @@ contains
         call taub_set_coulomb(tb, reg, ids, lcf, p, H_N, lam_min, zb0, zb1, trim(region_file), trim(cf_file))
     end subroutine taub_read_coulomb
 
+    subroutine taub_set_lambda_fixed(tb, z_rel)
+        ! "coulomb" (set before): lambda fixed in time, of the bed z_rel [m] relative to present sea level (the
+        ! relaxed present-day bed, kryos_plastic_bed relaxed_bed); taub_mu then ignores its z_bed, z_sl.
+        type(taub_t), intent(inout) :: tb
+        real(dp),     intent(in)    :: z_rel(:,:)
+        if (tb%method /= TAUB_M_COULOMB) call fesm_error("kryos_plastic_taub::taub_set_lambda_fixed", &
+                                                         "a fixed lambda needs taub_method = 'coulomb'", trim(tb%src))
+        tb%lam = bed_lambda(z_rel, 0.0_dp, tb%lam_min, tb%zb0, tb%zb1)
+    end subroutine taub_set_lambda_fixed
+
     subroutine taub_mu(tb, z_bed, z_sl, mu)
-        ! "coulomb": mu = c_f(region) lambda(z_bed - z_sl) on the cells with a region, 0 elsewhere, then the
-        ! smoothing of taub_set_smooth over the cells with mu > 0.
+        ! "coulomb": mu = c_f(region) lambda on the cells with a region, 0 elsewhere, then the smoothing of
+        ! taub_set_smooth over the cells with mu > 0; lambda the fixed field (taub_set_lambda_fixed) or of
+        ! z_bed - z_sl.
         type(taub_t), intent(in)  :: tb
         real(dp),     intent(in)  :: z_bed(:,:), z_sl(:,:)
         real(dp),     intent(out) :: mu(:,:)
@@ -420,7 +434,9 @@ contains
                                                          "'coulomb'", trim(tb%src))
         do j = 1, size(mu, 2)
             do i = 1, size(mu, 1)
-                if (tb%ridx(i,j) > 0) then
+                if (tb%ridx(i,j) > 0 .and. allocated(tb%lam)) then
+                    mu(i,j) = tb%cf(tb%ridx(i,j))*tb%lam(i,j)
+                else if (tb%ridx(i,j) > 0) then
                     mu(i,j) = tb%cf(tb%ridx(i,j))*bed_lambda(z_bed(i,j), z_sl(i,j), tb%lam_min, tb%zb0, tb%zb1)
                 else
                     mu(i,j) = 0.0_dp
