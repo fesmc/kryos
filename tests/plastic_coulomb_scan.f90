@@ -22,7 +22,7 @@ program plastic_coulomb_scan
 
     implicit none
 
-    integer, parameter :: NMAX = 32, NREG = 5
+    integer, parameter :: NMAX = 32
     ! &scan
     character(len=512) :: hist = "", region_file = "", out = "", topo_file = ""
     character(len=64)  :: margin_var = "f_ice", margin_position = "sdist", bed_var = "z_bed", lambda_bed = "relaxed"
@@ -39,7 +39,7 @@ program plastic_coulomb_scan
     type(plastic_t), allocatable :: ps(:)
     real(dp), allocatable :: x(:), y(:), t(:), zb(:,:), zsl(:,:), sd(:,:), frac(:,:), zbt(:,:,:), H(:,:,:), zrel(:,:)
     real(dp), allocatable :: zpd(:,:), hpd(:,:)
-    integer,  allocatable :: reg(:,:), nsw(:,:,:)
+    integer,  allocatable :: reg(:,:), nsw(:,:,:), rid(:)
     logical,  allocatable :: mask(:,:)
     character(len=256) :: arg, units
     real(dp) :: dx, dy
@@ -71,6 +71,8 @@ program plastic_coulomb_scan
     where (zb < -9000.0_dp) zb = 0.0_dp
     zsl = 0.0_dp
     call nc_read(region_file, "region", reg)
+    allocate(rid(nc_size(region_file, "region")))
+    call nc_read(region_file, "region_id", rid)             ! the region ids of the map (one uniform c_f for all)
     select case (trim(lambda_bed))
     case ("relaxed")
         allocate(zpd(nx, ny), hpd(nx, ny))
@@ -136,7 +138,7 @@ contains
         real(dp), allocatable :: mu(:,:)
         integer :: i, st
         allocate(mu(nx, ny))
-        call taub_set_coulomb(tb, reg, [(i, i = 1, NREG)], [(log(cf(jc)), i = 1, NREG)], p, HN(jh), lam_min(jl), zb0, &
+        call taub_set_coulomb(tb, reg, rid, [(log(cf(jc)), i = 1, size(rid))], p, HN(jh), lam_min(jl), zb0, &
                               zb1, trim(region_file), "uniform c_f")
         if (allocated(zrel)) call taub_set_lambda_fixed(tb, zrel)
         call taub_set_smooth(tb, 1000.0_dp*smooth_km, dx, dy)

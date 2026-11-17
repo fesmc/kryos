@@ -233,10 +233,14 @@ c_f is one value per **region** (ice sheet), constant in time: `taub_region_file
 `region` (x, y) of region ids (0 = none; a cell of the ice mask without a region stops the
 run), `taub_cf_file` has `region_id(region)`, `log_cf(region)` (natural log; an id not on the
 grid is allowed, a region of the map without c_f stops). The maps
-`$KRYOS_DATA/plastic/{grid_name}_taub_regions.nc` (NH-32KM, ANT-16KM, PAT-PAL-8KM; written by
+`$KRYOS_DATA/plastic/{grid_name}_taub_regions_v2.nc` (NH-32KM, ANT-16KM, PAT-PAL-8KM; written by
 `tools/levante/plastic_cf_regions.jl`, which also writes c_f files) have 1 Laurentide (North
-America with the Cordillera and Innuitian), 2 Greenland, 3 Eurasia, 4 Antarctica,
-5 Patagonia, from the geography of Gowan's domains (no τ_b of the product). `taub_smooth_km`
+America with the Cordillera and Innuitian), 2 Greenland, 3 Fennoscandia (with the
+British-Irish ice), 4 Antarctica, 5 Patagonia, 6 BarentsKara (the Barents and Kara seas with
+their islands), from the geography of Gowan's domains (no τ_b of the product): whole domains,
+Greenland and BarentsKara by the majority of their cells in REGIONS codes; the cells off the
+domains take the nearest region, so that v2 covers the grid (any margin chronology). v1
+(`{grid_name}_taub_regions.nc`, the runs C1, C2) has 1-5 with all of Eurasia as region 3. `taub_smooth_km`
 smooths μ. The keys of `"domains"` (override, factors, scale groups) do not apply.
 
 ### Smoothing
