@@ -25,9 +25,16 @@
 #          band of lgm-calib-v3 (the Antarctic 20 ka excess near 12.5 m; lgm-calib-v3/fine: lambda_min in steps of 0.02):
 #          H_N 1000 m with lambda_min 0.34, H_N 300 m with 0.24; Patagonia takes Fennoscandia's c_f (lgm-calib has no
 #          Eurasia at these points)
+#   file   tau-CBF-H<H_N> | E1D-ES1-E117 (C7; W default $KRYOS_WORK/coulomb-taub/lambda-file): C6 (tau-CBDAR: delta with
+#          Antarctica of the calibration coulomb-taub/ant-calib) with lambda on the bed of the file in every instance
+#          (taub_lambda_bed "file": {grid}_lambda_bed.nc, the calibration's bed, whatever the Earth) and c_f recalibrated
+#          on it (lgm-calib-v4: the north as lgm-calib-v3; lgm-calib-v4/ant: Antarctica by ant-calib's pick rule); ice_nor
+#          and ice_pat lambda_min 0.75 at H_N 1000 m and 0.5 at 300 m, zb -300 / 200 m (C5); ice_ant lambda_min 0.34 and
+#          0.22, zb -600 / 0 m (ant-calib); Patagonia as delta
 #   band and split were run before the floor (N = 0 at flotation); with this kryos they take the default taub_delta 0.05.
 #
-#   all    taub_lambda_bed "relaxed", taub_p 1, taub_smooth_km 0 (as the calibration). Earths: E1D-PMIST (Gowan's 1-D, r of
+#   all    taub_p 1, taub_smooth_km 0 (as the calibration); taub_lambda_bed "relaxed" (the run's reference topography: on a
+#          refcorr topography lambda depends on the Earth) except file. Earths: E1D-PMIST (Gowan's 1-D, r of
 #          PaleoMIST-1D as D1), E1D-ES1-E117 (wave A's best 1-D under PaleoMIST ice; r of ice-PMIST | E1D-ES1-E117, its
 #          reference files written for all domains)
 #
@@ -36,14 +43,14 @@
 # each on 64 threads (D1: 7.4 min).
 set -euo pipefail
 X=$(cd "$(dirname "$(readlink -f "$0")")" && pwd); T=$X/../tools/levante; . "$T/env.sh"
-[ $# -ge 2 ] || { sed -n '2,36p' "$0"; exit 1; }
+[ $# -ge 2 ] || { sed -n '2,43p' "$0"; exit 1; }
 SET=$2
 BASE=${BASE:-/albedo/work/user/alrobi001/kryos-work/runs/pm-online/par_pdfac.nml}
 R_PMIST=${R_PMIST:-/albedo/work/user/alrobi001/kryos-work/kryos_data/refcorr/PaleoMIST-1D}
 case $SET in
     band)
         W=${W:-$KRYOS_WORK/coulomb-taub/coupled}; PREFIX=tau-CB; REGIONS=taub_regions; EARTHS=(E1D-PMIST E1D-ES1-E117)
-        OUT2D="'const'|2500.0"; WALL=02:00:00; DELTA=
+        OUT2D="'const'|2500.0"; WALL=02:00:00; DELTA=; LAMBDA_BED=relaxed
         # H_N  lambda_min  c_f: Laurentide, Greenland, Eurasia, Antarctica, Patagonia (lgm-calib/calib_*.nc)
         POINTS=("30 0.2 0.187851 0.300839 0.306872 0.346899 0.306872"
                 "100 0.3 0.056835 0.101503 0.091166 0.115349 0.091166"
@@ -51,7 +58,7 @@ case $SET in
                 "1000 0.75 0.009206 0.022060 0.015105 0.019586 0.015105") ;;
     split)
         W=${W:-$KRYOS_WORK/coulomb-taub/split}; PREFIX=tau-CBS; REGIONS=taub_regions_v2; EARTHS=(E1D-ES1-E117)
-        OUT2D="'times'|'-80000:2500:0, -30000:1000:0'"; WALL=01:00:00; DELTA=
+        OUT2D="'times'|'-80000:2500:0, -30000:1000:0'"; WALL=01:00:00; DELTA=; LAMBDA_BED=relaxed
         # H_N  lambda_min  c_f: Laurentide, Greenland, Fennoscandia, Antarctica (lgm-calib-v2/calib_*.nc), Patagonia (lgm-calib's
         # Eurasia), BarentsKara (lgm-calib-v2)
         POINTS=("1000 0.75 0.009206 0.022060 0.010553 0.019586 0.015105 0.021621"
@@ -59,19 +66,27 @@ case $SET in
                 "3000 1.0 0.005746 0.014740 0.007077 0.011415 0.009470 0.012578") ;;
     delta)
         W=${W:-$KRYOS_WORK/coulomb-taub/delta}; PREFIX=tau-CBD; REGIONS=taub_regions_v2; EARTHS=(E1D-ES1-E117)
-        OUT2D="'times'|'-80000:2500:0, -30000:500:0'"; WALL=01:30:00; DELTA=0.05
+        OUT2D="'times'|'-80000:2500:0, -30000:500:0'"; WALL=01:30:00; DELTA=0.05; LAMBDA_BED=relaxed
         # H_N  lambda_min  c_f: Laurentide, Greenland, Fennoscandia, Antarctica (lgm-calib-v3/calib_*.nc), Patagonia (lgm-calib's
         # Eurasia), BarentsKara (lgm-calib-v3)
         POINTS=("1000 0.75 0.008536 0.022060 0.010375 0.019212 0.015105 0.019428"
                 "300 0.5 0.019699 0.044263 0.021662 0.043037 0.033608 0.047985") ;;
     centre)
         W=${W:-$KRYOS_WORK/coulomb-taub/delta}; PREFIX=tau-CBDC; REGIONS=taub_regions_v2; EARTHS=(E1D-ES1-E117)
-        OUT2D="'times'|'-80000:2500:0, -30000:500:0'"; WALL=01:30:00; DELTA=0.05
+        OUT2D="'times'|'-80000:2500:0, -30000:500:0'"; WALL=01:30:00; DELTA=0.05; LAMBDA_BED=relaxed
         # H_N  lambda_min  c_f: Laurentide, Greenland, Fennoscandia, Antarctica (lgm-calib-v3/fine/calib_*.nc), Patagonia
         # (Fennoscandia's), BarentsKara (lgm-calib-v3/fine)
         POINTS=("1000 0.34 0.011105 0.022204 0.012104 0.021030 0.012104 0.035994"
                 "300 0.24 0.024691 0.044464 0.024552 0.045971 0.024552 0.082073") ;;
-    *) echo "unknown set $SET (band, split, delta, centre)"; exit 1 ;;
+    file)
+        W=${W:-$KRYOS_WORK/coulomb-taub/lambda-file}; PREFIX=tau-CBF; REGIONS=taub_regions_v2; EARTHS=(E1D-ES1-E117)
+        OUT2D="'times'|'-80000:2500:0, -30000:500:0'"; WALL=01:30:00; DELTA=0.05; LAMBDA_BED=file
+        # H_N  lambda_min (ice_nor, ice_pat)  c_f: Laurentide, Greenland, Fennoscandia (lgm-calib-v4/calib_NH-32KM.nc),
+        # Antarctica (lgm-calib-v4/ant), Patagonia (C5's: lgm-calib's Eurasia), BarentsKara (lgm-calib-v4)  ice_ant:
+        # lambda_min, zb0, zb1
+        POINTS=("1000 0.75 0.008536 0.022060 0.010375 0.019432 0.015105 0.019428 0.34 -600.0 0.0"
+                "300 0.5 0.019699 0.044263 0.021662 0.042123 0.033608 0.047985 0.22 -600.0 0.0") ;;
+    *) echo "unknown set $SET (band, split, delta, centre, file)"; exit 1 ;;
 esac
 R=$W/runs
 R_E117=${R_E117:-$KRYOS_WORK/coulomb-taub/coupled/refcorr/ice-PMIST_E1D-ES1-E117}
@@ -92,7 +107,8 @@ JSON
     ln -sfn "$FESMDATA" fesmdata; ln -sfn "$KRYOS_DATA" kryos_data
     mkdir -p maps; cp -n "$KRYOS_DATA"/maps/grid_*.txt "$KRYOS_DATA"/maps/scrip-*.nc maps/ 2> /dev/null || true
     for p in "${POINTS[@]}"; do
-        read -r hn lam cl cg ce ca cp cb <<< "$p"
+        read -r hn lam cl cg ce ca cp cb la za0 za1 <<< "$p"         # la, za0, za1: ice_ant's lambda_min, zb0, zb1
+        la=${la:-$lam}; za0=${za0:--300.0}; za1=${za1:-200.0}
         cf=$W/cf/cf-${PREFIX#tau-}-H$(printf %03d $hn).nc       # per set: sets may share W
         if [ "$SET" = band ]; then           # v1 maps: Eurasia is region 3; region 6 (none on v1) takes Eurasia's c_f
             kryos_jl "$T/plastic_cf_regions.jl" cf "$cf" "$cl" "$cg" "$ce" "$ca" "$cp" "$ce"
@@ -101,9 +117,9 @@ JSON
         fi
         for e in "${EARTHS[@]}"; do
             n=$(name "$hn" "$e"); rc=$R_PMIST; [ "$e" = E1D-ES1-E117 ] && rc=$R_E117
-            python3 - "$BASE" "par_$n.nml" "$hn" "$lam" "$cf" "$rc" "$e" "$REGIONS" "$OUT2D" "$DELTA" << 'EOF'
+            python3 - "$BASE" "par_$n.nml" "$hn" "$lam" "$cf" "$rc" "$e" "$REGIONS" "$OUT2D" "$DELTA" "$la" "$za0" "$za1" "$LAMBDA_BED" << 'EOF'
 import re, sys
-base, out, hn, lam, cf, rc, earth, regions, out2d, delta = sys.argv[1:]
+base, out, hn, lam, cf, rc, earth, regions, out2d, delta, lam_ant, zb0_ant, zb1_ant, lambda_bed = sys.argv[1:]
 lines = open(base).read().split("\n")
 def group(g):
     i = next(k for k, l in enumerate(lines) if l.strip().lower() == "&" + g)
@@ -118,8 +134,10 @@ def put(g, key, val):
 for g in ("ice_nor", "ice_ant", "ice_pat"):
     for k, v in [("taub_method", "'coulomb'"), ("taub_domain_factor_file", "''"), ("taub_scale_file", "''"),
                  ("taub_region_file", "'kryos_data/plastic/{grid_name}_%s.nc'" % regions), ("taub_cf_file", "'%s'" % cf),
-                 ("taub_HN", hn + ".0"), ("taub_p", "1.0"), ("taub_lam_min", lam), ("taub_zb0", "-300.0"),
-                 ("taub_zb1", "200.0"), ("taub_lambda_bed", "'relaxed'"), ("taub_smooth_km", "0.0"), ("out_plastic", "'out_2D'")]:
+                 ("taub_HN", hn + ".0"), ("taub_p", "1.0"), ("taub_lam_min", lam_ant if g == "ice_ant" else lam),
+                 ("taub_zb0", zb0_ant if g == "ice_ant" else "-300.0"),
+                 ("taub_zb1", zb1_ant if g == "ice_ant" else "200.0"), ("taub_lambda_bed", "'%s'" % lambda_bed),
+                 ("taub_smooth_km", "0.0"), ("out_plastic", "'out_2D'")]:
         put(g, k, v)
     if delta:
         put(g, "taub_delta", delta)
