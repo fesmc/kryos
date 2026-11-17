@@ -212,6 +212,8 @@
     margin_position    = "sdist"               ! the margin within the cells (library margin_frac): "sdist" (from the
                                                ! interpolated signed distance: the faces at the slices, moving between
                                                ! them) | "face" | "centre" (the ice-free cell centre, PlasticIceSheet.jl)
+    margin_patches     = ""                    ! regional chronologies in place of margin_file's: groups of template
+                                               ! [margin_patch], e.g. "margin_grl" ("" = none; regions must not overlap)
     ! tau_b (drive = "taub")
     taub_method        = "const"               ! "const" | "file" | "domains" | "coulomb" (the Coulomb yield law
                                                ! tau_b = c_f lambda N_eff, solved with the geometry; mode "surface")
@@ -286,6 +288,21 @@
     inv_sigma_cold     = 10.0                  ! [kg m-2 yr-1] inverted: the scale of that penalty
     inv_n_iter         = 50                    ! inverted: Gauss-Newton steps at most
     out_plastic        = "none"                ! schedule of <instance>_plastic.nc (state, mask, sdist, tau_b, ...)
+/
+
+&margin_patch
+    ! A regional margin chronology of the ice backend `plastic` (margin_patches; docs/backend-plastic.md): in the cells of
+    ! region_ids, within the time range of its slices, its mask and signed distance replace those of margin_file
+    ! (interpolated between its own slices, with the instance's margin_interp); elsewhere and at other times margin_file's.
+    file        = ""                           ! required; {domain}, {grid_name} replaced; slices (x, y, time) on the
+                                               ! instance grid, time as margin_file's
+    var         = "f_ice"                      ! the variable (as margin_var)
+    H_min       = 0.5                          ! ice where it exceeds this (as margin_H_min)
+    region_file = ""                           ! required; {domain}, {grid_name} replaced; a region map on the instance grid,
+                                               ! e.g. "kryos_data/plastic/{grid_name}_taub_regions_v2.nc"
+    region_var  = "region"                     ! its variable (integer ids)
+    region_ids  = ""                           ! required; the ids of the patch's region, e.g. "2" (v2 maps: Greenland), or
+                                               ! "2" "5"; each must occur in the map
 /
 &climate_snapshots
     snapshots = "snapshots"

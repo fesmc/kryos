@@ -12,7 +12,10 @@ program test_ice_plastic
     !   * the flotation binding is the backend's rule;
     !   * taub_method = "coulomb" (mode "surface", one region, H_N >> H: the wedge): the centre near c_f d (first
     !     order: within 15 %), tau_b of
-    !     the library equal to c_f rho_i g N_eff, the same tau_b after a restart (PASS_RESTART recomputes it).
+    !     the library equal to c_f rho_i g N_eff, the same tau_b after a restart (PASS_RESTART recomputes it);
+    !   * margin_patches: a patch (two disks around another centre) in the west half (region id 1 of a map):
+    !     the ice is the patch's there and the base's elsewhere, the footprint the base's and the patch's in
+    !     the west.
     ! Run from the repo root (files in tmp/test_ice_plastic).
 
     use precision,       only: dp
@@ -36,6 +39,7 @@ program test_ice_plastic
     call write_inputs()
     call test_backend()
     call test_coulomb()
+    call test_patch()
 
     if (nfail > 0) then
         write(*,"(a,i0,a)") "test_ice_plastic: ", nfail, " check(s) FAILED"
@@ -69,7 +73,7 @@ contains
     subroutine write_inputs()
         ! The margin history (H_ice on xc, yc, time in years) and the par file.
         real(dp) :: H(N, N, 2), x(N), r(N, N)
-        integer  :: i, u
+        integer  :: i, j, u
 
         r = radius()
         x = [((i - 31)*DXKM, i = 1, N)]
@@ -90,6 +94,44 @@ contains
         write(u,'(a)') '    margin_H_min = 1.0'
         write(u,'(a)') '    taub_method  = "const"'
         write(u,'(a)') '    taub_const   = 5.0e4'
+        write(u,'(a)') '/'
+        close(u)
+
+        ! a margin patch: disks of radius 5 and 15 cells around (21, 31) at 0 and 1000 yr, in the west half
+        do j = 1, N
+            do i = 1, N
+                H(i,j,1) = merge(1000.0_dp, 0.0_dp, (i - 21)**2 + (j - 31)**2 <= 25)
+                H(i,j,2) = merge(1000.0_dp, 0.0_dp, (i - 21)**2 + (j - 31)**2 <= 225)
+            end do
+        end do
+        call nc_create(dir//"/patch.nc")
+        call nc_write_dim(dir//"/patch.nc", "xc", x=x, units="km")
+        call nc_write_dim(dir//"/patch.nc", "yc", x=x, units="km")
+        call nc_write_dim(dir//"/patch.nc", "time", x=[0.0_dp, 1000.0_dp], units="years")
+        call nc_write(dir//"/patch.nc", "H_ice", H, dim1="xc", dim2="yc", dim3="time")
+        call nc_create(dir//"/halves.nc")
+        call nc_write_dim(dir//"/halves.nc", "xc", x=x, units="km")
+        call nc_write_dim(dir//"/halves.nc", "yc", x=x, units="km")
+        call nc_write(dir//"/halves.nc", "half", reshape([((merge(1, 2, i <= 31), i = 1, N), j = 1, N)], [N, N]), &
+                      dim1="xc", dim2="yc")
+        open(newunit=u, file=dir//"/par_patch.nml", status="replace", action="write")
+        write(u,'(a)') '&ice_test'
+        write(u,'(a)') '    backend        = "plastic"'
+        write(u,'(a)') '    mode           = "flat"'
+        write(u,'(a)') '    margin_file    = "'//dir//'/margin.nc"'
+        write(u,'(a)') '    margin_var     = "H_ice"'
+        write(u,'(a)') '    margin_H_min   = 1.0'
+        write(u,'(a)') '    margin_patches = "patch_w"'
+        write(u,'(a)') '    taub_method    = "const"'
+        write(u,'(a)') '    taub_const     = 5.0e4'
+        write(u,'(a)') '/'
+        write(u,'(a)') '&patch_w'
+        write(u,'(a)') '    file        = "'//dir//'/patch.nc"'
+        write(u,'(a)') '    var         = "H_ice"'
+        write(u,'(a)') '    H_min       = 1.0'
+        write(u,'(a)') '    region_file = "'//dir//'/halves.nc"'
+        write(u,'(a)') '    region_var  = "half"'
+        write(u,'(a)') '    region_ids  = "1"'
         write(u,'(a)') '/'
         close(u)
 
@@ -163,6 +205,39 @@ contains
         call ice_end(ice)
         call ice_end(ice2)
     end subroutine test_coulomb
+
+    subroutine test_patch()
+        type(ice_slot_t)  :: ice
+        type(step_time_t) :: st
+        real(dp) :: H(N, N), r(N, N), rp(N, N)
+        logical  :: west(N, N)
+        integer  :: i, j
+
+        write(*,"(a)") "margin_patches"
+        r = radius()
+        do j = 1, N
+            do i = 1, N
+                rp(i,j) = sqrt(real((i - 21)**2 + (j - 31)**2, dp))
+                west(i,j) = i <= 31
+            end do
+        end do
+        call make_ice(ice, "par_patch.nml")
+        st = step_time_t(t0=0.0_dp, t1=0.0_dp, t_eval=0.0_dp, dt=500.0_dp, dtt=500.0_dp, tick=0)
+        call ice_init_state(ice, st, PASS_INIT)
+        H = export(ice, ice%c%h_H_ice)
+        call check("patch: the patch's disk in the west, the base's in the east", &
+                   all((H > 0.0_dp) .eqv. merge(rp <= 5.0_dp, r <= R1, west)))
+        call check("patch: footprint = the base's, or the patch's in the west", &
+                   all((export(ice, ice%c%h_footprint) > 0.5_dp) .eqv. (r <= R2 .or. (west .and. rp <= 15.0_dp))))
+        st = step_time_t(t0=0.0_dp, t1=500.0_dp, t_eval=500.0_dp, dt=500.0_dp, dtt=500.0_dp, tick=1)
+        call ice_update(ice, st)
+        H = export(ice, ice%c%h_H_ice)
+        call check("patch: at 500 yr the east half of the base's disk of radius 15 (within one cell)", &
+                   all(west .or. (H > 0.0_dp) .or. r > 14.0_dp) .and. all(west .or. .not. (H > 0.0_dp) .or. r < 16.0_dp))
+        call check("patch: at 500 yr the west the patch's disk of radius 10 (within one cell)", &
+                   all(.not. west .or. (H > 0.0_dp) .or. rp > 9.0_dp) .and. all(.not. west .or. .not. (H > 0.0_dp) .or. rp < 11.0_dp))
+        call ice_end(ice)
+    end subroutine test_patch
 
     subroutine make_ice(slot, par)
         type(ice_slot_t), intent(out) :: slot

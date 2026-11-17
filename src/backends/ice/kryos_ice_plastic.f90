@@ -29,7 +29,9 @@ module kryos_ice_plastic
                                NAME_LEN, PATH_LEN, PASS_INIT, PASS_GEOMETRY, PASS_SPINUP, PASS_RESTART
     use kryos_outfile,   only: outfile_dims_2d, outfile_open, outfile_var2d
     use kryos_ice,       only: ice_t, ice_opt_t
-    use kryos_plastic_margin, only: margin_t, margin_init, margin_at, margin_footprint, margin_interp_code
+    use kryos_plastic_margin, only: margin_t, margin_init, margin_interp_code, margin_set_t, margin_set_init, &
+                                    margin_set_add, margin_set_at, margin_set_footprint, margin_region
+    use kryos_config,    only: config_t, config_validate, config_read
     use kryos_plastic_taub,   only: taub_t, taub_method_code, TAUB_M_CONST, TAUB_M_FILE, TAUB_M_DOMAINS, TAUB_M_COULOMB, &
                                     taub_set_const, taub_read_field, taub_read_domains, taub_read_scale, taub_at, &
                                     taub_read_domain_factor, taub_set_smooth, taub_read_coulomb, taub_mu, &
@@ -56,7 +58,7 @@ module kryos_ice_plastic
         type(plastic_par_t)     :: par
         type(plastic_glen_t)    :: rheo
         type(plastic_sliding_t) :: slide
-        type(margin_t)          :: mg
+        type(margin_set_t)      :: ms                     ! the margin chronology (margin_file) and its patches
         type(taub_t)            :: tb
         character(len=8)  :: drive = "taub"              ! "taub": plastic_solve | "smb": plastic_solve_smb
         logical           :: closure = .false.           ! rheology and sliding set (drive = "smb", mass_balance = "implied")
@@ -137,7 +139,7 @@ contains
         self%H_ice_pd  = ctx%ref%H_ice
         call constants_check(self, ctx)
 
-        self%footprint = margin_footprint(self%mg)
+        self%footprint = margin_set_footprint(self%ms)
         allocate(self%z_bed(self%nx, self%ny), self%z_sl(self%nx, self%ny), self%tau_b(self%nx, self%ny), &
                  self%sd(self%nx, self%ny), self%mask(self%nx, self%ny), self%H_prev(self%nx, self%ny))
         self%z_bed  = self%z_bed_ref
@@ -458,7 +460,7 @@ contains
         ! ("face"); between the slices the interpolated sd moves the margin within the cells.
         class(plastic_ice_t), intent(inout) :: self
         real(dp),             intent(in)    :: t
-        call margin_at(self%mg, t, self%mask, self%sd)
+        call margin_set_at(self%ms, t, self%mask, self%sd)
         if (allocated(self%mfrac)) call plastic_margin_frac_from_sdist(self%sd, self%mask, self%dx, self%dy, self%mfrac)
     end subroutine mask_at
 
@@ -950,8 +952,7 @@ contains
         end select
         if (len_trim(margin_file) == 0) call fesm_error(proc, "margin_file is not set", who)
         call substitute(margin_file, ctx)
-        call margin_init(self%mg, trim(margin_file), trim(margin_var), margin_H_min, self%nx, self%ny, &
-                         self%dx, self%dy, interp, hold)
+        call margin_patches_read(self, ctx, trim(margin_file), trim(margin_var), margin_H_min, interp, hold)
 
         ! tau_b
         if (trim(self%drive) == "taub") then
@@ -1085,6 +1086,88 @@ contains
         end subroutine rd_i
 
     end subroutine group_read
+
+    subroutine margin_patches_read(self, ctx, file, var, H_min, interp, hold)
+        ! The margin chronology of the instance: margin_file (the base, everywhere) and the patches of
+        ! margin_patches, each a group of template [margin_patch] (input/kryos_defaults.nml): a chronology
+        ! (file, var, H_min; the base's margin_interp) in the cells of region_ids of a region map
+        ! (region_file, region_var), within the time range of its slices. The regions must not overlap.
+        class(plastic_ice_t), intent(inout) :: self
+        type(init_ctx_t),     intent(in)    :: ctx
+        character(len=*),     intent(in)    :: file, var
+        real(dp),             intent(in)    :: H_min
+        integer,              intent(in)    :: interp
+        logical,              intent(in)    :: hold
+
+        character(len=*), parameter :: proc = "kryos_ice_plastic::init", TPL = "margin_patch"
+        integer, parameter :: n_max = 16, nid_max = 64
+        character(len=NAME_LEN) :: groups(n_max+1), ids_s(nid_max), pvar, rvar
+        character(len=PATH_LEN) :: pfile, rfile
+        character(len=:), allocatable :: who
+        type(config_t) :: cfg
+        type(margin_t) :: mg
+        logical, allocatable :: region(:,:)
+        integer, allocatable :: ids(:)
+        real(dp) :: pH_min
+        integer  :: k, i, m, ios
+
+        call margin_init(mg, file, var, H_min, self%nx, self%ny, self%dx, self%dy, interp, hold)
+        call margin_set_init(self%ms, mg)
+
+        groups = ""
+        if (nml_has_param(ctx%par_file, ctx%instance, "margin_patches")) &
+            call nml_read(ctx%par_file, ctx%instance, "margin_patches", groups)
+        if (len_trim(groups(n_max+1)) > 0) &
+            call fesm_error(proc, "margin_patches names more than "//to_str(n_max)//" groups", "instance "//trim(self%name))
+
+        cfg%par_file = ctx%par_file
+        cfg%library  = ctx%library
+        do k = 1, n_max
+            if (len_trim(groups(k)) == 0) cycle
+            who = "instance "//trim(self%name)//": margin patch &"//trim(groups(k))
+            call config_validate(cfg, trim(groups(k)), TPL, required=[character(len=11) :: "file", "region_file", &
+                                 "region_ids"])
+            call config_read(cfg, trim(groups(k)), "file",        pfile,  TPL)
+            call config_read(cfg, trim(groups(k)), "var",         pvar,   TPL)
+            call config_read(cfg, trim(groups(k)), "H_min",       pH_min, TPL)
+            call config_read(cfg, trim(groups(k)), "region_file", rfile,  TPL)
+            call config_read(cfg, trim(groups(k)), "region_var",  rvar,   TPL)
+            ids_s = ""
+            call config_read(cfg, trim(groups(k)), "region_ids",  ids_s,  TPL)
+            allocate(ids(count(len_trim(ids_s) > 0)))
+            if (size(ids) == 0) call fesm_error(proc, "region_ids is empty", who)
+            m = 0
+            do i = 1, nid_max
+                if (len_trim(ids_s(i)) == 0) cycle
+                m = m + 1
+                read(ids_s(i), *, iostat=ios) ids(m)
+                if (ios /= 0) call fesm_error(proc, "region_ids: '"//trim(ids_s(i))//"' is not an integer", who)
+            end do
+            call substitute(pfile, ctx)
+            call substitute(rfile, ctx)
+
+            call margin_init(mg, trim(pfile), trim(pvar), pH_min, self%nx, self%ny, self%dx, self%dy, interp, .false.)
+            region = margin_region(trim(rfile), trim(rvar), ids, self%nx, self%ny)
+            call margin_set_add(self%ms, mg, region)
+            call log_msg(LOG_INFO, "kryos_ice_plastic", "margin patch &"//trim(groups(k))//": "//to_str(mg%n)// &
+                         " slices, "//to_str(mg%time(1))//" to "//to_str(mg%time(mg%n))//" yr, in "// &
+                         to_str(count(region))//" cells (region ids"//ids_list(ids)//")", who//": "//trim(pfile))
+            deallocate(ids)
+        end do
+
+    contains
+
+        function ids_list(v) result(r)
+            integer, intent(in) :: v(:)
+            character(len=:), allocatable :: r
+            integer :: j
+            r = ""
+            do j = 1, size(v)
+                r = r//" "//to_str(v(j))
+            end do
+        end function ids_list
+
+    end subroutine margin_patches_read
 
     subroutine rheology_set(self, A, n, law, beta, m, C, u0, umax, fr)
         ! The Glen rheology and the sliding law of the flux closure, from the keys
