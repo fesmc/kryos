@@ -22,3 +22,5 @@ The exports of the instance (`<instance>.nc`, `<instance>_ts.nc`) are the table 
 | 11 | q_marine    | xc, yc     | m yr-1 | Outflow through the margin faces to the ocean (ice equivalent)  | 1e-4 |
 | 12 | u_inv       | xc, yc     | m yr-1 | Depth-averaged speed of the inversion                           | 1e-2 |
 | 13 | u_law       | xc, yc     | m yr-1 | Depth-averaged speed of the flow law (the inversion's prior)    | 1e-2 |
+| 14 | taub_region | xc, yc     | 1      | Region of the Coulomb law's c_f                                 | 1e-4 |
+| 15 | taub_mu     | xc, yc     | 1      | Coulomb coefficient c_f lambda                                  | 1e-6 |

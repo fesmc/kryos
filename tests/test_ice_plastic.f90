@@ -9,7 +9,10 @@ program test_ice_plastic
     !     dHidt, smb = bmb = cmb = 0, M_ice = rho_i sum(H) dx dy;
     !   * a restart round trip: written at 500, read into a second instance, both stepped to 1000:
     !     the same thickness bit for bit (the warm start comes back);
-    !   * the flotation binding is the backend's rule.
+    !   * the flotation binding is the backend's rule;
+    !   * taub_method = "coulomb" (mode "surface", one region, H_N >> H: the wedge): the centre near c_f d (first
+    !     order: within 15 %), tau_b of
+    !     the library equal to c_f rho_i g N_eff, the same tau_b after a restart (PASS_RESTART recomputes it).
     ! Run from the repo root (files in tmp/test_ice_plastic).
 
     use precision,       only: dp
@@ -26,12 +29,13 @@ program test_ice_plastic
     character(len=*), parameter :: dir = "tmp/test_ice_plastic"
     integer,  parameter :: N = 61
     real(dp), parameter :: DXKM = 10.0_dp, R1 = 10.0_dp, R2 = 20.0_dp     ! [km], radii [cells]
-    real(dp), parameter :: TAU = 5.0e4_dp, RHO_I = 910.0_dp, RHO_W = 1028.0_dp, G = 9.81_dp
+    real(dp), parameter :: TAU = 5.0e4_dp, RHO_I = 910.0_dp, RHO_W = 1028.0_dp, G = 9.81_dp, CF = 0.01_dp
     integer :: nfail = 0
 
     call execute_command_line("mkdir -p "//dir)
     call write_inputs()
     call test_backend()
+    call test_coulomb()
 
     if (nfail > 0) then
         write(*,"(a,i0,a)") "test_ice_plastic: ", nfail, " check(s) FAILED"
@@ -88,10 +92,81 @@ contains
         write(u,'(a)') '    taub_const   = 5.0e4'
         write(u,'(a)') '/'
         close(u)
+
+        ! the Coulomb law: one region everywhere, c_f = 0.01, the wedge (H_N >> H), no bed factor, no smoothing
+        call nc_create(dir//"/regions.nc")
+        call nc_write_dim(dir//"/regions.nc", "xc", x=x, units="km")
+        call nc_write_dim(dir//"/regions.nc", "yc", x=x, units="km")
+        call nc_write(dir//"/regions.nc", "region", reshape([(1, i = 1, N*N)], [N, N]), dim1="xc", dim2="yc")
+        call nc_create(dir//"/cf.nc")
+        call nc_write_dim(dir//"/cf.nc", "region", x=[1.0_dp])
+        call nc_write(dir//"/cf.nc", "region_id", [1], dim1="region")
+        call nc_write(dir//"/cf.nc", "log_cf", [log(CF)], dim1="region")
+        open(newunit=u, file=dir//"/par_coulomb.nml", status="replace", action="write")
+        write(u,'(a)') '&ice_test'
+        write(u,'(a)') '    backend          = "plastic"'
+        write(u,'(a)') '    mode             = "surface"'
+        write(u,'(a)') '    margin_file      = "'//dir//'/margin.nc"'
+        write(u,'(a)') '    margin_var       = "H_ice"'
+        write(u,'(a)') '    margin_H_min     = 1.0'
+        write(u,'(a)') '    taub_method      = "coulomb"'
+        write(u,'(a)') '    taub_region_file = "'//dir//'/regions.nc"'
+        write(u,'(a)') '    taub_cf_file     = "'//dir//'/cf.nc"'
+        write(u,'(a)') '    taub_HN          = 1.0e9'
+        write(u,'(a)') '    taub_smooth_km   = 0.0'
+        write(u,'(a)') '/'
+        close(u)
     end subroutine write_inputs
 
-    subroutine make_ice(slot)
+    subroutine test_coulomb()
+        type(ice_slot_t)  :: ice, ice2
+        type(step_time_t) :: st
+        real(dp) :: H(N, N), r(N, N), Hc, e
+        integer  :: i, j
+
+        r = radius()
+        write(*,"(a)") "taub_method = coulomb"
+        call make_ice(ice, "par_coulomb.nml")
+        st = step_time_t(t0=0.0_dp, t1=0.0_dp, t_eval=0.0_dp, dt=500.0_dp, dtt=500.0_dp, tick=0)
+        call ice_init_state(ice, st, PASS_INIT)
+        H = export(ice, ice%c%h_H_ice)
+        Hc = CF*(R1 + 0.5_dp)*DXKM*1.0e3_dp
+        write(*,"(a,f9.2,a,f9.2,a)") "  centre: H = ", H(31,31), " m, the wedge c_f d ", Hc, " m"
+        ! the first-order distance on a 10-cell disk is 12 % short (the Nye check above: -6 % in H ~ sqrt(d))
+        call check("centre: the wedge c_f d within 15 %", abs(H(31,31) - Hc) < 0.15_dp*Hc)
+        call check("the ice is the disk of t = 0", all((H > 0.0_dp) .eqv. (r <= R1)))
+        select type (c => ice%c)
+        type is (plastic_ice_t)
+            e = 0.0_dp
+            do j = 1, N
+                do i = 1, N
+                    if (c%mask(i,j)) e = max(e, abs(c%tau_b(i,j) - c%mu(i,j)*RHO_I*G*H(i,j)*1.0e9_dp/(H(i,j) + 1.0e9_dp)))
+                end do
+            end do
+            call check("tau_b = c_f rho_i g N_eff (the library's)", e <= 1.0e-9_dp*CF*RHO_I*G*maxval(H) .and. &
+                       all(c%tau_b == c%ps%tau_b) .and. all(abs(c%mu - CF) < 1.0e-15_dp))
+        end select
+        st = step_time_t(t0=0.0_dp, t1=500.0_dp, t_eval=500.0_dp, dt=500.0_dp, dtt=500.0_dp, tick=1)
+        call ice_update(ice, st)
+        call ice_restart_write(ice, dir, 500.0_dp)
+        call make_ice(ice2, "par_coulomb.nml")
+        call ice_restart_read(ice2, dir, 500.0_dp)
+        st = step_time_t(t0=500.0_dp, t1=500.0_dp, t_eval=500.0_dp, dt=500.0_dp, dtt=500.0_dp, tick=1)
+        call ice_init_state(ice2, st, PASS_RESTART)
+        select type (c => ice%c)
+        type is (plastic_ice_t)
+            select type (c2 => ice2%c)
+            type is (plastic_ice_t)
+                call check("restart: the same tau_b (recomputed on the restored H)", all(c%tau_b == c2%tau_b))
+            end select
+        end select
+        call ice_end(ice)
+        call ice_end(ice2)
+    end subroutine test_coulomb
+
+    subroutine make_ice(slot, par)
         type(ice_slot_t), intent(out) :: slot
+        character(len=*), intent(in), optional :: par
         type(init_ctx_t) :: ctx
         type(census_t)   :: census
 
@@ -101,6 +176,7 @@ contains
         ctx%domain    = "Test"
         ctx%grid_name = "TEST"
         ctx%par_file  = dir//"/par.nml"
+        if (present(par)) ctx%par_file = dir//"/"//par
         call grid_init(ctx%grid, name="TEST", mtype="cartesian", units="km", dx=DXKM, nx=N, dy=DXKM, ny=N, &
                        x0=-30.0_dp*DXKM, y0=-30.0_dp*DXKM)
         allocate(ctx%ref%z_bed(N, N), ctx%ref%H_ice(N, N), ctx%ref%z_srf(N, N), ctx%ref%z_bed_sd(N, N))

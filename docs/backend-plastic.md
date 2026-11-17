@@ -25,7 +25,8 @@ PlasticIceSheet.jl.
   (the backend), [`plastic/kryos_plastic_margin.f90`](https://github.com/fesmc/kryos/blob/main/src/backends/ice/plastic/kryos_plastic_margin.f90)
   (the margin chronology), [`plastic/kryos_plastic_taub.f90`](https://github.com/fesmc/kryos/blob/main/src/backends/ice/plastic/kryos_plastic_taub.f90)
   (τ_b), [`plastic/kryos_plastic_friction.f90`](https://github.com/fesmc/kryos/blob/main/src/backends/ice/plastic/kryos_plastic_friction.f90)
-  (the sliding laws that follow τ_b). The three helper modules use no library and are
+  (the sliding laws that follow τ_b), [`plastic/kryos_plastic_bed.f90`](https://github.com/fesmc/kryos/blob/main/src/backends/ice/plastic/kryos_plastic_bed.f90)
+  (the bed factor λ of `coulomb_n` and the Coulomb law). The four helper modules use no library and are
   compiled whatever `plastic=`, so their tests run with the stub.
 - **Library API:** PlasticIceSheet
   [`docs/fortran-port.md`](https://github.com/fesmc/PlasticIceSheet/blob/main/docs/fortran-port.md).
@@ -139,7 +140,8 @@ lies in it.
 
 - `"const"`: `taub_const` [Pa] everywhere;
 - `"file"`: the static field `taub_var` (x, y) [Pa] of `taub_file`;
-- `"domains"`: Gowan's domain map, below.
+- `"domains"`: Gowan's domain map, below;
+- `"coulomb"`: the Coulomb yield law, below (`mode = "surface"`).
 
 ### Gowan's domains
 
@@ -201,9 +203,40 @@ and East Antarctica, Patagonia) and time node, sampled from a prior and weighted
 the sea-level data ([Our ice: the τ_b ensembles](science/ice-ensembles.md)). The
 ES-MDA calibrations that first set them (v1, v2) are retired.
 
+### Coulomb yield law
+
+With `taub_method = "coulomb"` τ_b is not given but follows from the geometry (Robinson
+et al. 2020, as in Yelmo):
+
+$$
+\tau_b = c_f \, \lambda(z_b - z_{sl}) \, N_\mathrm{eff}, \quad
+N = \rho_i g H \left(1 - \frac{H_f}{H}\right)^{p}, \quad
+\frac{1}{N_\mathrm{eff}} = \frac{1}{N} + \frac{1}{\rho_i g H_N},
+$$
+
+N the effective pressure of Leguy et al. (2014) (H_f = (ρ_w/ρ_i) max(0, z_sl − z_b), N = 0
+at or below flotation), capped smoothly at ρ_i g `taub_HN`, and λ linear from
+`taub_lam_min` at a bed `taub_zb0` or more below the sea level of the time to 1 at `taub_zb1`
+or higher (`kryos_plastic_bed`, the same λ as `coulomb_n`). In the plastic equation this is
+a slope, |∇z_s| = c_f λ N_eff/(ρ_i g H): the constant c_f λ where H ≪ H_N on land (a wedge),
+0 at flotation, and for H ≫ H_N the Nye profile of τ_b = c_f λ ρ_i g H_N. Nothing depends on
+time explicitly. The backend computes μ = c_f λ on the bed and sea level of each solve and
+calls the library's `plastic_solve_coulomb` (mode `"surface"` only), which returns τ_b
+(output `tau_b`; `taub_mu` is μ).
+
+c_f is one value per **region** (ice sheet), constant in time: `taub_region_file` is a map
+`region` (x, y) of region ids (0 = none; a cell of the ice mask without a region stops the
+run), `taub_cf_file` has `region_id(region)`, `log_cf(region)` (natural log; an id not on the
+grid is allowed, a region of the map without c_f stops). The maps
+`$KRYOS_DATA/plastic/{grid_name}_taub_regions.nc` (NH-32KM, ANT-16KM, PAT-PAL-8KM; written by
+`tools/levante/plastic_cf_regions.jl`, which also writes c_f files) have 1 Laurentide (North
+America with the Cordillera and Innuitian), 2 Greenland, 3 Eurasia, 4 Antarctica,
+5 Patagonia, from the geography of Gowan's domains (no τ_b of the product). `taub_smooth_km`
+smooths μ. The keys of `"domains"` (override, factors, scale groups) do not apply.
+
 ### Smoothing
 
-`taub_smooth_km` (default 50; `drive = "taub"`, any method): τ_b at t, after the
+`taub_smooth_km` (default 50; `drive = "taub"`, any method; `"coulomb"`: μ): τ_b at t, after the
 factors, is replaced on the cells with τ_b > 0 by its Gaussian mean over those cells
 (sd `taub_smooth_km`, within 3 sd; a normalised convolution), for the solve and the
 flow closure alike. The steps between domains become ramps of a few sd (the ice
@@ -278,6 +311,7 @@ holds the state of the last solve and its inputs:
 | `sdist` | m | signed distance to the margin (positive inside) |
 | `tau_b` | Pa | basal shear stress |
 | `taub_domain` | 1 | τ_b domain (0 = none) |
+| `taub_region`, `taub_mu` | 1 | `"coulomb"`: the region of c_f, μ = c_f λ |
 | `div_q`, `q_land`, `q_marine` | m yr-1 | `"implied"`, `"inverted"`: flux divergence and the outflow through the margin faces to land and to the ocean (ice equivalent) |
 | `u_inv`, `u_law` | m yr-1 | `"inverted"`: the speed of the inversion and of the flow law |
 | `converged`, `n_outer_used`, `stress_res_median`, `stress_res_max` | | 0-D: convergence and the stress residual \|ρ_i g H \|∇z_s\| − τ_b\| / τ_b over the ice (1 at the first ice cell by construction) |
@@ -336,7 +370,7 @@ the core keys of `[instance]` (`backend`, `grid`, `dt`, `out_2D`, ...).
 | `margin_interp` | `"sdist"` | `"sdist"`, `"nearest"` |
 | `margin_extrapolate` | `"error"` | `"error"`, `"hold"` |
 | `margin_position` | `"sdist"` | `"sdist"`, `"face"`, `"centre"` |
-| `taub_method` | `"const"` | `"const"`, `"file"`, `"domains"` |
+| `taub_method` | `"const"` | `"const"`, `"file"`, `"domains"`, `"coulomb"` |
 | `taub_const` | 0.0 | [Pa] `"const"` (> 0) |
 | `taub_file`, `taub_var` | `""`, `"taub"` | `"file"` |
 | `taub_domain_file` | `""` | `"domains"`: the product |
@@ -345,7 +379,10 @@ the core keys of `[instance]` (`backend`, `grid`, `dt`, `out_2D`, ...).
 | `taub_default` | 0.0 | [Pa] `"domains"`: cells without a domain (0: none) |
 | `taub_domain_factor_file` | `""` | `"domains"`: factor per domain (Stage 1) |
 | `taub_scale_file` | `""` | `"domains"`: multipliers per scale group |
-| `taub_smooth_km` | 50.0 | [km] Gaussian sd of the τ_b smoothing; 0 = none |
+| `taub_smooth_km` | 50.0 | [km] Gaussian sd of the τ_b smoothing (`"coulomb"`: of μ); 0 = none |
+| `taub_region_file`, `taub_cf_file` | `""`, `""` | `"coulomb"`: the region map, c_f per region |
+| `taub_HN`, `taub_p` | 0.0, 1.0 | `"coulomb"`: [m] cap of N (required, > 0); exponent of N in [0, 1] |
+| `taub_lam_min`, `taub_zb0`, `taub_zb1` | 1.0, -300.0, 200.0 | `"coulomb"`: λ (1 = no bed dependence) |
 | `rheo_A`, `rheo_n` | 0.0, 3.0 | Glen rate factor [Pa-n yr-1] (0: no closure), exponent |
 | `slide_law` | `"none"` | see [Flow closure](#flow-closure) |
 | `slide_beta`, `slide_m` | 0.0, 1.0 | linear, weertman coefficient; stress exponent |

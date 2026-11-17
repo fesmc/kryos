@@ -8,7 +8,12 @@ module kryos_plastic_taub
     !              series per id (linear in time), as the product {grid}_IceHistory-PaleoMIST_taub.nc; a par
     !              table (codes, values) overrides the value of some ids, constant in time, or gives ids of
     !              the map the file has no value for; every id of the map must then have one. Cells without
-    !              a domain take `default` (0: such a cell in the ice mask stops the solve, kryos_ice_plastic).
+    !              a domain take `default` (0: such a cell in the ice mask stops the solve, kryos_ice_plastic);
+    !   "coulomb"  the Coulomb yield law tau_b = c_f lambda(z_bed - z_sl) N_eff (Robinson et al. 2020), solved
+    !              with the geometry by the library (plastic_solve_coulomb: N_eff depends on H): here only its
+    !              coefficient mu = c_f lambda (taub_mu), with c_f one value per region of a region map (0 =
+    !              none: such a cell in the ice mask stops the solve), constant in time, and lambda the bed
+    !              factor of kryos_plastic_bed on the bed and sea level of the solve; and the law's p, H_N.
     !
     ! "domains" may be scaled. A factor per domain (taub_domain_factor_file, the present-day fit of
     ! tests/plastic_taub_fit.f90): the value of an id, after the override table, times exp(log_factor(id)),
@@ -20,18 +25,19 @@ module kryos_plastic_taub
     ! Any method may be smoothed (taub_set_smooth; the backend's taub_smooth_km): the field at t, after the
     ! factors, is replaced on the cells with tau_b > 0 by its Gaussian mean (sd, within 3 sd) over those
     ! cells (a normalised convolution: steps between domains become ramps over a few sd, values are kept
-    ! where the field is uniform). Cells with tau_b <= 0 stay as they are.
+    ! where the field is uniform). Cells with tau_b <= 0 stay as they are. "coulomb" smooths mu the same way.
 
     use precision, only: dp
     use fesm_log,  only: fesm_error, to_str
     use ncio,      only: nc_read, nc_read_attr, nc_dims, nc_exists_var
     use kryos_plastic_margin, only: model_time_axis, time_order
+    use kryos_plastic_bed,    only: bed_lambda
 
     implicit none
 
     private
 
-    integer, parameter, public :: TAUB_M_CONST = 1, TAUB_M_FILE = 2, TAUB_M_DOMAINS = 3
+    integer, parameter, public :: TAUB_M_CONST = 1, TAUB_M_FILE = 2, TAUB_M_DOMAINS = 3, TAUB_M_COULOMB = 4
 
     type, public :: taub_t
         integer  :: method = 0
@@ -49,6 +55,15 @@ module kryos_plastic_taub
         real(dp), allocatable :: stime(:)            ! [yr] model time of the scale nodes, increasing
         real(dp), allocatable :: slf(:,:)            ! (group, node): natural log of the multiplier
         real(dp), allocatable :: dfac(:)             ! the factor of each id (exp of its log factor); unallocated: none
+        integer,  allocatable :: reg(:,:)            ! "coulomb": the region id of each cell (<= 0: none)
+        integer,  allocatable :: ridx(:,:)           ! its position in rids (0: none)
+        integer,  allocatable :: rids(:)             ! the region ids with a c_f
+        real(dp), allocatable :: cf(:)               ! their c_f (exp of the log)
+        real(dp) :: p = 1.0_dp                       ! "coulomb": N = rho_i g H (1 - H_f/H)^p
+        real(dp) :: H_N = 0.0_dp                     ! [m] "coulomb": cap N_max = rho_i g H_N
+        real(dp) :: lam_min = 1.0_dp                 ! "coulomb": lambda at a bed zb0 or lower
+        real(dp) :: zb0 = -300.0_dp, zb1 = 200.0_dp  ! [m] "coulomb": bed above sea level of lam_min, of lambda = 1
+        character(len=512) :: csrc = ""              ! messages: the c_f file
         real(dp) :: smooth = 0.0_dp                  ! [m] Gaussian sd of the smoothing (0: none)
         real(dp) :: sdx = 0.0_dp, sdy = 0.0_dp       ! [m] the grid spacing of the smoothing
         character(len=512) :: dsrc = ""              ! messages: the domain factor file
@@ -61,16 +76,18 @@ module kryos_plastic_taub
     public :: taub_set_scale, taub_read_scale, taub_scale_at
     public :: taub_set_domain_factor, taub_read_domain_factor
     public :: taub_set_smooth
+    public :: taub_set_coulomb, taub_read_coulomb, taub_mu
 
 contains
 
     integer function taub_method_code(name) result(code)
-        ! "const" | "file" | "domains" -> TAUB_*; 0 for anything else.
+        ! "const" | "file" | "domains" | "coulomb" -> TAUB_*; 0 for anything else.
         character(len=*), intent(in) :: name
         select case (trim(name))
         case ("const");   code = TAUB_M_CONST
         case ("file");    code = TAUB_M_FILE
         case ("domains"); code = TAUB_M_DOMAINS
+        case ("coulomb"); code = TAUB_M_COULOMB
         case default;     code = 0
         end select
     end function taub_method_code
@@ -296,11 +313,122 @@ contains
                     end if
                 end do
             end do
+        case (TAUB_M_COULOMB)
+            call fesm_error("kryos_plastic_taub::taub_at", "taub_method = 'coulomb' has no tau_b before the solve", &
+                            trim(tb%src)//": the solve takes mu (taub_mu) and returns tau_b")
         case default
             call fesm_error("kryos_plastic_taub::taub_at", "tau_b is not set", trim(tb%src))
         end select
         if (tb%smooth > 0.0_dp) call smooth_positive(tau, tb%sdx, tb%sdy, tb%smooth)
     end subroutine taub_at
+
+    subroutine taub_set_coulomb(tb, reg, ids, log_cf, p, H_N, lam_min, zb0, zb1, src, csrc)
+        ! "coulomb": the region map `reg` (<= 0: none), c_f = exp(log_cf) of the region ids `ids` (an id not in
+        ! the map is allowed; a region of the map without c_f stops), the law's p in [0, 1], H_N > 0 [m] and the
+        ! bed factor's lam_min in (0, 1], zb0 < zb1 [m]. src, csrc name the map and the c_f table in messages.
+        type(taub_t),     intent(out) :: tb
+        integer,          intent(in)  :: reg(:,:), ids(:)
+        real(dp),         intent(in)  :: log_cf(:), p, H_N, lam_min, zb0, zb1
+        character(len=*), intent(in)  :: src, csrc
+
+        character(len=*), parameter :: proc = "kryos_plastic_taub::taub_set_coulomb"
+        integer :: k, i, j, q
+
+        if (size(ids) /= size(log_cf)) call fesm_error(proc, "one log_cf per region id is needed", trim(csrc))
+        if (.not. all(abs(log_cf) <= huge(1.0_dp))) call fesm_error(proc, "log_cf is not finite", trim(csrc))
+        do k = 1, size(ids)
+            if (count(ids == ids(k)) > 1) call fesm_error(proc, "region id "//to_str(ids(k))//" is listed twice", &
+                                                         trim(csrc))
+        end do
+        if (.not. (p >= 0.0_dp .and. p <= 1.0_dp)) call fesm_error(proc, "taub_p must be in [0, 1]", &
+                                                                  "taub_p = "//to_str(p))
+        if (.not. (H_N > 0.0_dp)) call fesm_error(proc, "taub_HN must be positive", "taub_HN = "//to_str(H_N)//" m")
+        if (.not. (lam_min > 0.0_dp .and. lam_min <= 1.0_dp)) &
+            call fesm_error(proc, "taub_lam_min must be in (0, 1]", "taub_lam_min = "//to_str(lam_min))
+        if (lam_min < 1.0_dp .and. .not. zb1 > zb0) &
+            call fesm_error(proc, "taub_zb1 must be above taub_zb0", "taub_zb0 = "//to_str(zb0)//", taub_zb1 = "// &
+                            to_str(zb1))
+
+        tb%method  = TAUB_M_COULOMB
+        tb%reg     = reg
+        tb%rids    = ids
+        tb%cf      = exp(log_cf)
+        tb%p       = p
+        tb%H_N     = H_N
+        tb%lam_min = lam_min
+        tb%zb0     = zb0
+        tb%zb1     = zb1
+        tb%src     = src
+        tb%csrc    = csrc
+        allocate(tb%ridx(size(reg, 1), size(reg, 2)))
+        tb%ridx = 0
+        do j = 1, size(reg, 2)
+            do i = 1, size(reg, 1)
+                if (reg(i,j) <= 0) cycle
+                q = findloc(ids, reg(i,j), dim=1)
+                if (q == 0) call fesm_error(proc, "region "//to_str(reg(i,j))//" of the map has no c_f", trim(csrc)// &
+                                            "; map "//trim(src)//" (cell "//to_str(i)//", "//to_str(j)//")")
+                tb%ridx(i,j) = q
+            end do
+        end do
+    end subroutine taub_set_coulomb
+
+    subroutine taub_read_coulomb(tb, region_file, cf_file, nx, ny, p, H_N, lam_min, zb0, zb1)
+        ! "coulomb" from the region map file (region (x, y), the ids, 0 = none; tools/levante/plastic_cf_regions.jl)
+        ! and the c_f file (dimension region: region_id(region), log_cf(region), natural log), then taub_set_coulomb.
+        type(taub_t),     intent(out) :: tb
+        character(len=*), intent(in)  :: region_file, cf_file
+        integer,          intent(in)  :: nx, ny
+        real(dp),         intent(in)  :: p, H_N, lam_min, zb0, zb1
+
+        character(len=*), parameter :: proc = "kryos_plastic_taub::taub_read_coulomb"
+        character(len=64), allocatable :: names(:)
+        integer,  allocatable :: dims(:), reg(:,:), ids(:)
+        real(dp), allocatable :: lcf(:)
+        integer :: n
+        logical :: exists
+
+        inquire(file=trim(region_file), exist=exists)
+        if (.not. exists) call fesm_error(proc, "the region file does not exist", "taub_region_file = "// &
+                                          trim(region_file))
+        inquire(file=trim(cf_file), exist=exists)
+        if (.not. exists) call fesm_error(proc, "the c_f file does not exist", "taub_cf_file = "//trim(cf_file))
+        call check_xy(region_file, "region", nx, ny)
+        allocate(reg(nx, ny))
+        call nc_read(region_file, "region", reg)
+        call nc_dims(cf_file, "region_id", names, dims)
+        if (size(dims) /= 1) call fesm_error(proc, "`region_id` is not a list of ids (1-D)", trim(cf_file))
+        n = dims(1)
+        call nc_dims(cf_file, "log_cf", names, dims)
+        if (size(dims) /= 1 .or. dims(1) /= n) call fesm_error(proc, "`log_cf` is not one value per region_id", &
+                                                              trim(cf_file))
+        allocate(ids(n), lcf(n))
+        call nc_read(cf_file, "region_id", ids)
+        call nc_read(cf_file, "log_cf", lcf)
+        call taub_set_coulomb(tb, reg, ids, lcf, p, H_N, lam_min, zb0, zb1, trim(region_file), trim(cf_file))
+    end subroutine taub_read_coulomb
+
+    subroutine taub_mu(tb, z_bed, z_sl, mu)
+        ! "coulomb": mu = c_f(region) lambda(z_bed - z_sl) on the cells with a region, 0 elsewhere, then the
+        ! smoothing of taub_set_smooth over the cells with mu > 0.
+        type(taub_t), intent(in)  :: tb
+        real(dp),     intent(in)  :: z_bed(:,:), z_sl(:,:)
+        real(dp),     intent(out) :: mu(:,:)
+        integer :: i, j
+
+        if (tb%method /= TAUB_M_COULOMB) call fesm_error("kryos_plastic_taub::taub_mu", "mu needs taub_method = "// &
+                                                         "'coulomb'", trim(tb%src))
+        do j = 1, size(mu, 2)
+            do i = 1, size(mu, 1)
+                if (tb%ridx(i,j) > 0) then
+                    mu(i,j) = tb%cf(tb%ridx(i,j))*bed_lambda(z_bed(i,j), z_sl(i,j), tb%lam_min, tb%zb0, tb%zb1)
+                else
+                    mu(i,j) = 0.0_dp
+                end if
+            end do
+        end do
+        if (tb%smooth > 0.0_dp) call smooth_positive(mu, tb%sdx, tb%sdy, tb%smooth)
+    end subroutine taub_mu
 
     subroutine taub_set_smooth(tb, sd, dx, dy)
         ! The Gaussian smoothing of taub_at: sd [m] (0: none) on a grid of spacing dx, dy [m].

@@ -3,8 +3,9 @@ module kryos_ice_plastic
     ! PlasticIceSheet (module plastic_ice), as Gowan et al. (2021) built PaleoMIST, run online: at every
     ! update the ice mask of the margin chronology at t1 (kryos_plastic_margin), the basal shear stress
     ! at t1 (kryos_plastic_taub) and the imported bed and sea level give the thickness (plastic_solve,
-    ! warm-started from the last solution), or, with drive = "smb", the imported smb does
-    ! (plastic_solve_smb). Built with plastic=1; otherwise kryos_ice_plastic_stub.f90 provides this module.
+    ! warm-started from the last solution; with taub_method = "coulomb" the Coulomb yield law,
+    ! plastic_solve_coulomb), or, with drive = "smb", the imported smb does (plastic_solve_smb). Built with
+    ! plastic=1; otherwise kryos_ice_plastic_stub.f90 provides this module.
     ! Everything is dp, as the exchange.
     !
     ! The ice is imposed, not integrated: dHidt = (H - H_prev)/dt and mb_net = rho_i dHidt, the mass
@@ -29,12 +30,13 @@ module kryos_ice_plastic
     use kryos_outfile,   only: outfile_dims_2d, outfile_open, outfile_var2d
     use kryos_ice,       only: ice_t, ice_opt_t
     use kryos_plastic_margin, only: margin_t, margin_init, margin_at, margin_footprint, margin_interp_code
-    use kryos_plastic_taub,   only: taub_t, taub_method_code, TAUB_M_CONST, TAUB_M_FILE, TAUB_M_DOMAINS, taub_set_const, &
-                                    taub_read_field, taub_read_domains, taub_read_scale, taub_at, &
-                                    taub_read_domain_factor, taub_set_smooth
+    use kryos_plastic_taub,   only: taub_t, taub_method_code, TAUB_M_CONST, TAUB_M_FILE, TAUB_M_DOMAINS, TAUB_M_COULOMB, &
+                                    taub_set_const, taub_read_field, taub_read_domains, taub_read_scale, taub_at, &
+                                    taub_read_domain_factor, taub_set_smooth, taub_read_coulomb, taub_mu
     use kryos_plastic_friction, only: friction_t, friction_law, friction_map
     use plastic_ice,     only: plastic_par_t, plastic_t, plastic_glen_t, plastic_sliding_t, plastic_init, &
-                               plastic_solve, plastic_solve_smb, plastic_end, plastic_smb_flux_divergence, &
+                               plastic_solve, plastic_solve_coulomb, plastic_coulomb_taub, plastic_solve_smb, &
+                               plastic_end, plastic_smb_flux_divergence, &
                                plastic_stress_residual, plastic_margin_frac_from_sdist, PLASTIC_OK, &
                                PLASTIC_NOT_CONVERGED, plastic_inv_ctrl_t, plastic_inv_info_t, plastic_smb_inversion, &
                                plastic_flow_direction
@@ -66,6 +68,7 @@ module kryos_ice_plastic
         real(dp), allocatable :: z_bed_ref(:,:), H_ice_pd(:,:), footprint(:,:)   ! static
         real(dp), allocatable :: z_bed(:,:), z_sl(:,:)   ! [m] the bed and sea level of the last solve
         real(dp), allocatable :: tau_b(:,:), sd(:,:)     ! [Pa], [m] its basal shear stress and signed distance
+        real(dp), allocatable :: mu(:,:)                 ! taub_method = "coulomb": c_f lambda of the last solve
         logical,  allocatable :: mask(:,:)               ! its ice mask
         real(dp), allocatable :: mfrac(:,:)              ! margin_position = "sdist": the margin's distance from the
                                                          ! ice-free cell centres [fraction of the spacing]; else
@@ -137,6 +140,10 @@ contains
         self%z_bed  = self%z_bed_ref
         self%z_sl   = 0.0_dp
         self%H_prev = 0.0_dp
+        if (self%tb%method == TAUB_M_COULOMB) then
+            allocate(self%mu(self%nx, self%ny))
+            self%mu = 0.0_dp
+        end if
         if (self%implied) then
             allocate(self%divq(self%nx, self%ny), self%q_land(self%nx, self%ny), self%q_marine(self%nx, self%ny), &
                      self%us_x(self%nx, self%ny), self%us_y(self%nx, self%ny))
@@ -187,6 +194,11 @@ contains
             call mask_at(self, st%t1)
             if (trim(self%drive) == "taub") then
                 call forcing_taub(self, st%t1)
+                if (self%tb%method == TAUB_M_COULOMB) then
+                    call plastic_coulomb_taub(self%ps, self%z_bed, self%z_sl, self%mu, self%mask, self%tb%p, &
+                                              self%tb%H_N)
+                    self%tau_b = self%ps%tau_b
+                end if
             else
                 self%tau_b = driving_stress(self)
             end if
@@ -302,6 +314,11 @@ contains
             if (self%tb%method == TAUB_M_DOMAINS) &
                 call outfile_var2d(file, "taub_domain", real(self%tb%dom, dp), n, ncid, "1", "Basal shear stress domain", &
                                    table=TABLE)
+            if (self%tb%method == TAUB_M_COULOMB) then
+                call outfile_var2d(file, "taub_region", real(self%tb%reg, dp), n, ncid, "1", &
+                                   "Region of the Coulomb law's c_f", table=TABLE)
+                call outfile_var2d(file, "taub_mu", self%mu, n, ncid, "1", "Coulomb coefficient c_f lambda", table=TABLE)
+            end if
             if (self%implied) then
                 call outfile_var2d(file, "div_q", self%divq, n, ncid, "m yr-1", &
                                    "Divergence of the ice flux (ice equivalent)", table=TABLE)
@@ -393,8 +410,14 @@ contains
         select case (trim(self%drive))
         case ("taub")
             call forcing_taub(self, t)
-            call plastic_solve(self%ps, self%z_bed, self%z_sl, self%tau_b, self%mask, warm=warm, stat=stat, &
-                               margin_frac=self%mfrac)
+            if (self%tb%method == TAUB_M_COULOMB) then
+                call plastic_solve_coulomb(self%ps, self%z_bed, self%z_sl, self%mu, self%mask, self%tb%p, self%tb%H_N, &
+                                           warm=warm, stat=stat, margin_frac=self%mfrac)
+                self%tau_b = self%ps%tau_b
+            else
+                call plastic_solve(self%ps, self%z_bed, self%z_sl, self%tau_b, self%mask, warm=warm, stat=stat, &
+                                   margin_frac=self%mfrac)
+            end if
         case ("smb")
             if (.not. published(self, self%hi_smb)) then
                 call fesm_error("kryos_ice_plastic::solve", "drive = 'smb' needs the smb import", "instance "// &
@@ -430,12 +453,24 @@ contains
     end subroutine mask_at
 
     subroutine forcing_taub(self, t)
-        ! tau_b at t (drive = "taub"; with "smb" the solve derives it): positive on every ice cell.
+        ! tau_b at t (drive = "taub"; with "smb" the solve derives it): positive on every ice cell. With
+        ! taub_method = "coulomb" the law's coefficient mu = c_f lambda on the current bed and sea level instead
+        ! (the solve returns tau_b): positive on every ice cell, i.e. each in a region with c_f.
         class(plastic_ice_t), intent(inout) :: self
         real(dp),             intent(in)    :: t
 
         integer :: n
 
+        if (self%tb%method == TAUB_M_COULOMB) then
+            call taub_mu(self%tb, self%z_bed, self%z_sl, self%mu)
+            n = count(self%mask .and. .not. self%mu > 0.0_dp)
+            if (n > 0) then
+                call fesm_error("kryos_ice_plastic::solve", to_str(n)//" ice cells have no Coulomb region at t = "// &
+                                to_str(t)//" yr", "instance "//trim(self%name)//": region 0 of taub_region_file; "// &
+                                trim(self%tb%src))
+            end if
+            return
+        end if
         call taub_at(self%tb, t, self%tau_b)
         n = count(self%mask .and. .not. self%tau_b > 0.0_dp)
         if (n > 0) then
@@ -775,13 +810,14 @@ contains
 
         character(len=*), parameter :: proc = "kryos_ice_plastic::init"
         character(len=PATH_LEN) :: margin_file, taub_file, taub_domain_file, taub_scale_file, taub_domain_factor_file
+        character(len=PATH_LEN) :: taub_region_file, taub_cf_file
         character(len=NAME_LEN) :: margin_var, margin_interp, margin_extrapolate, mode, taub_method, taub_var
         character(len=NAME_LEN) :: taub_domain_var, taub_id_var, taub_value_var, taub_time_var, taub_override_grp
         character(len=NAME_LEN) :: slide_law, margin_position, mass_balance
         real(dp) :: mb_smooth_km, taub_smooth_km, inv_smooth_km, inv_smooth_smb_km, inv_sigma_smb_min, inv_sigma_cold
         character(len=:), allocatable :: who
         real(dp) :: margin_H_min, taub_const, taub_default, rheo_A, rheo_n, slide_beta, slide_m, slide_C, slide_u0
-        real(dp) :: slide_umax
+        real(dp) :: slide_umax, taub_HN, taub_p, taub_lam_min, taub_zb0, taub_zb1
         type(friction_t) :: fr
         integer,  allocatable :: codes(:)
         real(dp), allocatable :: vals(:)
@@ -795,6 +831,8 @@ contains
         taub_domain_file = "";  taub_domain_var = "taub_domain";  taub_id_var = "domain_id";  taub_value_var = "taub"
         taub_time_var = "taub_t";  taub_override_grp = "";  taub_default = 0.0_dp;  taub_scale_file = ""
         taub_domain_factor_file = "";  taub_smooth_km = 50.0_dp
+        taub_region_file = "";  taub_cf_file = "";  taub_HN = 0.0_dp;  taub_p = 1.0_dp;  taub_lam_min = 1.0_dp
+        taub_zb0 = -300.0_dp;  taub_zb1 = 200.0_dp
         mode = "surface"
         rheo_A = 0.0_dp;  rheo_n = 3.0_dp
         slide_law = "none";  slide_beta = 0.0_dp;  slide_m = 1.0_dp;  slide_C = 0.0_dp;  slide_u0 = 0.0_dp
@@ -838,6 +876,13 @@ contains
         call rd_s("taub_domain_factor_file", taub_domain_factor_file)
         call rd_s("taub_scale_file", taub_scale_file)
         call rd_r("taub_smooth_km", taub_smooth_km)
+        call rd_s("taub_region_file", taub_region_file)
+        call rd_s("taub_cf_file", taub_cf_file)
+        call rd_r("taub_HN", taub_HN)
+        call rd_r("taub_p", taub_p)
+        call rd_r("taub_lam_min", taub_lam_min)
+        call rd_r("taub_zb0", taub_zb0)
+        call rd_r("taub_zb1", taub_zb1)
         ! rheology and sliding (drive = "smb"; mass_balance = "implied")
         call rd_r("rheo_A", rheo_A)
         call rd_r("rheo_n", rheo_n)
@@ -920,9 +965,23 @@ contains
                                            trim(taub_value_var), trim(taub_time_var), taub_default, hold, self%nx, &
                                            self%ny)
                 end if
+            case (TAUB_M_COULOMB)
+                if (len_trim(taub_region_file) == 0 .or. len_trim(taub_cf_file) == 0) &
+                    call fesm_error(proc, "taub_method = 'coulomb' needs taub_region_file and taub_cf_file", who)
+                if (trim(self%par%mode) /= "surface") &
+                    call fesm_error(proc, "taub_method = 'coulomb' needs mode = 'surface'", who//": mode = '"// &
+                                    trim(self%par%mode)//"' (the library's Coulomb kernel is a surface kernel)")
+                call substitute(taub_region_file, ctx)
+                call substitute(taub_cf_file, ctx)
+                call taub_read_coulomb(self%tb, trim(taub_region_file), trim(taub_cf_file), self%nx, self%ny, taub_p, &
+                                       taub_HN, taub_lam_min, taub_zb0, taub_zb1)
+                call log_msg(LOG_INFO, "kryos_ice_plastic", "taub_method coulomb: c_f "//to_str(minval(self%tb%cf))// &
+                             " to "//to_str(maxval(self%tb%cf))//" ("//to_str(size(self%tb%cf))//" regions), H_N "// &
+                             to_str(taub_HN)//" m, p "//to_str(taub_p)//", lambda "//to_str(taub_lam_min)//" at "// &
+                             to_str(taub_zb0)//" m to 1 at "//to_str(taub_zb1)//" m", who//": "//trim(taub_cf_file))
             case default
                 call fesm_error(proc, "taub_method = '"//trim(taub_method)//"' is not recognised", &
-                                who//"; use const, file or domains")
+                                who//"; use const, file, domains or coulomb")
             end select
             if (len_trim(taub_override_grp) > 0 .and. taub_method_code(taub_method) /= TAUB_M_DOMAINS) &
                 call fesm_error(proc, "taub_override needs taub_method = 'domains'", who)
