@@ -12,11 +12,13 @@
 # America with Greenland, 2 Eurasia, 3 Antarctica, 4 Patagonia). North America and Eurasia are split as the scale groups
 # of plastic_taub_scale.jl, by whole domains: a domain is Greenland when more than half of its cells on the grid lie in
 # REGIONS region_2 code 103, BarentsKara when more than half lie in region_3 codes 10201 (Barents-Kara) and 10203
-# (Svalbard); the "outside every polygon" domains (Gowan's number 0) are split cell by cell. Cells without a domain have
-# region 0 (none). Only the geography of the product is used: none of its tau_b values.
+# (Svalbard); the "outside every polygon" domains (Gowan's number 0) are split cell by cell. The cells without a domain then
+# take the region of the nearest cell with one (grid distance), so that the map covers the whole grid: the backend stops
+# on an ice cell of region 0, and a margin chronology other than PaleoMIST's may put ice there. Only the geography of the
+# product is used: none of its tau_b values.
 #
-# Versions: v1, {grid}_taub_regions.nc (2026-11-17, kryos 8ff43a2: ids 1-5, region 3 all of Eurasia; the runs C1, C2 of
-# docs/science/results.md); v2, {grid}_taub_regions_v2.nc (this tool).
+# Versions: v1, {grid}_taub_regions.nc (2026-11-17, kryos 8ff43a2: ids 1-5, region 3 all of Eurasia, region 0 off the
+# domains; the runs C1, C2 of docs/science/results.md); v2, {grid}_taub_regions_v2.nc (this tool).
 #
 # Region file: region(xc, yc) (Int32, 0 = none; flag_values, flag_meanings), region_id(region), attribute region_names.
 # c_f file: region_id(region), log_cf(region) (natural log of c_f).
@@ -52,6 +54,23 @@ function region_map(taub_file, regions_file)
                  g in 3:4 ? g + 1 : error("$taub_file: domain $d of no known region")
     end
     reg, xc, yc
+end
+
+# the cells of region <= 0 take the region of the nearest cell of region > 0 (Euclidean distance in grid cells; the first
+# found on ties); returns the filled map and the number of cells filled
+function fill_nearest(reg)
+    src = findall(>(0), reg); isempty(src) && error("no cell has a region")
+    si = [c[1] for c in src]; sj = [c[2] for c in src]; out = copy(reg); nf = 0
+    for c in CartesianIndices(reg)
+        reg[c] > 0 && continue
+        best = typemax(Int); k = 0
+        @inbounds for q in eachindex(si)
+            d = (si[q] - c[1])^2 + (sj[q] - c[2])^2
+            d < best && (best = d; k = q)
+        end
+        out[c] = reg[src[k]]; nf += 1
+    end
+    out, nf
 end
 
 function write_regions(file, reg, xc, yc, src)
@@ -91,7 +110,10 @@ if abspath(PROGRAM_FILE) == @__FILE__
         for (dom, g) in GRIDS
             tf = joinpath(fesmdata, dom, g, "$(g)_IceHistory-PaleoMIST_taub.nc")
             rf = joinpath(fesmdata, dom, g, "$(g)_REGIONS.nc")
-            reg, xc, yc = region_map(tf, rf)
+            reg0, xc, yc = region_map(tf, rf)
+            reg, nf = fill_nearest(reg0)
+            println(g, ": ", nf, " cells without a domain filled by the nearest region: ",
+                    join(["$(REGION_NAMES[r]) $(count((reg0 .<= 0) .& (reg .== r)))" for r in 1:length(REGION_NAMES) if any((reg0 .<= 0) .& (reg .== r))], ", "))
             f = write_regions(joinpath(out, "$(g)_taub_regions_$(VERSION).nc"), reg, xc, yc, basename(tf) * ", " * basename(rf))
             println(f, ": ", join(["$(REGION_NAMES[r]) $(count(==(r), reg))" for r in 1:length(REGION_NAMES) if any(==(r), reg)], ", "),
                     " cells; none ", count(==(0), reg))

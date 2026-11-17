@@ -238,7 +238,8 @@ grid is allowed, a region of the map without c_f stops). The maps
 America with the Cordillera and Innuitian), 2 Greenland, 3 Fennoscandia (with the
 British-Irish ice), 4 Antarctica, 5 Patagonia, 6 BarentsKara (the Barents and Kara seas with
 their islands), from the geography of Gowan's domains (no τ_b of the product): whole domains,
-Greenland and BarentsKara by the majority of their cells in REGIONS codes. v1
+Greenland and BarentsKara by the majority of their cells in REGIONS codes; the cells off the
+domains take the nearest region, so that v2 covers the grid (any margin chronology). v1
 (`{grid_name}_taub_regions.nc`, the runs C1, C2) has 1-5 with all of Eurasia as region 3. `taub_smooth_km`
 smooths μ. The keys of `"domains"` (override, factors, scale groups) do not apply.
 
