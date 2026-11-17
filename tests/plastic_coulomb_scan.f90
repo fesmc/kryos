@@ -2,8 +2,9 @@ program plastic_coulomb_scan
     ! A parameter scan of the Coulomb yield law of the ice backend `plastic` (taub_method = "coulomb") at one time of a
     ! margin history, without an Earth: the margin of the slice at time_ka, the history's bed of that slice (bed_var;
     ! PaleoMIST: relative to the sea level of the time, so z_sl = 0), mu = c_f lambda with one c_f for every region
-    ! of the region map (taub_mu, smoothing smooth_km; lambda_bed = "relaxed": lambda on the present-day bed of topo_file
-    ! relaxed by local isostasy, fixed, as the backend's default; "current": on the slice's bed), a cold
+    ! of the region map (taub_mu, smoothing smooth_km; lambda_bed = "file": lambda fixed on the bed z_lambda of
+    ! lambda_file, the backend's default and the same file ({grid_name} is grid_name); "relaxed": on the present-day
+    ! bed of topo_file relaxed by local isostasy, fixed; "current": on the slice's bed), a cold
     ! plastic_solve_coulomb for each (c_f, H_N, lambda_min) of
     ! the lists cf x HN x lam_min (OpenMP over the cases). Output <out>: H (xc, yc, case) with case_cf, case_HN,
     ! case_lam_min (case = cf fastest, then HN, then lam_min), the bed, the
@@ -15,8 +16,10 @@ program plastic_coulomb_scan
     use precision, only: dp
     use ncio,      only: nc_read, nc_size, nc_create, nc_write_dim, nc_write
     use kryos_plastic_margin, only: margin_t, margin_init, margin_at, MARGIN_SDIST, model_time_axis
-    use kryos_plastic_taub,   only: taub_t, taub_set_coulomb, taub_set_smooth, taub_mu, taub_set_lambda_fixed
+    use kryos_plastic_taub,   only: taub_t, taub_set_coulomb, taub_set_smooth, taub_mu, taub_set_lambda_fixed, &
+                                    taub_read_lambda_bed
     use kryos_plastic_bed,    only: relaxed_bed
+    use nml,                  only: nml_replace
     use plastic_ice, only: plastic_par_t, plastic_t, plastic_init, plastic_solve_coulomb, plastic_coulomb_law_t, &
                            plastic_margin_frac_from_sdist
     !$ use omp_lib, only: omp_get_max_threads, omp_get_thread_num
@@ -26,19 +29,21 @@ program plastic_coulomb_scan
     integer, parameter :: NMAX = 32
     ! &scan
     character(len=512) :: hist = "", region_file = "", out = "", topo_file = ""
-    character(len=64)  :: margin_var = "f_ice", margin_position = "sdist", bed_var = "z_bed", lambda_bed = "relaxed"
+    character(len=512) :: lambda_file = "kryos_data/plastic/{grid_name}_lambda_bed.nc"
+    character(len=64)  :: margin_var = "f_ice", margin_position = "sdist", bed_var = "z_bed", lambda_bed = "file"
+    character(len=64)  :: grid_name = ""
     character(len=64)  :: topo_bed_var = "z_bed", topo_H_var = "H_ice"
     real(dp) :: time_ka = 20.0_dp, margin_min = 0.5_dp, smooth_km = 0.0_dp
     real(dp) :: cf(NMAX) = -1.0_dp, HN(NMAX) = -1.0_dp, lam_min(NMAX) = -1.0_dp
     real(dp) :: p = 1.0_dp, delta = 0.05_dp, zb0 = -300.0_dp, zb1 = 200.0_dp
     real(dp), parameter :: RHO_I = 910.0_dp, RHO_SW = 1028.0_dp, GRAV = 9.81_dp    ! the kryos Earth
     namelist /scan/ hist, margin_var, margin_min, margin_position, bed_var, time_ka, region_file, smooth_km, cf, HN, &
-                    lam_min, p, delta, zb0, zb1, lambda_bed, topo_file, topo_bed_var, topo_H_var, out
+                    lam_min, p, delta, zb0, zb1, lambda_bed, lambda_file, grid_name, topo_file, topo_bed_var, topo_H_var, out
 
     type(margin_t)      :: mg
     type(plastic_par_t) :: par
     type(plastic_t), allocatable :: ps(:)
-    real(dp), allocatable :: x(:), y(:), t(:), zb(:,:), zsl(:,:), sd(:,:), frac(:,:), zbt(:,:,:), H(:,:,:), zrel(:,:)
+    real(dp), allocatable :: x(:), y(:), t(:), zb(:,:), zsl(:,:), sd(:,:), frac(:,:), zbt(:,:,:), H(:,:,:), zfix(:,:)
     real(dp), allocatable :: zpd(:,:), hpd(:,:)
     integer,  allocatable :: reg(:,:), nsw(:,:,:), rid(:)
     logical,  allocatable :: mask(:,:)
@@ -75,15 +80,17 @@ program plastic_coulomb_scan
     allocate(rid(nc_size(region_file, "region")))
     call nc_read(region_file, "region_id", rid)             ! the region ids of the map (one uniform c_f for all)
     select case (trim(lambda_bed))
+    case ("file")
+        zfix = taub_read_lambda_bed(trim(lambda_path()), nx, ny)
     case ("relaxed")
         allocate(zpd(nx, ny), hpd(nx, ny))
         call nc_read(topo_file, topo_bed_var, zpd)
         call nc_read(topo_file, topo_H_var, hpd)
         where (zpd < -9000.0_dp) zpd = 0.0_dp
-        zrel = relaxed_bed(zpd, hpd, RHO_I)
+        zfix = relaxed_bed(zpd, hpd, RHO_I)
     case ("current")
     case default
-        error stop "plastic_coulomb_scan: lambda_bed must be relaxed or current"
+        error stop "plastic_coulomb_scan: lambda_bed must be file, relaxed or current"
     end select
     if (count(mask .and. reg <= 0) > 0) error stop "plastic_coulomb_scan: ice cells without a region"
 
@@ -141,7 +148,7 @@ contains
         allocate(mu(nx, ny))
         call taub_set_coulomb(tb, reg, rid, [(log(cf(jc)), i = 1, size(rid))], p, HN(jh), delta, lam_min(jl), zb0, &
                               zb1, trim(region_file), "uniform c_f")
-        if (allocated(zrel)) call taub_set_lambda_fixed(tb, zrel)
+        if (allocated(zfix)) call taub_set_lambda_fixed(tb, zfix)
         call taub_set_smooth(tb, 1000.0_dp*smooth_km, dx, dy)
         call taub_mu(tb, zb, zsl, mu)
         call plastic_solve_coulomb(ps(tt), zb, zsl, mu, mask, law(jh), warm=.false., stat=st, margin_frac=frac)
@@ -150,6 +157,16 @@ contains
         nsw(jc, jh, jl) = ps(tt)%n_sweeps
     end subroutine case_solve
 
+
+    function lambda_path() result(f)
+        ! lambda_file with {grid_name} replaced by grid_name
+        character(len=512) :: f
+        f = lambda_file
+        if (index(f, "{grid_name}") > 0) then
+            if (len_trim(grid_name) == 0) error stop "plastic_coulomb_scan: lambda_file has {grid_name}: set grid_name"
+            call nml_replace(f, "{grid_name}", trim(grid_name))
+        end if
+    end function lambda_path
 
     function law(jh) result(lw)
         ! The library's Coulomb law of H_N number jh (p and delta of the namelist).

@@ -15,8 +15,10 @@ program plastic_coulomb_calib
     !
     ! The regions are the ids of the region file (region_id); pd_region and target_region name ids of it.
     !
-    ! mu = c_f(region) lambda (taub_mu; lambda_bed = "relaxed": on the present-day bed of topo_file relaxed by local
-    ! isostasy, fixed, the backend's default), smoothing smooth_km. SLE = V_af rho_i / (rho_sw A_ocean), A_ocean =
+    ! mu = c_f(region) lambda (taub_mu), smoothing smooth_km; lambda fixed, on the bed z_lambda of lambda_file
+    ! (lambda_bed = "file", the backend's default and the same file: taub_read_lambda_bed; {grid_name} is grid_name),
+    ! or on the present-day bed of topo_file relaxed by local isostasy ("relaxed"), or on the bed of each solve
+    ! ("current"). SLE = V_af rho_i / (rho_sw A_ocean), A_ocean =
     ! 3.618e14 m2. Output <out>: per pair the present-day fit, the c_f, volumes and maximum thickness per region at
     ! time_ka (region, HN, lam_min). Analysis: tools/levante/plastic_coulomb_calib.jl. Needs plastic=1:
     !
@@ -26,8 +28,10 @@ program plastic_coulomb_calib
     use precision, only: dp
     use ncio,      only: nc_read, nc_size, nc_create, nc_write_dim, nc_write
     use kryos_plastic_margin, only: margin_t, margin_init, margin_at, MARGIN_SDIST, model_time_axis
-    use kryos_plastic_taub,   only: taub_t, taub_set_coulomb, taub_set_smooth, taub_mu, taub_set_lambda_fixed
+    use kryos_plastic_taub,   only: taub_t, taub_set_coulomb, taub_set_smooth, taub_mu, taub_set_lambda_fixed, &
+                                    taub_read_lambda_bed
     use kryos_plastic_bed,    only: relaxed_bed
+    use nml,                  only: nml_replace
     use plastic_ice, only: plastic_par_t, plastic_t, plastic_init, plastic_solve_coulomb, plastic_coulomb_law_t, &
                            plastic_margin_frac_from_sdist
     !$ use omp_lib, only: omp_get_max_threads, omp_get_thread_num
@@ -38,8 +42,9 @@ program plastic_coulomb_calib
     real(dp), parameter :: RHO_I = 910.0_dp, RHO_SW = 1028.0_dp, GRAV = 9.81_dp, A_OC = 3.618e14_dp
     ! &calib
     character(len=512) :: hist = "", topo_file = "", region_file = "", out = ""
+    character(len=512) :: lambda_file = "kryos_data/plastic/{grid_name}_lambda_bed.nc"
     character(len=64)  :: margin_var = "f_ice", margin_position = "sdist", bed_var = "z_bed", H_var = "H_ice"
-    character(len=64)  :: mask_var = "mask", lambda_bed = "relaxed"
+    character(len=64)  :: mask_var = "mask", lambda_bed = "file", grid_name = ""
     real(dp) :: margin_min = 0.5_dp, smooth_km = 0.0_dp, time_ka = 20.0_dp
     real(dp) :: HN(NMAX) = -1.0_dp, lam_min(NMAX) = -1.0_dp, p = 1.0_dp, delta = 0.05_dp, zb0 = -300.0_dp, zb1 = 200.0_dp
     integer  :: pd_region = 0, target_region(MAXREG) = 0
@@ -48,13 +53,14 @@ program plastic_coulomb_calib
     real(dp) :: sigma_min = 50.0_dp, sigma_rel = 0.1_dp
     integer  :: n_grid = 13
     namelist /calib/ hist, margin_var, margin_min, margin_position, topo_file, bed_var, H_var, mask_var, region_file, &
-                     lambda_bed, smooth_km, time_ka, HN, lam_min, p, delta, zb0, zb1, pd_region, target_region, target_sle, &
+                     lambda_bed, lambda_file, grid_name, smooth_km, time_ka, HN, lam_min, p, delta, zb0, zb1, &
+                     pd_region, target_region, target_sle, &
                      cf_other, cf_min, cf_max, lcf_lo, lcf_hi, tol, sigma_min, sigma_rel, n_grid, out
 
     type(margin_t)      :: mg
     type(plastic_par_t) :: par
     type(plastic_t), allocatable :: ps(:)
-    real(dp), allocatable :: x(:), y(:), t(:), zt(:,:,:), zpd(:,:), zlgm(:,:), zsl(:,:), Hobs(:,:), sig(:,:), zrel(:,:)
+    real(dp), allocatable :: x(:), y(:), t(:), zt(:,:,:), zpd(:,:), zlgm(:,:), zsl(:,:), Hobs(:,:), sig(:,:), zfix(:,:)
     real(dp), allocatable :: sd0(:,:), sdl(:,:), fr0(:,:), frl(:,:)
     real(dp), allocatable :: lcf_pd(:,:), chi2n(:,:), sle_pd(:,:), lcf(:,:,:), sle(:,:,:), hmax(:,:,:)
     integer,  allocatable :: reg(:,:), mobs(:,:), nwide(:,:), nbis(:,:), rid(:), tpos(:)
@@ -69,7 +75,6 @@ program plastic_coulomb_calib
     if (ios /= 0) error stop "plastic_coulomb_calib: cannot read &calib"
     close(u_nml)
     nh = count(HN > 0.0_dp);  nl = count(lam_min > 0.0_dp);  nt = count(target_region > 0)
-    if (trim(lambda_bed) /= "relaxed" .and. trim(lambda_bed) /= "current") error stop "plastic_coulomb_calib: lambda_bed"
 
     nx = nc_size(hist, "xc");  ny = nc_size(hist, "yc")
     allocate(x(nx), y(ny), zpd(nx,ny), zsl(nx,ny), Hobs(nx,ny), mobs(nx,ny), reg(nx,ny), sd0(nx,ny), sdl(nx,ny))
@@ -95,7 +100,12 @@ program plastic_coulomb_calib
     where (zpd < -9000.0_dp) zpd = 0.0_dp
     where (Hobs < 0.0_dp) Hobs = 0.0_dp
     zsl = 0.0_dp
-    zrel = relaxed_bed(zpd, Hobs, RHO_I)
+    select case (trim(lambda_bed))
+    case ("file");     zfix = taub_read_lambda_bed(trim(lambda_path()), nx, ny)
+    case ("relaxed");  zfix = relaxed_bed(zpd, Hobs, RHO_I)
+    case ("current")
+    case default;      error stop "plastic_coulomb_calib: lambda_bed must be file, relaxed or current"
+    end select
     sig = max(sigma_min, sigma_rel*Hobs)
     call nc_read(region_file, "region", reg)
     nreg = nc_size(region_file, "region")
@@ -129,6 +139,7 @@ program plastic_coulomb_calib
     write(*,"(a,f6.1,a,i0,a,i0,a,i0,a,i0,a)") "# plastic_coulomb_calib: "//trim(hist)//", 0 and ", time_ka, " ka: ", &
         count(m0), " and ", count(ml), " ice cells; pd_region ", pd_region, ", ", nt, " targets; lambda on the "// &
         trim(lambda_bed)//" bed"
+    if (trim(lambda_bed) == "file") write(*,"(a)") "# lambda bed: "//trim(lambda_path())
     if (pd_region > 0) write(*,"(a,i0,a,f8.3,a)") "# observed present day, region ", pd_region, ": ", sle_obs, " m SLE"
 
     allocate(lcf_pd(nh, nl), chi2n(nh, nl), sle_pd(nh, nl), lcf(nreg, nh, nl), sle(nreg, nh, nl), hmax(nreg, nh, nl))
@@ -200,7 +211,7 @@ contains
         allocate(mu(nx, ny))
         call taub_set_coulomb(tb, reg, rid, lc, p, HN(jh), delta, lam_min(jl), zb0, zb1, trim(region_file), &
                               "calibration c_f")
-        if (trim(lambda_bed) == "relaxed") call taub_set_lambda_fixed(tb, zrel)
+        if (allocated(zfix)) call taub_set_lambda_fixed(tb, zfix)
         call taub_set_smooth(tb, 1000.0_dp*smooth_km, dx, dy)
         call taub_mu(tb, zb, zsl, mu)
         call plastic_solve_coulomb(ps(tt), zb, zsl, mu, mask, law(jh), warm=.false., stat=st, margin_frac=frac)
@@ -293,6 +304,16 @@ contains
         nbis(jh, jl) = nb
     end subroutine fit_lgm
 
+
+    function lambda_path() result(f)
+        ! lambda_file with {grid_name} replaced by grid_name
+        character(len=512) :: f
+        f = lambda_file
+        if (index(f, "{grid_name}") > 0) then
+            if (len_trim(grid_name) == 0) error stop "plastic_coulomb_calib: lambda_file has {grid_name}: set grid_name"
+            call nml_replace(f, "{grid_name}", trim(grid_name))
+        end if
+    end function lambda_path
 
     function law(jh) result(lw)
         ! The library's Coulomb law of H_N number jh (p and delta of the namelist).
