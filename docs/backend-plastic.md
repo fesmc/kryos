@@ -248,12 +248,13 @@ et al. 2020, as in Yelmo):
 
 $$
 \tau_b = c_f \, \lambda(z_b - z_{sl}) \, N_\mathrm{eff}, \quad
-N = \rho_i g H \left(1 - \frac{H_f}{H}\right)^{p}, \quad
+N = \rho_i g H \max\!\left[\left(1 - \frac{H_f}{H}\right)^{p}, \delta\right], \quad
 \frac{1}{N_\mathrm{eff}} = \frac{1}{N} + \frac{1}{\rho_i g H_N},
 $$
 
-N the effective pressure of Leguy et al. (2014) (H_f = (ρ_w/ρ_i) max(0, z_sl − z_b), N = 0
-at or below flotation), capped smoothly at ρ_i g `taub_HN`, and λ linear from
+N the effective pressure of Leguy et al. (2014) (H_f = (ρ_w/ρ_i) max(0, z_sl − z_b), the
+bracket 0 at or below flotation) with the floor δ = `taub_delta` (default 0.05) of the
+overburden, capped smoothly at ρ_i g `taub_HN`, and λ linear from
 `taub_lam_min` at a bed `taub_zb0` or more below sea level to 1 at `taub_zb1` or higher
 (`kryos_plastic_bed`, the same λ as `coulomb_n`). λ is geology, N (through H_f) the ocean
 connection: with `taub_lambda_bed = "relaxed"` (default) λ is a fixed field of the
@@ -262,7 +263,17 @@ relative to present sea level), computed at init and held in time, so that the
 isostatically depressed interior beds of today's ice sheets do not read as marine;
 `"current"` takes the bed and sea level of each solve. In the plastic equation this is
 a slope, |∇z_s| = c_f λ N_eff/(ρ_i g H): the constant c_f λ where H ≪ H_N on land (a wedge),
-0 at flotation, and for H ≫ H_N the Nye profile of τ_b = c_f λ ρ_i g H_N. Nothing depends on
+c_f λ δ H_N/(δ H + H_N) at flotation, and for H ≫ H_N the Nye profile of τ_b = c_f λ ρ_i g H_N.
+
+The floor makes the solve well posed. Without it (N = 0 at flotation) the slope vanishes at
+flotation, and a marine trough whose flotation surface rises inland (Weddell, Ross) can sit
+wholly at flotation or grounded above it: the discrete problem has several solutions, and
+which one the sweep reaches flips on decimetre changes of the bed. Coupled to VILMA2 (the
+elastic and geoid response to the change) the Antarctic mass then jumped by up to
+1.5 × 10⁶ Gt per 100-yr step, alternating between the two states. With δ > 0 every grounded
+cell has a positive slope, the solution is unique and continuous in the bed and sea level
+(the library's uniqueness argument, PlasticIceSheet docs/fortran-port.md); δ = 0.05 removed
+the jumps (max |ΔM| 2.5 × 10⁵ Gt, no alternation), δ = 0.02 did not. Nothing depends on
 time explicitly. The backend computes μ = c_f λ on the bed and sea level of each solve and
 calls the library's `plastic_solve_coulomb` (mode `"surface"` only), which returns τ_b
 (output `tau_b`; `taub_mu` is μ).
@@ -430,6 +441,7 @@ the core keys of `[instance]` (`backend`, `grid`, `dt`, `out_2D`, ...).
 | `taub_smooth_km` | 50.0 | [km] Gaussian sd of the τ_b smoothing (`"coulomb"`: of μ); 0 = none |
 | `taub_region_file`, `taub_cf_file` | `""`, `""` | `"coulomb"`: the region map, c_f per region |
 | `taub_HN`, `taub_p` | 0.0, 1.0 | `"coulomb"`: [m] cap of N (required, > 0); exponent of N in [0, 1] |
+| `taub_delta` | 0.05 | `"coulomb"`: floor of N as a fraction of the overburden ρ_i g H, in (0, 1] |
 | `taub_lam_min`, `taub_zb0`, `taub_zb1` | 1.0, -300.0, 200.0 | `"coulomb"`: λ (1 = no bed dependence) |
 | `taub_lambda_bed` | `"relaxed"` | `"coulomb"`: the bed of λ, `"relaxed"` (fixed) or `"current"` |
 | `rheo_A`, `rheo_n` | 0.0, 3.0 | Glen rate factor [Pa-n yr-1] (0: no closure), exponent |

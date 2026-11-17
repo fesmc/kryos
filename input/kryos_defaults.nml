@@ -245,7 +245,11 @@
                                                ! log; {domain}, {grid_name})
     taub_HN            = 0.0                   ! [m] "coulomb": the cap of N, N_max = rho_i g taub_HN (1/N_eff = 1/N +
                                                ! 1/N_max); required (> 0)
-    taub_p             = 1.0                   ! "coulomb": N = rho_i g H (1 - H_f/H)^taub_p (Leguy et al. 2014), in [0, 1]
+    taub_p             = 1.0                   ! "coulomb": N = rho_i g H max((1 - H_f/H)^taub_p, taub_delta) (Leguy et al.
+                                               ! 2014, with a floor), in [0, 1]
+    taub_delta         = 0.05                  ! "coulomb": floor of N, a fraction of the overburden rho_i g H, in (0, 1]
+                                               ! (> 0: a grounded slope everywhere, the solution unique and continuous
+                                               ! in the bed and sea level; 0.02 too small for the coupled runs)
     taub_lam_min       = 1.0                   ! "coulomb": lambda at a bed taub_zb0 or lower (1 = no bed dependence)
     taub_zb0           = -300.0                ! [m] "coulomb": bed above sea level (z_bed - z_sl) of taub_lam_min
     taub_zb1           = 200.0                 ! [m] "coulomb": of lambda = 1 (linear between)
