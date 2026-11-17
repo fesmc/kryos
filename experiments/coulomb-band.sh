@@ -93,7 +93,7 @@ JSON
     mkdir -p maps; cp -n "$KRYOS_DATA"/maps/grid_*.txt "$KRYOS_DATA"/maps/scrip-*.nc maps/ 2> /dev/null || true
     for p in "${POINTS[@]}"; do
         read -r hn lam cl cg ce ca cp cb <<< "$p"
-        cf=$W/cf/cf-H$(printf %03d $hn).nc
+        cf=$W/cf/cf-${PREFIX#tau-}-H$(printf %03d $hn).nc       # per set: sets may share W
         if [ "$SET" = band ]; then           # v1 maps: Eurasia is region 3; region 6 (none on v1) takes Eurasia's c_f
             kryos_jl "$T/plastic_cf_regions.jl" cf "$cf" "$cl" "$cg" "$ce" "$ca" "$cp" "$ce"
         else
