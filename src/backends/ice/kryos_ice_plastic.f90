@@ -32,7 +32,9 @@ module kryos_ice_plastic
     use kryos_plastic_margin, only: margin_t, margin_init, margin_at, margin_footprint, margin_interp_code
     use kryos_plastic_taub,   only: taub_t, taub_method_code, TAUB_M_CONST, TAUB_M_FILE, TAUB_M_DOMAINS, TAUB_M_COULOMB, &
                                     taub_set_const, taub_read_field, taub_read_domains, taub_read_scale, taub_at, &
-                                    taub_read_domain_factor, taub_set_smooth, taub_read_coulomb, taub_mu
+                                    taub_read_domain_factor, taub_set_smooth, taub_read_coulomb, taub_mu, &
+                                    taub_set_lambda_fixed
+    use kryos_plastic_bed,    only: relaxed_bed, RHO_M
     use kryos_plastic_friction, only: friction_t, friction_law, friction_map
     use plastic_ice,     only: plastic_par_t, plastic_t, plastic_glen_t, plastic_sliding_t, plastic_init, &
                                plastic_solve, plastic_solve_coulomb, plastic_coulomb_taub, plastic_solve_smb, &
@@ -69,6 +71,7 @@ module kryos_ice_plastic
         real(dp), allocatable :: z_bed(:,:), z_sl(:,:)   ! [m] the bed and sea level of the last solve
         real(dp), allocatable :: tau_b(:,:), sd(:,:)     ! [Pa], [m] its basal shear stress and signed distance
         real(dp), allocatable :: mu(:,:)                 ! taub_method = "coulomb": c_f lambda of the last solve
+        character(len=8)  :: lambda_bed = "relaxed"      ! "coulomb": lambda on the relaxed present-day bed | "current"
         logical,  allocatable :: mask(:,:)               ! its ice mask
         real(dp), allocatable :: mfrac(:,:)              ! margin_position = "sdist": the margin's distance from the
                                                          ! ice-free cell centres [fraction of the spacing]; else
@@ -143,6 +146,13 @@ contains
         if (self%tb%method == TAUB_M_COULOMB) then
             allocate(self%mu(self%nx, self%ny))
             self%mu = 0.0_dp
+            if (trim(self%lambda_bed) == "relaxed") then
+                ! lambda fixed in time on the reference bed relaxed by local isostasy (relative to present sea level)
+                call taub_set_lambda_fixed(self%tb, relaxed_bed(self%z_bed_ref, self%H_ice_pd, self%par%rho_i))
+                call log_msg(LOG_INFO, "kryos_ice_plastic", "taub_lambda_bed relaxed: lambda fixed on z_bed_ref + "// &
+                             "(rho_i/"//to_str(RHO_M)//") H_ice_pd, "//to_str(count(self%tb%lam < 1.0_dp))// &
+                             " cells below 1", "instance "//trim(self%name))
+            end if
         end if
         if (self%implied) then
             allocate(self%divq(self%nx, self%ny), self%q_land(self%nx, self%ny), self%q_marine(self%nx, self%ny), &
@@ -883,6 +893,7 @@ contains
         call rd_r("taub_lam_min", taub_lam_min)
         call rd_r("taub_zb0", taub_zb0)
         call rd_r("taub_zb1", taub_zb1)
+        call rd_s("taub_lambda_bed", self%lambda_bed)
         ! rheology and sliding (drive = "smb"; mass_balance = "implied")
         call rd_r("rheo_A", rheo_A)
         call rd_r("rheo_n", rheo_n)
@@ -971,6 +982,9 @@ contains
                 if (trim(self%par%mode) /= "surface") &
                     call fesm_error(proc, "taub_method = 'coulomb' needs mode = 'surface'", who//": mode = '"// &
                                     trim(self%par%mode)//"' (the library's Coulomb kernel is a surface kernel)")
+                if (trim(self%lambda_bed) /= "relaxed" .and. trim(self%lambda_bed) /= "current") &
+                    call fesm_error(proc, "taub_lambda_bed = '"//trim(self%lambda_bed)//"' is not recognised", &
+                                    who//"; use relaxed or current")
                 call substitute(taub_region_file, ctx)
                 call substitute(taub_cf_file, ctx)
                 call taub_read_coulomb(self%tb, trim(taub_region_file), trim(taub_cf_file), self%nx, self%ny, taub_p, &

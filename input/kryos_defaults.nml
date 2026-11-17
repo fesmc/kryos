@@ -247,6 +247,9 @@
     taub_lam_min       = 1.0                   ! "coulomb": lambda at a bed taub_zb0 or lower (1 = no bed dependence)
     taub_zb0           = -300.0                ! [m] "coulomb": bed above sea level (z_bed - z_sl) of taub_lam_min
     taub_zb1           = 200.0                 ! [m] "coulomb": of lambda = 1 (linear between)
+    taub_lambda_bed    = "relaxed"             ! "coulomb": the bed of lambda: "relaxed" (fixed in time: the reference
+                                               ! bed + (rho_i/3300) H_ice_pd, relative to present sea level) |
+                                               ! "current" (the bed and sea level of each solve)
     ! rheology and sliding (drive = "smb"; mass_balance = "implied")
     rheo_A             = 0.0                   ! [Pa-n yr-1] Glen rate factor; 0 = no velocity
     rheo_n             = 3.0                   ! Glen exponent

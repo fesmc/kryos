@@ -7,14 +7,17 @@ program test_plastic_coulomb
     !     expression);
     !   * mu = c_f(region) lambda: c_f by region id (not position), 0 off the regions, a region id without cells
     !     allowed; the smoothing keeps a uniform mu; from the files (region map, c_f table);
+    !   * a fixed lambda (taub_lambda_bed = "relaxed"): of the relaxed bed z_bed + (rho_i/3300) H, independent of the
+    !     bed and sea level of the solve;
     !   * a region of the map without c_f, p outside [0, 1], H_N <= 0 and taub_at stop (the program re-runs itself).
     ! Run from the repo root (files in tmp/test_plastic_coulomb).
 
     use precision, only: dp
     use ncio,      only: nc_create, nc_write_dim, nc_write
-    use kryos_plastic_bed,      only: bed_lambda
+    use kryos_plastic_bed,      only: bed_lambda, relaxed_bed
     use kryos_plastic_friction, only: friction_t, friction_map
     use kryos_plastic_taub,     only: taub_t, taub_set_coulomb, taub_read_coulomb, taub_mu, taub_set_smooth, taub_at, &
+                                      taub_set_lambda_fixed, &
                                       TAUB_M_COULOMB
 
     implicit none
@@ -127,6 +130,16 @@ contains
         call taub_mu(tb, zb, zsl, mu)
         call check("smoothing keeps a uniform mu and 0 off the regions", &
                    all(abs(mu(1:20, :) - 0.02_dp) < 1.0e-15_dp) .and. all(mu(21:, :) == 0.0_dp))
+        ! fixed lambda on the relaxed bed: a bed 400 m below sea level under 3300 m of ice relaxes to +510 m
+        call check("relaxed bed: z_bed + (rho_i/3300) H", &
+                   abs(relaxed_bed(-400.0_dp, 3300.0_dp, 910.0_dp) - 510.0_dp) < 1.0e-12_dp .and. &
+                   relaxed_bed(-400.0_dp, -5.0_dp, 910.0_dp) == -400.0_dp)
+        call taub_set_coulomb(tb, reg, [4], [log(0.02_dp)], 1.0_dp, 1000.0_dp, 0.1_dp, -300.0_dp, 200.0_dp, "map", "t")
+        zb = -400.0_dp
+        call taub_set_lambda_fixed(tb, relaxed_bed(zb, 0.0_dp*zb + 3300.0_dp, 910.0_dp))
+        call taub_mu(tb, -2000.0_dp + 0.0_dp*zb, zsl + 100.0_dp, mu)
+        call check("fixed lambda: of the relaxed bed (1 here), not of the solve's deep bed", &
+                   all(abs(mu(1:20, :) - 0.02_dp) < 1.0e-15_dp))
     end subroutine test_mu
 
     subroutine test_files()
