@@ -13,6 +13,9 @@ program test_ice_plastic
     !   * taub_method = "coulomb" (mode "surface", one region, H_N >> H: the wedge): the centre near c_f d (first
     !     order: within 15 %), tau_b of
     !     the library equal to c_f rho_i g N_eff, the same tau_b after a restart (PASS_RESTART recomputes it);
+    !   * taub_lambda_bed = "file" (lambda_min 0.5, z_lambda of {grid_name}_lambda_bed.nc): the backend's lambda and mu
+    !     bit for bit those of the calibration programs' path (taub_set_coulomb, taub_read_lambda_bed,
+    !     taub_set_lambda_fixed, taub_mu: tests/plastic_coulomb_{calib,scan,pd}.f90) on the same file;
     !   * margin_patches: a patch (two disks around another centre) in the west half (region id 1 of a map):
     !     the ice is the patch's there and the base's elsewhere, the footprint the base's and the patch's in
     !     the west.
@@ -26,6 +29,7 @@ program test_ice_plastic
     use kryos_ice,       only: ice_slot_t, ice_create, ice_init, ice_init_state, ice_update, ice_restart_write, &
                                ice_restart_read, ice_flotation, ice_end
     use kryos_ice_plastic, only: plastic_ice_t
+    use kryos_plastic_taub, only: taub_t, taub_set_coulomb, taub_read_lambda_bed, taub_set_lambda_fixed, taub_mu
 
     implicit none
 
@@ -39,6 +43,7 @@ program test_ice_plastic
     call write_inputs()
     call test_backend()
     call test_coulomb()
+    call test_lambda_file()
     call test_patch()
 
     if (nfail > 0) then
@@ -156,6 +161,29 @@ contains
         write(u,'(a)') '    taub_cf_file     = "'//dir//'/cf.nc"'
         write(u,'(a)') '    taub_HN          = 1.0e9'
         write(u,'(a)') '    taub_smooth_km   = 0.0'
+        write(u,'(a)') '    taub_lambda_file = "'//dir//'/{grid_name}_lambda_bed.nc"'
+        write(u,'(a)') '/'
+        close(u)
+        ! the bed of lambda (taub_lambda_bed = "file", the default): from -485 m in the west to 535 m in the east
+        call nc_create(dir//"/TEST_lambda_bed.nc")
+        call nc_write_dim(dir//"/TEST_lambda_bed.nc", "xc", x=x, units="km")
+        call nc_write_dim(dir//"/TEST_lambda_bed.nc", "yc", x=x, units="km")
+        call nc_write(dir//"/TEST_lambda_bed.nc", "z_lambda", lambda_bed_z(), dim1="xc", dim2="yc", units="m")
+        open(newunit=u, file=dir//"/par_coulomb_lam.nml", status="replace", action="write")
+        write(u,'(a)') '&ice_test'
+        write(u,'(a)') '    backend          = "plastic"'
+        write(u,'(a)') '    mode             = "surface"'
+        write(u,'(a)') '    margin_file      = "'//dir//'/margin.nc"'
+        write(u,'(a)') '    margin_var       = "H_ice"'
+        write(u,'(a)') '    margin_H_min     = 1.0'
+        write(u,'(a)') '    taub_method      = "coulomb"'
+        write(u,'(a)') '    taub_region_file = "'//dir//'/regions.nc"'
+        write(u,'(a)') '    taub_cf_file     = "'//dir//'/cf.nc"'
+        write(u,'(a)') '    taub_HN          = 1.0e9'
+        write(u,'(a)') '    taub_smooth_km   = 0.0'
+        write(u,'(a)') '    taub_lam_min     = 0.5'
+        write(u,'(a)') '    taub_lambda_bed  = "file"'
+        write(u,'(a)') '    taub_lambda_file = "'//dir//'/{grid_name}_lambda_bed.nc"'
         write(u,'(a)') '/'
         close(u)
     end subroutine write_inputs
@@ -205,6 +233,42 @@ contains
         call ice_end(ice)
         call ice_end(ice2)
     end subroutine test_coulomb
+
+    function lambda_bed_z() result(z)
+        real(dp) :: z(N, N)
+        integer :: i, j
+        do j = 1, N
+            do i = 1, N
+                z(i,j) = -500.0_dp + 15.0_dp*i + 2.0_dp*j
+            end do
+        end do
+    end function lambda_bed_z
+
+    subroutine test_lambda_file()
+        ! the backend's lambda and mu against the calibration programs' path on the same file
+        type(ice_slot_t)  :: ice
+        type(step_time_t) :: st
+        type(taub_t) :: tb
+        real(dp) :: mu(N, N)
+        integer  :: k
+
+        write(*,"(a)") "taub_lambda_bed = file"
+        call make_ice(ice, "par_coulomb_lam.nml")
+        st = step_time_t(t0=0.0_dp, t1=0.0_dp, t_eval=0.0_dp, dt=500.0_dp, dtt=500.0_dp, tick=0)
+        call ice_init_state(ice, st, PASS_INIT)
+        call taub_set_coulomb(tb, reshape([(1, k = 1, N*N)], [N, N]), [1], [log(CF)], 1.0_dp, 1.0e9_dp, 0.05_dp, &
+                              0.5_dp, -300.0_dp, 200.0_dp, "regions", "calibration c_f")
+        call taub_set_lambda_fixed(tb, taub_read_lambda_bed(dir//"/TEST_lambda_bed.nc", N, N))
+        call taub_mu(tb, 0.0_dp*mu + 100.0_dp, 0.0_dp*mu, mu)
+        select type (c => ice%c)
+        type is (plastic_ice_t)
+            call check("lambda bit for bit the calibration programs' (and spans 0.5 to 1)", &
+                       all(c%tb%lam == tb%lam) .and. minval(c%tb%lam) == 0.5_dp .and. maxval(c%tb%lam) == 1.0_dp .and. &
+                       any(c%tb%lam > 0.5_dp .and. c%tb%lam < 1.0_dp))
+            call check("mu = c_f lambda bit for bit the calibration programs'", all(c%mu == mu))
+        end select
+        call ice_end(ice)
+    end subroutine test_lambda_file
 
     subroutine test_patch()
         type(ice_slot_t)  :: ice

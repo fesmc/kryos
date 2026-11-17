@@ -5,9 +5,9 @@
 # map a run used; every cell has a region): NAIS = Laurentide, Fennoscandia (with the British-Irish ice), BarentsKara, Greenland
 # on NH-32KM (EIS = Fennoscandia + BarentsKara in the table); Antarctica on ANT-16KM; Patagonia on PAT-PAL-8KM, in the total
 # only; a run's ice_nor.nc, ice_ant.nc, ice_pat.nc (H_ice, z_bed, z_sl; any record times); the references the FesmData
-# IceHistory products of the grids. SLE = V_af rho_i / (rho_sw A_ocean) (910, 1028 kg m-3, 3.618e14 m2). A label starting with
-# "tau-CB-H" (coulomb-band.sh band) is coloured by its H_N, dashed on E1D-ES1-E117; "tau-CBS-H" (split) by its H_N, solid and
-# thick; "tau-CBD-H" (delta) by its H_N, dash-dot and thick; "tau-CBDC-H" (centre) by its H_N, dotted and thick. With ice_*_plastic.nc: the mean tau_b over each ice sheet. coupled.md: per series the 20 ka and MIS 3 (30-60 ka, mean of
+# IceHistory products of the grids. SLE = V_af rho_i / (rho_sw A_ocean) (910, 1028 kg m-3, 3.618e14 m2). A Coulomb run labelled
+# "tau-<set>-H<H_N>..." (set CB, CBS, CBD, CBF, ...) is coloured by its H_N and styled by its set, thick (the band set CB thin,
+# dashed on E1D-ES1-E117); other labels grey dotted. With ice_*_plastic.nc: the mean tau_b over each ice sheet. coupled.md: per series the 20 ka and MIS 3 (30-60 ka, mean of
 # the records) volume per ice sheet and the maximum thickness at 20 ka. Writes coupled_esl.png, coupled_taub.png, coupled.md.
 using CairoMakie, NCDatasets, Printf, Statistics
 
@@ -73,14 +73,19 @@ end
 
 refs = [("PaleoMIST", ref_series("PaleoMIST"), :black, :solid), ("GLAC-1D", ref_series("GLAC1D"), :black, :dash)]
 R = [(lbl, run_series(dir)...) for (lbl, dir) in runs]
-cb(l) = startswith(l, "tau-CB-H") || startswith(l, "tau-CBS-H") || startswith(l, "tau-CBD-H") ||
-        startswith(l, "tau-CBDC-H")
-hns = sort(unique([parse(Int, match(r"H(\d+)", l)[1]) for (l, _, _, _) in R if cb(l)]))
-cols = Dict(h => Makie.wong_colors()[k] for (k, h) in enumerate(hns))
-style(l) = !cb(l) ? (:gray50, :dot, 1.6) : (cols[parse(Int, match(r"H(\d+)", l)[1])],
-           startswith(l, "tau-CBD-H") ? :dashdot : startswith(l, "tau-CBDC-H") ? :dot :
-           startswith(l, "tau-CBS-H") || !occursin("E117", l) ? :solid : :dash,
-           startswith(l, "tau-CB-H") ? 1.6 : 3.0)
+# Coulomb runs "tau-<set>-H<H_N>[...]": colour by H_N, line style by set (in order of first appearance; the band set "CB"
+# thin, dashed on E1D-ES1-E117); any other label grey dotted.
+cbm(l) = match(r"^tau-(CB[A-Z0-9]*)-H(\d+)", l)
+hns = sort(unique([parse(Int, cbm(l)[2]) for (l, _, _, _) in R if cbm(l) !== nothing]))
+cols = Dict(h => Makie.wong_colors()[mod1(k, 7)] for (k, h) in enumerate(hns))
+sets = unique([cbm(l)[1] for (l, _, _, _) in R if cbm(l) !== nothing && cbm(l)[1] != "CB"])
+const SET_LS = [:solid, :dashdot, :dot, :dashdotdot, (:dash, :dense), (:dot, :loose)]
+function style(l)
+    m = cbm(l); m === nothing && return (:gray50, :dot, 1.6)
+    c = cols[parse(Int, m[2])]
+    m[1] == "CB" && return (c, occursin("E117", l) ? :dash : :solid, 1.6)
+    (c, SET_LS[mod1(findfirst(==(m[1]), sets), length(SET_LS))], 3.0)
+end
 
 fig = Figure(size = (1900, 820))
 panels = ["NAIS", "Fennoscandia", "BarentsKara", "Greenland", "Antarctica", "total"]

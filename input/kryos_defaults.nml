@@ -253,9 +253,13 @@
     taub_lam_min       = 1.0                   ! "coulomb": lambda at a bed taub_zb0 or lower (1 = no bed dependence)
     taub_zb0           = -300.0                ! [m] "coulomb": bed above sea level (z_bed - z_sl) of taub_lam_min
     taub_zb1           = 200.0                 ! [m] "coulomb": of lambda = 1 (linear between)
-    taub_lambda_bed    = "relaxed"             ! "coulomb": the bed of lambda: "relaxed" (fixed in time: the reference
-                                               ! bed + (rho_i/3300) H_ice_pd, relative to present sea level) |
-                                               ! "current" (the bed and sea level of each solve)
+    taub_lambda_bed    = "file"                ! "coulomb": the bed of lambda: "file" (fixed in time: z_lambda of
+                                               ! taub_lambda_file, relative to present sea level; the same for every
+                                               ! Earth and the calibration) | "relaxed" (fixed in time: the reference bed
+                                               ! + (rho_i/3300) H_ice_pd; depends on the Earth through a refcorr
+                                               ! reference topography) | "current" (the bed and sea level of each solve)
+    taub_lambda_file   = "kryos_data/plastic/{grid_name}_lambda_bed.nc"   ! "coulomb", taub_lambda_bed = "file": z_lambda
+                                               ! (x, y) [m] (tools/levante/plastic_lambda_bed.jl; {domain}, {grid_name})
     ! rheology and sliding (drive = "smb"; mass_balance = "implied")
     rheo_A             = 0.0                   ! [Pa-n yr-1] Glen rate factor; 0 = no velocity
     rheo_n             = 3.0                   ! Glen exponent

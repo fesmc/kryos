@@ -257,11 +257,19 @@ bracket 0 at or below flotation) with the floor δ = `taub_delta` (default 0.05)
 overburden, capped smoothly at ρ_i g `taub_HN`, and λ linear from
 `taub_lam_min` at a bed `taub_zb0` or more below sea level to 1 at `taub_zb1` or higher
 (`kryos_plastic_bed`, the same λ as `coulomb_n`). λ is geology, N (through H_f) the ocean
-connection: with `taub_lambda_bed = "relaxed"` (default) λ is a fixed field of the
-reference bed relaxed by local isostasy, z_b,ref + (ρ_i/ρ_m) H_ice,pd (ρ_m = 3300 kg m⁻³,
-relative to present sea level), computed at init and held in time, so that the
-isostatically depressed interior beds of today's ice sheets do not read as marine;
-`"current"` takes the bed and sea level of each solve. In the plastic equation this is
+connection. With `taub_lambda_bed = "file"` (default) λ is a fixed field of the bed
+`z_lambda` (x, y) of `taub_lambda_file` (default
+`kryos_data/plastic/{grid_name}_lambda_bed.nc`), relative to present sea level, read at init and
+held in time: one field per grid, the same for every Earth and for the calibration programs
+(`tests/plastic_coulomb_{calib,scan,pd}.f90`, `lambda_file`, the same reader). The files of
+`tools/levante/plastic_lambda_bed.jl` hold the present-day bed relaxed by local isostasy,
+z_b + (ρ_i/ρ_m) H_ice (ρ_m = 3300 kg m⁻³) of the FesmData topography (GEBCO 2026; Antarctica
+BedMachine v4), so that the isostatically depressed interior beds of today's ice sheets do not
+read as marine. `"relaxed"` computes that field from the run's own reference topography,
+z_b,ref + (ρ_i/ρ_m) H_ice,pd: with a refcorr reference topography (+ r of the Earth) λ then
+depends on the Earth (over Hudson Bay r is +150 to +264 m on E1D-ES1-E117, which hardens a bed
+the calibration on GEBCO saw as soft; the runs up to C5b). `"current"` takes the bed and sea
+level of each solve. In the plastic equation this is
 a slope, |∇z_s| = c_f λ N_eff/(ρ_i g H): the constant c_f λ where H ≪ H_N on land (a wedge),
 c_f λ δ H_N/(δ H + H_N) at flotation, and for H ≫ H_N the Nye profile of τ_b = c_f λ ρ_i g H_N.
 
@@ -443,7 +451,8 @@ the core keys of `[instance]` (`backend`, `grid`, `dt`, `out_2D`, ...).
 | `taub_HN`, `taub_p` | 0.0, 1.0 | `"coulomb"`: [m] cap of N (required, > 0); exponent of N in [0, 1] |
 | `taub_delta` | 0.05 | `"coulomb"`: floor of N as a fraction of the overburden ρ_i g H, in (0, 1] |
 | `taub_lam_min`, `taub_zb0`, `taub_zb1` | 1.0, -300.0, 200.0 | `"coulomb"`: λ (1 = no bed dependence) |
-| `taub_lambda_bed` | `"relaxed"` | `"coulomb"`: the bed of λ, `"relaxed"` (fixed) or `"current"` |
+| `taub_lambda_bed` | `"file"` | `"coulomb"`: the bed of λ, `"file"` (fixed, `taub_lambda_file`), `"relaxed"` (fixed, the reference topography: Earth-dependent) or `"current"` |
+| `taub_lambda_file` | `"kryos_data/plastic/{grid_name}_lambda_bed.nc"` | `"coulomb"`, `"file"`: `z_lambda` (x, y) [m] ({domain}, {grid_name}) |
 | `rheo_A`, `rheo_n` | 0.0, 3.0 | Glen rate factor [Pa-n yr-1] (0: no closure), exponent |
 | `slide_law` | `"none"` | see [Flow closure](#flow-closure) |
 | `slide_beta`, `slide_m` | 0.0, 1.0 | linear, weertman coefficient; stress exponent |
