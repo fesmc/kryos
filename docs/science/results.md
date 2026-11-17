@@ -5,7 +5,7 @@ page-layout: full
 ---
 
 Every scored simulation, on one scale: what each changes against its parent ([Methods](methods.md#the-ladder)) and how
-well it fits ([Data and scores](data-scores.md)). Status 2026-11-16.
+well it fits ([Data and scores](data-scores.md)). Status 2026-11-17.
 
 **Columns.** **log L**, the log-likelihood over the six RSL groups, higher is better (differences of a few tens are
 large); **passed**, the groups within the bar, of 7 (RSL and ESL) or of 9 with the GNSS rates; **RMSE** over all RSL
@@ -97,10 +97,22 @@ Greenland 7.9, ESL 7.04; under the bar of our ice, ESL ≤ 3, every Coulomb run 
 | | `tau-CB-H100 \| E1D-ES1-E117` | | done | −8910 | 6/9 | 17.5 | −1.1 / 1.4 / 0.5 / 5.0 / 2.6 / −1.4 | 7.4 / 6.4 | 6.3 |
 | | `tau-CB-H300 \| E1D-ES1-E117` | | done | −8840 | 6/9 | 16.7 | −1.9 / 1.2 / −0.3 / 4.1 / 3.0 / −1.7 | 6.9 / 6.6 | 4.6 |
 | | `tau-CB-H1000 \| E1D-ES1-E117` | | done | −8829 | 5/9 | 15.8 | −1.1 / 0.9 / −1.0 / 3.9 / 4.0 / −1.1 | 7.0 / 8.6 | 5.6 |
+| C3 | `tau-CBS-H1000 \| E1D-ES1-E117` | C2 H1000: Eurasia split into Fennoscandia and BarentsKara | done | −8811 | 6/9 | 14.0 | −1.2 / 0.9 / 0.6 / 2.2 / 4.0 / −2.1 | 6.4 / 8.6 | 5.8 |
+| | `tau-CBS-H2000 \| E1D-ES1-E117` | H_N 2000 m, λ_min 1.0 | done | −8850 | 6/9 | 14.0 | −0.2 / 0.8 / 1.0 / 2.3 / 4.7 / −0.9 | 6.8 / 11.0 | 5.5 |
+| | `tau-CBS-H3000 \| E1D-ES1-E117` | H_N 3000 m, λ_min 1.0 | done | −8871 | 6/9 | 14.3 | 0.5 / 0.8 / 1.2 / 2.3 / 5.0 / −1.3 | 7.0 / 12.8 | 6.3 |
 
 The far field passes on every run (D1: 5.0) and log L rises with H_N on both Earths; Barents fails on all (too much
 Eurasian ice at 20 ka, 20-21 m against PaleoMIST's 18), Antarctica worsens with H_N. A larger H_N lowers τ_b where the
 ice is thin: less MIS 3 ice (NAIS 26 instead of 31 m SLE at H_N 1000) and a τ_b that drops with the deglacial ice.
+
+C3 splits Eurasia's c_f (region maps v2): BarentsKara (the Barents and Kara seas with their islands) and Fennoscandia
+(with the British-Irish ice), each calibrated to PaleoMIST's 20 ka volume (6.6 and 11.2 m; lgm-calib-v2, NAIS,
+Greenland and Antarctica as before). With one c_f, Fennoscandia carried 15 m and BarentsKara 5-6 m at 20 ka: too high
+RSL in the White Sea and on Kola, too low on Franz Josef Land. The split raises BarentsKara's c_f and lowers
+Fennoscandia's (H_N 1000: 0.0216 and 0.0106 against 0.0151); online they carry 7.2-7.5 and 12.2-12.5 m. Barents passes
+(I 3.9 → 2.2) and C3 at H_N 1000 has the best log L of the Coulomb runs (−8811, against −8801 for PaleoMIST's ice on
+the same Earth). H_N 2000 and 3000 (λ_min 1.0, the most the band allows) lose log L again: Antarctica and Hudson Bay's
+GNSS worsen, and the domes reach 5.0-5.3 km (NAIS) and 7.2-7.4 km (Antarctica).
 
 ## Ensembles
 
@@ -169,6 +181,7 @@ The runs are on AWI's albedo:
 | I1-I8 | `/albedo/work/user/alrobi001/kryos-work/kryos_data/refcorr/<ice>_<earth>`; scores `kryos-work/refs-test/ens/iter_01/scores.csv` |
 | T1, D1 | `/albedo/work/user/alrobi001/kryos-work/runs/pm-online/gowan`, `.../pdfac` |
 | C1, C2 | `/albedo/work/projects/p_forclima/kryos-work/coulomb-taub/coupled/runs/tau-CB-H<H_N>_<Earth>`; scores `.../coupled/score/iter_01/scores.csv` |
+| C3 | `/albedo/work/projects/p_forclima/kryos-work/coulomb-taub/split/runs/tau-CBS-H<H_N>_E1D-ES1-E117`; scores `.../split/score/iter_01/scores.csv`; calibration `.../coulomb-taub/lgm-calib-v2` |
 | D2, E2 | `/albedo/work/user/alrobi001/kryos-plastic/kryos/runs/ens-v2/iter_01/<m>` |
 | D3 | `/albedo/work/user/alrobi001/kryos-work/runs/res16/m000-NH16` |
 | E1 | `/albedo/work/projects/p_forclima/kryos-work/levante/ens-v1` (copied from Levante) |
