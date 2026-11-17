@@ -7,7 +7,7 @@
 # only; a run's ice_nor.nc, ice_ant.nc, ice_pat.nc (H_ice, z_bed, z_sl; any record times); the references the FesmData
 # IceHistory products of the grids. SLE = V_af rho_i / (rho_sw A_ocean) (910, 1028 kg m-3, 3.618e14 m2). A label starting with
 # "tau-CB-H" (coulomb-band.sh band) is coloured by its H_N, dashed on E1D-ES1-E117; "tau-CBS-H" (split) by its H_N, solid and
-# thick; "tau-CBD-H" (delta) by its H_N, dash-dot and thick. With ice_*_plastic.nc: the mean tau_b over each ice sheet. coupled.md: per series the 20 ka and MIS 3 (30-60 ka, mean of
+# thick; "tau-CBD-H" (delta) by its H_N, dash-dot and thick; "tau-CBDC-H" (centre) by its H_N, dotted and thick. With ice_*_plastic.nc: the mean tau_b over each ice sheet. coupled.md: per series the 20 ka and MIS 3 (30-60 ka, mean of
 # the records) volume per ice sheet and the maximum thickness at 20 ka. Writes coupled_esl.png, coupled_taub.png, coupled.md.
 using CairoMakie, NCDatasets, Printf, Statistics
 
@@ -73,11 +73,13 @@ end
 
 refs = [("PaleoMIST", ref_series("PaleoMIST"), :black, :solid), ("GLAC-1D", ref_series("GLAC1D"), :black, :dash)]
 R = [(lbl, run_series(dir)...) for (lbl, dir) in runs]
-cb(l) = startswith(l, "tau-CB-H") || startswith(l, "tau-CBS-H") || startswith(l, "tau-CBD-H")
+cb(l) = startswith(l, "tau-CB-H") || startswith(l, "tau-CBS-H") || startswith(l, "tau-CBD-H") ||
+        startswith(l, "tau-CBDC-H")
 hns = sort(unique([parse(Int, match(r"H(\d+)", l)[1]) for (l, _, _, _) in R if cb(l)]))
 cols = Dict(h => Makie.wong_colors()[k] for (k, h) in enumerate(hns))
 style(l) = !cb(l) ? (:gray50, :dot, 1.6) : (cols[parse(Int, match(r"H(\d+)", l)[1])],
-           startswith(l, "tau-CBD-H") ? :dashdot : startswith(l, "tau-CBS-H") || !occursin("E117", l) ? :solid : :dash,
+           startswith(l, "tau-CBD-H") ? :dashdot : startswith(l, "tau-CBDC-H") ? :dot :
+           startswith(l, "tau-CBS-H") || !occursin("E117", l) ? :solid : :dash,
            startswith(l, "tau-CB-H") ? 1.6 : 3.0)
 
 fig = Figure(size = (1900, 820))
