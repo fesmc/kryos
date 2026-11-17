@@ -1,7 +1,7 @@
 #!/bin/bash
 # Coupled runs of the Coulomb law (taub_method = "coulomb"; docs/backend-plastic.md) along the feasible band of the LGM
 # calibration (tests/plastic_coulomb_calib.f90): PlasticIceSheet online on VILMA2, 80 ka to 0, as D1 (tau-PMIST-PD |
-# E1D-PMIST: the same par file, margin chronology, grids and output) but with the Coulomb law. Three sets:
+# E1D-PMIST: the same par file, margin chronology, grids and output) but with the Coulomb law. Four sets:
 #
 #   experiments/coulomb-band.sh setup <set>                  run folder, c_f files and par files of the set
 #   experiments/coulomb-band.sh submit <set> [<name> ...]    runme jobs (default all of the set)
@@ -21,6 +21,10 @@
 #          taub_delta 0.05, and c_f of the calibration lgm-calib-v3 (lgm-calib-v2 with the floor); H_N 1000 m, lambda_min
 #          0.75 (C3's H1000) and H_N 300 m, lambda_min 0.5 (C2's H300); Patagonia as split; out_2D every 2.5 kyr, every
 #          500 yr from 30 ka
+#   centre tau-CBDC-H<H_N> | E1D-ES1-E117 (C5b; W default $KRYOS_WORK/coulomb-taub/delta): delta on the centre line of the
+#          band of lgm-calib-v3 (the Antarctic 20 ka excess near 12.5 m; lgm-calib-v3/fine: lambda_min in steps of 0.02):
+#          H_N 1000 m with lambda_min 0.34, H_N 300 m with 0.24; Patagonia takes Fennoscandia's c_f (lgm-calib has no
+#          Eurasia at these points)
 #   band and split were run before the floor (N = 0 at flotation); with this kryos they take the default taub_delta 0.05.
 #
 #   all    taub_lambda_bed "relaxed", taub_p 1, taub_smooth_km 0 (as the calibration). Earths: E1D-PMIST (Gowan's 1-D, r of
@@ -32,7 +36,7 @@
 # each on 64 threads (D1: 7.4 min).
 set -euo pipefail
 X=$(cd "$(dirname "$(readlink -f "$0")")" && pwd); T=$X/../tools/levante; . "$T/env.sh"
-[ $# -ge 2 ] || { sed -n '2,32p' "$0"; exit 1; }
+[ $# -ge 2 ] || { sed -n '2,36p' "$0"; exit 1; }
 SET=$2
 BASE=${BASE:-/albedo/work/user/alrobi001/kryos-work/runs/pm-online/par_pdfac.nml}
 R_PMIST=${R_PMIST:-/albedo/work/user/alrobi001/kryos-work/kryos_data/refcorr/PaleoMIST-1D}
@@ -60,7 +64,14 @@ case $SET in
         # Eurasia), BarentsKara (lgm-calib-v3)
         POINTS=("1000 0.75 0.008536 0.022060 0.010375 0.019212 0.015105 0.019428"
                 "300 0.5 0.019699 0.044263 0.021662 0.043037 0.033608 0.047985") ;;
-    *) echo "unknown set $SET (band, split, delta)"; exit 1 ;;
+    centre)
+        W=${W:-$KRYOS_WORK/coulomb-taub/delta}; PREFIX=tau-CBDC; REGIONS=taub_regions_v2; EARTHS=(E1D-ES1-E117)
+        OUT2D="'times'|'-80000:2500:0, -30000:500:0'"; WALL=01:30:00; DELTA=0.05
+        # H_N  lambda_min  c_f: Laurentide, Greenland, Fennoscandia, Antarctica (lgm-calib-v3/fine/calib_*.nc), Patagonia
+        # (Fennoscandia's), BarentsKara (lgm-calib-v3/fine)
+        POINTS=("1000 0.34 0.011105 0.022204 0.012104 0.021030 0.012104 0.035994"
+                "300 0.24 0.024691 0.044464 0.024552 0.045971 0.024552 0.082073") ;;
+    *) echo "unknown set $SET (band, split, delta, centre)"; exit 1 ;;
 esac
 R=$W/runs
 R_E117=${R_E117:-$KRYOS_WORK/coulomb-taub/coupled/refcorr/ice-PMIST_E1D-ES1-E117}
