@@ -76,6 +76,11 @@ The simulations of the [results](science/results.md) are made by these scripts, 
 | [plastic_ensemble_v2.toml](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_ensemble_v2.toml) | Config of ensemble v2: v1 plus the Earth ([earth]: global and regional log10-viscosity shifts of the 3-D Earth), the error model of ens-v1, all groups judging |
 | [plastic_earth_shift.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_earth_shift.jl) | Included by `plastic_esmda.jl`: the Earth parameters of ens-v2, the region masks (`plastic_ensemble.jl earth-regions`) and the viscosity shift file of a member (VILMA2 `visc_shift_file`; `earth-shift`) |
 | [plastic_ensemble_v1.toml](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_ensemble_v1.toml) | Config of ensemble v1, wave 1: NH-32KM, ANT-16KM and PAT-PAL-8KM on the 3-D Earth, 8 groups, per-group model error |
+| [plastic_cf_regions.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_cf_regions.jl) | The region maps of the Coulomb law (`taub_region_file`; Laurentide, Greenland, Eurasia, Antarctica, Patagonia from the geography of Gowan's domains) per grid into `$KRYOS_DATA/plastic`, and c_f files (`taub_cf_file`) |
+| [tests/plastic_coulomb_pd.f90](https://github.com/fesmc/kryos/blob/main/tests/plastic_coulomb_pd.f90) | The present-day test of the Coulomb law: for each H_N x lambda_min of the lists the c_f of the least misfit to the present thickness (setup of `plastic_taub_fit`), against Gowan's tau_b x the domain factors; `plastic=1` |
+| [plastic_coulomb_pd_report.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_coulomb_pd_report.jl) | Its table and figures: thickness error maps of the best case and the reference, chi2/n against H_N, a profile |
+| [tests/plastic_coulomb_scan.f90](https://github.com/fesmc/kryos/blob/main/tests/plastic_coulomb_scan.f90) | A c_f x H_N x lambda_min scan of the Coulomb law at one slice of a margin history, on its bed, without an Earth; `plastic=1` |
+| [plastic_coulomb_lgm.jl](https://github.com/fesmc/kryos/blob/main/tools/levante/plastic_coulomb_lgm.jl) | Ice-sheet volumes (SLE, above flotation) and maximum thickness of a scan against PaleoMIST and GLAC-1D at that time; figures |
 | [tests/plastic_closure_fit.f90](https://github.com/fesmc/kryos/blob/main/tests/plastic_closure_fit.f90) | Stage 1b of the implied mass balance: the flow closure (`yield` or `coulomb_n` parameter lists) against the observed present-day speed; with `prior_file`, the joint inversion on one set; `plastic=1` |
 
 ## The Earth search
@@ -121,6 +126,7 @@ The simulations of the [results](science/results.md) are made by these scripts, 
 | File | What |
 |---|---|
 | [tests/test_plastic_margin.f90](https://github.com/fesmc/kryos/blob/main/tests/test_plastic_margin.f90) | Margin chronology and tau_b (distance transform, interpolation, domains, scale groups, domain factors); runs with `plastic=0` |
+| [tests/test_plastic_coulomb.f90](https://github.com/fesmc/kryos/blob/main/tests/test_plastic_coulomb.f90) | The Coulomb law without the library: the bed factor lambda (shared with `coulomb_n`, bit for bit), mu = c_f lambda by region, the files and their errors; runs with `plastic=0` |
 | [tests/test_ice_plastic.f90](https://github.com/fesmc/kryos/blob/main/tests/test_ice_plastic.f90) | The backend through the ice wrappers on a toy grid (profile, masks, exports, restart, flotation); `plastic=1` only |
 
 ## Archive
