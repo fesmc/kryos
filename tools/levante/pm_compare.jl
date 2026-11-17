@@ -215,15 +215,23 @@ end
 rate_at(R, plon, plat) = [1000.0 * interp(R.rate, xweight(R.lon, x), yweight(R.lat, y)) for (x, y) in zip(plon, plat)]
 
 # --- ESL --------------------------------------------------------------------------------------------------------------------------
+# linear in time: the series x on the ascending axis t at a, its record where a is one; NaN outside [t[1], t[end]]
+function tlin(t, x, a)
+    (a < t[1] || a > t[end]) && return NaN
+    k = clamp(searchsortedlast(t, a), 1, length(t) - 1); w = (a - t[k]) / (t[k+1] - t[k])
+    w == 0 ? x[k] : w == 1 ? x[k+1] : (1 - w) * x[k] + w * x[k+1]
+end
 # A global sea-level curve of FesmData Records/SeaLevel/SeaLevel-<product>.nc (sl or the variable var, negative when lower; region 1),
-# relative to its own present (the value at 0 ka subtracted: Spratt and Lisiecki 2016 are +8.5 m there), at the ages [yr]
-# (nearest record); with its 1 sigma (var_sd, NaN without one).
+# relative to its own present (the value at 0 ka subtracted: Spratt and Lisiecki 2016 are +8.5 m there), at the ages [yr], linear
+# in time between its records (Spratt and Lisiecki: every 1 kyr, so 22.5 ka is the mean of 22 and 23 ka); with its 1 sigma (var_sd,
+# linear the same way; NaN without one). The time of the file in years ago.
 function sealevel_at(fesmdata, product, ages; var = "sl")
     NCDataset(joinpath(fesmdata, "Records", "SeaLevel", "SeaLevel-" * product * ".nc")) do ds
         t = Float64.(ds["time"][:]); x = Float64.(nomissing(ds[var][:], NaN)); x = ndims(x) > 1 ? vec(x[1, :]) : x
         sd = haskey(ds, var * "_sd") ? (y = Float64.(nomissing(ds[var * "_sd"][:], NaN)); ndims(y) > 1 ? vec(y[1, :]) : y) : fill(NaN, length(t))
-        x0 = x[argmin(abs.(t))]; k = [argmin(abs.(t .- a)) for a in ages]
-        x[k] .- x0, sd[k]
+        p = sortperm(t); t = t[p]; x = x[p]; sd = sd[p]
+        x0 = tlin(t, x, 0.0)
+        [tlin(t, x, a) - x0 for a in ages], [tlin(t, sd, a) for a in ages]
     end
 end
 # The points of the ESL group ([esl] of an ensemble config: name, product, var, ages_ka): the curve at the ages, each a point at
@@ -240,12 +248,15 @@ end
 # runme's job and by gia_refcorr.sh) says 0. VILMA2 writes the whole time axis of its output when it starts, so the output alone does
 # not tell a finished run from one still going (or stopped), whose later records are fill values.
 run_done(dir) = (f = joinpath(dir, "status"); isfile(f) && (w = split(read(f, String)); !isempty(w) && w[1] == "0"))
-# a run's ESL [m] at the ages: bsl_ive (ice-volume equivalent) of its record of each age (trun) minus that of its last record (0 ka);
-# NaN for a run that has not finished
+# the age [yr] of each record of a run: its time rounded to 10 yr, without the 1 yr of trec / trun (records 100 yr apart or more)
+rec_age(r::Run) = -10.0 .* round.(r.t ./ 10.0)
+# a run's ESL [m] at the ages [yr]: bsl_ive (ice-volume equivalent) relative to its last record (0 ka), linear in time between the
+# records (rec_age; the record itself at an age it has); NaN for a run that has not finished
 function esl_at(dir, ages)
     run_done(dir) || return fill(NaN, length(ages))
     r = read_run(dir); r === nothing && return fill(NaN, length(ages))
-    [(k = findfirst(x -> abs(x - trun(r, a)) < 0.01, r.t); k === nothing ? NaN : r.bsl_ive[k] - r.bsl_ive[end]) for a in ages]
+    a = rec_age(r); p = sortperm(a); x = r.bsl_ive .- r.bsl_ive[end]
+    [tlin(a[p], x[p], age) for age in ages]
 end
 
 # linear in time: the value and the slope at t; the range over [t0, t1]

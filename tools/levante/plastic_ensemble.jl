@@ -27,7 +27,8 @@
 # [esl] (optional): the ESL group, global sea level relative to the present against an independent curve: name ("ESL"), product
 # (FesmData Records/SeaLevel/SeaLevel-<product>.nc, e.g. Spratt2016), var (sl_short), ages_ka (25 to 10 every 2.5), judge (true),
 # reference_curves (SeaLevel products shown in weights.md, not scored, e.g. Lambeck2014); a reference's esl = "<product>" gives a
-# published reconstruction its ESL (pub-PMIST: PaleoMIST). Model ESL: bsl_ive of the run's records (pm_compare.jl esl_at).
+# published reconstruction its ESL (pub-PMIST: PaleoMIST). Model ESL: bsl_ive of the run's records (pm_compare.jl esl_at); model and
+# data each linear in time on their own axis, compared at the ages (esl_at, sealevel_at).
 # [[gnss]] (optional): GNSS data groups, the present-day uplift rate at GNSS stations: name (the group), product
 # (FesmData Records/GPS/GPS-<product>.nc under [score] gnss_dir, default <fesmdata>/Records/GPS), rate (gia | corrected | observed),
 # box, exclude, min_years (pm_compare.jl read_gnss), judge (default true; false: reported only, not in the default use_groups);
