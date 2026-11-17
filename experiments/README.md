@@ -14,6 +14,7 @@ All scripts run on Levante or albedo from a kryos checkout installed with `confi
 | P1, P2 | none | the published reconstructions are FesmData products (`IceHistory-PaleoMIST`, `IceHistory-GLAC1D`), scored as they are |
 | I1-I8 | `refs-ice.sh <id>` | an ice history imposed on VILMA2 with one Earth: `$KRYOS_WORK/kryos_data/refcorr/<ice>_<earth>` |
 | T1, D1, D3 | `refs-tau.sh <ens-v2> <id>` | kryos online from ens-v2's m000: `$KRYOS_WORK/runs/pm-online/{gowan,pdfac}`, `$KRYOS_WORK/runs/res16/m000-NH16` |
+| C1, C2 | `coulomb-band.sh setup`, `submit` | kryos online with the Coulomb law at four (H_N, lambda_min) on two 1-D Earths: `$KRYOS_WORK/coulomb-taub/coupled/runs` |
 | D2, E2 | `ens.sh v2` | ens-v2, 50 members (m000 = D2): `$KRYOS_WORK/ens-v2` |
 | E1 | `ens.sh v1` | ens-v1, 25 members (on Levante) |
 | Earth-only | `earth-pca.sh basis v1`, `sample`, `run` | the PCA basis of the expert Earths, 30 sampled Earths, one pass each: `.../refcorr/ice-PMIST_E3D-PCA-E<nnn>` |

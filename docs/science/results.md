@@ -79,6 +79,29 @@ The present-day factors remove most of the far-field misfit (T1 17.1 → D1 5.0)
 fails as it does under imposed ice (I3). 16 km in the north (D3) changes the scores little and costs 2 m of ESL; 32 km
 stays the default.
 
+## Our ice, the Coulomb law
+
+PlasticIceSheet online on VILMA2 with the Coulomb yield law instead of PaleoMIST's τ_b (`taub_method = "coulomb"`, λ on
+the relaxed bed, one c_f per ice sheet): four (H_N, λ_min) of the band that meets the 20 ka targets (H_N 30, 100, 300,
+1000 m with λ_min 0.2, 0.3, 0.5, 0.75; c_f of the calibration, Patagonia Eurasia's), each on Gowan's Earth and on the
+Earth search's E117, with the r of PaleoMIST's ice on that Earth. Scored on the Earth search's scale (9 groups; the bars
+Greenland 7.9, ESL 7.04; under the bar of our ice, ESL ≤ 3, every Coulomb run fails ESL).
+
+| id | simulation | changes against | status | log L | passed | RMSE [m] | I L / G / F / B / A / FF | I GNSS F / HB | I ESL |
+|---|---|---|---|---|---|---|---|---|---|
+| C1 | `tau-CB-H030 \| E1D-PMIST` | D1: the Coulomb law, H_N 30 m | done | −9016 | 6/9 | 22.3 | −2.3 / 4.9 / 2.4 / 6.8 / 2.8 / −0.9 | 7.4 / 11.1 | 5.7 |
+| | `tau-CB-H100 \| E1D-PMIST` | H_N 100 m | done | −8977 | 6/9 | 21.5 | −2.5 / 4.5 / 1.8 / 6.0 / 2.8 / −1.4 | 7.0 / 10.9 | 6.2 |
+| | `tau-CB-H300 \| E1D-PMIST` | H_N 300 m | done | −8918 | 5/9 | 20.1 | −3.5 / 3.9 / 1.1 / 5.0 / 3.4 / −0.9 | 6.2 / 9.8 | 6.2 |
+| | `tau-CB-H1000 \| E1D-PMIST` | H_N 1000 m | done | −8885 | 5/9 | 18.5 | −2.5 / 3.7 / −0.2 / 4.5 / 4.0 / −0.8 | 6.6 / 11.8 | 5.4 |
+| C2 | `tau-CB-H030 \| E1D-ES1-E117` | C1: the Earth E117 | done | −8925 | 6/9 | 18.0 | −0.9 / 1.5 / 1.0 / 5.8 / 2.6 / −0.8 | 8.1 / 6.3 | 5.8 |
+| | `tau-CB-H100 \| E1D-ES1-E117` | | done | −8910 | 6/9 | 17.5 | −1.1 / 1.4 / 0.5 / 5.0 / 2.6 / −1.4 | 7.4 / 6.4 | 6.3 |
+| | `tau-CB-H300 \| E1D-ES1-E117` | | done | −8840 | 6/9 | 16.7 | −1.9 / 1.2 / −0.3 / 4.1 / 3.0 / −1.7 | 6.9 / 6.6 | 4.6 |
+| | `tau-CB-H1000 \| E1D-ES1-E117` | | done | −8829 | 5/9 | 15.8 | −1.1 / 0.9 / −1.0 / 3.9 / 4.0 / −1.1 | 7.0 / 8.6 | 5.6 |
+
+The far field passes on every run (D1: 5.0) and log L rises with H_N on both Earths; Barents fails on all (too much
+Eurasian ice at 20 ka, 20-21 m against PaleoMIST's 18), Antarctica worsens with H_N. A larger H_N lowers τ_b where the
+ice is thin: less MIS 3 ice (NAIS 26 instead of 31 m SLE at H_N 1000) and a τ_b that drops with the deglacial ice.
+
 ## Ensembles
 
 τ_b sampled per scale group and node, in ens-v2 the Earth too (shifts of structure 6); members weighted by their
@@ -145,6 +168,7 @@ The runs are on AWI's albedo:
 | P1, P2 | FesmData `IceHistory-PaleoMIST` (`dz_sl`), `IceHistory-GLAC1D` (topography) |
 | I1-I8 | `/albedo/work/user/alrobi001/kryos-work/kryos_data/refcorr/<ice>_<earth>`; scores `kryos-work/refs-test/ens/iter_01/scores.csv` |
 | T1, D1 | `/albedo/work/user/alrobi001/kryos-work/runs/pm-online/gowan`, `.../pdfac` |
+| C1, C2 | `/albedo/work/projects/p_forclima/kryos-work/coulomb-taub/coupled/runs/tau-CB-H<H_N>_<Earth>`; scores `.../coupled/score/iter_01/scores.csv` |
 | D2, E2 | `/albedo/work/user/alrobi001/kryos-plastic/kryos/runs/ens-v2/iter_01/<m>` |
 | D3 | `/albedo/work/user/alrobi001/kryos-work/runs/res16/m000-NH16` |
 | E1 | `/albedo/work/projects/p_forclima/kryos-work/levante/ens-v1` (copied from Levante) |
