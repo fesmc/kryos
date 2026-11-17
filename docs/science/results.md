@@ -105,6 +105,12 @@ Greenland 7.9, ESL 7.04; under the bar of our ice, ESL ≤ 3, every Coulomb run 
 | | `tau-CBD-H300 \| E1D-ES1-E117` | C2 H300 (λ_min 0.5) on the maps v2, with the floor, lgm-calib-v3 | done | −8918 | 5/9 | 13.6 | −1.8 / 1.3 / −0.1 / 2.6 / 3.7 / 6.0 | 5.5 / 6.8 | 2.5 |
 | C5b | `tau-CBDC-H1000 \| E1D-ES1-E117` | C5 H1000 on the band's centre line: λ_min 0.34 | done | −8894 | 6/9 | 14.5 | 1.9 / 1.1 / −0.3 / 2.2 / 4.2 / −0.9 | 6.1 / 12.7 | 6.2 |
 | | `tau-CBDC-H300 \| E1D-ES1-E117` | C5 H300 on the centre line: λ_min 0.24 | done | −8872 | 6/9 | 14.3 | 0.4 / 1.4 / −0.3 / 2.6 / 3.6 / −0.9 | 5.7 / 8.9 | 6.2 |
+| C6 | `tau-CBDA-H1000 \| E1D-ES1-E117` | C5 H1000 with Antarctica of ant-calib: λ_min 0.34, zb −600 / 0 m, c_f 0.0194 (λ on BedMachine v4) | done | −8815 | 5/9 | 14.1 | −0.6 / 0.7 / −0.2 / 1.8 / 4.0 / −1.6 | 6.2 / 9.7 | 7.1 |
+| | `tau-CBDA-H300 \| E1D-ES1-E117` | C5 H300, Antarctica λ_min 0.24, zb −600 / 0 m, c_f 0.0406 | done | −8827 | 6/9 | 14.1 | −1.4 / 1.0 / −0.2 / 2.2 / 3.2 / −1.2 | 5.7 / 6.8 | 7.0 |
+| | `tau-CBDAR-H1000 \| E1D-ES1-E117` | CBDA H1000, Antarctica's c_f 0.01896 calibrated with λ on the runs' refcorr bed | done | −8819 | 5/9 | 14.2 | −0.6 / 0.7 / −0.2 / 1.8 / 4.0 / −1.6 | 6.3 / 9.7 | 7.5 |
+| | `tau-CBDAR-H300 \| E1D-ES1-E117` | CBDA H300 with λ_min 0.22, c_f 0.04154 (refcorr bed) | done | −8822 | 5/9 | 14.2 | −1.4 / 1.0 / −0.2 / 2.2 / 3.2 / −1.4 | 5.7 / 6.8 | 7.3 |
+| C7 | `tau-CBF-H1000 \| E1D-ES1-E117` | CBDAR H1000 with λ fixed on the file (`taub_lambda_bed = "file"`) in every instance, Antarctica's c_f 0.01943 recalibrated on it | done | −8810 | 5/9 | 14.3 | −0.5 / 0.6 / −0.1 / 1.7 / 4.0 / −2.0 | 6.3 / 8.2 | 8.1 |
+| | `tau-CBF-H300 \| E1D-ES1-E117` | CBDAR H300 with λ on the file, Antarctica's c_f 0.04212 | done | −8788 | 6/9 | 14.5 | −1.3 / 0.9 / 0.0 / 2.0 / 3.0 / −2.7 | 5.7 / 4.5 | 9.1 |
 
 The far field passes on every run (D1: 5.0) and log L rises with H_N on both Earths; Barents fails on all (too much
 Eurasian ice at 20 ka, 20-21 m against PaleoMIST's 18), Antarctica worsens with H_N. A larger H_N lowers τ_b where the
@@ -169,6 +175,32 @@ deglacial retreat). The far field passes again (−0.9) and ESL is back at 6.2, 
 the North: NAIS 81.6 and 80.7 m at 20 ka (C3: 77.3, domes 4.9 and 4.5 km), Hudson Bay's GNSS worsens (12.7 at H_N 1000,
 8.9 at 300) and so does Laurentide at H_N 1000 (1.9). Both pass 6/9, as C3, with a lower log L (−8894, −8872 against
 −8811): the floor removes the jumps at a cost in log L of 60-80 on the centre line.
+
+Up to C6 the runs took λ on their own reference topography relaxed by local isostasy (`taub_lambda_bed = "relaxed"`),
+which on E1D-ES1-E117 is today's bed + r (refcorr), while the calibrations took it on GEBCO / BedMachine. Over Hudson Bay
+r is +150 to +264 m, so the runs saw Hudson Bay harder than the calibration (λ up to 0.14 higher at λ_min 0.75), and the
+north's c_f calibrated on the softer bed grew too much ice there (coulomb-taub/nais-diag; CBDR, the north recalibrated on
+the refcorr bed: −8886, −8868). λ stands for the geology of the bed and must not depend on the Earth: since lambda-file λ
+is a fixed field per grid, `z_lambda` of `$KRYOS_DATA/plastic/{grid}_lambda_bed.nc` (today's GEBCO / BedMachine bed +
+(ρ_i/3300) H_ice, `tools/levante/plastic_lambda_bed.jl`), read by the backend (`taub_lambda_bed = "file"`, the default)
+and by the calibration programs alike. The file reproduces the calibrations' relaxed bed bit for bit, so the north's c_f
+of lgm-calib-v4 equal lgm-calib-v3's (H_N 1000, λ_min 0.75: NAIS 0.008536, Fennoscandia 0.010375, BarentsKara 0.019428,
+Greenland 0.022060; H_N 300, λ_min 0.5: 0.019699, 0.021662, 0.047985, 0.044263).
+
+C6 (coulomb-taub/ant-calib, ant-runs) recalibrates only Antarctica on C5, by the least present-day χ²/n with the 20 ka
+excess 12.5 ± 1 m (and at most a quarter of the Ross, Weddell, Amundsen expansion on the floor of N): λ_min 0.34 at H_N
+1000 and 0.22-0.24 at 300, with zb −600 / 0 m. CBDA took λ on BedMachine, CBDAR on the runs' refcorr bed; both lift
+log L to −8815 to −8827 (Antarctica 11.6-13.3 m at 20 ka, far field −1.2 to −1.6, ESL 7.0-7.5).
+
+C7 is CBDAR with λ on the file in every instance (`experiments/coulomb-band.sh` set `file`) and Antarctica's c_f
+recalibrated on it by C6's rule (lgm-calib-v4/ant: 0.01943 at H_N 1000, 0.04212 at 300, excess 13.5 and 12.6 m; the north
+and Patagonia keep their c_f). The run's μ is c_f λ of the file (within the 10⁻⁶ of the output). The north's interior
+beds are now as soft as in the calibration: NAIS carries 74.6 and 73.5 m at 20 ka (CBDAR 75.6, 76.0; target 72.5; dome
+4.3 and 4.0 km), Antarctica 12.7 and 11.2 m. Hudson Bay's GNSS improves most (I 9.7 → 8.2 at H_N 1000, 6.8 → 4.5 at 300),
+Greenland, Barents and the far field gain 0.1-1.3, Laurentide and Fennoscandia lose 0.1-0.2, Antarctica holds (4.0) or
+gains (3.2 → 3.0), and ESL is worse (8.1, 9.1 against 7.5, 7.3: less northern ice at the LGM). log L −8810 and −8788: H_N 300 is the best Coulomb run so far (6/9; better than PaleoMIST's ice on the same
+Earth, −8801), H_N 1000 passes 5/9. No alternating jumps in Antarctica (max |ΔM| 3.6 and 2.0 × 10⁵ Gt); the North keeps
+5 and 3 pairs at the deglacial retreat (10.3 ka), as CBDAR.
 
 ## Ensembles
 
@@ -241,6 +273,8 @@ The runs are on AWI's albedo:
 | C4 | `/albedo/work/projects/p_forclima/kryos-work/coulomb-taub/margin-patch/runs/tau-CBS-H1000-{pPG,pPM,pFP}_E1D-ES1-E117`; scores `.../margin-patch/score/iter_01/scores.csv`; the patch `.../kryos-work/margins/NH-32KM/NH-32KM_IceHistory-PaleoGrIS-patch.nc` |
 | C5 | `/albedo/work/projects/p_forclima/kryos-work/coulomb-taub/delta/runs/tau-CBD-H<H_N>_E1D-ES1-E117`; scores `.../delta/score/iter_01/scores.csv`; calibration `.../coulomb-taub/lgm-calib-v3`; jumps `.../delta/jumps/jumps.md`; volumes `.../delta/coupled/coupled.md` |
 | C5b | `.../coulomb-taub/delta/runs/tau-CBDC-H<H_N>_E1D-ES1-E117`; scores as C5; calibration `.../lgm-calib-v3/fine`; jumps `.../delta/jumps-centre/jumps.md`; volumes `.../delta/coupled-centre/coupled.md` |
+| C6 | `.../coulomb-taub/ant-runs/runs/tau-{CBDA,CBDAR}-H<H_N>_E1D-ES1-E117`; scores `.../ant-runs/score/iter_01/scores.csv`; calibration `.../coulomb-taub/ant-calib/fine` (CBDA), `.../ant-calib/fine-ref/report.md` (CBDAR); jumps `.../ant-runs/jumps/jumps.md`; volumes `.../ant-runs/coupled/coupled.md` |
+| C7 | `.../coulomb-taub/lambda-file/runs/tau-CBF-H<H_N>_E1D-ES1-E117`; scores `.../lambda-file/score/iter_01/scores.csv`; calibration `.../coulomb-taub/lgm-calib-v4` (north), `.../lgm-calib-v4/ant/pick.txt` (Antarctica); jumps `.../lambda-file/jumps/jumps.md`; volumes `.../lambda-file/coupled/coupled.md`; λ files `/albedo/work/projects/p_forclima/kryos_data/plastic/{grid}_lambda_bed.nc` |
 | D2, E2 | `/albedo/work/user/alrobi001/kryos-plastic/kryos/runs/ens-v2/iter_01/<m>` |
 | D3 | `/albedo/work/user/alrobi001/kryos-work/runs/res16/m000-NH16` |
 | E1 | `/albedo/work/projects/p_forclima/kryos-work/levante/ens-v1` (copied from Levante) |
