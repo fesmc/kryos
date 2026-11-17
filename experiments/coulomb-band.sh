@@ -98,9 +98,17 @@ for g in ("ice_nor", "ice_ant", "ice_pat"):
                  ("taub_HN", hn + ".0"), ("taub_p", "1.0"), ("taub_lam_min", lam), ("taub_zb0", "-300.0"),
                  ("taub_zb1", "200.0"), ("taub_lambda_bed", "'relaxed'"), ("taub_smooth_km", "0.0"), ("out_plastic", "'out_2D'")]:
         put(g, k, v)
+def drop(g, key):
+    i, j = group(g)
+    for k in range(i + 1, j):
+        if re.match(r"\s*" + key + r"\s*=", lines[k], re.I):
+            del lines[k]; return
 method, when = out2d.split("|")
 put("out_2d", "method", method)
-put("out_2d", "dt" if method == "'const'" else "times", when)
+if method == "'const'":
+    drop("out_2d", "times"); put("out_2d", "dt", when)
+else:
+    drop("out_2d", "dt"); put("out_2d", "times", when)
 topo = {"topo_nor": "North/{grid_name}/{grid_name}_TOPO-GEBCO2026-refcorr.nc",
         "topo_ant": "Antarctica/{grid_name}/{grid_name}_TOPO-BedMachine-v4-refcorr.nc",
         "topo_pat": "PatagoniaPaleo/{grid_name}/{grid_name}_TOPO-GEBCO2026-refcorr.nc"}
