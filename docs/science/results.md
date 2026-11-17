@@ -100,6 +100,8 @@ Greenland 7.9, ESL 7.04; under the bar of our ice, ESL ≤ 3, every Coulomb run 
 | C3 | `tau-CBS-H1000 \| E1D-ES1-E117` | C2 H1000: Eurasia split into Fennoscandia and BarentsKara | done | −8811 | 6/9 | 14.0 | −1.2 / 0.9 / 0.6 / 2.2 / 4.0 / −2.1 | 6.4 / 8.6 | 5.8 |
 | | `tau-CBS-H2000 \| E1D-ES1-E117` | H_N 2000 m, λ_min 1.0 | done | −8850 | 6/9 | 14.0 | −0.2 / 0.8 / 1.0 / 2.3 / 4.7 / −0.9 | 6.8 / 11.0 | 5.5 |
 | | `tau-CBS-H3000 \| E1D-ES1-E117` | H_N 3000 m, λ_min 1.0 | done | −8871 | 6/9 | 14.3 | 0.5 / 0.8 / 1.2 / 2.3 / 5.0 / −1.3 | 7.0 / 12.8 | 6.3 |
+| C5 | `tau-CBD-H1000 \| E1D-ES1-E117` | C3 H1000: the floor of N, δ = 0.05, c_f recalibrated (lgm-calib-v3) | done | −9194 | 5/9 | 14.2 | −0.9 / 1.2 / −0.1 / 2.5 / 4.7 / 16.6 | 5.8 / 9.7 | 1.1 |
+| | `tau-CBD-H300 \| E1D-ES1-E117` | C2 H300 (λ_min 0.5) on the maps v2, with the floor, lgm-calib-v3 | done | −8918 | 5/9 | 13.6 | −1.8 / 1.3 / −0.1 / 2.6 / 3.7 / 6.0 | 5.5 / 6.8 | 2.5 |
 
 The far field passes on every run (D1: 5.0) and log L rises with H_N on both Earths; Barents fails on all (too much
 Eurasian ice at 20 ka, 20-21 m against PaleoMIST's 18), Antarctica worsens with H_N. A larger H_N lowers τ_b where the
@@ -113,6 +115,31 @@ Fennoscandia's (H_N 1000: 0.0216 and 0.0106 against 0.0151); online they carry 7
 (I 3.9 → 2.2) and C3 at H_N 1000 has the best log L of the Coulomb runs (−8811, against −8801 for PaleoMIST's ice on
 the same Earth). H_N 2000 and 3000 (λ_min 1.0, the most the band allows) lose log L again: Antarctica and Hudson Bay's
 GNSS worsen, and the domes reach 5.0-5.3 km (NAIS) and 7.2-7.4 km (Antarctica).
+
+C5 adds the floor of the effective pressure, N = ρ_i g H max((1 − H_f/H)^p, δ) with δ = 0.05 (`taub_delta`;
+[backend-plastic.md](../backend-plastic.md)). Without it (C1-C3) the Antarctic marine troughs sat at flotation or
+grounded, the solve had several solutions, and the Antarctic mass jumped by up to 2.0 × 10⁶ Gt per 100-yr step, in
+alternating pairs. With the floor the jumps are gone (Antarctica, per 100-yr step):
+
+| run | max \|ΔM\| [Gt] | alternating pairs > 5 × 10⁴ Gt | North: max \|ΔM\|, pairs |
+|---|---|---|---|
+| C3 `tau-CBS-H1000` (no floor) | 2.03 × 10⁶ | 36 | 3.13 × 10⁶, 73 |
+| C5 `tau-CBD-H1000` | 3.9 × 10⁵ | 0 | 1.13 × 10⁶, 6 |
+| C2 `tau-CB-H300 \| E1D-ES1-E117` (no floor) | 1.56 × 10⁶ | 41 | 1.77 × 10⁶, 37 |
+| C5 `tau-CBD-H300` | 2.5 × 10⁵ | 0 | 9.2 × 10⁵, 3 |
+
+The northern maxima of C5 are at 10.3 ka, the deglacial retreat of the margin, not an alternation; Patagonia has no
+step above 5 × 10⁴ Gt in any run. The floor keeps the troughs grounded above flotation, so it grounds more ice:
+recalibrated at 20 ka (lgm-calib-v3; NAIS, Fennoscandia, BarentsKara to their targets, Greenland and Antarctica from
+the present-day fit) the c_f hardly change (H_N 1000, λ_min 0.75: NAIS 0.0085, Fennoscandia 0.0104, BarentsKara 0.0194,
+Greenland 0.0221, Antarctica 0.0192; H_N 300, λ_min 0.5: 0.0197, 0.0217, 0.0480, 0.0443, 0.0430), but the Antarctic 20 ka
+excess rises from 12.7 to 35.2 m (H_N 1000) and from 11.8 to 26.9 m (H_N 300): both points leave the feasible band
+(excess ≤ 20 m), which now spans λ_min 0.1-0.5. Online, Antarctica carries 31.4 and 23.9 m above present at 20 ka
+(C3: 14.6, C2 H300: 12.8; PaleoMIST 11.2); the northern sheets are as before (NAIS 76.3, Fennoscandia 11.9-12.2,
+BarentsKara 6.9-7.2 m). The far field, passed by every earlier Coulomb run, fails (I 16.6 at H_N 1000, 6.0 at 300: too
+much Antarctic ice), Antarctica still fails (4.7, 3.7); ESL drops to 1.1 and 2.5, the first Coulomb runs under the bar of
+our ice (3). log L drops against C3 (−9194, −8918), 5/9 groups. The floor itself works;
+these two points need a smaller λ_min (or a recalibrated Antarctic c_f) to stay in the band.
 
 ## Ensembles
 
@@ -182,6 +209,7 @@ The runs are on AWI's albedo:
 | T1, D1 | `/albedo/work/user/alrobi001/kryos-work/runs/pm-online/gowan`, `.../pdfac` |
 | C1, C2 | `/albedo/work/projects/p_forclima/kryos-work/coulomb-taub/coupled/runs/tau-CB-H<H_N>_<Earth>`; scores `.../coupled/score/iter_01/scores.csv` |
 | C3 | `/albedo/work/projects/p_forclima/kryos-work/coulomb-taub/split/runs/tau-CBS-H<H_N>_E1D-ES1-E117`; scores `.../split/score/iter_01/scores.csv`; calibration `.../coulomb-taub/lgm-calib-v2` |
+| C5 | `/albedo/work/projects/p_forclima/kryos-work/coulomb-taub/delta/runs/tau-CBD-H<H_N>_E1D-ES1-E117`; scores `.../delta/score/iter_01/scores.csv`; calibration `.../coulomb-taub/lgm-calib-v3`; jumps `.../delta/jumps/jumps.md`; volumes `.../delta/coupled/coupled.md` |
 | D2, E2 | `/albedo/work/user/alrobi001/kryos-plastic/kryos/runs/ens-v2/iter_01/<m>` |
 | D3 | `/albedo/work/user/alrobi001/kryos-work/runs/res16/m000-NH16` |
 | E1 | `/albedo/work/projects/p_forclima/kryos-work/levante/ens-v1` (copied from Levante) |
