@@ -37,7 +37,8 @@ module kryos_ice_plastic
     use kryos_plastic_bed,    only: relaxed_bed, RHO_M
     use kryos_plastic_friction, only: friction_t, friction_law, friction_map
     use plastic_ice,     only: plastic_par_t, plastic_t, plastic_glen_t, plastic_sliding_t, plastic_init, &
-                               plastic_solve, plastic_solve_coulomb, plastic_coulomb_taub, plastic_solve_smb, &
+                               plastic_solve, plastic_solve_coulomb, plastic_coulomb_taub, plastic_coulomb_law_t, &
+                               plastic_solve_smb, &
                                plastic_end, plastic_smb_flux_divergence, &
                                plastic_stress_residual, plastic_margin_frac_from_sdist, PLASTIC_OK, &
                                PLASTIC_NOT_CONVERGED, plastic_inv_ctrl_t, plastic_inv_info_t, plastic_smb_inversion, &
@@ -205,8 +206,7 @@ contains
             if (trim(self%drive) == "taub") then
                 call forcing_taub(self, st%t1)
                 if (self%tb%method == TAUB_M_COULOMB) then
-                    call plastic_coulomb_taub(self%ps, self%z_bed, self%z_sl, self%mu, self%mask, self%tb%p, &
-                                              self%tb%H_N)
+                    call plastic_coulomb_taub(self%ps, self%z_bed, self%z_sl, self%mu, self%mask, coulomb_law(self%tb))
                     self%tau_b = self%ps%tau_b
                 end if
             else
@@ -421,7 +421,7 @@ contains
         case ("taub")
             call forcing_taub(self, t)
             if (self%tb%method == TAUB_M_COULOMB) then
-                call plastic_solve_coulomb(self%ps, self%z_bed, self%z_sl, self%mu, self%mask, self%tb%p, self%tb%H_N, &
+                call plastic_solve_coulomb(self%ps, self%z_bed, self%z_sl, self%mu, self%mask, coulomb_law(self%tb), &
                                            warm=warm, stat=stat, margin_frac=self%mfrac)
                 self%tau_b = self%ps%tau_b
             else
@@ -627,6 +627,13 @@ contains
         if (mod(n, 2) == 0) m = 0.5_dp*(m + minval(a(k+1:n)))
     end function median
 
+    pure function coulomb_law(tb) result(law)
+        ! The library's Coulomb law of taub_method = "coulomb": p, H_N, delta.
+        type(taub_t), intent(in) :: tb
+        type(plastic_coulomb_law_t) :: law
+        law = plastic_coulomb_law_t(p=tb%p, H_N=tb%H_N, delta=tb%delta)
+    end function coulomb_law
+
     function driving_stress(self) result(tau)
         ! [Pa] rho_i g H |grad z_srf| (centred differences, one-sided at the edges): tau_b of a plastic
         ! ice sheet at yield, for the diagnostics of drive = "smb".
@@ -827,7 +834,7 @@ contains
         real(dp) :: mb_smooth_km, taub_smooth_km, inv_smooth_km, inv_smooth_smb_km, inv_sigma_smb_min, inv_sigma_cold
         character(len=:), allocatable :: who
         real(dp) :: margin_H_min, taub_const, taub_default, rheo_A, rheo_n, slide_beta, slide_m, slide_C, slide_u0
-        real(dp) :: slide_umax, taub_HN, taub_p, taub_lam_min, taub_zb0, taub_zb1
+        real(dp) :: slide_umax, taub_HN, taub_p, taub_delta, taub_lam_min, taub_zb0, taub_zb1
         type(friction_t) :: fr
         integer,  allocatable :: codes(:)
         real(dp), allocatable :: vals(:)
@@ -841,8 +848,8 @@ contains
         taub_domain_file = "";  taub_domain_var = "taub_domain";  taub_id_var = "domain_id";  taub_value_var = "taub"
         taub_time_var = "taub_t";  taub_override_grp = "";  taub_default = 0.0_dp;  taub_scale_file = ""
         taub_domain_factor_file = "";  taub_smooth_km = 50.0_dp
-        taub_region_file = "";  taub_cf_file = "";  taub_HN = 0.0_dp;  taub_p = 1.0_dp;  taub_lam_min = 1.0_dp
-        taub_zb0 = -300.0_dp;  taub_zb1 = 200.0_dp
+        taub_region_file = "";  taub_cf_file = "";  taub_HN = 0.0_dp;  taub_p = 1.0_dp;  taub_delta = 0.05_dp
+        taub_lam_min = 1.0_dp;  taub_zb0 = -300.0_dp;  taub_zb1 = 200.0_dp
         mode = "surface"
         rheo_A = 0.0_dp;  rheo_n = 3.0_dp
         slide_law = "none";  slide_beta = 0.0_dp;  slide_m = 1.0_dp;  slide_C = 0.0_dp;  slide_u0 = 0.0_dp
@@ -890,6 +897,7 @@ contains
         call rd_s("taub_cf_file", taub_cf_file)
         call rd_r("taub_HN", taub_HN)
         call rd_r("taub_p", taub_p)
+        call rd_r("taub_delta", taub_delta)
         call rd_r("taub_lam_min", taub_lam_min)
         call rd_r("taub_zb0", taub_zb0)
         call rd_r("taub_zb1", taub_zb1)
@@ -988,10 +996,10 @@ contains
                 call substitute(taub_region_file, ctx)
                 call substitute(taub_cf_file, ctx)
                 call taub_read_coulomb(self%tb, trim(taub_region_file), trim(taub_cf_file), self%nx, self%ny, taub_p, &
-                                       taub_HN, taub_lam_min, taub_zb0, taub_zb1)
+                                       taub_HN, taub_delta, taub_lam_min, taub_zb0, taub_zb1)
                 call log_msg(LOG_INFO, "kryos_ice_plastic", "taub_method coulomb: c_f "//to_str(minval(self%tb%cf))// &
                              " to "//to_str(maxval(self%tb%cf))//" ("//to_str(size(self%tb%cf))//" regions), H_N "// &
-                             to_str(taub_HN)//" m, p "//to_str(taub_p)//", lambda "//to_str(taub_lam_min)//" at "// &
+                             to_str(taub_HN)//" m, p "//to_str(taub_p)//", delta "//to_str(taub_delta)//", lambda "//to_str(taub_lam_min)//" at "// &
                              to_str(taub_zb0)//" m to 1 at "//to_str(taub_zb1)//" m", who//": "//trim(taub_cf_file))
             case default
                 call fesm_error(proc, "taub_method = '"//trim(taub_method)//"' is not recognised", &

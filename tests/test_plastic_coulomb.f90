@@ -9,7 +9,8 @@ program test_plastic_coulomb
     !     allowed; the smoothing keeps a uniform mu; from the files (region map, c_f table);
     !   * a fixed lambda (taub_lambda_bed = "relaxed"): of the relaxed bed z_bed + (rho_i/3300) H, independent of the
     !     bed and sea level of the solve;
-    !   * a region of the map without c_f, p outside [0, 1], H_N <= 0 and taub_at stop (the program re-runs itself).
+    !   * a region of the map without c_f, p outside [0, 1], H_N <= 0, delta outside (0, 1] and taub_at stop (the
+    !     program re-runs itself).
     ! Run from the repo root (files in tmp/test_plastic_coulomb).
 
     use precision, only: dp
@@ -39,6 +40,8 @@ program test_plastic_coulomb
     call expect_abort("noregion", "region 3 of the map has no c_f")
     call expect_abort("badp", "taub_p must be in [0, 1]")
     call expect_abort("badHN", "taub_HN must be positive")
+    call expect_abort("baddelta0", "taub_delta must be in (0, 1]")
+    call expect_abort("baddelta1", "taub_delta must be in (0, 1]")
     call expect_abort("taub_at", "has no tau_b before the solve")
 
     if (nfail > 0) then
@@ -116,7 +119,7 @@ contains
         reg = 0;  reg(1:10, :) = 4;  reg(11:20, :) = 2
         zb = 500.0_dp;  zb(:, 1:5) = -1000.0_dp
         zsl = 0.0_dp
-        call taub_set_coulomb(tb, reg, [2, 9, 4], log([0.01_dp, 0.5_dp, 0.02_dp]), 1.0_dp, 1000.0_dp, 0.1_dp, &
+        call taub_set_coulomb(tb, reg, [2, 9, 4], log([0.01_dp, 0.5_dp, 0.02_dp]), 1.0_dp, 1000.0_dp, 0.05_dp, 0.1_dp, &
                               -300.0_dp, 200.0_dp, "map", "table")
         call check("method coulomb", tb%method == TAUB_M_COULOMB)
         call taub_mu(tb, zb, zsl, mu)
@@ -125,7 +128,8 @@ contains
         call check("times lambda (lam_min on a deep bed)", abs(mu(5, 2) - 0.002_dp) < 1.0e-15_dp)
         zb(:, 1:5) = 500.0_dp
         reg(11:20, :) = 4
-        call taub_set_coulomb(tb, reg, [4], [log(0.02_dp)], 1.0_dp, 1000.0_dp, 0.1_dp, -300.0_dp, 200.0_dp, "map", "t")
+        call taub_set_coulomb(tb, reg, [4], [log(0.02_dp)], 1.0_dp, 1000.0_dp, 0.05_dp, 0.1_dp, -300.0_dp, &
+                              200.0_dp, "map", "t")
         call taub_set_smooth(tb, 50.0e3_dp, 10.0e3_dp, 10.0e3_dp)
         call taub_mu(tb, zb, zsl, mu)
         call check("smoothing keeps a uniform mu and 0 off the regions", &
@@ -134,7 +138,8 @@ contains
         call check("relaxed bed: z_bed + (rho_i/3300) H", &
                    abs(relaxed_bed(-400.0_dp, 3300.0_dp, 910.0_dp) - 510.0_dp) < 1.0e-12_dp .and. &
                    relaxed_bed(-400.0_dp, -5.0_dp, 910.0_dp) == -400.0_dp)
-        call taub_set_coulomb(tb, reg, [4], [log(0.02_dp)], 1.0_dp, 1000.0_dp, 0.1_dp, -300.0_dp, 200.0_dp, "map", "t")
+        call taub_set_coulomb(tb, reg, [4], [log(0.02_dp)], 1.0_dp, 1000.0_dp, 0.05_dp, 0.1_dp, -300.0_dp, &
+                              200.0_dp, "map", "t")
         zb = -400.0_dp
         call taub_set_lambda_fixed(tb, relaxed_bed(zb, 0.0_dp*zb + 3300.0_dp, 910.0_dp))
         call taub_mu(tb, -2000.0_dp + 0.0_dp*zb, zsl + 100.0_dp, mu)
@@ -158,12 +163,12 @@ contains
         call nc_write_dim(fc, "region", x=[1.0_dp, 2.0_dp, 3.0_dp])
         call nc_write(fc, "region_id", [3, 2, 1], dim1="region")
         call nc_write(fc, "log_cf", log([0.03_dp, 0.02_dp, 0.01_dp]), dim1="region")
-        call taub_read_coulomb(tb, fr, fc, 6, 4, 0.5_dp, 800.0_dp, 1.0_dp, -300.0_dp, 200.0_dp)
+        call taub_read_coulomb(tb, fr, fc, 6, 4, 0.5_dp, 800.0_dp, 0.1_dp, 1.0_dp, -300.0_dp, 200.0_dp)
         zb = 100.0_dp;  zsl = 0.0_dp
         call taub_mu(tb, zb, zsl, mu)
         call check("region map and c_f table by id", abs(mu(2, 2) - 0.01_dp) < 1.0e-15_dp .and. &
                    abs(mu(5, 3) - 0.02_dp) < 1.0e-15_dp .and. mu(1, 1) == 0.0_dp .and. tb%p == 0.5_dp .and. &
-                   tb%H_N == 800.0_dp)
+                   tb%H_N == 800.0_dp .and. tb%delta == 0.1_dp)
     end subroutine test_files
 
     subroutine expect_abort(case_name, text)
@@ -198,17 +203,23 @@ contains
         call get_command_argument(1, arg)
         select case (trim(arg))
         case ("noregion")
-            call taub_set_coulomb(tb, reg, [1, 2], [0.0_dp, 0.0_dp], 1.0_dp, 1000.0_dp, 1.0_dp, -300.0_dp, 200.0_dp, &
-                                  "map", "table")
+            call taub_set_coulomb(tb, reg, [1, 2], [0.0_dp, 0.0_dp], 1.0_dp, 1000.0_dp, 0.05_dp, 1.0_dp, -300.0_dp, &
+                                  200.0_dp, "map", "table")
         case ("badp")
-            call taub_set_coulomb(tb, reg, [1, 3], [0.0_dp, 0.0_dp], 1.5_dp, 1000.0_dp, 1.0_dp, -300.0_dp, 200.0_dp, &
-                                  "map", "table")
+            call taub_set_coulomb(tb, reg, [1, 3], [0.0_dp, 0.0_dp], 1.5_dp, 1000.0_dp, 0.05_dp, 1.0_dp, -300.0_dp, &
+                                  200.0_dp, "map", "table")
         case ("badHN")
-            call taub_set_coulomb(tb, reg, [1, 3], [0.0_dp, 0.0_dp], 1.0_dp, 0.0_dp, 1.0_dp, -300.0_dp, 200.0_dp, &
-                                  "map", "table")
+            call taub_set_coulomb(tb, reg, [1, 3], [0.0_dp, 0.0_dp], 1.0_dp, 0.0_dp, 0.05_dp, 1.0_dp, -300.0_dp, &
+                                  200.0_dp, "map", "table")
+        case ("baddelta0")
+            call taub_set_coulomb(tb, reg, [1, 3], [0.0_dp, 0.0_dp], 1.0_dp, 1000.0_dp, 0.0_dp, 1.0_dp, -300.0_dp, &
+                                  200.0_dp, "map", "table")
+        case ("baddelta1")
+            call taub_set_coulomb(tb, reg, [1, 3], [0.0_dp, 0.0_dp], 1.0_dp, 1000.0_dp, 1.5_dp, 1.0_dp, -300.0_dp, &
+                                  200.0_dp, "map", "table")
         case ("taub_at")
-            call taub_set_coulomb(tb, reg, [1, 3], [0.0_dp, 0.0_dp], 1.0_dp, 1000.0_dp, 1.0_dp, -300.0_dp, 200.0_dp, &
-                                  "map", "table")
+            call taub_set_coulomb(tb, reg, [1, 3], [0.0_dp, 0.0_dp], 1.0_dp, 1000.0_dp, 0.05_dp, 1.0_dp, -300.0_dp, &
+                                  200.0_dp, "map", "table")
             call taub_at(tb, 0.0_dp, tau)
         end select
     end subroutine abort_case

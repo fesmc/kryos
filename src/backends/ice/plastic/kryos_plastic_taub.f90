@@ -15,7 +15,7 @@ module kryos_plastic_taub
     !              none: such a cell in the ice mask stops the solve), constant in time, and lambda the bed
     !              factor of kryos_plastic_bed, either a fixed field (taub_set_lambda_fixed: on the relaxed
     !              present-day bed, the backend's taub_lambda_bed = "relaxed") or on the bed and sea level of the
-    !              solve ("current"); and the law's p, H_N.
+    !              solve ("current"); and the law's p, H_N and floor delta (N >= delta rho_i g H).
     !
     ! "domains" may be scaled. A factor per domain (taub_domain_factor_file, the present-day fit of
     ! tests/plastic_taub_fit.f90): the value of an id, after the override table, times exp(log_factor(id)),
@@ -62,8 +62,9 @@ module kryos_plastic_taub
         integer,  allocatable :: rids(:)             ! the region ids with a c_f
         real(dp), allocatable :: cf(:)               ! their c_f (exp of the log)
         real(dp), allocatable :: lam(:,:)            ! "coulomb": a fixed lambda (unallocated: on the current bed)
-        real(dp) :: p = 1.0_dp                       ! "coulomb": N = rho_i g H (1 - H_f/H)^p
+        real(dp) :: p = 1.0_dp                       ! "coulomb": N = rho_i g H max((1 - H_f/H)^p, delta)
         real(dp) :: H_N = 0.0_dp                     ! [m] "coulomb": cap N_max = rho_i g H_N
+        real(dp) :: delta = 0.05_dp                  ! "coulomb": floor of N as a fraction of the overburden
         real(dp) :: lam_min = 1.0_dp                 ! "coulomb": lambda at a bed zb0 or lower
         real(dp) :: zb0 = -300.0_dp, zb1 = 200.0_dp  ! [m] "coulomb": bed above sea level of lam_min, of lambda = 1
         character(len=512) :: csrc = ""              ! messages: the c_f file
@@ -325,13 +326,14 @@ contains
         if (tb%smooth > 0.0_dp) call smooth_positive(tau, tb%sdx, tb%sdy, tb%smooth)
     end subroutine taub_at
 
-    subroutine taub_set_coulomb(tb, reg, ids, log_cf, p, H_N, lam_min, zb0, zb1, src, csrc)
+    subroutine taub_set_coulomb(tb, reg, ids, log_cf, p, H_N, delta, lam_min, zb0, zb1, src, csrc)
         ! "coulomb": the region map `reg` (<= 0: none), c_f = exp(log_cf) of the region ids `ids` (an id not in
-        ! the map is allowed; a region of the map without c_f stops), the law's p in [0, 1], H_N > 0 [m] and the
-        ! bed factor's lam_min in (0, 1], zb0 < zb1 [m]. src, csrc name the map and the c_f table in messages.
+        ! the map is allowed; a region of the map without c_f stops), the law's p in [0, 1], H_N > 0 [m], floor
+        ! delta in (0, 1] and the bed factor's lam_min in (0, 1], zb0 < zb1 [m]. src, csrc name the map and the
+        ! c_f table in messages.
         type(taub_t),     intent(out) :: tb
         integer,          intent(in)  :: reg(:,:), ids(:)
-        real(dp),         intent(in)  :: log_cf(:), p, H_N, lam_min, zb0, zb1
+        real(dp),         intent(in)  :: log_cf(:), p, H_N, delta, lam_min, zb0, zb1
         character(len=*), intent(in)  :: src, csrc
 
         character(len=*), parameter :: proc = "kryos_plastic_taub::taub_set_coulomb"
@@ -346,6 +348,8 @@ contains
         if (.not. (p >= 0.0_dp .and. p <= 1.0_dp)) call fesm_error(proc, "taub_p must be in [0, 1]", &
                                                                   "taub_p = "//to_str(p))
         if (.not. (H_N > 0.0_dp)) call fesm_error(proc, "taub_HN must be positive", "taub_HN = "//to_str(H_N)//" m")
+        if (.not. (delta > 0.0_dp .and. delta <= 1.0_dp)) call fesm_error(proc, "taub_delta must be in (0, 1]", &
+                                                                          "taub_delta = "//to_str(delta))
         if (.not. (lam_min > 0.0_dp .and. lam_min <= 1.0_dp)) &
             call fesm_error(proc, "taub_lam_min must be in (0, 1]", "taub_lam_min = "//to_str(lam_min))
         if (lam_min < 1.0_dp .and. .not. zb1 > zb0) &
@@ -358,6 +362,7 @@ contains
         tb%cf      = exp(log_cf)
         tb%p       = p
         tb%H_N     = H_N
+        tb%delta   = delta
         tb%lam_min = lam_min
         tb%zb0     = zb0
         tb%zb1     = zb1
@@ -376,13 +381,13 @@ contains
         end do
     end subroutine taub_set_coulomb
 
-    subroutine taub_read_coulomb(tb, region_file, cf_file, nx, ny, p, H_N, lam_min, zb0, zb1)
+    subroutine taub_read_coulomb(tb, region_file, cf_file, nx, ny, p, H_N, delta, lam_min, zb0, zb1)
         ! "coulomb" from the region map file (region (x, y), the ids, 0 = none; tools/levante/plastic_cf_regions.jl)
         ! and the c_f file (dimension region: region_id(region), log_cf(region), natural log), then taub_set_coulomb.
         type(taub_t),     intent(out) :: tb
         character(len=*), intent(in)  :: region_file, cf_file
         integer,          intent(in)  :: nx, ny
-        real(dp),         intent(in)  :: p, H_N, lam_min, zb0, zb1
+        real(dp),         intent(in)  :: p, H_N, delta, lam_min, zb0, zb1
 
         character(len=*), parameter :: proc = "kryos_plastic_taub::taub_read_coulomb"
         character(len=64), allocatable :: names(:)
@@ -408,7 +413,7 @@ contains
         allocate(ids(n), lcf(n))
         call nc_read(cf_file, "region_id", ids)
         call nc_read(cf_file, "log_cf", lcf)
-        call taub_set_coulomb(tb, reg, ids, lcf, p, H_N, lam_min, zb0, zb1, trim(region_file), trim(cf_file))
+        call taub_set_coulomb(tb, reg, ids, lcf, p, H_N, delta, lam_min, zb0, zb1, trim(region_file), trim(cf_file))
     end subroutine taub_read_coulomb
 
     subroutine taub_set_lambda_fixed(tb, z_rel)
