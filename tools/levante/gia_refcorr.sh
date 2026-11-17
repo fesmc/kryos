@@ -141,6 +141,8 @@ EOF
 export OMP_NUM_THREADS=$NTHR OMP_PROC_BIND=true OMP_STACKSIZE=512M OMP_MAX_ACTIVE_LEVELS=1
 ulimit -s unlimited
 log() { echo "$*" | tee -a $O/iter.log; }
+# run a command with its output appended to iter.log; returns the command's status, not tee's
+logrun() { "$@" | tee -a $O/iter.log; return ${PIPESTATUS[0]}; }
 # the job's end [Unix s] (SLURM_JOB_END_TIME), and whether TMIN of it is left (always without one)
 JEND=${SLURM_JOB_END_TIME:-}; [[ $JEND =~ ^[0-9]+$ ]] || JEND=""
 enough() { [ -z "$JEND" ] || [ $(( JEND - $(date +%s) )) -ge $(( TMIN * 60 )) ]; }
@@ -200,7 +202,7 @@ pass() {
         read -r rc sec t < $C/status; log "it$n/c$k: exit $rc, $sec s, t = $t yr"
     done
     # the window is done: join the chunks, then the status, then the clean-up (each step safe to redo)
-    $JL $T/gia_refcorr.jl join $R | tee -a $O/iter.log; [ ${PIPESTATUS[0]} = 0 ] || { log "it$n: join failed"; return 1; }
+    logrun $JL $T/gia_refcorr.jl join $R || { log "it$n: join failed"; return 1; }
     sec=0; for k in $(seq 0 $last); do read -r rc s t < $R/c$k/status; sec=$((sec + s)); done
     for f in out.out out.err; do for k in $(seq 0 $last); do cat $R/c$k/$f; done > $R/$f.tmp && mv $R/$f.tmp $R/$f; done
     [ -d $R/c$last/final ] && { rm -rf $R/final; mv $R/c$last/final $R/final; }    # the layout of an unsplit pass
@@ -219,8 +221,9 @@ for n in $(seq 0 $((NMAX - 1))); do
     [ $rc = 0 ] || exit 1
   fi
   rm -rf $R/c[0-9]*     # the chunks of a finished pass (left by a job cut off while deleting them)
-  $JL $T/gia_refcorr.jl next $R/vilma_out.nc $r $prev | tee -a $O/iter.log
+  logrun $JL $T/gia_refcorr.jl next $R/vilma_out.nc $r $prev || { log "it$n: next failed"; exit 1; }
   m=$(tail -1 $O/iter.log | sed -n 's/.*max |d| = \([0-9.]*\).*/\1/p')
+  [ -n "$m" ] || { log "it$n: next failed (no misfit in its output)"; exit 1; }
   if [ -n "$prev" ] && awk -v m=$m -v t=$TOL 'BEGIN{exit !(m < t)}'; then conv=1; final=$prev; echo "converged: it$n (r_$n), max misfit $m m" | tee -a $O/iter.log; break; fi
   [ -n "${R0:-}" ] && { echo "== done (one run with r = $R0) $(date -Is)" | tee -a $O/iter.log; exit 0; }
   prev=$r
@@ -234,5 +237,6 @@ if [ "${KEEP:-all}" = last ]; then
     echo "KEEP=last: kept it$n/vilma_out.nc of the model output" | tee -a $O/iter.log
 fi
 DOMS=""; for d in $DOMAINS; do IFS=: read dom hub topo <<< "$d"; DOMS="$DOMS $dom:$hub:$F/$topo"; done
-RHO_ICE=$RHOI RHO_SW=$RHOW $JL $T/gia_refcorr.jl write $O/r.nc $O $XGRID:$XHIST${XZREF:+:$XZREF} $DOMS | tee -a $O/iter.log || exit 1
+RHO_ICE=$RHOI RHO_SW=$RHOW logrun $JL $T/gia_refcorr.jl write $O/r.nc $O $XGRID:$XHIST${XZREF:+:$XZREF} $DOMS ||
+    { log "write failed"; exit 1; }
 echo "== done $(date -Is)" | tee -a $O/iter.log
