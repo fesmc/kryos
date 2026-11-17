@@ -46,7 +46,7 @@ upper mantles are slow); 3-5 iterations to converge.
 | file | content |
 |---|---|
 | `iter.log` | the iterations, the 0 ka bed misfit of each, and the last line `== done` (or `not converged`, or `failed`) |
-| `it<n>/` | iteration n, a runme run of `vilma_rc.nml`: `vilma_out.nc`, `out.out`, `status` |
+| `it<n>/` | iteration n, a runme run of `vilma_rc.nml`: `vilma_out.nc`, `out.out`, `status`; while it runs, its chunks `c<k>/` |
 | `r_<n>.nc`, `r.nc` | the corrections; `r.nc` links to the converged one |
 | `<grid>/<grid>_REFCORR.nc`, `<domain>/<hub>/<topo>-refcorr` | the reference files a kryos run reads (today's bed + r) |
 | `data/` | `force.nc` (the ice history as VILMA2 forcing) and `ref.nc` (the history's 0 ka bed and ice) |
@@ -54,6 +54,21 @@ upper mantles are slow); 3-5 iterations to converge.
 
 The case is restartable: an iteration whose `status` is 0 is not rerun. A case that ended in `not converged` or `failed` is
 not retried by the pools below: delete its folder to rerun it.
+
+**Passes longer than a job.** A pass runs in chunks `it<n>/c<k>/` (`vilma_out.nc`, `final/`, `out.out`, `status`). In a
+Slurm job `vilma.x` stops after the forcing slice past which the next one and the restart might not end before the job does
+(`SLURM_JOB_END_TIME`), writes `final/vilma_restart.nc` and exits with 75; the next chunk resumes it, in the same job if at
+least `TMIN` minutes are left (default 120; 240 for a 3-D Earth), else in a later one (`iter.log`: `it<n>: continues at t =
+...`, the job ends normally). `CHAIN=<m>` makes each job submit its successor (`--dependency=afterany`), which exits at once
+when the case is done. A chunk killed with its job is redone from the restart of the chunk before (the first chunk from its
+spin-up restart, if it got that far). When the last chunk ends, the outputs are joined into `it<n>/vilma_out.nc`
+(`gia_refcorr.jl join`, which checks each chunk's first slice against the last of the one before, bit for bit) and the
+chunks are deleted. The result is the pass of one long job bit for bit, on the same thread count and node type (a chunk
+that resumes on others is warned of in `iter.log`). `provenance.txt` records each chunk (threads, node, VILMA2 commit).
+
+```bash
+CASE=<case> PAR=<par file> TIME=48:00:00 TMIN=240 CHAIN=2 tools/levante/gia_refcorr.sh
+```
 
 ## The ladder rows
 
@@ -89,8 +104,10 @@ LIST=cases.txt NJOB=4 NWORK=8 NCPU=128 MEM=64G TIME=12:00:00 tools/levante/gia_r
 
 The list has one case per line, `CASE PAR [VAR=value ...]`, the variables being those of `gia_refcorr.sh` for that case
 (`HIST`, `ZREF`, `R0`, ...). A worker claims a case with a link `<case>/claim -> <job id>`. A claim of a job that no longer
-runs is taken over, so resubmitting the same list resumes the cases of a job that was cut off. A worker claims no case after
-`TIME - MARGIN`, nor when less than 1.2 times the longest finished case of the list is left. `PART` sets the partition and
+runs is taken over, so resubmitting the same list resumes the cases of a job that was cut off. A worker claims a case only
+with at least `TMIN` minutes of the job left (default 120; 240 for 3-D cases), and a case continues over several jobs (above):
+when its pass goes on in a later job, the worker releases it and claims no other. `CHAIN=<m>` makes each pool job submit its
+successor, which exits at once when the list is done. `PART` sets the partition and
 QOS (default `KRYOS_PART`; `PART="$KRYOS_PART_LONG"` with a `TIME` over 12 h on albedo). Each case writes `pool.out`; the
 job writes `$KD/refcorr/pool-<job>.out`.
 
