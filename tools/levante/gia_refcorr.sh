@@ -3,7 +3,7 @@
 # VILMA2 (vilma.x of a stack) under an ice history with the Earth of a kryos par file, iterated with i_eq = 3 until its 0 ka bed is
 # today's (r_{n+1} = rsl_n(0 ka), r_0 = 0), then the kryos reference files (today's topography + r, H_ice present-day).
 #   CASE=PaleoMIST-sci PAR=par/kryos_NH-ANT_plastic_vilma2.nml tools/levante/gia_refcorr.sh     (submits itself: shared,
-#   2 days, 128 cpus, 60 GB)
+#   2 days, 128 cpus, 60 GB; CHAIN=3: and up to 3 successors, for passes longer than a job)
 # Env:
 #   CASE     name of the case: everything goes to $KD/refcorr/$CASE (KD default $KRYOS_WORK/kryos_data: a run reads the case
 #            through its kryos_data link, so point KRYOS_DATA there, or copy the case into the shared KRYOS_DATA)
@@ -20,8 +20,8 @@
 #            without ZREF)
 #   DOMAINS  "<domain>:<hub grid>:<topo file under fesmdata> ..." the domain reference topographies to correct (default North on NH-16KM and
 #            NH-32KM, and Antarctica; the case PaleoMIST-sci also has PatagoniaPaleo:PAT-PAL-8KM:PatagoniaPaleo/PAT-PAL-8KM/PAT-PAL-8KM_TOPO-GEBCO2026.nc)
-#   NCPU, MEM  cpus and memory of the job (128, 60G): a 3-D Earth; a 1-D Earth needs far fewer (16-32 cpus, about 3 GB at
-#            degree 170; many 1-D cases: gia_refcorr_pool.sh)
+#   NCPU, MEM, TIME  cpus, memory and time of the job (128, 60G, 2-00:00:00): a 3-D Earth; a 1-D Earth needs far fewer
+#            (16-32 cpus, about 3 GB at degree 170; many 1-D cases: gia_refcorr_pool.sh)
 #   NTHR     OpenMP threads (NCPU, at most 64)
 #   KEEP     all (default) | last: once converged, delete the model output of the iterations (vilma_out.nc, spinup/, final/)
 #            but the converged iteration's vilma_out.nc, what the scores read (a 1-D case: about 0.3 instead of 3 GB)
@@ -29,6 +29,8 @@
 #            nearby Earth); the run is it0, no reference files are written
 #   TMIN     [min] start a pass or a chunk of one only with at least this much of the job left (120; 240 for a 3-D Earth),
 #            from SLURM_JOB_END_TIME (no job end: always)
+#   CHAIN    m: at its start the job submits its successor (afterany, CHAIN = m - 1), which exits at once when the case is
+#            done; a pass longer than a job goes on in the next
 #   CHUNK_TEND  (tests) time_end [yr] of the chunks, e.g. "-60000 -30000": a pass in three chunks
 # Provenance: <case>/provenance.txt, appended at every start (env, git commits, md5 of the par file and vilma.x, the inputs)
 # and at every chunk (threads, node, vilma2 commit, md5 of vilma.x); a chunk that resumes one on another thread count or node
@@ -48,12 +50,21 @@ JL="$KRYOS_JULIA --project=$_h"
 CASE=${CASE:?}; PAR=${PAR:?}
 case $PAR in /*) ;; *) PAR=$KRYOS/$PAR ;; esac
 KD=${KD:-$KRYOS_WORK/kryos_data}
+submit() {   # the job of the case ($1: sbatch options before the script)
+    sbatch --parsable -A $ACCOUNT ${PART:-$KRYOS_PART_LONG} -t ${TIME:-2-00:00:00} -c ${NCPU:-128} --mem=${MEM:-60G} \
+        -J gia_refcorr-$CASE -o $KD/refcorr/$CASE/job-%j.out --export=ALL,KRYOS_JOB=1,PAR=$PAR,KD=$KD "$@" "$_h/gia_refcorr.sh"
+}
 if [ "${KRYOS_JOB:-}" != 1 ]; then
     [ -f "$PAR" ] || { echo "no par file $PAR"; exit 1; }
     mkdir -p $KD/refcorr/$CASE
-    sbatch --parsable -A $ACCOUNT $KRYOS_PART_LONG -t 2-00:00:00 -c ${NCPU:-128} --mem=${MEM:-60G} -J gia_refcorr-$CASE \
-        -o $KD/refcorr/$CASE/job-%j.out --export=ALL,KRYOS_JOB=1,PAR=$PAR,KD=$KD "$_h/gia_refcorr.sh"
+    submit
     exit
+fi
+# CHAIN: a successor that waits for this job; a case that is done (or failed) has nothing left to do
+if [ -n "${CHAIN:-}" ]; then
+    tail -1 $KD/refcorr/$CASE/iter.log 2> /dev/null | grep -q "^== done\|^not converged\|failed" && {
+        echo "gia_refcorr $CASE: nothing left to do ($(tail -1 $KD/refcorr/$CASE/iter.log))"; exit 0; }
+    [ "$CHAIN" -gt 0 ] && echo "gia_refcorr $CASE: successor $(CHAIN=$((CHAIN - 1)) submit --dependency=afterany:$SLURM_JOB_ID)"
 fi
 HIST=${HIST:-$F/Global/GLOBAL-0.25DEG/GLOBAL-0.25DEG_IceHistory-PaleoMIST.nc}; INTERP=${INTERP:-linear}
 RHOI=${RHOI:-910.0}; RHOW=${RHOW:-1028.0}; TOL=${TOL:-1.5}; NMAX=${NMAX:-8}; TMIN=${TMIN:-120}
@@ -76,7 +87,7 @@ gitrev() {   # the commit of checkout $1 (without git, as on the compute nodes: 
 # par file and vilma.x, the inputs with their version and history attributes
 {
     echo "== $(date -Is) on $(hostname)"
-    for v in CASE PAR HIST XHIST ZREF XZREF R0 DOMAINS NCPU NTHR TOL NMAX INTERP RHOI RHOW KEEP TMIN CHUNK_TEND SLURM_JOB_ID; do
+    for v in CASE PAR HIST XHIST ZREF XZREF R0 DOMAINS NCPU NTHR TOL NMAX INTERP RHOI RHOW KEEP TMIN CHAIN CHUNK_TEND SLURM_JOB_ID; do
         echo "$v=${!v:-}"
     done
     for d in $KRYOS $VILMA2; do echo "git $d $(gitrev $d) dirty $(git -C $d status --porcelain -uno 2> /dev/null | wc -l)"; done
