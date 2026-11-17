@@ -213,7 +213,8 @@
                                                ! interpolated signed distance: the faces at the slices, moving between
                                                ! them) | "face" | "centre" (the ice-free cell centre, PlasticIceSheet.jl)
     ! tau_b (drive = "taub")
-    taub_method        = "const"               ! "const" | "file" | "domains"
+    taub_method        = "const"               ! "const" | "file" | "domains" | "coulomb" (the Coulomb yield law
+                                               ! tau_b = c_f lambda N_eff, solved with the geometry; mode "surface")
     taub_const         = 0.0                   ! [Pa] "const": the value (> 0)
     taub_file          = ""                    ! "file": a static field (x, y) on the instance grid ({domain}, {grid_name})
     taub_var           = "taub"                ! "file": its variable
@@ -235,7 +236,17 @@
                                                ! "" = none
     taub_smooth_km     = 50.0                  ! [km] drive = "taub": Gaussian sd of the smoothing of tau_b (after the
                                                ! factors) over the cells with tau_b > 0, for the solve and the
-                                               ! closure alike; 0 = none
+                                               ! closure alike ("coulomb": of mu = c_f lambda); 0 = none
+    taub_region_file   = ""                    ! "coulomb": the region map (region (x, y), 0 = none; written by
+                                               ! tools/levante/plastic_cf_regions.jl; {domain}, {grid_name})
+    taub_cf_file       = ""                    ! "coulomb": c_f per region, constant in time (region_id, log_cf: natural
+                                               ! log; {domain}, {grid_name})
+    taub_HN            = 0.0                   ! [m] "coulomb": the cap of N, N_max = rho_i g taub_HN (1/N_eff = 1/N +
+                                               ! 1/N_max); required (> 0)
+    taub_p             = 1.0                   ! "coulomb": N = rho_i g H (1 - H_f/H)^taub_p (Leguy et al. 2014), in [0, 1]
+    taub_lam_min       = 1.0                   ! "coulomb": lambda at a bed taub_zb0 or lower (1 = no bed dependence)
+    taub_zb0           = -300.0                ! [m] "coulomb": bed above sea level (z_bed - z_sl) of taub_lam_min
+    taub_zb1           = 200.0                 ! [m] "coulomb": of lambda = 1 (linear between)
     ! rheology and sliding (drive = "smb"; mass_balance = "implied")
     rheo_A             = 0.0                   ! [Pa-n yr-1] Glen rate factor; 0 = no velocity
     rheo_n             = 3.0                   ! Glen exponent
