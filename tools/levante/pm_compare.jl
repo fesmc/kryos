@@ -250,12 +250,23 @@ end
 run_done(dir) = (f = joinpath(dir, "status"); isfile(f) && (w = split(read(f, String)); !isempty(w) && w[1] == "0"))
 # the age [yr] of each record of a run: its time rounded to 10 yr, without the 1 yr of trec / trun (records 100 yr apart or more)
 rec_age(r::Run) = -10.0 .* round.(r.t ./ 10.0)
-# a run's ESL [m] at the ages [yr]: bsl_ive (ice-volume equivalent) relative to its last record (0 ka), linear in time between the
-# records (rec_age; the record itself at an age it has); NaN for a run that has not finished
-function esl_at(dir, ages)
+# The model's ESL: a scalar of VILMA2's own diagnostics (vilma_coupling.f90 update_bsl; in a kryos run geo_glob_vilma.nc of the
+# global instance), var of esl_at, [esl] model_var of an ensemble config:
+#   bsl      the barystatic sea level, the ocean mean of C rsl, ∫C rsl dA / ∫C dA over the ocean of the time; by the mass balance of
+#            the sea-level equation the melt water (−ρ_i/ρ_w ∫ΔI_g dA, ΔI_g the grounded-ice change) plus the flooded-area fill
+#            (vilma_coupling.f90 fill_int, with the host's F in a kryos run). The ocean that fills newly flooded area (the
+#            cavity of lost marine ice, flooding shelves) does not raise it, so in effect the ice above flotation counts, with the
+#            change of the ocean area: the ice-volume-equivalent sea level of a stack. The default.
+#   bsl_ive  −ρ_i/ρ_w ∫ΔI_g dA / ∫C dA, the whole grounded column, below flotation too (about 10 m more ice at the LGM; bsl −
+#            bsl_ive = fill_int / ∫C dA): the comparator before 2026-11-18, kept to reproduce the old scores
+const ESL_VARS = (:bsl, :bsl_ive)
+# a run's ESL [m] at the ages [yr]: var (ESL_VARS) relative to its last record (0 ka), linear in time between the records (rec_age; the
+# record itself at an age it has); NaN for a run that has not finished
+function esl_at(dir, ages; var = :bsl)
+    var in ESL_VARS || error("esl_at: var $(var), not one of $(ESL_VARS)")
     run_done(dir) || return fill(NaN, length(ages))
     r = read_run(dir); r === nothing && return fill(NaN, length(ages))
-    a = rec_age(r); p = sortperm(a); x = r.bsl_ive .- r.bsl_ive[end]
+    b = getfield(r, var); a = rec_age(r); p = sortperm(a); x = b .- b[end]
     [tlin(a[p], x[p], age) for age in ages]
 end
 
