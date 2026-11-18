@@ -122,7 +122,7 @@ viscosity, in three ways:
   8 structures, Lloyd et al. 2024 and Pan et al. 2022, each clamped to [19.5, 24]), φ₂′, φ₃′ the lateral part of its components
   2 and 3, w_j the masks of five regions (`earth_regions_v2.nc`), and log10 η = 30 (elastic) above the lithosphere. The field is
   clamped to [19.5, 30]; wave B2 lowers the floor to 19.0, and its par files set `visc_log10_min = 19.0` so that VILMA2 does not
-  clamp it again at its default. The parameters, their ranges and why: [The Earth search](science/earth-search.md).
+  clamp it again at its default. The parameters, their ranges and why: [The Earth search](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/earth-search.md).
 
 With `l_visc_3d = .true.` the file's log10 η (bilinear onto the Gauss grid, linear in radius onto the FE nodes, plus
 `visc_shift_file`, clamped to `visc_log10_min`, `visc_log10_max`) replaces the radial viscosity of every Maxwell layer; the
@@ -243,17 +243,17 @@ the PaleoMIST slice times).
 
 ### GAPSLIP scoring
 
-`geo_glob_vilma.nc` is what the sea-level scoring reads. `tools/levante/pm_compare.jl`
+`geo_glob_vilma.nc` is what the sea-level scoring reads. `ice-earth-recon/tools/pm_compare.jl`
 (`read_run`, in place) takes `rsl`, `dz_bed`, `bsl` and `bsl_ive`; the model RSL at an
 indicator is rsl(t) − rsl(0 ka) (relative to present, as Gowan's), bilinear in space
 and linear in time between the records, against GAPSLIP 2.1 (Gowan 2023; FesmData
 `Records/RSL/RSL-GAPSLIP_global.nc`). Index points give z = (model − obs)/σ, limiting
 data are violated or not, by group (Laurentide, Greenland, Fennoscandia/Barents,
 Antarctica, far field). The same reading drives the ensemble scores (`plastic_ensemble.jl`), whose
-members write only `geo_glob_vilma.nc` and the 1-D series, `tools/levante/plastic_score.sh` and the comparison
+members write only `geo_glob_vilma.nc` and the 1-D series, `ice-earth-recon/tools/plastic_score.sh` and the comparison
 across Earths (`plastic_earth_compare.jl`). The GNSS scores read `dz_bed_rate` of the last record. The groups and
-the likelihood: [Data and scores](science/data-scores.md); the tools: [Ensembles](howto/ensembles.md),
-[Analysis and figures](howto/analysis.md).
+the likelihood: [Data and scores](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/data-scores.md); the tools: [Ensembles](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/ensembles.md),
+[Analysis and figures](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/analysis.md).
 
 ## Configuration
 

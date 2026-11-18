@@ -8,7 +8,7 @@ program plastic_coulomb_scan
     ! plastic_solve_coulomb for each (c_f, H_N, lambda_min) of
     ! the lists cf x HN x lam_min (OpenMP over the cases). Output <out>: H (xc, yc, case) with case_cf, case_HN,
     ! case_lam_min (case = cf fastest, then HN, then lam_min), the bed, the
-    ! margin and the region map (volumes per ice sheet: tools/levante/plastic_coulomb_lgm.jl). Needs plastic=1:
+    ! margin and the region map (volumes per ice sheet: ice-earth-recon/tools/plastic_coulomb_lgm.jl). Needs plastic=1:
     !
     !     make libkryos/bin/plastic_coulomb_scan.x plastic=1
     !     plastic_coulomb_scan.x <scan.nml>          (namelist &scan, below)

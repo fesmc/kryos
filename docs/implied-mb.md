@@ -180,7 +180,7 @@ is `par/kryos_NH-ANT-PAT_plastic_vilma2.nml` with the following changes:
 | `slide_p` | 1.0 | 0.5 |
 | `slide_u0`, `slide_m`, `slide_umax` | 100 m yr-1, 2, 1000 m yr-1 | same |
 
-Build with `plastic=1 vilma=1`. The run setup is that of [Online ice](howto/online-ice.md). The closure
+Build with `plastic=1 vilma=1`. The run setup is that of [Online ice](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/online-ice.md). The closure
 values come from the present-day scans of `runs/closure-cn` (the sets within the observed totals; section "Implied
 mass balance: present-day tests" of [docs/dev/plastic-backend.md](https://github.com/fesmc/kryos/blob/main/docs/dev/plastic-backend.md)). A first LGM run of this par file was
 queued on Levante on 2026-11-10; the work was paused before a result was analysed.
@@ -226,13 +226,13 @@ The namelist `&fit` has these keys: `hist`, `margin_var`, `margin_min`, `taub_fi
 The figures:
 
 ```bash
-julia --project=tools/levante tools/levante/plastic_closure_maps.jl <out.png> <sd_km> [ref=<smb.nc>] <label>=<set.nc>[:inv] ...
-julia --project=tools/levante tools/levante/plastic_implied_pd.jl <run folder> <out folder> [age=0]
+recon_jl tools/plastic_closure_maps.jl <out.png> <sd_km> [ref=<smb.nc>] <label>=<set.nc>[:inv] ...
+recon_jl tools/plastic_implied_pd.jl <run folder> <out folder> [age=0]
 ```
 
 `plastic_closure_maps.jl` maps the fit's sets (`:inv` for the inversion). `plastic_implied_pd.jl` compares a coupled
 run's implied mass balance with MAR, RACMO and the observed speeds. `plastic_lgm_map.jl mode=smb` maps it at any age.
-See [Analysis and figures](howto/analysis.md#implied-mass-balance).
+See [Analysis and figures](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/analysis.md#implied-mass-balance).
 
 ## Status and open issues
 

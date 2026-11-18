@@ -219,7 +219,7 @@ the 9 groups that judge (on this scale I1 −8967.9, I5 −8931.9).
 ## Wave B2 (2026-11-16)
 
 Decided with the results of wave B: 30 3-D Earths (E101-E130) in two boxes at the ends of the UM-TZ ridge, widened where wave B
-pressed against the prior (`experiments/earth-search-b2-boxes.toml`, `plastic_ensemble.jl earth-search-sample3d-box`, a Latin
+pressed against the prior (`ice-earth-recon/experiments/earth-search-b2-boxes.toml`, `plastic_ensemble.jl earth-search-sample3d-box`, a Latin
 hypercube per box):
 
 | box | n | lithosphere [km] | UM | TZ | LM1 | LM2 |

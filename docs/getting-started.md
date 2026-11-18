@@ -153,7 +153,7 @@ How the generated dependencies work and how to add a backend:
 ## The HPC tools
 
 The scripts of [tools/levante/](https://github.com/fesmc/kryos/tree/main/tools/levante) and
-[experiments/](https://github.com/fesmc/kryos/tree/main/experiments) share one environment,
+[experiments/](https://github.com/awi-esc/ice-earth-recon/tree/main/experiments) share one environment,
 [env.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/env.sh), which every script sources. The folder is named
 after Levante but serves both machines: `KRYOS_MACHINE` (`levante` or `albedo`, from the host name) sets the defaults,
 given below as Levante's / albedo's. This table is the reference of these variables for every page of this site:
@@ -173,12 +173,11 @@ given below as Levante's / albedo's. This table is the reference of these variab
 | `KRYOS_JULIA` | juliaup's `julia +1.13` | the julia command (by full path: Levante's python module puts an old julia first on `PATH`) |
 
 Override any of them in the environment or in `~/.kryos.env`. The pages write the paths with these variables
-(`$KRYOS_WORK/...`); to use them in a shell, source the file (`. tools/levante/env.sh`). Then `kryos_jl <script.jl> ...`
-runs julia with the tools' project.
+(`$KRYOS_WORK/...`); to use them in a shell, source the file (`. tools/levante/env.sh`). The analysis tools of the
+experiments (Julia) are in [ice-earth-recon](https://github.com/awi-esc/ice-earth-recon), whose `tools/env.sh` sources
+this one.
 
-Once, in a login shell (it needs your own juliaup with Julia 1.13:
-`curl -fsSL https://install.julialang.org | sh -s -- --yes && juliaup add 1.13`, and runme:
-`pip install --user git+https://github.com/fesmc/runme`):
+Once, in a login shell (it needs runme: `pip install --user git+https://github.com/fesmc/runme`):
 
 ```bash
 tools/levante/setup.sh
@@ -194,10 +193,7 @@ It checks the paths and the builds, and sets up the checkout:
   `.runme/config.default.toml` (`hpc = "dkrz_levante"`, `account = "ba1442"`; on albedo `awi_albedo`,
   `envi.p_forclima`; edit it for another account);
 - `ice_data` and `isostasy_data`: read only by the Yelmo par files. Without them runme warns that the link is
-  missing, which is harmless for the plastic runs;
-- the Julia project of the tools, `tools/levante` (`Project.toml`, `Manifest.toml`: CairoMakie, NCDatasets,
-  DelimitedFiles on Julia 1.13), instantiated in your own depot (a fresh instantiate took 3.5 min). Every Julia tool
-  runs with `julia --project=tools/levante` (or `kryos_jl`).
+  missing, which is harmless for the plastic runs.
 
 It is safe to rerun.
 
@@ -226,7 +222,7 @@ from those of the checkout ([.runme/info.json](https://github.com/fesmc/kryos/bl
 | Link | Target | What |
 |---|---|---|
 | `fesmdata` | `$FESMDATA` | FesmData products, `<Domain>/<GRID>/<GRID>_<PRODUCT>.nc`: topography, regions, PaleoMIST ice history and tau_b domains, the Bagge et al. (2021) viscosity |
-| `kryos_data` | `$KRYOS_DATA` | kryos-made inputs, e.g. `refcorr/PaleoMIST-sci/` (the present-day reference correction r, [tools/levante/gia_refcorr.sh](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr.sh)), the released tau_b products `plastic/` |
+| `kryos_data` | `$KRYOS_DATA` | kryos-made inputs, e.g. `refcorr/PaleoMIST-sci/` (the present-day reference correction r, [ice-earth-recon/tools/gia_refcorr.sh](https://github.com/awi-esc/ice-earth-recon/blob/main/tools/gia_refcorr.sh)), the released tau_b products `plastic/` |
 | `input` | the checkout's `input/` | defaults, variable tables, constants, synchronised copies (below) |
 | `maps` | the checkout's `maps/` | grid descriptions `grid_<GRID>.txt` and the cached remapping weights (`*.nc`) |
 | `ice_data`, `isostasy_data` | e.g. `/work/ba1442/ice_data`, `/work/ba1442/isostasy_data` | the yelmox data of the Yelmo configurations, linked when the checkout has them; the plastic par files do not read them |
@@ -344,7 +340,7 @@ Keep within the job limit of the machine ([above](#the-hpc-tools)).
 ```
 
 Copying `kryos.x` keeps the run independent of later builds. `kryos.x` takes one argument, the par file. The members
-of an ensemble have the same layout, staged by runme from the ensemble folder ([Ensembles](howto/ensembles.md)).
+of an ensemble have the same layout, staged by runme from the ensemble folder ([Ensembles](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/ensembles.md)).
 
 ### Which par file first
 
@@ -475,7 +471,7 @@ forcing instance.
 - How a run is put together: [Architecture](architecture.qmd), [Global hub and regional domains](global-hub.qmd).
 - The backends: [PlasticIceSheet](backend-plastic.md), [VILMA2](backend-vilma2.md),
   [smb_simple](backend-smb-simple.md).
-- How to run the glacial-cycle simulations: [Imposed ice](howto/imposed-ice.md), [Online ice](howto/online-ice.md),
-  [Ensembles](howto/ensembles.md), [The Earth search](howto/earth-search.md), [Analysis and figures](howto/analysis.md).
-- The science they serve: [the reconstruction of the last glacial cycle](science/index.md).
-- The par files and the tools: [Par files](reference-par-files.md), [Tools](reference-tools.md).
+- How to run the glacial-cycle simulations: [Imposed ice](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/imposed-ice.md), [Online ice](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/online-ice.md),
+  [Ensembles](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/ensembles.md), [The Earth search](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/earth-search.md), [Analysis and figures](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/analysis.md).
+- The science they serve: [the reconstruction of the last glacial cycle](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/index.md).
+- The par files and the tools: [Par files](reference-par-files.md), [Tools](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/reference-tools.md).

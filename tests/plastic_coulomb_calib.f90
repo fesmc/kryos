@@ -20,7 +20,7 @@ program plastic_coulomb_calib
     ! or on the present-day bed of topo_file relaxed by local isostasy ("relaxed"), or on the bed of each solve
     ! ("current"). SLE = V_af rho_i / (rho_sw A_ocean), A_ocean =
     ! 3.618e14 m2. Output <out>: per pair the present-day fit, the c_f, volumes and maximum thickness per region at
-    ! time_ka (region, HN, lam_min). Analysis: tools/levante/plastic_coulomb_calib.jl. Needs plastic=1:
+    ! time_ka (region, HN, lam_min). Analysis: ice-earth-recon/tools/plastic_coulomb_calib.jl. Needs plastic=1:
     !
     !     make libkryos/bin/plastic_coulomb_calib.x plastic=1
     !     plastic_coulomb_calib.x <calib.nml>          (namelist &calib, below)

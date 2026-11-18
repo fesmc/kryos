@@ -7,3 +7,6 @@ Successor to [yelmox](https://github.com/fesmc/yelmox).
 
 Documentation: **[fesmc.github.io/kryos](https://fesmc.github.io/kryos/)** (sources in [docs/](docs/)); developer
 notes in [docs/dev/](docs/dev/) and [docs/study/](docs/study/).
+
+The glacial-cycle reconstruction made with kryos (experiments, scores, ensembles, analysis tools) is in
+[awi-esc/ice-earth-recon](https://github.com/awi-esc/ice-earth-recon) since v0.1.0, the last version that holds it here.

@@ -12,8 +12,8 @@ derived from and the build it needs.
 Hand-written; keys left out take the templates of `input/kryos_defaults.nml`. All run 80 ka to present
 (`time_init = -80e3`, `time_end = 0`, `dtt = 100` yr), with the PaleoMIST margins (`f_ice > 0.5`, signed-distance
 interpolation) and Gowan's time-dependent tau_b domains of FesmData IceHistory. Build: `plastic=1`, and `vilma=1`
-where geo is `vilma2` (`yelmo=0` is enough). See [Online ice](howto/online-ice.md) and
-[PlasticIceSheet](backend-plastic.md). The standalone VILMA2 runs of imposed ice ([Imposed ice](howto/imposed-ice.md))
+where geo is `vilma2` (`yelmo=0` is enough). See [Online ice](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/online-ice.md) and
+[PlasticIceSheet](backend-plastic.md). The standalone VILMA2 runs of imposed ice ([Imposed ice](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/imposed-ice.md))
 read only the `&vilma` group of these files: their Earth. Status as of 2026-11-16.
 
 | Par file | Domains (hub) | Ice | Geo | What it sets up |
@@ -32,14 +32,14 @@ In the `_b1` files and the NH-ANT(-PAT) files, `taub_domain_factor_file` (the pr
 Stage 1) is `"kryos_data/plastic/taub_domain_factor_v3.nc"` on every instance (the released factors; v3 is v2 plus
 Patagonia, identical on all NH and ANT domains), and `taub_scale_file` (the multipliers per scale group of an
 ensemble member) is `""`. `kryos_North_plastic.nml` and `kryos_North_plastic_vilma2.nml` list neither key (the default
-`""`: Gowan's tau_b as it is). The ensemble tools set them per member ([Ensembles](howto/ensembles.md)); for one run,
+`""`: Gowan's tau_b as it is). The ensemble tools set them per member ([Ensembles](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/ensembles.md)); for one run,
 `-p ice_nor.taub_scale_file=<file> ...`.
 
 **Generated par files of the Earth search.** `plastic_ensemble.jl earth-search-sample`, `earth-search-sample3d` and
 `earth-search-sample3d-box` write one par file per sampled Earth from the two templates (`_b1` for 1-D, `NH-ANT-PAT` for
 3-D): `earths/E<nnn>.nml` (wave A, 1-D), `earthsB/E<nnn>.nml` with its field `E<nnn>.nc` and `E<nnn>_1d.nml` (wave B, 3-D and
 its radial profile), and the same for wave B2 in `waveB2/earths/` (with `visc_log10_min = 19.0`). They live in the search's
-work folder, not in `par/` ([The Earth search](howto/earth-search.md)). `experiments/refs-ice.sh` writes the Bagge structures
+work folder, not in `par/` ([The Earth search](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/earth-search.md)). `ice-earth-recon/experiments/refs-ice.sh` writes the Bagge structures
 1-8 likewise (`$KRYOS_WORK/experiments/par/E3D-B21-<k>.nml`: the 3-D par file with `visc_3d_structure = k`).
 
 ## The Yelmo configurations
@@ -59,7 +59,7 @@ generate again.
 
 Each converted file has its report next to it (`par/kryos_<domain>_conversion.md`): every yelmox key mapped,
 default-equal or dropped, with the reason. The converter needs the Julia project of `tools/`; see
-[Tools](reference-tools.md).
+[Tools](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/reference-tools.md).
 
 ## par/gate/
 
@@ -164,4 +164,4 @@ python3 tools/levante/set_nml.py par.nml clock.time_end=-70e3 'kryos.restart_out
 - `kryos.x` itself takes no overrides: one argument, the par file.
 
 Do not edit a generated file (the converted, merged and derived files above): change the source or the generator
-and generate again (Julia project `tools/`, [Tools](reference-tools.md)).
+and generate again (Julia project `tools/`, [Tools](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/reference-tools.md)).

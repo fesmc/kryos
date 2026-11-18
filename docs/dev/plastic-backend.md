@@ -23,9 +23,9 @@ level of the geo backend (VILMA2) at every coupling step. The solver is the Fort
 | `tests/test_ice_plastic.f90` | the backend through the ice wrappers (`plastic=1` only) |
 | `tests/plastic_slices.f90` | the offline check against PaleoMIST per slice (`plastic=1`) |
 | `tests/plastic_taub_fit.f90` | Stage 1 of calibration v2: a tau_b factor per domain against the present-day thickness (`plastic=1`) |
-| `tools/levante/plastic_maps.jl`, `plastic_score.sh` | maps of the offline check; the GAPSLIP scoring with `pm_compare.jl` (its `read_run` reads a kryos run's VILMA2 stream `geo_glob_vilma.nc` in place) |
-| `tools/levante/plastic_taub_scale.jl`, `plastic_esmda.jl`, `plastic_esmda.sh`, `plastic_esmda.toml`, `plastic_esmda_v2.toml` | the tau_b calibration: scale groups and multiplier files; ES-MDA; its jobs; its configs (v1, v2) |
-| `tools/levante/plastic_esmda_report.jl`, `plastic_taub_fit_report.jl`, `plastic_pd_regions.jl` | the reports: of a calibration; of Stage 1 (lambda, the domain factor file, maps); the present-day thickness per region |
+| `ice-earth-recon/tools/plastic_maps.jl`, `plastic_score.sh` | maps of the offline check; the GAPSLIP scoring with `pm_compare.jl` (its `read_run` reads a kryos run's VILMA2 stream `geo_glob_vilma.nc` in place) |
+| `ice-earth-recon/tools/plastic_taub_scale.jl`, `plastic_esmda.jl`, `plastic_esmda.sh`, `plastic_esmda.toml`, `plastic_esmda_v2.toml` | the tau_b calibration: scale groups and multiplier files; ES-MDA; its jobs; its configs (v1, v2) |
+| `ice-earth-recon/tools/plastic_esmda_report.jl`, `plastic_taub_fit_report.jl`, `plastic_pd_regions.jl` | the reports: of a calibration; of Stage 1 (lambda, the domain factor file, maps); the present-day thickness per region |
 
 Build: `plastic=1` adds `INC_PLASTIC` / `LIB_PLASTIC` (`config/common.mk`: the sibling `PlasticIceSheet`,
 `libplastic/include` with `libplastic.a` and the `.mod` files; `make plastic-static`). `yelmo=0` is enough for these runs. The library's API: PlasticIceSheet
@@ -351,7 +351,7 @@ volume 1.18 to 1.51 (as the offline check). ESL (`bsl_ive` - `bsl_ive`(0), m):
 | I910_it0 (B1 at 910) | -10.2 | -52.6 | -82.4 | -39.2 | -63.8 | -117.8 | -122.8 | -84.5 | -29.5 | -5.1 |
 | online plastic | -12.5 | -61.4 | -94.4 | -44.7 | -72.4 | -131.7 | -137.7 | -96.2 | -34.0 | -5.2 |
 
-GAPSLIP 2.1 indicators (`tools/levante/plastic_score.sh`: `pm_compare.jl` with the run's VILMA2 stream beside B1,
+GAPSLIP 2.1 indicators (`ice-earth-recon/tools/plastic_score.sh`: `pm_compare.jl` with the run's VILMA2 stream beside B1,
 the same scoring as docs/dev/vilma2-paleomist.md; RMS z, median |z|, fraction |z| <= 2, mean misfit [m], marine /
 terrestrial limiting data violated):
 
@@ -541,14 +541,14 @@ So the indicators' sigma alone is far below the model error: the full calibratio
 Launch:
 
 ```
-bash tools/levante/plastic_esmda.sh start tools/levante/plastic_esmda.toml /work/ba1442/robinson/kryos-ice-plastic/runs/esmda-<name>
+bash ice-earth-recon/tools/plastic_esmda.sh start ice-earth-recon/tools/plastic_esmda.toml /work/ba1442/robinson/kryos-ice-plastic/runs/esmda-<name>
 ```
 
 ## Calibration v1 (2026-11-09)
 
 `runs/esmda-v1` (`plastic_esmda.toml` at fa734aa: the baseline above, margin `f_ice` > 0.5 at `"sdist"`, Gowan's 1-D Earth;
 24 parameters, Ne = 40, alpha 9.333, 7, 4, 2, sigma_add 5 m, cut at |z| > 5, at most 29 members at once), reported by
-`tools/levante/plastic_esmda_report.jl`. The cut kept 4385 of the 4705 index points: Laurentide 836 of 896, Greenland 150 of
+`ice-earth-recon/tools/plastic_esmda_report.jl`. The cut kept 4385 of the 4705 index points: Laurentide 836 of 896, Greenland 150 of
 276, Fennoscandia/Barents 1065 of 1088, far field 2334 of 2445. All 165 runs succeeded (11-24 min on 8 threads); 3.0 h of wall
 time, 464 cpu-h with the analyses (12 cpus billed per member). Scores of the mean member over all index points (RMS z; marine
 / terrestrial limiting data violated), the ensemble's RMS z (median [min, max]) and ESL at 20 ka:
@@ -610,7 +610,7 @@ sigma_H = max(50 m, 0.1 H_obs),
 w the shared boundary [km] (faces between 4-neighbour cells of the two domains anywhere in the map). Levenberg-Marquardt on u (the
 Gauss-Newton matrix J'J + lambda L, damping mu diag), the Jacobian by forward differences (du = 0.01, one solve per free domain, OpenMP
 over the domains), |u| <= 2.3 (factor 0.1-10), lambda from 100 down to 0, each from the previous solution. NH: 5 s on 27 threads; ANT:
-26 min. `tools/levante/plastic_taub_fit_report.jl` picks lambda by the discrepancy principle (the largest lambda with chi2 / n <= 1)
+26 min. `ice-earth-recon/tools/plastic_taub_fit_report.jl` picks lambda by the discrepancy principle (the largest lambda with chi2 / n <= 1)
 and, where no lambda reaches it, at the corner of the L-curve (largest Menger curvature of log chi2 against log roughness); writes
 `taub_domain_factor.nc` (the free domains of both grids, 644) and the tables and maps below (`runs/taub-fit`).
 
@@ -675,7 +675,7 @@ m), as offline. Ice volume [m SLE] and ESL [m]:
 The Stage 1 factors (mostly < 1) take 6 % off the NH LGM volume (124.7 -> 117.7 m SLE, 1.05 x PaleoMIST); Antarctica's plastic ice is
 within 0.3 % of PaleoMIST's at 20 ka (`M_ice` today counts the 261 floating cells as grounded ice).
 
-### ES-MDA v2 (`tools/levante/plastic_esmda_v2.toml`)
+### ES-MDA v2 (`ice-earth-recon/tools/plastic_esmda_v2.toml`)
 
 - **Observation error**: R = diag(sigma_i^2) + sigma_m^2 C, C_ij = exp(-dist_ij / 150 km) exp(-|t_i - t_j| / 2 kyr) (great-circle
   distance, indicator ages), sigma_m = 5 m; sigma_i the scorer's, at the ensemble-mean RSL of the iteration (as v1). The update
@@ -756,16 +756,16 @@ the free group with the fewest local constraints. v3 (below, Open) adds that ice
 
 ### Stage 1 v3: Patagonia (`runs/taub-fit-v3`, 2026-11-09)
 
-The Stage 1 fit of PAT-PAL-8KM (`tools/levante/taub_fit/fit_PAT.nml`, the same lambda list as NH-32KM and ANT-16KM) added to
+The Stage 1 fit of PAT-PAL-8KM (`ice-earth-recon/tools/taub_fit/fit_PAT.nml`, the same lambda list as NH-32KM and ANT-16KM) added to
 the v2 fits of NH-32KM and ANT-16KM: `runs/taub-fit-v3/report/taub_domain_factor.nc` holds the factors of the three grids
 (report `runs/taub-fit-v3/report/report.md`). It is the factor file of the NH-ANT-PAT runs and of the weighted ensemble
-(`tools/levante/plastic_ensemble_v1.toml`). The namelists and the job are in `tools/levante/taub_fit/`.
+(`ice-earth-recon/tools/plastic_ensemble_v1.toml`). The namelists and the job are in `ice-earth-recon/tools/taub_fit/`.
 
 ## The 3-D Earth (`par/kryos_NH-ANT_plastic_vilma2.nml`, `par/kryos_NH-ANT-PAT_plastic_vilma2.nml`)
 
 The science Earth: VILMA2 with PREM in 11 layers and the 3-D viscosity of Bagge et al. (2021, structure 6), lmax 170, the
 1-D pre-spin-up and a capped full relaxation (`equil_time_max` 20 kyr), the refcorr reference topography (`kryos_data/refcorr/
-PaleoMIST-sci`, `tools/levante/gia_refcorr.sh`). The 1-D twin is `par/kryos_NH-ANT_plastic_vilma2_b1.nml` (Gowan's 12-layer
+PaleoMIST-sci`, `ice-earth-recon/tools/gia_refcorr.sh`). The 1-D twin is `par/kryos_NH-ANT_plastic_vilma2_b1.nml` (Gowan's 12-layer
 Earth, B1's reference). Runs (Levante, `/work/ba1442/robinson/kryos-ice-plastic/runs`, `tools/levante/plastic_run.sh`):
 
 | run | par file | tau_b |
@@ -774,7 +774,7 @@ Earth, B1's reference). Runs (Levante, `/work/ba1442/robinson/kryos-ice-plastic/
 | `sci-v2-post` | NH-ANT, 3-D | the ES-MDA v2 posterior mean scale file |
 | `sci-v3-base` | NH-ANT-PAT, 3-D | Stage 1 v3 factors (with Patagonia) |
 
-Cost: 3.5-4.2 h on 64 OpenMP threads. Comparison with the 1-D runs of the same tau_b (`tools/levante/plastic_earth_compare.jl`):
+Cost: 3.5-4.2 h on 64 OpenMP threads. Comparison with the 1-D runs of the same tau_b (`ice-earth-recon/tools/plastic_earth_compare.jl`):
 
 - Globally the 3-D Earth fits the GAPSLIP index points worse at the same tau_b (RMS z_m prior 2.88 -> 3.47, posterior 2.33 ->
   3.20): the tau_b were calibrated on the 1-D Earth.

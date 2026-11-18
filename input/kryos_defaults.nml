@@ -234,13 +234,13 @@
                                                ! groups (domain_id, log_factor; the present-day fit,
                                                ! tests/plastic_taub_fit.f90; {domain}, {grid_name}); "" = none
     taub_scale_file    = ""                    ! "domains": multipliers of tau_b per scale group, time dependent (the
-                                               ! calibration, tools/levante/plastic_esmda.jl; {domain}, {grid_name});
+                                               ! calibration, ice-earth-recon/tools/plastic_esmda.jl; {domain}, {grid_name});
                                                ! "" = none
     taub_smooth_km     = 50.0                  ! [km] drive = "taub": Gaussian sd of the smoothing of tau_b (after the
                                                ! factors) over the cells with tau_b > 0, for the solve and the
                                                ! closure alike ("coulomb": of mu = c_f lambda); 0 = none
     taub_region_file   = ""                    ! "coulomb": the region map (region (x, y), 0 = none; written by
-                                               ! tools/levante/plastic_cf_regions.jl; {domain}, {grid_name})
+                                               ! ice-earth-recon/tools/plastic_cf_regions.jl; {domain}, {grid_name})
     taub_cf_file       = ""                    ! "coulomb": c_f per region, constant in time (region_id, log_cf: natural
                                                ! log; {domain}, {grid_name})
     taub_HN            = 0.0                   ! [m] "coulomb": the cap of N, N_max = rho_i g taub_HN (1/N_eff = 1/N +
@@ -259,7 +259,7 @@
                                                ! + (rho_i/3300) H_ice_pd; depends on the Earth through a refcorr
                                                ! reference topography) | "current" (the bed and sea level of each solve)
     taub_lambda_file   = "kryos_data/plastic/{grid_name}_lambda_bed.nc"   ! "coulomb", taub_lambda_bed = "file": z_lambda
-                                               ! (x, y) [m] (tools/levante/plastic_lambda_bed.jl; {domain}, {grid_name})
+                                               ! (x, y) [m] (ice-earth-recon/tools/plastic_lambda_bed.jl; {domain}, {grid_name})
     ! rheology and sliding (drive = "smb"; mass_balance = "implied")
     rheo_A             = 0.0                   ! [Pa-n yr-1] Glen rate factor; 0 = no velocity
     rheo_n             = 3.0                   ! Glen exponent

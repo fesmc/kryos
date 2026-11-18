@@ -1,5 +1,5 @@
-# The environment of the HPC tools (tools/levante; also on AWI's albedo): sourced by every script here; the Julia tools
-# read the same variables. Any of them can be set beforehand, in the environment or in ~/.kryos.env (sourced first;
+# The environment of kryos on the HPC machines (Levante; also on AWI's albedo): sourced by setup.sh, and by the tools of
+# ice-earth-recon (its tools/env.sh), which read the same variables. Any of them can be set beforehand, in the environment or in ~/.kryos.env (sourced first;
 # another file with KRYOS_ENV_FILE). The machine (KRYOS_MACHINE: levante or albedo, from the host name) sets the
 # defaults, Levante's / albedo's:
 #
@@ -29,8 +29,7 @@
 #   KRYOS_JULIA    the julia command (julia; with juliaup "julia +1.13" if that channel is installed)
 #
 # Model runs (kryos.x, vilma.x) go through runme from the checkout (its .runme: the links input, fesmdata, kryos_data,
-# maps into every run folder). Functions: kryos_jl <script.jl> [args]   julia with the project of tools/levante (run
-# tools/levante/setup.sh once). On albedo, git (runme needs it) is a module: loaded here when missing.
+# maps into every run folder). On albedo, git (runme needs it) is a module: loaded here when missing.
 
 _kryos_env_file=${KRYOS_ENV_FILE:-$HOME/.kryos.env}
 [ -f "$_kryos_env_file" ] && . "$_kryos_env_file"
@@ -84,7 +83,3 @@ if [ -z "${KRYOS_JULIA:-}" ]; then
     unset _ju
 fi
 export KRYOS_JULIA
-
-kryos_jl() {
-    $KRYOS_JULIA --project="$KRYOS/tools/levante" "$@"
-}

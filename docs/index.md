@@ -9,22 +9,20 @@ a contract with interchangeable *backends*: Yelmo or the perfectly-plastic ice s
 snapshots, chion or `smb_simple` for climate and surface. Outside the domains the global Earth sees an ice history read
 from file. kryos is the successor of [YelmoX](https://fesmc.github.io/yelmox/).
 
-The site has two parts:
-
-- **The science**: the reconstruction of ice sheets and sea level of the last glacial cycle made with kryos, the
-  material of a paper in preparation. [Start here](science/index.md).
-- **The model and how to use it**: getting started, the how-to pages, how kryos works, the backends and the reference.
+This site is the model and how to use it: getting started, how kryos works, the backends and the reference. The
+science made with kryos, the reconstruction of ice sheets and sea level of the last glacial cycle (its experiments,
+scores, ensembles, how-to pages and analysis tools), is in [ice-earth-recon](https://github.com/awi-esc/ice-earth-recon)
+since kryos v0.1.0.
 
 ## Where to start
 
 | you want to | read |
 |---|---|
-| understand the science and where it stands | [Reconstructing the last glacial cycle](science/index.md), then [Results](science/results.md) |
 | install kryos and make a first run | [Getting started](getting-started.md) |
-| run imposed ice, our ice online, an ensemble or the Earth search | the How-to pages: [imposed ice](howto/imposed-ice.md), [online ice](howto/online-ice.md), [ensembles](howto/ensembles.md), [the Earth search](howto/earth-search.md) |
 | understand how a run is put together | [Architecture](architecture.qmd), [Global hub and regional domains](global-hub.qmd) |
 | configure a backend | [PlasticIceSheet](backend-plastic.md), [VILMA2](backend-vilma2.md), [smb_simple](backend-smb-simple.md) |
-| look up a par file or a tool | [Par files](reference-par-files.md), [Tools](reference-tools.md) |
+| look up a par file | [Par files](reference-par-files.md) |
+| run the glacial-cycle experiments | [ice-earth-recon](https://github.com/awi-esc/ice-earth-recon) |
 
 ## Rules of the road
 

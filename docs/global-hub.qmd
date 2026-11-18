@@ -8,7 +8,7 @@ three plastic ice sheets (North on `NH-32KM`, Antarctica on `ANT-16KM`, Patagoni
 the global Earth `geo_glob` on its Gauss grid, with the rest of the world's ice from PaleoMIST's history. The general
 structure of a run (instances, wiring, lags, clock) is on [Architecture](architecture.qmd); the backends are on
 [VILMA2](backend-vilma2.md) and [PlasticIceSheet](backend-plastic.md); the runs themselves on
-[Online ice](howto/online-ice.md).
+[Online ice](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/online-ice.md).
 
 The design is [`docs/dev/phase4-plan.md`](https://github.com/fesmc/kryos/blob/main/docs/dev/phase4-plan.md) (sections 2-8); the code is
 [`kryos_globe_ice.f90`](https://github.com/fesmc/kryos/blob/main/src/core/kryos_globe_ice.f90) (the global ice field),
@@ -219,13 +219,13 @@ global reference is the merge of the domains' references with X. The 3-D par fil
 Bagge 6, 80 → 0 ka linear in time, ρ_i 910, ρ_w 1028): it converged in 4 runs to a 0 ka bed misfit of 0.23 m, 24 m RMS of r
 globally.
 
-**How r is made.** [`tools/levante/gia_refcorr.sh`](https://github.com/fesmc/kryos/blob/main/tools/levante/gia_refcorr.sh)
+**How r is made.** [`ice-earth-recon/tools/gia_refcorr.sh`](https://github.com/awi-esc/ice-earth-recon/blob/main/tools/gia_refcorr.sh)
 (with `gia_refcorr.jl`): standalone VILMA2 (`$VILMA2/bin/vilma.x`) with the `&vilma` group of a kryos par file and the run's
 densities, under a FesmData ice history, iterated until `max |r_n − rsl_n(0 ka)| < TOL` (1.5 m, at most `NMAX = 8` runs). It
 submits itself and writes the reference files under `$KD/refcorr/<CASE>/` (`KD` default `$KRYOS_WORK/kryos_data`):
 
 ```bash
-CASE=PaleoMIST-sci PAR=<kryos par file> tools/levante/gia_refcorr.sh
+CASE=PaleoMIST-sci PAR=<kryos par file> ice-earth-recon/tools/gia_refcorr.sh
 ```
 
 A pass longer than a job (a 3-D Earth: up to 30 h; albedo's longest QOS is 48 h) runs in chunks: `vilma.x` stops before the
@@ -233,7 +233,7 @@ job's end with a restart, the next chunk resumes it, in the next job with `CHAIN
 are joined bit for bit.
 
 Every imposed-ice run of the glacial-cycle work is such a case; its options, outputs and the pools that run many of them:
-[Imposed ice](howto/imposed-ice.md).
+[Imposed ice](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/imposed-ice.md).
 
 A run reads the case through its `kryos_data` link (runme links `kryos_data` into every run folder from the checkout's link,
 which `tools/levante/setup.sh` points at `$KRYOS_DATA`). To use a case of your own, point that link at `$KRYOS_WORK/kryos_data`
@@ -244,7 +244,7 @@ Any domain can be added to a converged case without a new GIA run (the Patagonia
 this way on 2026-11-09), or with `DOMAINS` when running `gia_refcorr.sh`:
 
 ```bash
-julia --project=tools/levante tools/levante/gia_refcorr.jl write <r.nc> <out folder> <X grid>:<history on that grid> <domain>:<hub grid>:<topo file> ...
+recon_jl tools/gia_refcorr.jl write <r.nc> <out folder> <X grid>:<history on that grid> <domain>:<hub grid>:<topo file> ...
 ```
 
 The derivation and the first tests: [`docs/dev/vilma2-paleomist.md`](https://github.com/fesmc/kryos/blob/main/docs/dev/vilma2-paleomist.md),
