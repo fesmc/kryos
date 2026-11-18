@@ -356,13 +356,25 @@ end
 volume_ok(vs, x) = all(!w.judge || w.lo <= v <= w.hi for (w, v) in zip(vs.windows, x))
 
 # --- likelihood ---------------------------------------------------------------------------------------------------------------------
-# the misfit of a member per data group: the index points with a finite score, d = model - obs and the scorer's 1 sigma
+# the misfit of a member per data group: the index points with a finite score, d = model - obs and the scorer's 1 sigma; the limiting
+# samples (LIMITING_GROUPS) one-sided (pm_compare.jl limit_misfit). idx: per group (g, the points' indices) or (g, indices, the columns
+# of S and A the group needs: score_window)
 function group_residuals(obs, idx, S, A)
     out = Dict{String,Any}()
-    for (g, ii) in idx
-        sc = [PM.score(obs[i], A, S[i, :]) for i in ii]
-        k = [j for j in eachindex(ii) if isfinite(sc[j].z) && sc[j].z != 0]
-        out[g] = (pts = [obs[ii[j]] for j in k], d = [sc[j].d for j in k], σ = [sc[j].d / sc[j].z for j in k])
+    for e in idx
+        g, ii = e[1], e[2]; kc = length(e) >= 3 ? e[3] : axes(S, 2); Ag = A[kc]
+        pts = NamedTuple[]; d = Float64[]; σ = Float64[]
+        for i in ii
+            o = obs[i]; s = S[i, kc]
+            if o.type == 0
+                sc = PM.score(o, Ag, s); (isfinite(sc.z) && sc.z != 0) || continue
+                push!(pts, o); push!(d, sc.d); push!(σ, sc.d / sc.z)
+            else
+                lm = PM.limit_misfit(o, Ag, s); (isfinite(lm.d) && isfinite(lm.σ)) || continue
+                push!(pts, o); push!(d, lm.d); push!(σ, lm.σ)
+            end
+        end
+        out[g] = (pts = pts, d = d, σ = σ)
     end
     out
 end
@@ -391,11 +403,22 @@ end
 # the implausibility of a group's misfit: (chi2 - n) / sqrt(2 n), the standardized chi2 (N(0, 1) for large n when R is right)
 implausibility(χ2, n) = (χ2 - n) / sqrt(2n)
 
+# The RSL samples of the data groups og: the primary index points (pm_compare.jl read_indicators) of the RSL groups of og, the limiting
+# samples of LIMITING_GROUPS too, and the proxy records (read_proxies: [score] rsl_proxy, default <fesmdata>/Records/RSL/
+# RSL-GAPSLIP_proxy.nc; proxy_thin_kyr, 1) when og has PROXY_GROUP
+function rsl_obs(cfg, og)
+    sc = cfg["score"]; fes = sc["fesmdata"]
+    obs = NamedTuple[o for o in PM.read_indicators(fes) if (o.type == 0 || o.group in PM.LIMITING_GROUPS) && any(g -> PM.in_group(o, g), og)]
+    PM.PROXY_GROUP in og && append!(obs, PM.read_proxies(get(sc, "rsl_proxy", joinpath(fes, "Records", "RSL", "RSL-GAPSLIP_proxy.nc"));
+                                                         thin_kyr = Float64(get(sc, "proxy_thin_kyr", 1.0))))
+    obs
+end
+
 # the members of wave k that ran, their residuals per group (RSL from S; GNSS from G, the model rates at the stations, nothing without
 # dz_bed_rate) and ESL at 20 ka (esl_at of gd.esl_var); gd the point data (point_data)
 function wave_residuals(C, k, cfg)
     og = data_groups(cfg); gd = point_data(cfg)
-    obs = [o for o in PM.read_indicators(cfg["score"]["fesmdata"]) if o.type == 0 && any(g -> PM.in_group(o, g), og)]
+    obs = rsl_obs(cfg, og)
     idx = [(g, findall(o -> PM.in_group(o, g), obs)) for g in og if g in RSL_GROUPS]
     A = sort(NCDataset(ds -> Float64.(ds["time"][:]),
                        joinpath(cfg["score"]["fesmdata"], "Global", "GLOBAL-0.5DEG", "GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc")))
@@ -472,19 +495,34 @@ function reference_points(cfg, gd)
     G
 end
 
-# A scoring window: the index points of age <= tmax [yr] and the records of age <= tmax (the references that end there: GLAC1D's own
-# GIA at 26 ka, so tmax = 25 ka, its last record of the 2.5 kyr ages of the scores). The series of all, members and references, are
-# scored on the same window.
+# A scoring window: the RSL samples of age <= tmax [yr] and the records of age <= tmax (the references that end there: GLAC1D's own
+# GIA at 26 ka, so tmax = 25 ka, its last record of the 2.5 kyr ages of the scores); a group with an age range of its own
+# (pm_compare.jl GROUP_AGES: the far field below 15 ka, and from 15 to 60 ka) all its samples, and the records up to its end. Per
+# group (idx) its samples and the columns of A it needs (kc: the records up to the first at or after its end, so that every sample
+# lies between two of them); kb, those of tmax. The series of all, members and references, are scored on the same window: a series
+# without the records of tmax has no score in it, one without those of a group's own range none in that group (window_residuals).
 function score_window(obs, A, og, tmax)
-    kp = findall(o -> o.t <= tmax, obs); ka = findall(<=(tmax), A)
-    (tmax = tmax, kp = kp, ka = ka, A = A[ka], obs = obs[kp], idx = [(g, findall(o -> PM.in_group(o, g), obs[kp])) for g in og if g in RSL_GROUPS])
+    rg = [g for g in og if g in RSL_GROUPS]
+    own(g) = haskey(PM.GROUP_AGES, g)
+    inw(o, g) = PM.in_group(o, g) && (own(g) || o.t <= tmax)
+    need(t) = (k = findfirst(>=(t), A); k === nothing ? length(A) : k)
+    nk(g) = need(own(g) ? PM.GROUP_AGES[g][2] : tmax)
+    kp = findall(o -> any(g -> inw(o, g), rg), obs); ka = 1:maximum([need(tmax); nk.(rg)])
+    (tmax = tmax, kp = kp, ka = ka, kb = 1:need(tmax), A = A[ka], obs = obs[kp],
+     idx = [(g, findall(o -> inw(o, g), obs[kp]), 1:nk(g)) for g in rg])
 end
-# per data group (log L, chi2, n, I) of a series S (all points x all ages) on the window W; nothing when S misses a record there (the
+# the RSL residuals per group (group_residuals) of a series S (all points x all ages) on the window W: nothing when S misses a
+# record of tmax (a column without a value at every sample), and without a group whose own range has a record S misses
+function window_residuals(S, W)
+    Sw = S[W.kp, W.ka]
+    any(k -> all(isnan, view(Sw, :, k)), W.kb) && return nothing
+    group_residuals(W.obs, [e for e in W.idx if !any(k -> all(isnan, view(Sw, e[2], k)), e[3])], Sw, W.A)
+end
+# per data group (log L, chi2, n, I) of a series S on the window W (window_residuals); nothing when S misses a record there (the
 # points where S has gaps are dropped, as in group_residuals). The GNSS groups (present day, in every window) from the series' model
 # rates G at the stations of gd: none when G is nothing (no dz_bed_rate), so a series may lack the GNSS groups.
 function score_series(S, W, em, og; G = nothing, gd = nothing)
-    Sw = S[W.kp, W.ka]; any(k -> all(isnan, view(Sw, :, k)), axes(Sw, 2)) && return nothing
-    rg = group_residuals(W.obs, W.idx, Sw, W.A)
+    rg = window_residuals(S, W); rg === nothing && return nothing
     gd === nothing || merge!(rg, point_residuals(gd, G))
     Dict(g => (v = loglik_group(rg[g], em[g]...); (v..., implausibility(v[2], v[3]))) for g in og if haskey(rg, g))
 end
@@ -779,8 +817,8 @@ function scores(C, k)
         println(io, "window,series,reference,group,n,rmse_m,rmsz,chi2n,I,logL")
         for (wn, W) in (("window", score_window(obs, A, og, tw)), ("all", score_window(obs, A, og, Inf)))
             for (nm, S, isref, G) in series
-                Sw = S[W.kp, W.ka]; any(c -> all(isnan, view(Sw, :, c)), axes(Sw, 2)) && continue
-                for (rg, tname) in ((group_residuals(W.obs, W.idx, Sw, W.A), "all"), (point_residuals(gd, G), "all points"))
+                rr = window_residuals(S, W); rr === nothing && continue
+                for (rg, tname) in ((rr, "all"), (point_residuals(gd, G), "all points"))
                     tot = (n = 0, d2 = 0.0, z2 = 0.0, chi2 = 0.0, ll = 0.0)
                     for g in og
                         haskey(rg, g) || continue

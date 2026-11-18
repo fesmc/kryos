@@ -18,8 +18,9 @@
 # records (2.5 kyr). Index points: d = model - rsl, sigma^2 = sigma_z^2 + (dRSL/dt sigma_t)^2 with sigma_z the 1-sigma (half the 2-sigma)
 # elevation uncertainty on the side of d and sigma_t that of the age, dRSL/dt the slope of the model at the age; reported: RMS of d/sigma
 # and the fraction with |d/sigma| <= 2. Limiting data: violated if no model RSL over the 2-sigma age range reaches the 2-sigma range of
-# the sample (marine: max RSL < rsl_min; terrestrial: min RSL > rsl_max). By the groups of Gowan's regions (GROUPS) and the marine-bed
-# areas (FOCUS).
+# the sample (marine: max RSL < rsl_min; terrestrial: min RSL > rsl_max); in the scores of LIMITING_GROUPS one-sided misfits
+# (limit_misfit). By the groups of Gowan's regions and ages (GROUPS, GROUP_AGES) and the marine-bed areas (FOCUS). The proxy records
+# of GAPSLIP (RSL-GAPSLIP_proxy): read_proxies.
 # Writes: pm_metrics.md (tables), pm_metrics_B1_PM.csv (all records), pm_sites.csv, pm_gmsl.csv, pm_fields.nc (for pm_maps.jl),
 # pm_indicators.md (scores), pm_ind_samples.csv (per sample), pm_ind_sites.csv (per site), pm_ind_curves.csv (model RSL at the sites).
 # GNSS uplift rates (the GNSS groups of plastic_ensemble.jl): read_gnss (the stations of a group, FesmData Records/GPS), read_rate and
@@ -39,9 +40,27 @@ const BKEYS = ["B1", "B1_170", "B1_L80", "B1_bm", "B3"]
 const EFFECTS = [("B1_170", "B1", "lmax 170 - 256 (B1)"), ("B1_L80", "B1_170", "lithosphere: B1_L80 - B1"),
                  ("B1_bm", "B1_L80", "radial profile: B1_bm - B1_L80"), ("B3", "B1_bm", "lateral: B3 - B1_bm"),
                  ("B3", "B1_170", "3-D - 1-D: B3 - B1 (l170)")]
+const FAR_FIELD = ["Caribbean", "East_Asia", "Southeast_Asia", "South_Asia", "Australia", "Pacific_Islands"]
 const GROUPS = ["Laurentide" => ["North_America_Arctic", "North_America_Atlantic"], "Greenland" => ["Greenland"],
                 "Fennoscandia" => ["Europe"], "Barents" => ["Eurasian_Arctic"], "Antarctica" => ["Antarctica"],
-                "far field" => ["Caribbean", "East_Asia", "Southeast_Asia", "South_Asia", "Australia", "Pacific_Islands"]]
+                "far field" => FAR_FIELD, "far field LGM/MIS 3" => FAR_FIELD]
+# The groups of the same regions split by age [yr] (lo <= t < hi): the far field below 15 ka (the deglaciation and the Holocene,
+# dense coral and mangrove data) and from 15 to 60 ka (the LGM and MIS 3: few index points, the limiting data and the proxy records
+# carry it, and a model error of their own); far-field samples older than 60 ka are in no group. A group's own range is its
+# window in every scoring window (plastic_ensemble.jl score_window). Groups not listed: all ages.
+const GROUP_AGES = Dict("far field" => (0.0, 15000.0), "far field LGM/MIS 3" => (15000.0, 60000.0 + 1))
+# the groups whose limiting data are scored (one-sided, limit_misfit) besides their index points, and the group of the proxy
+# records (read_proxies)
+const LIMITING_GROUPS = ["far field LGM/MIS 3"]
+const PROXY_GROUP = "far field LGM/MIS 3"
+# the group of a sample of a region at the age t: the first of GROUPS that has the region and t in its age range ("" for none)
+function group_of(region, t)
+    for (g, rs) in GROUPS
+        lo, hi = get(GROUP_AGES, g, (-Inf, Inf))
+        region in rs && lo <= t < hi && return g
+    end
+    ""
+end
 # groups made of groups (the configs before the split of Fennoscandia/Barents, 2026-11-12: the Fennoscandian shield and the softer,
 # thinner Barents shelf want different Earths); in_group: an index point is in a group or in a union that holds its group
 const GROUP_UNIONS = Dict("Fennoscandia/Barents" => ["Fennoscandia", "Barents"])
@@ -107,17 +126,43 @@ function stats(d, w, m)
 end
 
 # --- sea-level indicators ---------------------------------------------------------------------------------------------------------
-# the primary data (alternative = 0) of age 0-80 ka of FesmData RSL-GAPSLIP_global, with the group of their region
+# the primary data (alternative = 0) of age 0-80 ka of FesmData RSL-GAPSLIP_global, with the group of their region and age (group_of)
 function read_indicators(fesmdata)
-    grp = Dict(r => g for (g, rs) in GROUPS for r in rs)
     NCDataset(joinpath(fesmdata, "Records", "RSL", "RSL-GAPSLIP_global.nc")) do ds
         v(n) = ds[n][:]
         t = Float64.(v("time")); keep = findall((v("alternative") .== 0) .& (0 .<= t .<= 80000))
         reg = v("region"); sec = v("sector"); site = v("site_name"); la = Float64.(v("lat")); lo = Float64.(v("lon"))
         t0 = Float64.(v("time_min")); t1 = Float64.(v("time_max")); r = Float64.(v("rsl")); r0 = Float64.(v("rsl_min"))
         r1 = Float64.(v("rsl_max")); ty = Int.(v("type"))
-        [(region = reg[i], group = grp[reg[i]], sector = sec[i], site_name = site[i], lat = la[i], lon = lo[i], t = t[i],
+        [(region = reg[i], group = group_of(reg[i], t[i]), sector = sec[i], site_name = site[i], lat = la[i], lon = lo[i], t = t[i],
           tmin = max(t0[i], 0.0), tmax = min(t1[i], 80000.0), st = (t1[i] - t0[i]) / 4, rsl = r[i], rmin = r0[i], rmax = r1[i], type = ty[i]) for i in keep]
+    end
+end
+
+# The proxy records of GAPSLIP 2.1 (FesmData RSL-GAPSLIP_proxy: the Red Sea at Bab-el-Mandeb, Grant et al. 2012, 2014, index
+# points; the Karimata Strait, Weiss et al. 2022, terrestrial limiting), site RSL, as samples of read_indicators in PROXY_GROUP
+# where their age is in its range. Thinned: a continuous record's samples are not independent (the Red Sea: 4-5 per kyr, scattered
+# by the δ18O of the planktic foraminifera, whose noise the 1-kyr mean averages and whose level error the ±12 m of each sample
+# keeps): per site and type the mean of the samples in bins of thin_kyr [kyr] (age, RSL, its range and the age range), so about one
+# point per kyr; the Karimata values (every 2 kyr, GAPSLIP's interpolation between two estimates) stay as they are.
+function read_proxies(file; thin_kyr = 1.0)
+    isfile(file) || error("no $file (FesmData RSL-GAPSLIP_proxy; [score] rsl_proxy)")
+    NCDataset(file) do ds
+        v(n) = ds[n][:]
+        t = Float64.(v("time")); site = String.(v("site_name")); ty = Int.(v("type")); reg = String.(v("region")); sec = String.(v("sector"))
+        la = Float64.(v("lat")); lo = Float64.(v("lon")); t0 = Float64.(v("time_min")); t1 = Float64.(v("time_max"))
+        r = Float64.(v("rsl")); r0 = Float64.(v("rsl_min")); r1 = Float64.(v("rsl_max"))
+        bins = unique([(site[i], ty[i], floor(Int, t[i] / (1000 * thin_kyr))) for i in eachindex(t)])
+        out = NamedTuple[]
+        for (st, typ, b) in bins
+            k = [i for i in eachindex(t) if site[i] == st && ty[i] == typ && floor(Int, t[i] / (1000 * thin_kyr)) == b]
+            m(x) = sum(x[k]) / length(k); tm = m(t); g = PROXY_GROUP
+            lo_, hi_ = GROUP_AGES[g]; lo_ <= tm < hi_ || continue
+            a0 = max(m(t0), 0.0); a1 = min(m(t1), 80000.0)
+            push!(out, (region = reg[k[1]], group = g, sector = sec[k[1]], site_name = st, lat = la[k[1]], lon = lo[k[1]], t = tm,
+                        tmin = a0, tmax = a1, st = (m(t1) - m(t0)) / 4, rsl = m(r), rmin = m(r0), rmax = m(r1), type = typ))
+        end
+        sort!(out, by = o -> (o.site_name, o.t))
     end
 end
 
@@ -461,6 +506,19 @@ end
 function ip_sigma(o, d, dmdt)
     sz = (d > 0 ? o.rmax - o.rsl : o.rsl - o.rmin) / 2
     sqrt(sz^2 + (dmdt * o.st)^2)
+end
+
+# The misfit of a limiting sample, one-sided (a hinge): the model RSL m at its age against the sample's rsl, d = 0 on the side the
+# sample allows (marine, type -1: sea level above it, m >= rsl; terrestrial, type 1: below it, m <= rsl), d = m - rsl beyond it;
+# sigma as an index point's (ip_sigma: half the 2-sigma range on the side of the bound, the age's through the model's slope). A sample
+# that holds adds 0 to chi2 and 1 to n: the group's implausibility is low when every bound holds, as it should, and every series is
+# scored on the same points. (d, sigma), NaN with a gap in s.
+function limit_misfit(o, A, s)
+    any(isnan, s) && return (d = NaN, σ = NaN)
+    m, dmdt = tval(A, s, o.t)
+    d = o.type == -1 ? min(0.0, m - o.rsl) : max(0.0, m - o.rsl)
+    sz = (o.type == -1 ? o.rsl - o.rmin : o.rmax - o.rsl) / 2
+    (d = d, σ = sqrt(sz^2 + (dmdt * o.st)^2))
 end
 
 # score of one sample: index point -> (d, z), limiting -> violated (as 1.0 / 0.0)
