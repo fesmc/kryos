@@ -102,10 +102,10 @@ corr_time_kyr = 40.0
 sigma_m = 10.0
 corr_dist_km = 250.0
 corr_time_kyr = 40.0
-[likelihood."far field"]                 # below 15 ka (pm_compare.jl GROUP_AGES); refit in scores-v4 below
-sigma_m = 23.0
-corr_dist_km = 100.0
-corr_time_kyr = 20.0
+[likelihood."far field"]                 # below 15 ka (pm_compare.jl GROUP_AGES): fitted on the imposed ice histories, the 6 best
+sigma_m = 16.0                           # of PaleoMIST's and GLAC-1D's ice on the 200 Earths of wave A (errmodel refs=, all six
+corr_dist_km = 50.0                      # PaleoMIST's; kryos-work/scores-v4/errfit), not on the best members, which share our
+corr_time_kyr = 20.0                     # ice's misfit (until scores v4: 23 m over 100 km and 20 kyr, ens-v2, every age)
 [likelihood."far field LGM/MIS 3"]       # 15-60 ka: a priori, not fitted on members (a fit to members that are all short of the
 sigma_m = 6.0                            # LGM ice would take their common deficit for model error). sigma_m: the GIA of a good Earth
 corr_dist_km = 2000.0                    # at a far-field site, the site RSL less ESL (-9 to +6 m at 30-20 ka over Earths and ice),
@@ -118,12 +118,12 @@ corr_dist_km = 300.0
 [likelihood."GNSS Hudson Bay"]
 sigma_m = 1.0
 corr_dist_km = 300.0
-[likelihood."GNSS North America forebulge"]   # starting values, refit in scores-v4 below
-sigma_m = 1.0
-corr_dist_km = 300.0
+[likelihood."GNSS North America forebulge"]   # fitted as the other GNSS groups (errmodel refs=E1D-ES1-E, the 6 best Earths of
+sigma_m = 1.5                            # wave A: kryos-work/scores-v4/errfit)
+corr_dist_km = 750.0
 [likelihood."GNSS British Isles"]
-sigma_m = 1.0
-corr_dist_km = 300.0
+sigma_m = 0.7
+corr_dist_km = 175.0
 [likelihood."GNSS Greenland"]            # fitted as Fennoscandia's and Hudson Bay's (errmodel refs=E1D-ES1-E, the 6 best Earths of
 sigma_m = 2.0                            # wave A of the Earth search: kryos-work/scores-v3/errfit-gnss): what no model of ours has,
 corr_dist_km = 1000.0                    # the response to the loss since the Little Ice Age on a weak upper mantle (3-5 mm/yr on the
@@ -172,7 +172,7 @@ throttle   = 25                          # 25 members + the weights job + one ot
 
 [score]
 rsl_proxy = "{work}/fesmdata-staging/fesmdata/Records/RSL/RSL-GAPSLIP_proxy.nc"   # the proxy records of GAPSLIP (FesmData PR
-                                         # gapslip-proxy, staged; the default <fesmdata>/Records/RSL/RSL-GAPSLIP_proxy.nc once released)
+                                         # #16, staged; the default <fesmdata>/Records/RSL/RSL-GAPSLIP_proxy.nc once released)
 # gnss_dir = "{fesmdata}/Records/GPS"   # the default (FesmData GPS v2.2.0: Schumacher2018, MIDAS, BIFROST2015, GNET,
 #                                         MartinEspanol2016)
 
