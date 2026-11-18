@@ -16,6 +16,7 @@ All scripts run on Levante or albedo from a kryos checkout installed with `confi
 | T1, D1, D3 | `refs-tau.sh <ens-v2> <id>` | kryos online from ens-v2's m000: `$KRYOS_WORK/runs/pm-online/{gowan,pdfac}`, `$KRYOS_WORK/runs/res16/m000-NH16` |
 | C1, C2 | `coulomb-band.sh setup`, `submit` | kryos online with the Coulomb law at four (H_N, lambda_min) on two 1-D Earths: `$KRYOS_WORK/coulomb-taub/coupled/runs` |
 | C4 | `coulomb-margin-patch.sh setup`, `submit`, `score` | C3's H_N 1000 run with Greenland's margin from PaleoGrIS as a margin patch (`tools/levante/margin_patch.jl`), and with a patch equal to the base (C3 bit for bit): `$KRYOS_WORK/coulomb-taub/margin-patch/runs` |
+| C8 | `coulomb-dated-margins.sh patches`, `setup`, `submit`, `score`, `post` | C7 H300 with dated margins as patches: NAIS from Dalton 2020, Eurasia from DATED-1, both: `$KRYOS_WORK/coulomb-taub/dated-margins/runs` |
 | D2, E2 | `ens.sh v2` | ens-v2, 50 members (m000 = D2): `$KRYOS_WORK/ens-v2` |
 | E1 | `ens.sh v1` | ens-v1, 25 members (on Levante) |
 | Earth-only | `earth-pca.sh basis v1`, `sample`, `run` | the PCA basis of the expert Earths, 30 sampled Earths, one pass each: `.../refcorr/ice-PMIST_E3D-PCA-E<nnn>` |
