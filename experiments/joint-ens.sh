@@ -37,7 +37,7 @@
 # (default $C7/par_tau-CBF-H300_E1D-ES1-E117.nml), V4 (lgm-calib-v4), SEARCH (the Earth search of wave A: earths/, kryos_data/refcorr/;
 # default /albedo/work/user/alrobi001/kryos-search), EMU (the wave-A emulator without ESL judging:
 # $KRYOS_WORK/rescore-esl/earth-search/emulate-noesl), S (the FesmData products with DATED-1, default
-# $KRYOS_WORK/fesmdata-staging/fesmdata), I1, I5 (PaleoMIST's and GLAC-1D's ice on Gowan's Earth, standalone VILMA2: default
+# $FESMDATA: IceHistory v2.7.0), I1, I5 (PaleoMIST's and GLAC-1D's ice on Gowan's Earth, standalone VILMA2: default
 # /albedo/work/user/alrobi001/kryos-gnss/kryos_data/refcorr/ice-PMIST_E1D-PMIST, .../kryos-work/kryos_data/refcorr/GLAC1D-1D),
 # WALL (01:30:00), NJOBS (50).
 set -euo pipefail
@@ -46,7 +46,7 @@ X=$(cd "$(dirname "$(readlink -f "$0")")" && pwd); T=$X/../tools/levante; . "$T/
 W=${W:-$KRYOS_WORK/joint-ens}; C7=${C7:-$KRYOS_WORK/coulomb-taub/lambda-file/runs}
 TEMPLATE=${TEMPLATE:-$C7/par_tau-CBF-H300_E1D-ES1-E117.nml}; V4=${V4:-$KRYOS_WORK/coulomb-taub/lgm-calib-v4}
 SEARCH=${SEARCH:-/albedo/work/user/alrobi001/kryos-search}; EMU=${EMU:-$KRYOS_WORK/rescore-esl/earth-search/emulate-noesl}
-S=${S:-$KRYOS_WORK/fesmdata-staging/fesmdata}
+S=${S:-$FESMDATA}
 I1=${I1:-/albedo/work/user/alrobi001/kryos-gnss/kryos_data/refcorr/ice-PMIST_E1D-PMIST}
 I5=${I5:-/albedo/work/user/alrobi001/kryos-work/kryos_data/refcorr/GLAC1D-1D}
 WALL=${WALL:-01:30:00}; NJOBS=${NJOBS:-50}

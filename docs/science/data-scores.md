@@ -146,8 +146,8 @@ points at 18-30 ka (`kryos-work/esl-records`). The two older groups hold:
   38-60 ka are left out (`LIMITING_EXCLUDE`): every series, PaleoMIST's own GIA and every ESL record included, has sea
   level 63-78 m below them, so they measure the site's uplift correction (GAPSLIP's primary rate; its alternatives of
   1.7-2.3 mm/yr are not primary data), not the ice; Kikaijima's index points stay;
-- the two proxy records of GAPSLIP, FesmData `RSL-GAPSLIP_proxy` (FesmData #16; staged in `kryos-work/fesmdata-staging`
-  until released: `[score] rsl_proxy`), as site RSL by age: the Red Sea at Bab-el-Mandeb (Grant et al. 2012, 2014; index
+- the two proxy records of GAPSLIP, FesmData `RSL-GAPSLIP_proxy` (FesmData #16, released in RSL v2.3.0;
+  `[score] rsl_proxy` to read another file), as site RSL by age: the Red Sea at Bab-el-Mandeb (Grant et al. 2012, 2014; index
   points, ±12 m), thinned to the mean of each 1-kyr bin (`read_proxies`: a continuous record of 4-5 samples per kyr whose
   δ18O scatter is not independent; LGM 6 points, MIS 3 30), and the Karimata Strait (Weiss et al. 2022; terrestrial
   limiting, 60-32 ka, every 2 kyr: 15 in MIS 3).
