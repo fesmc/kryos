@@ -179,7 +179,7 @@ runs = [(String(strip(split(a, "=", limit = 2)[1])), String(split(a, "=", limit 
 isempty(runs) && error("give the runs: <label>=<run folder> ...")
 cfg = TOML.parsefile(joinpath(SCORE, "config.toml"))
 em, emsrc = EN.error_model(cfg, SCORE)
-gd = EN.gnss_data(cfg)
+gd = EN.point_data(cfg)
 const RSLG = first.(PM.GROUPS)
 obs = [o for o in PM.read_indicators(FES) if o.t <= TMAX && o.group in RSLG]
 ip = findall(o -> o.type == 0, obs)

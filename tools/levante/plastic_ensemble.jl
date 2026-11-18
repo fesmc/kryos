@@ -36,7 +36,7 @@
 # [[gnss]] (optional): GNSS data groups, the present-day uplift rate at GNSS stations: name (the group), product
 # (FesmData Records/GPS/GPS-<product>.nc under [score] gnss_dir, default <fesmdata>/Records/GPS), rate (gia | corrected | observed),
 # box, exclude, min_years (pm_compare.jl read_gnss), judge (default true; false: reported only, not in the default use_groups);
-# several entries of one name: one group of their stations, each once (gnss_data); every [[gnss]] group is a data group (after
+# several entries of one name: one group of their stations, each once (point_data); every [[gnss]] group is a data group (after
 # obs_groups: data_groups); [likelihood."<name>"]: sigma_m [mm/yr], corr_dist_km (no time term).
 # [[ice_grids]]: the grids of the ice runs for [rate] and [[volume]] (ice_grids). [rate] (optional): a limit on how fast each scale
 # group's ice may change, from the published reconstructions (rate_spec). [[volume]] (optional): windows on the excess ice volume of
@@ -99,7 +99,7 @@ function init(cfgfile, C)
     C = abspath(C)
     en = TOML.parsefile(cfgfile)["ensemble"]
     cfg, sg, obs = ES.prepare(cfgfile, C, [g for g in en["obs_groups"] if g in RSL_GROUPS])
-    gd = gnss_data(cfg)
+    gd = point_data(cfg)
     P = ES.params(cfg, sg); pr = cfg["prior"]; nP = length(P)
     E = haskey(cfg, "earth") ? ES.earth_spec(cfg) : nothing; nE = E === nothing ? 0 : length(E.names)
     Cθ = ES.prior_cov(P, pr, cfg["scale"]["groups"])
@@ -145,11 +145,11 @@ plain_cut_groups(cfg) = unique([String.(get(cfg["ensemble"], "fixed_cut", String
 group_kind(cfg, g) = g in RSL_GROUPS ? :rsl : g == esl_name(cfg) ? :esl : :gnss
 # The point data of a config, the data groups that are not RSL index points: the stations of its GNSS groups (pm_compare.jl
 # read_gnss) and the ages of its ESL group (read_esl), as points (group, kind, site_name, lat, lon, t, value, sd), and per group their
-# indices (idx), and the model's ESL (esl_var: gnss_model); every group of obs_groups must be an RSL group, a [[gnss]] entry or the [esl] group. A group of several entries (products) takes their
+# indices (idx), and the model's ESL (esl_var: point_model); every group of obs_groups must be an RSL group, a [[gnss]] entry or the [esl] group. A group of several entries (products) takes their
 # stations in the order of the entries, without those of a later entry that an earlier one has (the same site name, or within
 # MERGE_KM): a station counts once.
 const MERGE_KM = 1.0
-function gnss_data(cfg)
+function point_data(cfg)
     og = data_groups(cfg); specs = get(cfg, "gnss", Any[])
     bad = [g for g in og if !(g in RSL_GROUPS) && !any(sp -> sp["name"] == g, specs) && g != esl_name(cfg)]
     isempty(bad) || error("obs_groups: neither an RSL group (pm_compare.jl GROUPS) nor a [[gnss]] entry nor [esl]: ", join(bad, ", "))
@@ -184,7 +184,7 @@ function write_gnss(C, gd, cfg)
 end
 # the model's values at the points of gd for the run folder dir: the rates [mm/yr] at the GNSS stations (pm_compare.jl read_rate;
 # NaN without dz_bed_rate) and ESL [m] at the ages of the ESL group (esl_at of gd.esl_var); nothing when it has none
-function gnss_model(dir, gd)
+function point_model(dir, gd)
     isempty(gd.obs) && return nothing
     v = fill(NaN, length(gd.obs)); ig = findall(s -> s.kind == :gnss, gd.obs); ie = findall(s -> s.kind == :esl, gd.obs)
     if !isempty(ig)
@@ -195,7 +195,7 @@ function gnss_model(dir, gd)
     all(isnan, v) ? nothing : v
 end
 # the misfit per GNSS group of the model rates G (nothing: no group): d = model - obs, sigma_i the station's sd
-function gnss_residuals(gd, G)
+function point_residuals(gd, G)
     out = Dict{String,Any}()
     G === nothing && return out
     for (g, ii) in gd.idx
@@ -339,9 +339,9 @@ end
 implausibility(χ2, n) = (χ2 - n) / sqrt(2n)
 
 # the members of wave k that ran, their residuals per group (RSL from S; GNSS from G, the model rates at the stations, nothing without
-# dz_bed_rate) and ESL at 20 ka (esl_at of gd.esl_var); gd the GNSS data (gnss_data)
+# dz_bed_rate) and ESL at 20 ka (esl_at of gd.esl_var); gd the point data (point_data)
 function wave_residuals(C, k, cfg)
-    og = data_groups(cfg); gd = gnss_data(cfg)
+    og = data_groups(cfg); gd = point_data(cfg)
     obs = [o for o in PM.read_indicators(cfg["score"]["fesmdata"]) if o.type == 0 && any(g -> PM.in_group(o, g), og)]
     idx = [(g, findall(o -> PM.in_group(o, g), obs)) for g in og if g in RSL_GROUPS]
     A = sort(NCDataset(ds -> Float64.(ds["time"][:]),
@@ -351,8 +351,8 @@ function wave_residuals(C, k, cfg)
     for m in ids
         r, why = ES.member_series(ES.mdir(C, k, m), obs, A)
         r === nothing && (println("member $m: $why"); continue)
-        G = gnss_model(ES.mdir(C, k, m), gd)
-        res[m] = (esl = PM.esl_at(ES.mdir(C, k, m), [20000.0]; var = gd.esl_var)[1], rg = merge(group_residuals(obs, idx, r.S, A), gnss_residuals(gd, G)), S = r.S, G = G)
+        G = point_model(ES.mdir(C, k, m), gd)
+        res[m] = (esl = PM.esl_at(ES.mdir(C, k, m), [20000.0]; var = gd.esl_var)[1], rg = merge(group_residuals(obs, idx, r.S, A), point_residuals(gd, G)), S = r.S, G = G)
     end
     isempty(gd.idx) || println("GNSS: ", count(m -> res[m].G !== nothing, keys(res)), " of ", length(res), " members with dz_bed_rate")
     ids, Θ, res, og, obs, A, gd
@@ -402,16 +402,16 @@ function references(cfg, obs, A)
 end
 # the ESL of a published reconstruction at the points of the ESL group: from the reference's esl = "<SeaLevel product>" (pm_compare.jl
 # sealevel_at; SeaLevel-PaleoMIST for pub-PMIST); nothing without one
-function esl_reference(cfg, ref, gd)
+function point_reference(cfg, ref, gd)
     (haskey(ref, "esl") && any(s -> s.kind == :esl, gd.obs)) || return nothing
     v = fill(NaN, length(gd.obs)); ie = findall(s -> s.kind == :esl, gd.obs)
     v[ie] = PM.sealevel_at(cfg["score"]["fesmdata"], ref["esl"], [gd.obs[i].t for i in ie])[1]
     v
 end
-# the model rates at the GNSS stations of every reference (gnss_model): nothing for a published reconstruction (product, topo) and a
+# the model rates at the GNSS stations of every reference (point_model): nothing for a published reconstruction (product, topo) and a
 # run without dz_bed_rate
-function reference_rates(cfg, gd)
-    G = Dict{String,Any}(ref["name"] => (haskey(ref, "run") ? gnss_model(ref_dir(ref), gd) : esl_reference(cfg, ref, gd))
+function reference_points(cfg, gd)
+    G = Dict{String,Any}(ref["name"] => (haskey(ref, "run") ? point_model(ref_dir(ref), gd) : point_reference(cfg, ref, gd))
                          for ref in get(cfg, "references", []))
     isempty(gd.idx) || println("GNSS: references with dz_bed_rate: ", join(sort([n for (n, g) in G if g !== nothing]), ", "))
     G
@@ -430,7 +430,7 @@ end
 function score_series(S, W, em, og; G = nothing, gd = nothing)
     Sw = S[W.kp, W.ka]; any(k -> all(isnan, view(Sw, :, k)), axes(Sw, 2)) && return nothing
     rg = group_residuals(W.obs, W.idx, Sw, W.A)
-    gd === nothing || merge!(rg, gnss_residuals(gd, G))
+    gd === nothing || merge!(rg, point_residuals(gd, G))
     Dict(g => (v = loglik_group(rg[g], em[g]...); (v..., implausibility(v[2], v[3]))) for g in og if haskey(rg, g))
 end
 # a value of a series' score s in group g (i: 1 log L, 2 chi2, 3 n, 4 I), NaN (n: 0) when it has no score there
@@ -451,10 +451,10 @@ function errmodel(C, k; top = 6, refs = nothing, groups = nothing)
     if refs === nothing
         ids, _, res, og = wave_residuals(C, k, cfg)
     else            # the point groups from the run references whose name matches refs (the cases of an Earth search)
-        og = data_groups(cfg); gd = gnss_data(cfg); res = Dict{String,Any}()
+        og = data_groups(cfg); gd = point_data(cfg); res = Dict{String,Any}()
         for ref in get(cfg, "references", [])
             (haskey(ref, "run") && occursin(Regex(refs), ref["name"])) || continue
-            G = gnss_model(ref_dir(ref), gd); G === nothing || (res[ref["name"]] = (rg = gnss_residuals(gd, G),))
+            G = point_model(ref_dir(ref), gd); G === nothing || (res[ref["name"]] = (rg = point_residuals(gd, G),))
         end
         println("errmodel from ", length(res), " references matching ", refs)
     end
@@ -537,7 +537,7 @@ function weights(C, k)
     sc = Dict(m => score_series(res[m].S, W, em, og; G = res[m].G, gd = gd) for m in ok)   # g => (log L, chi2, n, I)
     nos = [g for g in ug0 if !all(m -> haskey(sc[m], g), ok)]      # judging groups without a score in every member
     ug = [g for g in ug0 if !(g in nos)]
-    refs = references(cfg, obs, A); rG = reference_rates(cfg, gd)
+    refs = references(cfg, obs, A); rG = reference_points(cfg, gd)
     rsc = [(nm, s) for (nm, s) in ((nm, score_series(S, W, em, og; G = rG[nm], gd = gd)) for (nm, S) in refs) if s !== nothing]
     # the bar: per group the lowest I_g of the bar's references that have a score there, and which one
     bar = String.(get(en, "bar", String[])); nob = setdiff(bar, first.(rsc))
@@ -709,7 +709,7 @@ end
 #   julia --project=tools/levante plastic_ensemble.jl scores <ensemble folder> [<wave>]
 function scores(C, k)
     C = abspath(C); cfg = ES.config(C); ids, Θ, res, og, obs, A, gd = wave_residuals(C, k, cfg)
-    em, src = error_model(cfg, C); refs = references(cfg, obs, A); rG = reference_rates(cfg, gd)
+    em, src = error_model(cfg, C); refs = references(cfg, obs, A); rG = reference_points(cfg, gd)
     tw = 1000.0 * get(cfg["ensemble"], "compare_max_age_ka", 25.0)
     series = [[(nm, S, 1, rG[nm]) for (nm, S) in refs]; [("m" * lpad(m, 3, "0"), res[m].S, 0, res[m].G) for m in sort(collect(keys(res)))]]
     f = joinpath(ES.itdir(C, k), "scores.csv")
@@ -718,7 +718,7 @@ function scores(C, k)
         for (wn, W) in (("window", score_window(obs, A, og, tw)), ("all", score_window(obs, A, og, Inf)))
             for (nm, S, isref, G) in series
                 Sw = S[W.kp, W.ka]; any(c -> all(isnan, view(Sw, :, c)), axes(Sw, 2)) && continue
-                for (rg, tname) in ((group_residuals(W.obs, W.idx, Sw, W.A), "all"), (gnss_residuals(gd, G), "all points"))
+                for (rg, tname) in ((group_residuals(W.obs, W.idx, Sw, W.A), "all"), (point_residuals(gd, G), "all points"))
                     tot = (n = 0, d2 = 0.0, z2 = 0.0, chi2 = 0.0, ll = 0.0)
                     for g in og
                         haskey(rg, g) || continue
