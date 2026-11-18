@@ -25,6 +25,7 @@
 # GNSS uplift rates (the GNSS groups of plastic_ensemble.jl): read_gnss (the stations of a group, FesmData Records/GPS), read_rate and
 # rate_at (the model's present-day uplift rate, dz_bed_rate of the run's last VILMA2 record, at the stations). Ice-core elevations (the
 # ice-core group): read_cores (the data, FesmData Records/IceCores) and core_at (the model's surface elevation change at the sites).
+# Earth rotation (the rotation group): read_rotation (the data of the config) and rotation_rates (J2dot and true polar wander).
 # Included by plastic_esmda.jl (in a module) for the scoring functions: main runs only as a script.
 using NCDatasets, Printf, Statistics
 
@@ -364,6 +365,66 @@ function series_at(A, srf, pts)
                 w = clamp((a - A[k]) / (A[k+1] - A[k]), 0.0, 1.0); w == 0 ? rec(k)[i] : w == 1 ? rec(k + 1)[i] : (1 - w) * rec(k)[i] + w * rec(k + 1)[i])
     [at(i, o.t) - at(i, 0.0) for (i, o) in enumerate(pts)]
 end
+
+# --- Earth rotation ---------------------------------------------------------------------------------------------------------------
+# The points of the rotation group ([rotation] of an ensemble config: plastic_ensemble.jl): per [[rotation.data]] entry the quantity
+# (ROT_QUANTITIES), its value and 1 sigma, the data's sd and the model error sd_model combined (sqrt(sd^2 + sd_model^2)); each a point
+# at (0, 0), t = 0 (the present). Returns (group, kind = :rot, site_name = the quantity, lat, lon, t, value, sd).
+const ROT_QUANTITIES = ("J2dot", "TPW rate", "TPW direction")   # [1e-11 / yr], [deg / Myr], [deg east]
+function read_rotation(spec)
+    nm = String(get(spec, "name", "rotation"))
+    map(get(spec, "data", Any[])) do d
+        q = String(d["quantity"]); q in ROT_QUANTITIES || error("[[rotation.data]] quantity \"$q\": not one of ", join(ROT_QUANTITIES, ", "))
+        (group = nm, kind = :rot, site_name = q, lat = 0.0, lon = 0.0, t = 0.0, value = Float64(d["value"]),
+         sd = hypot(Float64(d["sd"]), Float64(get(d, "sd_model", 0.0))))
+    end
+end
+# the Gauss-Legendre weights of the latitudes of a Gauss grid (the nodes their sines; sum 2)
+function gauss_weights(lat)
+    x = sind.(lat); n = length(x)
+    map(x) do xi
+        p0, p1 = 1.0, xi
+        for k in 2:n; p0, p1 = p1, ((2k - 1) * xi * p1 - (k - 1) * p0) / k; end
+        dp = n * (xi * p1 - p0) / (xi^2 - 1)
+        2 / ((1 - xi^2) * dp^2)
+    end
+end
+const R_EARTH_M = 6.371e6
+# J2 of the sea surface change N (VILMA2 dz_ss = N + Δφ [m], lon x lat on the Gauss grid of the latitudes lat, weights w): the
+# degree-2 zonal Stokes coefficient of the potential perturbation, J2 = -√5 C̄20, C̄20 = (1 / 4π a) ∫ N P̄20 dΩ (P̄20 = √5 P2, fully
+# normalized), so J2 = -(5 / 4π a) ∫ N P2 dΩ. Δφ (degree 0) and VILMA2's rotational potential (degree 2, order 1) do not enter.
+function j2_of(N, lat, w)
+    P2 = (3 .* sind.(lat) .^ 2 .- 1) ./ 2
+    -5 / (4π * R_EARTH_M) * sum(w[j] * P2[j] * sum(N[:, j]) * 2π / size(N, 1) for j in eachindex(lat))
+end
+# The model's present-day rotation of a run, over the last interval of the records of its VILMA2 stream (vilma_out.nc of a standalone
+# run, <inst>_vilma.nc of a kryos run): J2dot [1e-11 / yr] from dz_ss (j2_of), the true polar wander rate [deg / Myr] and direction
+# [deg east] from the polar motion m = m1 + i m2 (rot_m_re, rot_m_im; m1 toward Greenwich, m2 toward 90 E: the pole moves toward
+# atan(dm2, dm1)). NaN for what the stream lacks (rot_m: a kryos run, whose VILMA2 stream does not write it), and all for a run that
+# has not finished. The last interval: 100 yr in the standalone runs, 500 yr (the record interval) in the kryos runs; the model's
+# own ice change over it is in the rates.
+function rotation_rates(dir; inst = "geo_glob")
+    out = Dict(q => NaN for q in ROT_QUANTITIES)
+    run_done(dir) || return out
+    f = joinpath(dir, "vilma_out.nc"); isfile(f) || (f = joinpath(dir, inst * "_vilma.nc")); isfile(f) || return out
+    NCDataset(f) do ds
+        t = Float64.(ds["time"][:]); n = length(t); n >= 2 || return out
+        dt = t[n] - t[n-1]
+        if haskey(ds, "dz_ss")
+            lat = Float64.(ds["lat"][:]); w = gauss_weights(lat)
+            N(k) = Float64.(nomissing(ds["dz_ss"][:, :, k], NaN))
+            out["J2dot"] = 1e11 * (j2_of(N(n), lat, w) - j2_of(N(n - 1), lat, w)) / dt
+        end
+        if haskey(ds, "rot_m_re") && haskey(ds, "rot_m_im")
+            m1 = Float64.(ds["rot_m_re"][:]); m2 = Float64.(ds["rot_m_im"][:])
+            v1 = (m1[n] - m1[n-1]) / dt; v2 = (m2[n] - m2[n-1]) / dt
+            out["TPW rate"] = rad2deg(hypot(v1, v2)) * 1e6; out["TPW direction"] = atand(v2, v1)
+        end
+        out
+    end
+end
+# the misfit of a model value x at the point s: x - s.value, the difference of directions wrapped to [-180, 180)
+point_diff(s, x) = s.kind == :rot && s.site_name == "TPW direction" ? mod(x - s.value + 180, 360) - 180 : x - s.value
 
 # linear in time: the value and the slope at t; the range over [t0, t1]
 function tval(A, s, t)

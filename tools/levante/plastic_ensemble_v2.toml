@@ -1,7 +1,7 @@
 # Weighted ensemble v2: tau_b multipliers of the plastic ice and the Earth (shifts of log10 viscosity of the 3-D Earth, Bagge 2021,
 # globally and by region; plastic_earth_shift.jl), NH-32KM, ANT-16KM and PAT-PAL-8KM; the data groups that judge: every RSL
 # group, ESL, the GNSS uplift rates of Fennoscandia and Hudson Bay ([[gnss]]; Greenland and Antarctica reported only) and the
-# ice-core elevations of Greenland ([cores]). The error model
+# ice-core elevations of Greenland ([cores]) and the Earth's rotation ([rotation]). The error model
 # from ens-v1 wave 1 (errmodel.toml there); GNSS: starting values.
 # docs/dev/plastic-ensemble-design.md.
 #   tools/levante/plastic_ensemble.sh start tools/levante/plastic_ensemble_v2.toml <ensemble folder>
@@ -195,6 +195,35 @@ grid     = "NH-32KM"
 sigma_m       = 75.0                     # misses the present elevation of the sites by 30-380 m (RMS 240 m, C7); in the change
 corr_dist_km  = 500.0                    # relative to the present most of it cancels: a third of it. L_t: the time scale of the
 corr_time_kyr = 5.0                      # Holocene thinning; L_x: the sites are 300-1300 km apart
+
+[rotation]                               # the present-day rotation of the Earth from GIA: plastic_ensemble.jl [rotation]
+name = "rotation"
+[[rotation.data]]
+quantity = "J2dot"                       # [1e-11/yr], unnormalized J2 (J2 = -√5 C̄20)
+value    = -5.7                          # observed -3.7 ± 0.1 (SLR, 1976-1990; -3.4 to -4.0 by the window: Mitrovica et al. 2015)
+sd       = 0.6                           # less the melt of glaciers and ice sheets 1900-1990, +2.0 ± 0.4: the GIA part
+sd_model = 1.0                           # -5.7 ± 0.5 (Nakada et al. 2015, GJI 202, 976, doi:10.1093/gji/ggv198, Table 3; Mitrovica
+                                         # et al. 2015, Sci. Adv. 1, e1500679, doi:10.1126/sciadv.1500679). sd_model: the loading before
+                                         # the run's start (80 ka) and the run's own ice change over its last record interval (500 yr:
+                                         # C7's J2dot over the two last intervals differs by 0.9)
+source   = "Nakada et al. 2015; Mitrovica et al. 2015"
+[[rotation.data]]
+quantity = "TPW rate"                    # [deg/Myr]: observed 3.5 mas/yr = 0.97 deg/Myr toward 79 W relative to the mean lithosphere
+value    = 0.6                           # (Argus and Gross 2004, GRL 31, L06614, doi:10.1029/2004GL019657); the GIA part 33 ± 18 %
+sd       = 0.3                           # (Adhikari et al. 2018, EPSL 502, 126, doi:10.1016/j.epsl.2018.08.059: mantle convection the
+sd_model = 0.2                           # rest) to 0.85 deg/Myr (Nakada et al. 2015; Adhikari and Ivins 2016, Sci. Adv. 2, e1501693);
+                                         # the 20th-century melt adds < 0.1 deg/Myr (Nakada et al. 2015)
+source   = "Argus and Gross 2004; Adhikari et al. 2018; Nakada et al. 2015"
+[[rotation.data]]
+quantity = "TPW direction"               # [deg east]: the GIA polar motion toward 75-79 W (Nakada et al. 2015; Argus and Gross 2004)
+value    = -77.0
+sd       = 15.0
+sd_model = 15.0
+source   = "Argus and Gross 2004; Nakada et al. 2015"
+
+[likelihood."rotation"]                  # the model error is per quantity (sd_model): sigma_m 0, not fitted
+sigma_m      = 0.0
+corr_dist_km = 1.0
 
 [[gnss]]
 name    = "GNSS Fennoscandia"
