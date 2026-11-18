@@ -13,6 +13,9 @@
 #   experiments/joint-ens.sh margins            Greenland's PaleoGrIS patch (C4's), $W/margins: shared by every member
 #   experiments/joint-ens.sh design <set> [<points.csv>]   the design, $W/<set>/design.csv: the maximin LHS of joint-ens.toml,
 #                                               or the members of <points.csv> (the smoke test: experiments/joint-ens-smoke.csv)
+#   experiments/joint-ens.sh refocus <set> <emulate dir> [n]   a next wave in what a wave did not rule out: n (120) points of the
+#                                               emulator's sample with Imax <= 3, spread by maximin (plastic_joint_ens.jl nroy),
+#                                               $W/<set>/points.csv, and their design
 #   experiments/joint-ens.sh setup <set>        per member the par file, c_f file and margin patches (a job), the run folder
 #   experiments/joint-ens.sh submit <set> [<member> ...]   runme jobs (default every member), my jobs kept below 50
 #   experiments/joint-ens.sh score <set> [<folder>]   a score folder ($W/<set>/<folder>, default score, a new one): the groups,
@@ -39,7 +42,7 @@
 # WALL (01:30:00), NJOBS (50).
 set -euo pipefail
 X=$(cd "$(dirname "$(readlink -f "$0")")" && pwd); T=$X/../tools/levante; . "$T/env.sh"
-[ $# -ge 1 ] || { sed -n '2,39p' "$0"; exit 1; }
+[ $# -ge 1 ] || { sed -n '2,42p' "$0"; exit 1; }
 W=${W:-$KRYOS_WORK/joint-ens}; C7=${C7:-$KRYOS_WORK/coulomb-taub/lambda-file/runs}
 TEMPLATE=${TEMPLATE:-$C7/par_tau-CBF-H300_E1D-ES1-E117.nml}; V4=${V4:-$KRYOS_WORK/coulomb-taub/lgm-calib-v4}
 SEARCH=${SEARCH:-/albedo/work/user/alrobi001/kryos-search}; EMU=${EMU:-$KRYOS_WORK/rescore-esl/earth-search/emulate-noesl}
@@ -107,6 +110,10 @@ margins)
 design)
     setdir "$2"; mkdir -p "$SD"
     $J "$T/plastic_joint_ens.jl" design "$X/joint-ens.toml" "$W/earths.csv" "$CALN" "$CALA" "$SD/design.csv" ${3:+points=$3} ;;
+refocus)
+    setdir "$2"; mkdir -p "$SD"
+    $J "$T/plastic_joint_ens.jl" nroy "$X/joint-ens.toml" "$3/sample.csv" "$SD/points.csv" n=${4:-120}
+    $J "$T/plastic_joint_ens.jl" design "$X/joint-ens.toml" "$W/earths.csv" "$CALN" "$CALA" "$SD/design.csv" points="$SD/points.csv" ;;
 setup)
     setdir "$2"
     $J "$T/plastic_joint_ens.jl" files "$SD/design.csv" "$TEMPLATE" "$W" "$SD"
@@ -165,5 +172,5 @@ post)
         JL_TIME=00:30:00 "$T/jl.sh" "$SD/jumps.log" "$T/plastic_mass_jumps.jl" "$SD/jumps" "${L[@]}"
         JL_TIME=00:40:00 "$T/jl.sh" "$SD/coupled.log" "$T/plastic_coulomb_coupled.jl" "$SD/coupled" "${L[@]}"
     fi ;;
-*)  sed -n '2,39p' "$0"; exit 1 ;;
+*)  sed -n '2,42p' "$0"; exit 1 ;;
 esac
