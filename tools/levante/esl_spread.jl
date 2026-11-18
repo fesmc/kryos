@@ -1,22 +1,21 @@
-# The spread of the data-based global sea-level records, the structural part of the ESL group's model error (plastic_ensemble.jl
-# [esl] spread_file): per age the sample sd s(t) of the central values of four records that rest on data, each as its authors give it
-# (pm_compare.jl sealevel_at, no re-zeroing):
-#   Spratt2016               sl_short, the stack of δ18O-based reconstructions (0 at 5 ka)
+# The spread of the global sea-level records that measure the same quantity as the scored stack, the structural part of the ESL
+# group's model error (plastic_ensemble.jl [esl] spread_file): per age the sample sd s(t) of the central values of two records of
+# the ice mass, each as its authors give it (pm_compare.jl sealevel_at, no re-zeroing):
+#   Spratt2016               sl_short, the stack of δ18O-based reconstructions (0 at 5 ka): the scored record
 #   Lambeck2014              sl, far-field RSL inverted with GIA (ice-volume equivalent)
-#   Grant2014-probabilistic  rsl, the Red Sea record (RSL at the Hanish Sill, as given: its GIA, a few m at the LGM, not removed)
-#   Waelbroeck2002           sl, benthic δ18O regressed on coral sea levels
-# The records disagree by more than their own errors (10-14 m at 25-20 ka): the scored stack's sd does not hold that, so the ESL
-# group's model error is σ_m(t) = sqrt(σ_m^2 + s(t)^2). s(t): the sd of the records with a value at the age (all four from 2.5 to
-# 32.5 ka; Lambeck et al. 2014 end at 33 ka), every 0.5 kyr to 60 ka, the variance averaged over ±1 kyr (5 values: the records' own
-# scatter on 1-2 kyr is not the disagreement of their level). Computed once; the output is an input of the scores, kept with this
-# tool:
+# Not Grant et al. 2014 (the Red Sea: site RSL, its GIA not removed; scored at its site by the far field groups) nor Waelbroeck et
+# al. 2002 (benthic δ18O regressed on corals, a predecessor of the stack's own inputs): with them s(t) was 10-16 m at 25-15 ka and
+# the group no longer told an 83-m LGM from a 110-m one (scores v4). s(t) = |Spratt - Lambeck| / √2, every 0.5 kyr from 0 to 33 ka
+# (Lambeck et al. 2014 end there), the variance averaged over ±1 kyr (the stack's own scatter on 1-2 kyr is not the disagreement
+# of the records' level). The group's model error is σ_m(t) = sqrt(σ_m^2 + s(t)^2). Computed once; the output is an input of the
+# scores, kept with this tool:
 #   julia --project=tools/levante tools/levante/esl_spread.jl <fesmdata> [<out.csv>]     default out: tools/levante/esl_spread.csv
 using Printf, Statistics
 include(joinpath(@__DIR__, "pm_compare.jl"))
 
-const RECORDS = [("Spratt2016", "sl_short"), ("Lambeck2014", "sl"), ("Grant2014-probabilistic", "rsl"), ("Waelbroeck2002", "sl")]
+const RECORDS = [("Spratt2016", "sl_short"), ("Lambeck2014", "sl")]
 
-function esl_spread(fes, out; amax = 60.0, step = 0.5, half = 1.0)
+function esl_spread(fes, out; amax = 33.0, step = 0.5, half = 1.0)
     ages = collect(0.0:step:amax)
     X = hcat([sealevel_at(fes, p, 1000 .* ages; var = v)[1] for (p, v) in RECORDS]...)       # age x record
     var1 = [(x = filter(isfinite, X[i, :]); length(x) >= 2 ? var(x) : NaN) for i in eachindex(ages)]

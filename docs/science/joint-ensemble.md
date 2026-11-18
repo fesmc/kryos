@@ -3,8 +3,9 @@ title: "The joint ice + Earth ensemble"
 ---
 
 Our ice and the Earth sampled together: the Coulomb law of the coupled runs (C7, [Results](results.md)), the LGM timing
-of the margin and the Earth in one design, scored on the 9 groups and history-matched with an emulator. Status
-2026-11-18: code and smoke test done; wave 1 (200 members) set up, not yet submitted.
+of the margin and the Earth in one design, scored on the groups of [Data and scores](data-scores.md) and history-matched
+with an emulator. Status 2026-11-18: wave 1 (200 members) run and scored on scores v5; wave 2 (120 members in the space
+wave 1 did not rule out) set up, not submitted.
 
 ## Why
 
@@ -66,8 +67,10 @@ be out. Each Earth's r is its wave-A r under PaleoMIST's ice, with the reference
 members), the maximin criterion φ_p (p = 50) of the distances in the standardized parameters with the Earth by its 5
 (`plastic_joint_ens.jl design`). Wave 1: 200 members, minimum distance 1.07 against 0.64 for a random design.
 
-**Scores.** The 9 groups (six RSL groups, ESL, GNSS Fennoscandia and Hudson Bay) as C8, ESL with the plain cut 3, the
-references the bar, C7 and C8 pDE ([Data and scores](data-scores.md)).
+**Scores.** The groups, data and error model of the repository's scoring config (`tools/levante/plastic_ensemble_v2.toml`:
+since scores v5, 14 groups judging, 3 reported) in a new score folder (`joint-ens.sh score <set> [<folder>]`), with the
+bar (P1, P2), I1 and I5 (the far field LGM's bar), C7 and C8 pDE as references ([Data and scores](data-scores.md)). Each
+score folder also has `sites.csv`, the far-field misfit by site.
 
 **Emulator.** Per group a GP of y = log(χ²/n) over the 15 parameters on [0, 1] of their ranges (H_N in log; the Earth's
 over wave A's prior), the same GP and cut as the Earth search (`tools/levante/plastic_hm.jl`,
@@ -114,3 +117,30 @@ ice the patches remove; no cell differs.](figures/joint-ensemble/smoke-masks-hi.
 × 64 = about 6,400 core hours; at 49 jobs at a time (my jobs below 50) about 4 rounds, 2.5-3 h of wall time if the
 queue serves them at once (albedo's queue is long until the end of December). Scores: one job of about 1 h; the
 emulator: about 1 h.
+
+## Wave 1
+
+200 members, all finished (`$KRYOS_WORK/joint-ens/wave1`), scored on scores v5 (`score-v5`; the emulator
+`emulate-score-v5`, and `emulate-score-v5-1m` with a sample of 10⁶ points for wave 2). No member passes all 14 groups;
+the best, m196 (E050; H_N 335 m, λ_min 0.44 / 0.31, τ 0.57 / 0.66), passes 11 and fails the far field LGM (131.0
+against the cut 119.7), GNSS Fennoscandia (3.2) and GNSS Hudson Bay (4.0); four more pass 10 (m105, m088, m197, m028). Members
+passing each group: Laurentide 177, Greenland 189, Fennoscandia 149, Barents 170, Antarctica 98, far field 102, far field
+LGM 18, GNSS Fennoscandia 1, Hudson Bay 17, Greenland 75, North America forebulge 52, Antarctica 163, ESL 164, rotation 73
+(J̇2 only: the members' runs predate the polar motion in the VILMA2 stream).
+
+The emulator (LOO R² 0.86-0.99) leaves 0.0004 of the prior not ruled out. GNSS Fennoscandia alone rules out 0.91 of it,
+Hudson Bay 0.85, the far field LGM 0.52. What remains is narrow in the Earth (lithosphere 124-169 km, log η UM 20.9-21.5,
+TZ 20.0-21.0, LM1 below 22.7: 5-95 %; in the 10⁶ sample 371 points on 11 of the 53 Earths, 344 of them on E164, E050 and
+E104) and in NAIS's c_f (−0.28 to +0.05 of the surface) and τ_EU (below 0.63), and spans most of the other ice
+parameters.
+
+## Wave 2
+
+Set up, not submitted (`$KRYOS_WORK/joint-ens/wave2`; `joint-ens.sh refocus wave2 <emulate dir> 120`, `setup wave2`): 120
+members, maximin points of the 371 the emulator of wave 1 (10⁶-point sample) does not rule out (`plastic_joint_ens.jl
+nroy`: farthest-point selection in the standardized parameters from the point of the lowest Imax), on 11 Earths (E164 53,
+E050 29, E104 22, the others 1-3). What it is for: the emulator's cut runs through few wave-1 members (18 pass the far
+field LGM, 1 GNSS Fennoscandia, 17 Hudson Bay), so the space not ruled out is an extrapolation of the GPs near their
+edge; 120 runs inside it test whether any member passes every group, refine the GPs where the cut is, and show whether
+GNSS Fennoscandia and Hudson Bay (the Earth) and the far field LGM (the ice volume at the LGM) can be met together. Cost:
+120 × 0.5 h × 64 threads ≈ 3,800 core hours, three rounds at 49 jobs, a day of queue at albedo's current load.

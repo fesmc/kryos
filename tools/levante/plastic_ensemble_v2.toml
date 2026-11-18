@@ -74,29 +74,36 @@ theta_max     = 1.5
 [ensemble]
 n          = 49                          # members besides the prior mean (m000)
 seed       = 1
-obs_groups = ["Laurentide", "Greenland", "Fennoscandia", "Barents", "Antarctica", "far field", "far field LGM/MIS 3"]   # pm_compare.jl's GROUPS
+obs_groups = ["Laurentide", "Greenland", "Fennoscandia", "Barents", "Antarctica", "far field", "far field LGM", "far field MIS 3"]   # pm_compare.jl's GROUPS
+report_only = ["far field MIS 3"]        # scored and reported, not judged: MIS 3 (30-60 ka), the 2.5-kyr ice records and the
+                                         # limiting data cannot carry a judgement (scores v5)
 compare_max_age_ka = 25.0                # judging and the comparison with the references: GLAC1D's own GIA ends at 26 ka
 bar        = ["pub-PMIST", "pub-GLAC1D"]  # the cut per group: as good as the best published reconstruction (plastic_ensemble.jl weights)
 fixed_cut  = []                        # groups that keep the plain cut; ESL always does (its target is the Spratt stack, never a bar
                                        # reference's score: plastic_ensemble.jl plain_cut_groups)
+[ensemble.bar_groups]                    # a group's own bar references (plastic_ensemble.jl bar_refs): the far field LGM, 15-30 ka,
+"far field LGM" = ["pub-PMIST", "ice-GLAC1D | E1D-PMIST"]   # where GLAC-1D's own RSL (to 26 ka) has no score: its ice on our
+                                         # solver with Gowan's 1-D Earth (I5) stands in for it; the cut is PaleoMIST's 119.7
 
-[likelihood."Laurentide"]                # model error per data group: ens-v1 wave 1 (plastic_ensemble.jl errmodel, top 6 members)
+[likelihood."Laurentide"]                # the error model of the scores (the errmodel.toml of the score folders since scores
+                                         # v3: the RSL groups from ens-v2, GNSS from wave A of the Earth search; until v5 this
+                                         # config held ens-v1's starting values)
 sigma_m = 14.0
-corr_dist_km = 750.0
+corr_dist_km = 1000.0
 corr_time_kyr = 40.0
 [likelihood."Greenland"]
-sigma_m = 40.0
-corr_dist_km = 25.0
+sigma_m = 30.0
+corr_dist_km = 10.0
 corr_time_kyr = 40.0
-[likelihood."Fennoscandia"]              # the Fennoscandia/Barents values of ens-v1, split 2026-11-12: refit
+[likelihood."Fennoscandia"]
 sigma_m = 26.0
 corr_dist_km = 500.0
-corr_time_kyr = 40.0
+corr_time_kyr = 80.0
 
 [likelihood."Barents"]
-sigma_m = 26.0
+sigma_m = 30.0
 corr_dist_km = 500.0
-corr_time_kyr = 40.0
+corr_time_kyr = 80.0
 
 [likelihood."Antarctica"]
 sigma_m = 10.0
@@ -106,18 +113,22 @@ corr_time_kyr = 40.0
 sigma_m = 16.0                           # of PaleoMIST's and GLAC-1D's ice on the 200 Earths of wave A (errmodel refs=, all six
 corr_dist_km = 50.0                      # PaleoMIST's; kryos-work/scores-v4/errfit), not on the best members, which share our
 corr_time_kyr = 20.0                     # ice's misfit (until scores v4: 23 m over 100 km and 20 kyr, ens-v2, every age)
-[likelihood."far field LGM/MIS 3"]       # 15-60 ka: a priori, not fitted on members (a fit to members that are all short of the
+[likelihood."far field LGM"]             # 15-30 ka: a priori, not fitted on members (a fit to members that are all short of the
 sigma_m = 6.0                            # LGM ice would take their common deficit for model error). sigma_m: the GIA of a good Earth
 corr_dist_km = 2000.0                    # at a far-field site, the site RSL less ESL (-9 to +6 m at 30-20 ka over Earths and ice),
 corr_time_kyr = 5.0                      # and the tectonic uplift corrections (Huon, Barbados: 0.1-0.3 mm/yr over 20-60 kyr);
                                          # L_x: that term is of ocean-basin scale (ocean syphoning, levering); L_t: the 2.5-kyr
-                                         # records of the ice and the millennial MIS 3 changes they miss
-[likelihood."GNSS Fennoscandia"]         # GNSS: sigma_m [mm/yr], no time term; starting values (plastic_ensemble.jl errmodel)
-sigma_m = 1.0
-corr_dist_km = 300.0
+                                         # records of the ice
+[likelihood."far field MIS 3"]           # 30-60 ka, reported only: as the LGM's
+sigma_m = 6.0
+corr_dist_km = 2000.0
+corr_time_kyr = 5.0
+[likelihood."GNSS Fennoscandia"]         # GNSS: sigma_m [mm/yr], no time term; fitted on wave A of the Earth search (errmodel refs=)
+sigma_m = 0.7
+corr_dist_km = 750.0
 [likelihood."GNSS Hudson Bay"]
-sigma_m = 1.0
-corr_dist_km = 300.0
+sigma_m = 1.5
+corr_dist_km = 500.0
 [likelihood."GNSS North America forebulge"]   # fitted as the other GNSS groups (errmodel refs=E1D-ES1-E, the 6 best Earths of
 sigma_m = 1.5                            # wave A: kryos-work/scores-v4/errfit)
 corr_dist_km = 750.0
@@ -171,6 +182,7 @@ time       = "11:00:00"                  # within albedo's 12h queue
 throttle   = 25                          # 25 members + the weights job + one other run: within 30 jobs
 
 [score]
+fesmdata  = "{fesmdata}"                 # the FesmData store (init and joint-ens.sh score expand it)
 rsl_proxy = "{work}/fesmdata-staging/fesmdata/Records/RSL/RSL-GAPSLIP_proxy.nc"   # the proxy records of GAPSLIP (FesmData PR
                                          # #16, staged; the default <fesmdata>/Records/RSL/RSL-GAPSLIP_proxy.nc once released)
 # gnss_dir = "{fesmdata}/Records/GPS"   # the default (FesmData GPS v2.2.0: Schumacher2018, MIDAS, BIFROST2015, GNET,
@@ -190,8 +202,8 @@ reference_curves = ["Lambeck2014", "Waelbroeck2002", "Bintanja2008"]   # shown, 
 model_var        = "bsl_ive"             # the model's ESL by what the record measures: a δ18O stack sees the mass of all grounded
                                          # ice, below flotation too (VILMA2 bsl_ive); "bsl" (the ice above flotation) is for a direct
                                          # curve of the mean sea surface (pm_compare.jl ESL_VARS)
-spread_file      = "esl_spread.csv"      # the records' disagreement s(t) (tools/levante/esl_spread.jl: 10-13 m at 25-20 ka, 16 m at
-                                         # 17.5 ka, 6-7 m at 12.5-10 ka): the model error at an age sqrt(sigma_m^2 + s(t)^2)
+spread_file      = "esl_spread.csv"      # the disagreement s(t) of Spratt and Lambeck 2014 (tools/levante/esl_spread.jl: 3-5 m
+                                         # at 25-22.5 ka, 9-12 m at 20-10 ka): the model error at an age sqrt(sigma_m^2 + s(t)^2)
 [likelihood."ESL"]                       # sigma_m: the part every age has (5 m), with s(t) of spread_file
 sigma_m       = 5.0
 corr_dist_km  = 1.0
@@ -199,6 +211,8 @@ corr_time_kyr = 10.0
 
 [cores]                                  # ice-core elevation histories: plastic_ensemble.jl [cores]
 name     = "ice cores (Greenland)"
+judge    = false                         # reported only (scores v5): no member of the joint ensemble's wave 1 passes it (the
+                                         # plastic surface on 32 km misses the Holocene thinning at single sites)
 product  = "Vinther2009"                 # Vinther et al. 2009: Camp Century, NGRIP, GRIP, DYE-3; elevation above sea level, the
                                          # bed's isostatic change included; 1 sigma 40 m (GRIP, NGRIP), 65 m (Camp Century, DYE-3)
 ages_ka  = [11.0, 9.0, 7.0, 5.0, 3.0]    # every 2 kyr: the data errors (the uplift correction of Agassiz and Renland) are
@@ -271,6 +285,8 @@ name    = "GNSS British Isles"           # a thin load on a thin lithosphere (Sc
 product = "Schumacher2018"
 rate    = "corrected"
 box     = [[-11.0, 2.0, 49.0, 61.0]]
+judge   = false                          # reported only (scores v5): every series fails it (6.7-7.5), the fitted error model
+                                         # leaves chi2/n 1.8 on the best Earths of wave A
 [[gnss]]
 name    = "GNSS Antarctica"
 product = "MartinEspanol2016"            # Martín-Español et al. 2016, ITRF2008, elastic-corrected (REAR, the Antarctic ice loss of

@@ -158,10 +158,24 @@ end
 # sections; and those that judge by default (use_groups absent): all but the GNSS groups and sections of judge = false.
 data_groups(cfg) = unique([String.(cfg["ensemble"]["obs_groups"]); [String(sp["name"]) for sp in get(cfg, "gnss", Any[])]; section_groups(cfg)])
 judging_groups(cfg) = [g for g in data_groups(cfg) if !any(sp -> sp["name"] == g && !get(sp, "judge", true), get(cfg, "gnss", Any[])) &&
-                                                     !any(sec -> section_name(cfg, sec) == g && !get(cfg[sec], "judge", true), first.(POINT_SECTIONS))]
+                                                     !any(sec -> section_name(cfg, sec) == g && !get(cfg[sec], "judge", true), first.(POINT_SECTIONS)) &&
+                                                     !(g in report_only(cfg))]
+# [ensemble] report_only: data groups (RSL groups above all) scored and reported, not judged (the far field MIS 3)
+report_only(cfg) = String.(get(cfg["ensemble"], "report_only", String[]))
 # the groups that keep the plain cut ([ensemble] implausibility) whatever the bar references score: [ensemble] fixed_cut and
 # always the ESL group, whose target is the stack of [esl] (Spratt and Lisiecki 2016): no reconstruction sets its bar
 plain_cut_groups(cfg) = unique([String.(get(cfg["ensemble"], "fixed_cut", String[])); esl_name(cfg) === nothing ? String[] : [esl_name(cfg)]])
+# The bar references of group g: [ensemble] bar_groups."<g>" when the config has it (a group the publications cannot be scored in:
+# the far field LGM, where GLAC-1D's own RSL ends at 26 ka), else [ensemble] bar
+bar_refs(cfg, g) = String.(get(get(cfg["ensemble"], "bar_groups", Dict()), g, get(cfg["ensemble"], "bar", String[])))
+# The cut of group g: the larger of [ensemble] implausibility (3) and the lowest I_g of its bar references that have a score there
+# (Ig(ref) -> I or nothing), the plain cut for plain_cut_groups; and the reference that set it ("" for the plain cut)
+function group_cut(cfg, g, Ig)
+    cut0 = Float64(get(cfg["ensemble"], "implausibility", 3.0))
+    g in plain_cut_groups(cfg) && return (cut0, "")
+    b = [(Float64(I), r) for (r, I) in ((r, Ig(r)) for r in bar_refs(cfg, g)) if I !== nothing && isfinite(I)]
+    (isempty(b) || minimum(b)[1] <= cut0) ? (cut0, "") : minimum(b)
+end
 # the kind of a data group: :rsl (index points), :gnss ([[gnss]]) or that of its point section (:esl, :core, :rot)
 function group_kind(cfg, g)
     g in RSL_GROUPS && return :rsl
@@ -405,12 +419,13 @@ end
 implausibility(χ2, n) = (χ2 - n) / sqrt(2n)
 
 # The RSL samples of the data groups og: the primary index points (pm_compare.jl read_indicators) of the RSL groups of og, the limiting
-# samples of LIMITING_GROUPS too, and the proxy records (read_proxies: [score] rsl_proxy, default <fesmdata>/Records/RSL/
-# RSL-GAPSLIP_proxy.nc; proxy_thin_kyr, 1) when og has PROXY_GROUP
+# samples of LIMITING_GROUPS too (but those of LIMITING_EXCLUDE), and the proxy records (read_proxies: [score] rsl_proxy, default
+# <fesmdata>/Records/RSL/RSL-GAPSLIP_proxy.nc; proxy_thin_kyr, 1) when og has a group of PROXY_GROUPS
 function rsl_obs(cfg, og)
     sc = cfg["score"]; fes = sc["fesmdata"]
-    obs = NamedTuple[o for o in PM.read_indicators(fes) if (o.type == 0 || o.group in PM.LIMITING_GROUPS) && any(g -> PM.in_group(o, g), og)]
-    PM.PROXY_GROUP in og && append!(obs, PM.read_proxies(get(sc, "rsl_proxy", joinpath(fes, "Records", "RSL", "RSL-GAPSLIP_proxy.nc"));
+    lim(o) = o.group in PM.LIMITING_GROUPS && !(o.site_name in PM.LIMITING_EXCLUDE)
+    obs = NamedTuple[o for o in PM.read_indicators(fes) if (o.type == 0 || lim(o)) && any(g -> PM.in_group(o, g), og)]
+    any(g -> any(p -> PM.in_group((group = p,), g), PM.PROXY_GROUPS), og) && append!(obs, PM.read_proxies(get(sc, "rsl_proxy", joinpath(fes, "Records", "RSL", "RSL-GAPSLIP_proxy.nc"));
                                                          thin_kyr = Float64(get(sc, "proxy_thin_kyr", 1.0))))
     obs
 end
@@ -501,7 +516,7 @@ end
 
 # A scoring window: the RSL samples of age <= tmax [yr] and the records of age <= tmax (the references that end there: GLAC1D's own
 # GIA at 26 ka, so tmax = 25 ka, its last record of the 2.5 kyr ages of the scores); a group with an age range of its own
-# (pm_compare.jl GROUP_AGES: the far field below 15 ka, and from 15 to 60 ka) all its samples, and the records up to its end. Per
+# (pm_compare.jl GROUP_AGES: the far field below 15 ka, 15-30 ka and 30-60 ka) all its samples, and the records up to its end. Per
 # group (idx) its samples and the columns of A it needs (kc: the records up to the first at or after its end, so that every sample
 # lies between two of them); kb, those of tmax. The series of all, members and references, are scored on the same window: a series
 # without the records of tmax has no score in it, one without those of a group's own range none in that group (window_residuals).
@@ -649,13 +664,11 @@ function weights(C, k)
     refs = references(cfg, obs, A); rG = reference_points(cfg, gd)
     rsc = [(nm, s) for (nm, s) in ((nm, score_series(S, W, em, og; G = rG[nm], gd = gd)) for (nm, S) in refs) if s !== nothing]
     # the bar: per group the lowest I_g of the bar's references that have a score there, and which one
-    bar = String.(get(en, "bar", String[])); nob = setdiff(bar, first.(rsc))
+    bar = unique([b for g in og for b in bar_refs(cfg, g)]); nob = setdiff(bar, first.(rsc))
     isempty(nob) || error("bar references not scored on the window: ", join(nob, ", "))
-    # the groups that keep the plain cut whatever the bar (plain_cut_groups: [ensemble] fixed_cut and ESL)
-    fixed = plain_cut_groups(cfg)
-    best = Dict(g => (b = [(s[g][4], nm) for (nm, s) in rsc if nm in bar && haskey(s, g) && !(g in fixed)]; isempty(b) ? (-Inf, "") : minimum(b))
-                for g in og)
-    cut = Dict(g => max(cut0, best[g][1]) for g in og)
+    rI(r, g) = (k = findfirst(x -> x[1] == r, rsc); k === nothing || !haskey(rsc[k][2], g) ? nothing : rsc[k][2][g][4])
+    best = Dict(g => (c = group_cut(cfg, g, r -> rI(r, g)); (c[1], c[2])) for g in og)
+    cut = Dict(g => best[g][1] for g in og)
     rs = rate_spec(cfg)                        # [rate]: the limit on the rate of ice change, per scale group
     rb, rref = rs === nothing ? (Float64[], Dict()) : rate_bounds(rs)
     rr = rs === nothing ? Dict() : Dict(m => rate_ratio(rs, rb, ES.mdir(C, k, m)) for m in ok)
@@ -818,7 +831,7 @@ end
 
 # The scores of every series, references and members, for tables (docs/science/results.md): per window (the index points of age <=
 # compare_max_age_ka; all points) and data group, and over all groups: n, the RMSE of d [m], the RMS of z = d / sigma_i (the classic
-# score), chi2/n, I_g and log L under the error model. Writes iter_kk/scores.csv. A reference without records in a window is left out.
+# score), chi2/n, I_g and log L under the error model. Writes iter_kk/scores.csv, and sites.csv (write_sites). A reference without records in a window is left out.
 # GNSS groups (the same in both windows): their rows after the RSL groups' row "all" (the RSL groups only), rmse_m then in mm/yr, and
 # their own total "all GNSS"; a series without dz_bed_rate has no GNSS rows.
 #   julia --project=tools/levante plastic_ensemble.jl scores <ensemble folder> [<wave>]
@@ -828,6 +841,7 @@ function scores(C, k)
     tw = 1000.0 * get(cfg["ensemble"], "compare_max_age_ka", 25.0)
     series = [[(nm, S, 1, rG[nm]) for (nm, S) in refs]; [("m" * lpad(m, 3, "0"), res[m].S, 0, res[m].G) for m in sort(collect(keys(res)))]]
     f = joinpath(ES.itdir(C, k), "scores.csv")
+    write_sites(joinpath(ES.itdir(C, k), "sites.csv"), series, score_window(obs, A, og, tw), og)   # the far-field groups: their own ranges
     open(f, "w") do io
         println(io, "window,series,reference,group,n,rmse_m,rmsz,chi2n,I,logL")
         for (wn, W) in (("window", score_window(obs, A, og, tw)), ("all", score_window(obs, A, og, Inf)))
@@ -849,6 +863,33 @@ function scores(C, k)
         end
     end
     println("wrote ", f, " (error model: ", src, ")")
+end
+
+# The misfit of the far-field groups by site (pm_compare.jl FAR_FIELD: the far field, far field LGM, far field MIS 3), the
+# metric of the first comparisons kept for context: per series, group and site (and "all" over the group's sites) the index
+# points (the Red Sea proxy's 1-kyr means among them) n_ip, their RMSE and mean of d = model - obs [m], and the limiting samples
+# n_lim and how many are violated. Writes <iter>/sites.csv (scores).
+function write_sites(f, series, W, og)
+    ff = [g for g in og if g in RSL_GROUPS && get(Dict(PM.GROUPS), g, String[]) == PM.FAR_FIELD]
+    open(f, "w") do io
+        println(io, "series,group,site,lat,lon,n_ip,rmse_m,mean_d_m,n_lim,violated")
+        isempty(ff) && return
+        for (nm, S, _, _) in series
+            rr = window_residuals(S, W); rr === nothing && continue
+            for g in ff
+                haskey(rr, g) || continue
+                r = rr[g]; ip = [i for i in eachindex(r.pts) if r.pts[i].type == 0]; lm = setdiff(eachindex(r.pts), ip)
+                row(st, ii, jj, la, lo) = @printf(io, "\"%s\",%s,%s,%.2f,%.2f,%d,%.2f,%.2f,%d,%d\n", nm, g, st, la, lo, length(ii),
+                                                  isempty(ii) ? NaN : sqrt(mean(abs2, r.d[ii])), isempty(ii) ? NaN : mean(r.d[ii]), length(jj),
+                                                  count(j -> r.d[j] != 0, jj))
+                row("all", ip, lm, NaN, NaN)
+                for st in unique(p.site_name for p in r.pts)
+                    ii = [i for i in ip if r.pts[i].site_name == st]; jj = [j for j in lm if r.pts[j].site_name == st]
+                    q = r.pts[first([ii; jj])]; row(st, ii, jj, q.lat, q.lon)
+                end
+            end
+        end
+    end
 end
 
 # the Earth parameters: the region masks of a config ([earth]), and a shift file of given values (a test, or a check of r)

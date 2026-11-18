@@ -43,16 +43,26 @@ const EFFECTS = [("B1_170", "B1", "lmax 170 - 256 (B1)"), ("B1_L80", "B1_170", "
 const FAR_FIELD = ["Caribbean", "East_Asia", "Southeast_Asia", "South_Asia", "Australia", "Pacific_Islands"]
 const GROUPS = ["Laurentide" => ["North_America_Arctic", "North_America_Atlantic"], "Greenland" => ["Greenland"],
                 "Fennoscandia" => ["Europe"], "Barents" => ["Eurasian_Arctic"], "Antarctica" => ["Antarctica"],
-                "far field" => FAR_FIELD, "far field LGM/MIS 3" => FAR_FIELD]
+                "far field" => FAR_FIELD, "far field LGM" => FAR_FIELD, "far field MIS 3" => FAR_FIELD]
 # The groups of the same regions split by age [yr] (lo <= t < hi): the far field below 15 ka (the deglaciation and the Holocene,
-# dense coral and mangrove data) and from 15 to 60 ka (the LGM and MIS 3: few index points, the limiting data and the proxy records
-# carry it, and a model error of their own); far-field samples older than 60 ka are in no group. A group's own range is its
-# window in every scoring window (plastic_ensemble.jl score_window). Groups not listed: all ages.
-const GROUP_AGES = Dict("far field" => (0.0, 15000.0), "far field LGM/MIS 3" => (15000.0, 60000.0 + 1))
-# the groups whose limiting data are scored (one-sided, limit_misfit) besides their index points, and the group of the proxy
-# records (read_proxies)
-const LIMITING_GROUPS = ["far field LGM/MIS 3"]
-const PROXY_GROUP = "far field LGM/MIS 3"
+# dense coral and mangrove data), from 15 to 30 ka (the LGM: index points, limiting data and the proxy records, the ice volume at the
+# sites) and from 30 to 60 ka (MIS 3: few index points, mostly limiting data and the proxies; the 2.5-kyr records of the ice and its
+# millennial changes); far-field samples older than 60 ka are in no group. A group's own range is its window in every scoring
+# window (plastic_ensemble.jl score_window). Groups not listed: all ages.
+const GROUP_AGES = Dict("far field" => (0.0, 15000.0), "far field LGM" => (15000.0, 30000.0), "far field MIS 3" => (30000.0, 60000.0 + 1),
+                        "far field LGM/MIS 3" => (15000.0, 60000.0 + 1))
+# groups made of groups (configs of other dates): Fennoscandia/Barents (before the split of 2026-11-12: the Fennoscandian shield and
+# the softer, thinner Barents shelf want different Earths), far field LGM/MIS 3 (scores v4, one group of 15-60 ka); in_group: an index
+# point is in a group or in a union that holds its group
+const GROUP_UNIONS = Dict("Fennoscandia/Barents" => ["Fennoscandia", "Barents"], "far field LGM/MIS 3" => ["far field LGM", "far field MIS 3"])
+in_group(o, g) = o.group == g || o.group in get(GROUP_UNIONS, g, String[])
+# the groups whose limiting data are scored (one-sided, limit_misfit) besides their index points, and those of the proxy records
+# (read_proxies, by age); limiting samples of LIMITING_EXCLUDE (site names) are left out: Kikaijima's 46 marine-limiting corals of
+# 38-60 ka (uplift-corrected by GAPSLIP's primary rate) put sea level 63-78 m above every series, PaleoMIST's own GIA and all ESL
+# records included: a correction of the site, not a constraint on the ice (its index points are kept)
+const LIMITING_GROUPS = ["far field LGM", "far field MIS 3"]
+const PROXY_GROUPS = ["far field LGM", "far field MIS 3"]
+const LIMITING_EXCLUDE = ["Kikaijima"]
 # the group of a sample of a region at the age t: the first of GROUPS that has the region and t in its age range ("" for none)
 function group_of(region, t)
     for (g, rs) in GROUPS
@@ -61,10 +71,6 @@ function group_of(region, t)
     end
     ""
 end
-# groups made of groups (the configs before the split of Fennoscandia/Barents, 2026-11-12: the Fennoscandian shield and the softer,
-# thinner Barents shelf want different Earths); in_group: an index point is in a group or in a union that holds its group
-const GROUP_UNIONS = Dict("Fennoscandia/Barents" => ["Fennoscandia", "Barents"])
-in_group(o, g) = o.group == g || o.group in get(GROUP_UNIONS, g, String[])
 # the marine-bed areas where B1 and PaleoMIST differ most: by sector or site of GAPSLIP (no data in the Weddell embayment itself)
 const FOCUS = ["Hudson Bay" => (:sector, ["Hudson_Bay"]), "Hudson Strait" => (:sector, ["Hudson_Strait"]),
                "Ross Sea (Scott Coast, Terra Nova Bay)" => (:site_name, ["Southern_Scott_Coast", "Terra_Nova_Bay"]),
@@ -140,8 +146,8 @@ function read_indicators(fesmdata)
 end
 
 # The proxy records of GAPSLIP 2.1 (FesmData RSL-GAPSLIP_proxy: the Red Sea at Bab-el-Mandeb, Grant et al. 2012, 2014, index
-# points; the Karimata Strait, Weiss et al. 2022, terrestrial limiting), site RSL, as samples of read_indicators in PROXY_GROUP
-# where their age is in its range. Thinned: a continuous record's samples are not independent (the Red Sea: 4-5 per kyr, scattered
+# points; the Karimata Strait, Weiss et al. 2022, terrestrial limiting), site RSL, as samples of read_indicators in the group of PROXY_GROUPS
+# whose age range has their age. Thinned: a continuous record's samples are not independent (the Red Sea: 4-5 per kyr, scattered
 # by the δ18O of the planktic foraminifera, whose noise the 1-kyr mean averages and whose level error the ±12 m of each sample
 # keeps): per site and type the mean of the samples in bins of thin_kyr [kyr] (age, RSL, its range and the age range), so about one
 # point per kyr; the Karimata values (every 2 kyr, GAPSLIP's interpolation between two estimates) stay as they are.
@@ -156,8 +162,8 @@ function read_proxies(file; thin_kyr = 1.0)
         out = NamedTuple[]
         for (st, typ, b) in bins
             k = [i for i in eachindex(t) if site[i] == st && ty[i] == typ && floor(Int, t[i] / (1000 * thin_kyr)) == b]
-            m(x) = sum(x[k]) / length(k); tm = m(t); g = PROXY_GROUP
-            lo_, hi_ = GROUP_AGES[g]; lo_ <= tm < hi_ || continue
+            m(x) = sum(x[k]) / length(k); tm = m(t)
+            gs = [g for g in PROXY_GROUPS if GROUP_AGES[g][1] <= tm < GROUP_AGES[g][2]]; isempty(gs) && continue; g = gs[1]
             a0 = max(m(t0), 0.0); a1 = min(m(t1), 80000.0)
             push!(out, (region = reg[k[1]], group = g, sector = sec[k[1]], site_name = st, lat = la[k[1]], lon = lo[k[1]], t = tm,
                         tmin = a0, tmax = a1, st = (m(t1) - m(t0)) / 4, rsl = m(r), rmin = m(r0), rmax = m(r1), type = typ))

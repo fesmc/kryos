@@ -95,13 +95,32 @@ function joint_emulate(designf, cfgf, earthsf, scoresf, scfgf, outdir; npts = 10
             println(io, "\nRuled out by each group alone (fraction of the prior with I_emu > $cutI there): ",
                     join([@sprintf("%s %.3f", g, mean(Igrp[(SET, g)] .> cutI)) for g in fitted], ", "), ".\n")
         end
-        println(io, "\n## The runs\n\nRanked by the groups passed, then log L over the groups that judge; the references first.\n")
-        println(io, "| series | log L | passed | ", join(["I " * g for g in ug], " | "), " |\n|---|---|---|", repeat("---|", length(ug)))
+        # the far-field RMSE of the index points (sites.csv of the score folder, plastic_ensemble.jl write_sites), for context
+        ffr = far_rmse(joinpath(dirname(scoresf), "sites.csv")); ffg = sort(unique(last.(collect(keys(ffr)))))
+        rep = [g for g in unique(last.(collect(keys(sc)))) if !(g in ug)]
+        println(io, "\n## The runs\n\nRanked by the groups passed, then log L over the groups that judge; the references first. ",
+                isempty(rep) ? "" : "Reported, not judged: " * join(rep, ", ") * ". ",
+                isempty(ffg) ? "" : "RMSE [m]: of the far-field index points (" * join(ffg, ", ") * "; sites.csv).", "\n")
+        println(io, "| series | log L | passed | ", join(["I " * g for g in [ug; rep]], " | "), isempty(ffg) ? "" : " | " * join(["RMSE " * g for g in ffg], " | "),
+                " |\n|---|---|---|", repeat("---|", length(ug) + length(rep) + length(ffg)))
         for s in [refs; [s for (_, s) in sort(cases[SET], by = x -> (-np(x[2]), -LL(x[2])))]]
-            println(io, "| ", esc(s), " | ", @sprintf("%.1f", LL(s)), " | ", np(s), "/", length(ug), " | ", join([fI(s, g) for g in ug], " | "), " |")
+            println(io, "| ", esc(s), " | ", @sprintf("%.1f", LL(s)), " | ", np(s), "/", length(ug), " | ", join([fI(s, g) for g in [ug; rep]], " | "),
+                    isempty(ffg) ? "" : " | " * join([haskey(ffr, (s, g)) ? @sprintf("%.1f", ffr[(s, g)]) : "-" for g in ffg], " | "), " |")
         end
     end
     println("wrote ", joinpath(outdir, "summary.md"), @sprintf("; not ruled out %.4f", mean(keep)))
+end
+
+# the far-field index-point RMSE per (series, group) of a sites.csv (its "all" rows), empty without the file
+function far_rmse(f)
+    out = Dict{Tuple{String,String},Float64}()
+    isfile(f) || return out
+    M, h = readdlm(f, ',', Any; header = true); h = String.(vec(h)); c(n) = findfirst(==(n), h)
+    for i in axes(M, 1)
+        M[i, c("site")] == "all" || continue
+        x = M[i, c("rmse_m")]; out[(strip(String(M[i, c("series")]), '"'), String(M[i, c("group")]))] = x isa Number ? Float64(x) : NaN
+    end
+    out
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__

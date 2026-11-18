@@ -16,6 +16,12 @@
 #       the file (columns member, the parameters, earth). The c_f of each member (c_f* of the calibration surface,
 #       plastic_cf_surface.jl, times exp of its deviation) are added. design.csv: member, the parameters, earth, its 5
 #       parameters, c_f per region (cf_NAIS, cf_Greenland, cf_Fennoscandia, cf_BarentsKara, cf_Antarctica, cf_Patagonia).
+#   julia ... plastic_joint_ens.jl nroy <joint-ens.toml> <sample.csv> <out points.csv> [n=120] [cut=3] [prefix=w]
+#       the points of a next wave in the space a wave did not rule out: of the emulator's dense sample (plastic_joint_emulate.jl
+#       sample.csv: the ice parameters, the Earth and its 5 parameters, Imax over the groups that judge) those with Imax <= cut, and
+#       of them n spread over that space: farthest-point (maximin) selection in the standardized parameters (the ice parameters on
+#       [0, 1] of their prior ranges, the Earth's on wave A's), starting from the point of the lowest Imax. All of them when fewer.
+#       points.csv: member (prefix and number), the ice parameters, earth, Imax: the input of design points=.
 #   julia ... plastic_joint_ens.jl files <design.csv> <template par.nml> <W> <S> [members=<m1,m2,...>]
 #       per member <S>/members/<member>/cf.nc (taub_cf_file) and <S>/runs/par_<name>.nml (<S>: the set's folder, <W> the
 #       ensemble's: its Earths, their r and the shared margin patch): the template (C7's par file) with
@@ -183,6 +189,35 @@ function design(cfgf, earthsf, fN, fA, out; n = nothing, seed = nothing, points 
     out
 end
 
+# the points of a next wave (see the header: nroy)
+function nroy(cfgf, samplef, out; n = 120, cut = 3.0, seed = 1, prefix = "w")
+    P = ice_params(TOML.parsefile(cfgf))
+    R, h = read_csv(samplef); issubset([ICE_PARAMS; EARTH_COLS; "earth"; "Imax"], h) || error("$samplef: not an emulator sample.csv")
+    keep = [r for r in R if Float64(r["Imax"]) <= cut]
+    println("nroy: $(length(keep)) of $(length(R)) sample points with Imax <= $cut")
+    isempty(keep) && error("nothing not ruled out in $samplef")
+    X = hcat([[[to01(P[k], Float64(r[ICE_PARAMS[k]])) for k in eachindex(P)]; earth01([Float64(r[c]) for c in EARTH_COLS])] for r in keep]...)
+    m = min(n, length(keep)); sel = [argmin([Float64(r["Imax"]) for r in keep])]
+    dmin = [norm(X[:, j] - X[:, sel[1]]) for j in axes(X, 2)]
+    while length(sel) < m
+        j = argmax(dmin); push!(sel, j)
+        for i in axes(X, 2); dmin[i] = min(dmin[i], norm(X[:, i] - X[:, j])); end
+    end
+    nd = max(3, ndigits(m))
+    open(out, "w") do io
+        println(io, "member,", join(ICE_PARAMS, ","), ",earth,Imax")
+        for (q, j) in enumerate(sel)
+            r = keep[j]
+            println(io, prefix, lpad(q, nd, '0'), ",", join([@sprintf("%.6g", Float64(r[c])) for c in ICE_PARAMS], ","), ",", str(r["earth"]), ",",
+                    @sprintf("%.2f", Float64(r["Imax"])))
+        end
+    end
+    E = unique(str(keep[j]["earth"]) for j in sel)
+    @printf("wrote %s: %d points (%d Earths), the smallest distance between them %.3f\n", out, m, length(E),
+            minimum(norm(X[:, sel[a]] - X[:, sel[b]]) for a in 1:m for b in a+1:m; init = Inf))
+    out
+end
+
 # --- the members' files ---------------------------------------------------------------------------------------------------------
 # a namelist file as lines: set / read a key of a group (the group's name case-insensitive), append groups
 function nml_group(lines, g)
@@ -254,13 +289,16 @@ function files(designf, template, W, S; members = nothing)
 end
 
 function joint_main(args)
-    isempty(args) && error("plastic_joint_ens.jl earths | design | files (see the header)")
+    isempty(args) && error("plastic_joint_ens.jl earths | design | nroy | files (see the header)")
     o = kv([a for a in args if occursin("=", a)]); pos = [a for a in args if !occursin("=", a)]
     if pos[1] == "earths" && length(pos) == 4
         earths(pos[2], pos[3], pos[4]; cut = parse(Float64, get(o, "cut", "3")))
     elseif pos[1] == "design" && length(pos) == 6
         design(pos[2:6]...; n = haskey(o, "n") ? parse(Int, o["n"]) : nothing, seed = haskey(o, "seed") ? parse(Int, o["seed"]) : nothing,
                points = get(o, "points", nothing))
+    elseif pos[1] == "nroy" && length(pos) == 4
+        nroy(pos[2:4]...; n = parse(Int, get(o, "n", "120")), cut = parse(Float64, get(o, "cut", "3")), seed = parse(Int, get(o, "seed", "1")),
+             prefix = String(get(o, "prefix", "w")))
     elseif pos[1] == "files" && length(pos) == 5
         files(pos[2:5]...; members = haskey(o, "members") ? split(o["members"], ",") : nothing)
     else
