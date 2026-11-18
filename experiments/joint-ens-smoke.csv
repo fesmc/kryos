@@ -1,0 +1,5 @@
+member,H_N,lam_N,lam_A,dlcf_NAIS,dlcf_Greenland,dlcf_Fennoscandia,dlcf_BarentsKara,dlcf_Antarctica,tau_NA,tau_EU,earth
+centre,547.7226,0.65,0.275,0,0,0,0,0,0.5,0.5,E117
+lo,300,0.4,0.15,-0.3,-0.15,-0.3,-0.3,-0.3,0,0,E012
+hi,1000,0.9,0.4,0.3,0.15,0.3,0.3,0.3,1,1,E104
+c7,300,0.5,0.22,0,0,0,0,0,0,0,E117
