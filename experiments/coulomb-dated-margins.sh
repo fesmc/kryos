@@ -18,7 +18,8 @@
 # Each patch: PaleoMIST's slices at both ends of its window, the product's slices strictly inside it (margin_patch.jl).
 # Greenland keeps PaleoMIST's margin (no PaleoGrIS patch, as C7). The par files are C7's unchanged with ice_nor's
 # margin_patches and their groups added; C7's kryos.x, input/ and maps. Env: C7 (C7's run folder, default
-# $KRYOS_WORK/coulomb-taub/lambda-file/runs), S (the FesmData products with the dated margins, default $FESMDATA),
+# $KRYOS_WORK/coulomb-taub/lambda-file/runs), S (the FesmData products with the dated margins, default $FESMDATA:
+# DATED-1 is released, IceHistory v2.7.0; Dalton2020 is not (no licence stated), so pDA and pDAE need S with it),
 # NA_T0, NA_T1 (default 25000, 20000), EU_T0, EU_T1 (default 27500, 7500), W (default $KRYOS_WORK/coulomb-taub/dated-margins).
 # Runs in $W/runs/<name>, scores in $W/score/iter_01/scores.csv.
 set -euo pipefail
