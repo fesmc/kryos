@@ -841,7 +841,7 @@ function scores(C, k)
     tw = 1000.0 * get(cfg["ensemble"], "compare_max_age_ka", 25.0)
     series = [[(nm, S, 1, rG[nm]) for (nm, S) in refs]; [("m" * lpad(m, 3, "0"), res[m].S, 0, res[m].G) for m in sort(collect(keys(res)))]]
     f = joinpath(ES.itdir(C, k), "scores.csv")
-    write_sites(joinpath(ES.itdir(C, k), "sites.csv"), series, score_window(obs, A, og, Inf), og)
+    write_sites(joinpath(ES.itdir(C, k), "sites.csv"), series, score_window(obs, A, og, tw), og)   # the far-field groups: their own ranges
     open(f, "w") do io
         println(io, "window,series,reference,group,n,rmse_m,rmsz,chi2n,I,logL")
         for (wn, W) in (("window", score_window(obs, A, og, tw)), ("all", score_window(obs, A, og, Inf)))
