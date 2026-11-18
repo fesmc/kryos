@@ -91,7 +91,7 @@ config; implemented 2026-11-12):
 
   Greenland and Antarctica were reported only until 2026-11-18; they judge since, with a model error fitted as the
   others' that carries the Little Ice Age loading, the weak mantle under the recent ice loss and the elastic correction
-  ([Data and scores](../science/data-scores.md#gnss-greenland-and-antarctica)).
+  ([Data and scores](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/data-scores.md#gnss-greenland-and-antarctica)).
 - **Model:** `dz_bed_rate` of the run's last VILMA2 record (`geo_glob_vilma.nc` of a kryos run, `vilma_out.nc` of a
   standalone run), bilinear at the station, in mm/yr. It is the rate of the bed over VILMA2's last update: 100 yr in
   a kryos run (`geo_glob` cadence), 100 yr in a `gia_refcorr.sh` case (its forcing has a slice 100 yr before present).

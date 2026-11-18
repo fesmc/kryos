@@ -65,7 +65,7 @@ level from SELEN on a 1-D Earth. The FesmData products used here are
 2.5 kyr slices, each reconstructed on its own (`margin_interp = "nearest"` reproduces
 that); online, kryos interpolates the margin in time and solves on the bed and sea
 level of its own Earth at every step. See
-[Imposed ice](howto/imposed-ice.md) and [Online ice](howto/online-ice.md).
+[Imposed ice](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/imposed-ice.md) and [Online ice](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/online-ice.md).
 
 ## What a step does
 
@@ -168,7 +168,7 @@ gather (and so the run) from the start, before the patch's time range.
 /
 ```
 
-`tools/levante/margin_patch.jl <product> <var> <region ids> <t0> <t1> <out>` writes a
+`ice-earth-recon/tools/margin_patch.jl <product> <var> <region ids> <t0> <t1> <out>` writes a
 patch from a dated margin product of FesmData (IceHistory): PaleoMIST's slices (or its
 interpolated mask) at t0 and t1, so that the patch hands over to the base continuously at
 both ends, and the product's slices strictly between them, in the given regions of the
@@ -226,8 +226,8 @@ its scale group. `taub_default` is scaled by neither.
 
 | Key | File | What |
 |---|---|---|
-| `taub_domain_factor_file` | dimension `domain`: `domain_id(domain)`, `log_factor(domain)` (natural log $u_d$) | a factor per domain, constant in time: the present-day fit (Stage 1, `tests/plastic_taub_fit.f90`, written by `tools/levante/plastic_taub_fit_report.jl` as `taub_domain_factor.nc`; released as `$KRYOS_DATA/plastic/taub_domain_factor_v2.nc`, `_v3.nc`). An id of the product missing from the file keeps factor 1; an id of the file without τ_b stops unless its log_factor is 0. |
-| `taub_scale_file` | dimensions `domain`, `scale_group`, `node`: `domain_id(domain)`, `group(domain)` (1 to the number of groups, 0 = unscaled), `time(node)` (any order, units as the margin's), `log_factor(scale_group, node)` ($v_g$) | multipliers per scale group, time dependent: the parameters of a weighted-ensemble member (`tools/levante/plastic_taub_scale.jl`, written by `plastic_ensemble.jl` as `<ensemble>/iter_01/scale/mNNN.nc`). $v_g$ is linear in time between the nodes and held outside them. An id of the product missing from the file is unscaled; an id of the file with a group but no τ_b stops. |
+| `taub_domain_factor_file` | dimension `domain`: `domain_id(domain)`, `log_factor(domain)` (natural log $u_d$) | a factor per domain, constant in time: the present-day fit (Stage 1, `tests/plastic_taub_fit.f90`, written by `ice-earth-recon/tools/plastic_taub_fit_report.jl` as `taub_domain_factor.nc`; released as `$KRYOS_DATA/plastic/taub_domain_factor_v2.nc`, `_v3.nc`). An id of the product missing from the file keeps factor 1; an id of the file without τ_b stops unless its log_factor is 0. |
+| `taub_scale_file` | dimensions `domain`, `scale_group`, `node`: `domain_id(domain)`, `group(domain)` (1 to the number of groups, 0 = unscaled), `time(node)` (any order, units as the margin's), `log_factor(scale_group, node)` ($v_g$) | multipliers per scale group, time dependent: the parameters of a weighted-ensemble member (`ice-earth-recon/tools/plastic_taub_scale.jl`, written by `plastic_ensemble.jl` as `<ensemble>/iter_01/scale/mNNN.nc`). $v_g$ is linear in time between the nodes and held outside them. An id of the product missing from the file is unscaled; an id of the file with a group but no τ_b stops. |
 
 A file of zeros gives the unscaled τ_b bit for bit, and so does leaving the key out.
 This page is the reference for how τ_b is composed; the other pages link here.
@@ -242,12 +242,12 @@ Levenberg-Marquardt (|u| ≤ `u_max` = 2.3: factors 0.1-10) for a list of λ; th
 `plastic_taub_fit_report.jl` picks λ per grid (the largest with χ²/n ≤ 1, else the
 corner of the L-curve). Released: `taub_domain_factor_v3.nc` (NH-32KM, ANT-16KM,
 PAT-PAL-8KM), the file of the par files and the ensembles. How to run it:
-[Ensembles, Stage 1](howto/ensembles.md#stage-1-the-present-day-factors).
+[Ensembles, Stage 1](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/howto/ensembles.md#stage-1-the-present-day-factors).
 
 **The multipliers** are the parameters of the weighted ensembles: one log factor per
 scale group (Laurentide, Greenland, Fennoscandia, Barents-Kara, British-Irish, West
 and East Antarctica, Patagonia) and time node, sampled from a prior and weighted by
-the sea-level data ([Our ice: the τ_b ensembles](science/ice-ensembles.md)). The
+the sea-level data ([Our ice: the τ_b ensembles](https://github.com/awi-esc/ice-earth-recon/blob/main/docs/ice-ensembles.md)). The
 ES-MDA calibrations that first set them (v1, v2) are retired.
 
 ### Coulomb yield law
@@ -271,7 +271,7 @@ connection. With `taub_lambda_bed = "file"` (default) λ is a fixed field of the
 `kryos_data/plastic/{grid_name}_lambda_bed.nc`), relative to present sea level, read at init and
 held in time: one field per grid, the same for every Earth and for the calibration programs
 (`tests/plastic_coulomb_{calib,scan,pd}.f90`, `lambda_file`, the same reader). The files of
-`tools/levante/plastic_lambda_bed.jl` hold the present-day bed relaxed by local isostasy,
+`ice-earth-recon/tools/plastic_lambda_bed.jl` hold the present-day bed relaxed by local isostasy,
 z_b + (ρ_i/ρ_m) H_ice (ρ_m = 3300 kg m⁻³) of the FesmData topography (GEBCO 2026; Antarctica
 BedMachine v4), so that the isostatically depressed interior beds of today's ice sheets do not
 read as marine. `"relaxed"` computes that field from the run's own reference topography,
@@ -300,7 +300,7 @@ c_f is one value per **region** (ice sheet), constant in time: `taub_region_file
 run), `taub_cf_file` has `region_id(region)`, `log_cf(region)` (natural log; an id not on the
 grid is allowed, a region of the map without c_f stops). The maps
 `$KRYOS_DATA/plastic/{grid_name}_taub_regions_v2.nc` (NH-32KM, ANT-16KM, PAT-PAL-8KM; written by
-`tools/levante/plastic_cf_regions.jl`, which also writes c_f files) have 1 Laurentide (North
+`ice-earth-recon/tools/plastic_cf_regions.jl`, which also writes c_f files) have 1 Laurentide (North
 America with the Cordillera and Innuitian), 2 Greenland, 3 Fennoscandia (with the
 British-Irish ice), 4 Antarctica, 5 Patagonia, 6 BarentsKara (the Barents and Kara seas with
 their islands), from the geography of Gowan's domains (no τ_b of the product): whole domains,

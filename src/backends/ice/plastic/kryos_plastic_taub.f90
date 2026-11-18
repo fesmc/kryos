@@ -21,7 +21,7 @@ module kryos_plastic_taub
     ! "domains" may be scaled. A factor per domain (taub_domain_factor_file, the present-day fit of
     ! tests/plastic_taub_fit.f90): the value of an id, after the override table, times exp(log_factor(id)),
     ! constant in time. Then the scale groups (taub_scale_file, the calibration of
-    ! tools/levante/plastic_esmda.jl): each id belongs to a scale group (0 = unscaled) and its value is
+    ! ice-earth-recon/tools/plastic_esmda.jl): each id belongs to a scale group (0 = unscaled) and its value is
     ! multiplied by exp(log_factor(group, t)), linear in t between the nodes of the groups and held outside
     ! them. The default of the cells without a domain is scaled by neither.
     !
@@ -383,7 +383,7 @@ contains
     end subroutine taub_set_coulomb
 
     subroutine taub_read_coulomb(tb, region_file, cf_file, nx, ny, p, H_N, delta, lam_min, zb0, zb1)
-        ! "coulomb" from the region map file (region (x, y), the ids, 0 = none; tools/levante/plastic_cf_regions.jl)
+        ! "coulomb" from the region map file (region (x, y), the ids, 0 = none; ice-earth-recon/tools/plastic_cf_regions.jl)
         ! and the c_f file (dimension region: region_id(region), log_cf(region), natural log), then taub_set_coulomb.
         type(taub_t),     intent(out) :: tb
         character(len=*), intent(in)  :: region_file, cf_file
@@ -419,7 +419,7 @@ contains
 
     function taub_read_lambda_bed(file, nx, ny) result(z)
         ! [m] The bed of a fixed lambda (taub_set_lambda_fixed), relative to present sea level: the field z_lambda
-        ! (x, y) of `file` on the nx x ny grid (tools/levante/plastic_lambda_bed.jl), every value finite. The backend
+        ! (x, y) of `file` on the nx x ny grid (ice-earth-recon/tools/plastic_lambda_bed.jl), every value finite. The backend
         ! (taub_lambda_bed = "file") and the calibration programs (tests/plastic_coulomb_*.f90) read it with this.
         character(len=*), intent(in) :: file
         integer,          intent(in) :: nx, ny

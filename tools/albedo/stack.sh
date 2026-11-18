@@ -2,7 +2,7 @@
 # stack.sh: a kryos stack on AWI's albedo, from scratch: configme install kryos (kryos and every dependency at the refs
 # of its .configme/manifest.toml, configured for albedo: awi_albedo, ifx; fesm-utils and its external libraries built),
 # make kryos with the backends of BUILD (it builds their libraries first), VILMA2's standalone driver; then
-# tools/levante/setup.sh (the data links, maps, runme, the Julia project of the tools).
+# tools/levante/setup.sh (the data links, maps, runme).
 #
 #   tools/albedo/stack.sh <dir> [<kryos ref>]      (from a kryos checkout; or curl it and run it anywhere)
 #
@@ -34,7 +34,7 @@ done
 
 echo "== $(date -Is) build ($BUILD)"
 make kryos $BUILD -j8 > build.log 2>&1 || { tail -30 build.log; exit 1; }
-# VILMA2's standalone driver (vilma2/bin/vilma.x): the runs of tools/levante/gia_refcorr.sh (present-day correction, references)
+# VILMA2's standalone driver (vilma2/bin/vilma.x): the runs of ice-earth-recon/tools/gia_refcorr.sh (present-day correction, references)
 if [[ " $BUILD " == *" vilma=1 "* ]]; then make -C vilma2 vilma openmp=$omp >> build.log 2>&1 || { tail -30 build.log; exit 1; }; fi
 ls -l libkryos/bin/kryos.x
 echo "== $(date -Is) tools/levante/setup.sh"

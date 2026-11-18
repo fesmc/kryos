@@ -48,14 +48,14 @@ const HEADER = """
 !                 North America, ANT without a reconstruction); [Antarctica] experiments = "recon_ant"
 !   removed       [barysealevel], [isos_nor], [isos_ant] (FastIsostasy only)
 !   [topo_nor], [topo_ant], [X_z_bed], [X_H_ice]  the reference bed is today's + r, the present-day reference correction of
-!                 tools/levante/gia_refcorr.sh (case PaleoMIST-sci); H_ice stays present-day
+!                 ice-earth-recon/tools/gia_refcorr.sh (case PaleoMIST-sci); H_ice stays present-day
 !   [out_rst]     restart bundle every 5 kyr (was 20 kyr; phase 4 G7, Q12)
 !   added         [vilma] (CLIMBER-X set: PREM, 11 layers, Bagge 3D structure 6, lmax 170, 1-D pre-spin-up, spin-up 2e4 yr / 1e-5 m/yr),
 !                 [globe_ice] and the three datasrc groups of the PaleoMIST history on GLOBAL-0.5DEG (X at 0 ka, anomaly of the history)
 ! A run shorter than 80 ka: -p clock.time_end=<t>. The smb_simple variant: par/gate/g6-smb.nml (tools/bin/kryos-smb-par.jl).
 """
 
-# The present-day reference correction r (tools/levante/gia_refcorr.sh, case PaleoMIST-sci: this Earth, PaleoMIST 80 -> 0 ka): the
+# The present-day reference correction r (ice-earth-recon/tools/gia_refcorr.sh, case PaleoMIST-sci: this Earth, PaleoMIST 80 -> 0 ka): the
 # reference bed of every component is today's bed + r, the rebound still to come at 0 ka, so that the run ends on today's bed
 # (docs/dev/vilma2-paleomist.md, "Present-day reference correction for kryos"). Only the reference topography changes: the domains'
 # [topo_*] path and the globe_ice background X; H_ice stays present-day.

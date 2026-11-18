@@ -4,8 +4,6 @@ project:
   render:
     - "*.md"
     - "*.qmd"
-    - "science/*.md"
-    - "howto/*.md"
     - "!README.md"
     - "!design.md"
     - "!dev/"
@@ -13,7 +11,7 @@ project:
 
 website:
   title: "kryos"
-  description: "Documentation for kryos, the component-based ice-sheet and solid-Earth modelling framework, and the glacial-cycle reconstructions made with it"
+  description: "Documentation for kryos, the component-based ice-sheet and solid-Earth modelling framework"
   repo-url: https://github.com/fesmc/kryos
   repo-subdir: docs
   repo-actions: [edit, issue]
@@ -26,36 +24,6 @@ website:
         href: index.md
       - text: "Getting started"
         href: getting-started.md
-      - text: "Science"
-        menu:
-          - text: "Reconstructing the last glacial cycle"
-            href: science/index.md
-          - text: "Methods"
-            href: science/methods.md
-          - text: "Data and scores"
-            href: science/data-scores.md
-          - text: "The Earth search"
-            href: science/earth-search.md
-          - text: "The ice: τ_b ensembles"
-            href: science/ice-ensembles.md
-          - text: "The joint ice + Earth ensemble"
-            href: science/joint-ensemble.md
-          - text: "Results"
-            href: science/results.md
-          - text: "Maps: data and models"
-            href: science/maps.md
-      - text: "How-to"
-        menu:
-          - text: "Imposed ice on VILMA2"
-            href: howto/imposed-ice.md
-          - text: "Our ice online"
-            href: howto/online-ice.md
-          - text: "Ensembles"
-            href: howto/ensembles.md
-          - text: "The Earth search"
-            href: howto/earth-search.md
-          - text: "Analysis and figures"
-            href: howto/analysis.md
       - text: "Model"
         menu:
           - text: "Architecture"
@@ -73,8 +41,6 @@ website:
         menu:
           - text: "Par files"
             href: reference-par-files.md
-          - text: "Tools"
-            href: reference-tools.md
           - text: "Developer notes"
             href: developer-notes.md
           - text: "---"
