@@ -105,10 +105,9 @@ lhs01(d, n, rng) = permutedims(hcat([(randperm(rng, n) .- rand(rng, n)) ./ n for
 # the groups that judge, their cut (the larger of [ensemble] implausibility and the bar's best I_g), n and y_cut = log(1 + cut sqrt(2/n))
 function cut_setup(sc, cfg)
     en = cfg["ensemble"]; ug = String.(get(en, "use_groups", judging_groups(cfg)))
-    cut0 = get(en, "implausibility", 3.0); bar = String.(get(en, "bar", String[]))
-    fixed = plain_cut_groups(cfg)                             # groups that keep the plain cut (fixed_cut and ESL; plastic_ensemble.jl)
-    cut = Dict(g => g in fixed ? cut0 : max(cut0, minimum([sc[(b, g)].I for b in bar if haskey(sc, (b, g))]; init = Inf)) for g in ug)
-    for g in ug; isfinite(cut[g]) || (cut[g] = cut0); end
+    cut0 = get(en, "implausibility", 3.0); bar = unique([b for g in ug for b in bar_refs(cfg, g)])
+    # per group the cut of plastic_ensemble.jl group_cut (the plain cut for ESL and fixed_cut, else the bar references' best I)
+    cut = Dict(g => group_cut(cfg, g, r -> haskey(sc, (r, g)) ? sc[(r, g)].I : nothing)[1] for g in ug)
     ngrp = Dict(g => first([v.n for ((s, gg), v) in sc if gg == g]) for g in ug if any(k -> k[2] == g, keys(sc)))
     (ug = ug, cut0 = cut0, bar = bar, cut = cut, ngrp = ngrp, ycut = Dict(g => log(1 + cut[g] * sqrt(2 / ngrp[g])) for g in keys(ngrp)))
 end
