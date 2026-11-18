@@ -255,14 +255,17 @@ run_done(dir) = (f = joinpath(dir, "status"); isfile(f) && (w = split(read(f, St
 # the age [yr] of each record of a run: its time rounded to 10 yr, without the 1 yr of trec / trun (records 100 yr apart or more)
 rec_age(r::Run) = -10.0 .* round.(r.t ./ 10.0)
 # The model's ESL: a scalar of VILMA2's own diagnostics (vilma_coupling.f90 update_bsl; in a kryos run geo_glob_vilma.nc of the
-# global instance), var of esl_at, [esl] model_var of an ensemble config:
+# global instance), var of esl_at, [esl] model_var of an ensemble config. The comparator follows what the record measures:
+#   bsl_ive  −ρ_i/ρ_w ∫ΔI_g dA / ∫C dA, the mass of the whole grounded column (below flotation too) as sea level over the ocean
+#            of the time: what a record built on ice mass measures, the δ18O stacks (Spratt and Lisiecki 2016, Waelbroeck et
+#            al. 2002) and the mass-based curves (Lambeck et al. 2014, Rohling, PaleoMIST's own ESL). δ18O sees every
+#            kilogram of ice, floating or not. The default.
 #   bsl      the barystatic sea level, the ocean mean of C rsl, ∫C rsl dA / ∫C dA over the ocean of the time; by the mass balance of
 #            the sea-level equation the melt water (−ρ_i/ρ_w ∫ΔI_g dA, ΔI_g the grounded-ice change) plus the flooded-area fill
-#            (vilma_coupling.f90 fill_int, with the host's F in a kryos run). The ocean that fills newly flooded area (the
-#            cavity of lost marine ice, flooding shelves) does not raise it, so in effect the ice above flotation counts, with the
-#            change of the ocean area: the ice-volume-equivalent sea level of a stack. The default.
-#   bsl_ive  −ρ_i/ρ_w ∫ΔI_g dA / ∫C dA, the whole grounded column, below flotation too (about 10 m more ice at the LGM; bsl −
-#            bsl_ive = fill_int / ∫C dA): the comparator before 2026-11-18, kept to reproduce the old scores
+#            (vilma_coupling.f90 fill_int, with the host's F in a kryos run): the ocean that fills newly flooded area (the cavity
+#            of lost marine ice, flooding shelves) does not raise it, so the ice above flotation counts. What a direct curve of the
+#            mean sea surface measures; a site record (the Red Sea) is site RSL, not either. About 10 m less ice than bsl_ive at
+#            the LGM (bsl − bsl_ive = fill_int / ∫C dA). The comparator of 2026-11-18 (PR #55), which took it for the stack's.
 const ESL_VARS = (:bsl, :bsl_ive)
 # a run's ESL [m] at the ages [yr]: var (ESL_VARS) relative to its last record (0 ka), linear in time between the records (rec_age; the
 # record itself at an age it has); NaN for a run that has not finished

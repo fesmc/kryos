@@ -28,9 +28,9 @@
 # [esl] (optional): the ESL group, global sea level relative to the present against an independent curve: name ("ESL"), product
 # (FesmData Records/SeaLevel/SeaLevel-<product>.nc, e.g. Spratt2016), var (sl_short), ages_ka (25 to 10 every 2.5), judge (true),
 # reference_curves (SeaLevel products shown in weights.md, not scored, e.g. Lambeck2014), its cut the plain one (never a bar
-# reference's: plain_cut_groups; judge = false in the Earth search, where the imposed ice sets ESL), model_var (the model's ESL: "bsl", the
-# barystatic sea level of the volume above flotation, the default; "bsl_ive", the whole grounded column, the scores before
-# 2026-11-18; pm_compare.jl ESL_VARS); a reference's esl = "<product>" gives a published reconstruction its ESL (pub-PMIST:
+# reference's: plain_cut_groups; judge = false in the Earth search, where the imposed ice sets ESL), model_var (the model's ESL by what the record
+# measures: "bsl_ive", the mass of the whole grounded column, for the δ18O stacks and mass-based curves, the default; "bsl", the
+# barystatic sea level (the ice above flotation), for a direct curve of the mean sea surface; pm_compare.jl ESL_VARS); a reference's esl = "<product>" gives a published reconstruction its ESL (pub-PMIST:
 # PaleoMIST). Model ESL: model_var of the run's VILMA2 records relative to its last (0 ka) (pm_compare.jl esl_at); the data as their
 # authors give them (Spratt: 0 at 5 ka); model and data each linear in time on their own axis, compared at the ages (esl_at, sealevel_at).
 # [[gnss]] (optional): GNSS data groups, the present-day uplift rate at GNSS stations: name (the group), product
@@ -146,9 +146,9 @@ const POINT_SECTIONS = ["esl" => (:esl, "ESL"), "cores" => (:core, "ice cores"),
 section_name(cfg, sec) = haskey(cfg, sec) ? String(get(cfg[sec], "name", Dict(POINT_SECTIONS)[sec][2])) : nothing
 esl_name(cfg) = section_name(cfg, "esl")
 section_groups(cfg) = String[section_name(cfg, sec) for (sec, _) in POINT_SECTIONS if haskey(cfg, sec)]
-# the model's ESL, [esl] model_var (pm_compare.jl esl_at): :bsl (the default) or :bsl_ive
+# the model's ESL, [esl] model_var (pm_compare.jl esl_at, ESL_VARS): :bsl_ive (the default, ice mass: the δ18O stacks) or :bsl
 function esl_var(cfg)
-    v = Symbol(haskey(cfg, "esl") ? get(cfg["esl"], "model_var", "bsl") : "bsl")
+    v = Symbol(haskey(cfg, "esl") ? get(cfg["esl"], "model_var", "bsl_ive") : "bsl_ive")
     v in PM.ESL_VARS || error("[esl] model_var = \"$(v)\": not one of ", join(string.(PM.ESL_VARS), ", "))
     v
 end
