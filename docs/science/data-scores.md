@@ -72,8 +72,8 @@ on NH-32KM, `z_sl` the sea level the ice sees), bilinear at the site in the grid
 records, relative to 0 ka; a standalone VILMA2 run under a reconstruction's ice `z_bed + h_ice` of its stream; a
 published reconstruction its `z_topo` (`pm_compare.jl` `core_at`, `core_product`). Error model: σ_m 75 m over 500 km and 5
 kyr, starting values (`[likelihood."ice cores (Greenland)"]`): the plastic surface on 32 km misses the present elevation
-of the sites by 30-380 m (RMS 240 m, C7), most of which cancels in the change relative to the present; to be refitted by
-`errmodel` from an ensemble.
+of the sites by 30-380 m (RMS 240 m, C7), most of which cancels in the change relative to the present; kept after a
+refit on the joint ensemble's wave 1 that the data do not allow ([the error model](#the-error-model)).
 
 ### Rotation
 
@@ -204,7 +204,12 @@ fitted, then held fixed for every simulation:
 - GNSS from wave A of the Earth search: Fennoscandia 0.7 mm/yr over 750 km, Hudson Bay 1.5 mm/yr over 500 km, Greenland
   2.0 mm/yr over 1000 km, Antarctica 4.0 mm/yr over 250 km, North America forebulge 1.5 mm/yr over 750 km, British Isles
   0.7 mm/yr over 175 km;
-- ESL σ_m 5 m over 10 kyr with the records' spread; the ice cores 75 m over 500 km and 5 kyr (starting values, [above](#ice-cores)); the rotation group a model error per quantity.
+- ESL σ_m 5 m over 10 kyr with the records' spread; the rotation group a model error per quantity;
+- the ice cores 75 m over 500 km and 5 kyr, the starting values ([above](#ice-cores)), kept: refit on the 6 best members
+  of the joint ensemble's wave 1 (`errmodel refs=^tau-JE-`, `kryos-work/joint-ens/wave1/score-v4-corefit`) the maximum
+  likelihood is on the edge of the grid (80 m, the largest; 10 km, the smallest) with χ²/n still 2.4: the best members'
+  misfit is not of the form of the error model (the plastic surface on 32 km misses the Holocene thinning at single
+  sites), and 20 points do not fit three parameters.
 
 ## The scores
 
