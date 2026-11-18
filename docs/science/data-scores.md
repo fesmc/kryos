@@ -16,25 +16,28 @@ error model for every simulation, published reconstructions included.
 | Barents | GAPSLIP 2.1 (Svalbard, Franz Josef Land, Novaya Zemlya, the Kara Sea) | 370 | yes |
 | Antarctica | GAPSLIP 2.1 | 47 | yes |
 | far field | GAPSLIP 2.1, below 15 ka | 1787 | yes |
-| far field LGM/MIS 3 | GAPSLIP 2.1 index points and limiting samples, 15-60 ka, and the Red Sea and Karimata proxy records ([below](#far-field-lgmmis-3)) | 893 | yes |
-| ESL | the Spratt and Lisiecki (2016) sea-level stack as given, 25-10 ka every 2.5 kyr, against the run's ice-mass sea level `bsl_ive`, with the spread of the data-based records in the model error ([below](#esl)) | 7 | yes |
+| far field LGM | GAPSLIP 2.1 index points and limiting samples, 15-30 ka, and the Red Sea proxy record ([below](#far-field-lgm-and-mis-3)) | 671 | yes |
+| far field MIS 3 | the same at 30-60 ka, without Kikaijima's limiting samples, and the Karimata proxy | 176 | no (reported) |
+| ESL | the Spratt and Lisiecki (2016) sea-level stack as given, 25-10 ka every 2.5 kyr, against the run's ice-mass sea level `bsl_ive`, with the spread of Spratt and Lambeck et al. (2014) in the model error ([below](#esl)) | 7 | yes |
 | GNSS Fennoscandia | present-day uplift rates, BIFROST2015 (Kierulf et al. 2021) | 164 | yes |
 | GNSS Hudson Bay | Schumacher et al. (2018), elastic-corrected, and MIDAS stations (Blewitt et al. 2016) | 61 | yes |
 | GNSS North America forebulge | Schumacher et al. (2018), the Great Lakes, the St Lawrence and the US Atlantic coast ([below](#gnss-in-new-regions)) | 661 | yes |
-| GNSS British Isles | Schumacher et al. (2018) | 112 | yes |
+| GNSS British Isles | Schumacher et al. (2018) | 112 | no (reported) |
 | GNSS Greenland | GNET (Berg et al. 2024), less its elastic part ([below](#gnss-greenland-and-antarctica)) | 55 | yes |
 | GNSS Antarctica | Martín-Español et al. (2016), elastic-corrected | 67 | yes |
-| ice cores (Greenland) | Holocene surface elevation at Camp Century, NGRIP, GRIP and DYE-3 (Vinther et al. 2009), 11-3 ka every 2 kyr ([below](#ice-cores)) | 20 | yes |
+| ice cores (Greenland) | Holocene surface elevation at Camp Century, NGRIP, GRIP and DYE-3 (Vinther et al. 2009), 11-3 ka every 2 kyr ([below](#ice-cores)) | 20 | no (reported) |
 | rotation | GIA J̇2 and the true polar wander velocity along and across its observed direction, from the literature ([below](#rotation)) | 3 | yes |
 
 The RSL points are those of age ≤ 25 ka, GLAC-1D's own RSL ending at 26 ka so that the published reconstructions can
-be scored on the same points, except the far field: below 15 ka in its own group, and 15-60 ka in the far field LGM/MIS 3
-group, whose window is its own in every scoring window (a series without the records of 15-60 ka, `pub-GLAC1D` and our
-GLAC-1D runs with their gap at 32.5 and 37.5 ka, has no score there). GNSS rates are compared with the run's rate of
+be scored on the same points, except the far field: below 15 ka in its own group, 15-30 ka in the far field LGM and 30-60
+ka in the far field MIS 3, each with its own window in every scoring window (a series without the records of a window has
+no score there: `pub-GLAC1D` in the LGM and MIS 3 groups, our GLAC-1D runs, with their gap at 32.5 and 37.5 ka, in MIS 3). GNSS rates are compared with the run's rate of
 bed change at its last record (elastic-corrected data; VILMA2's centre-of-mass frame against ITRF/IGS, a few tenths of
 a mm/yr apart, not corrected). Until 2026-11-18 GNSS Greenland and Antarctica were reported, not judged; the far field
 held every age (2248 points of age ≤ 25 ka), and the new groups of scores v4 (far field LGM/MIS 3, GNSS North America
-forebulge and British Isles) did not exist.
+forebulge and British Isles) did not exist. Scores v5 (2026-11-18): the far field LGM/MIS 3 split at 30 ka, MIS 3
+reported only, Kikaijima's limiting samples out; ESL's spread from Spratt and Lambeck alone; the Greenland ice cores and
+GNSS British Isles reported only.
 
 ### GNSS Greenland and Antarctica
 
@@ -119,48 +122,49 @@ field LGM/MIS 3 group scores at its site. PR #55 (2026-11-18) took `bsl` for the
 measures ice mass, not the sea surface; `bsl_ive` holds about 10 m more ice at the LGM than `bsl`.
 
 The error model: a time term only, σ_m(t) = √(σ_m² + s(t)²) correlated over L_t, with σ_m 5 m and L_t 10 kyr and s(t)
-the disagreement of the data-based records, the sd of the central values of Spratt and Lisiecki (2016) as given,
-Lambeck et al. (2014), Grant et al. (2014, the Red Sea as given) and Waelbroeck et al. (2002), the variance averaged
-over ±1 kyr (`tools/levante/esl_spread.jl`, computed once; its output `tools/levante/esl_spread.csv` is the input,
-`[esl] spread_file`): 12.2, 10.3, 13.3, 16.1, 11.8, 6.3, 6.6 m at 25, 22.5, ..., 10 ka. The stack's own sd (2-5 m) does
-not hold that disagreement, and a run between the records is not wrong for being off the stack.
+the disagreement of the two records of the ice mass, Spratt and Lisiecki (2016) as given and Lambeck et al. (2014),
+|Spratt − Lambeck|/√2, the variance averaged over ±1 kyr (`tools/levante/esl_spread.jl`, computed once; its output
+`tools/levante/esl_spread.csv` is the input, `[esl] spread_file`): 2.8, 4.5, 9.3, 10.0, 11.6, 7.4, 10.4 m at 25, 22.5, ...,
+10 ka. Not Grant et al. (2014: the Red Sea, site RSL with its GIA, scored at its site by the far field LGM) nor
+Waelbroeck et al. (2002, a predecessor of the stack's own inputs). With them (scores v4) s(t) was 10-16 m and ESL did not
+tell an 83-m LGM from a 110-m one (`kryos-work/esl-records`: JE-lo, the smoke test's low corner, 3.9 against C7's 0.6); now
+JE-lo 15.7, C7 4.8, ED-pNE25 −1.0, PaleoMIST's ice on E117 2.6 ([results](results.md#scores-v5)).
 
-With all three changes ESL becomes a weak constraint: C7 15.2 → 0.3, ED-pNE25 5.2 → −1.4, PaleoMIST's ice on E117
-10.2 → −0.4 ([the regression](#scores-v4-regression)). What constrains the LGM ice volume now is the far field LGM/MIS 3
-group, at the sites.
-
-### Far field LGM/MIS 3
+### Far field LGM and MIS 3
 
 The far-field regions of GAPSLIP 2.1 (the Caribbean, East, Southeast and South Asia, Australia, the Pacific islands)
 split by age (`pm_compare.jl` `GROUPS`, `GROUP_AGES`): the far field below 15 ka (the deglaciation and the Holocene, dense
-coral and mangrove index points: 1787 of age < 15 ka) and the far field LGM/MIS 3, 15-60 ka. The old far field group held
-every age, and its error model, fitted on the residuals of ens-v2's best members (dominated by the Holocene points),
-was 23 m over 100 km: wide enough to hide that every run is 16-21 m short of the far-field index points at 18-30 ka
-(`kryos-work/esl-records`). The new group holds, at 15-60 ka:
+coral and mangrove index points: 1787 of age < 15 ka), the far field LGM, 15-30 ka, and the far field MIS 3, 30-60 ka.
+The old far field group held every age, and its error model, fitted on the residuals of ens-v2's best members (dominated
+by the Holocene points), was 23 m over 100 km: wide enough to hide that every run is 16-21 m short of the far-field index
+points at 18-30 ka (`kryos-work/esl-records`). The two older groups hold:
 
-- the primary index points (650);
-- the limiting samples (192), one-sided (`pm_compare.jl` `limit_misfit`): d = 0 on the side the sample allows (marine:
-  sea level above it; terrestrial: below), d = m − rsl beyond it, σ as an index point's. A sample that holds adds 0 to
-  χ² and 1 to n, so every series is scored on the same points;
-- the two proxy records of GAPSLIP, FesmData `RSL-GAPSLIP_proxy` (new, FesmData PR #16; staged in
-  `kryos-work/fesmdata-staging` until released: `[score] rsl_proxy`): the Red Sea at Bab-el-Mandeb (Grant et al. 2012,
-  2014; index points, ±12 m) and the Karimata Strait (Weiss et al. 2022; terrestrial limiting, 60-32 ka), as site RSL.
-  The Red Sea record is continuous (4-5 samples per kyr whose δ18O scatter is not independent): thinned to the mean of
-  each 1-kyr bin (`read_proxies`, 36 points at 15-60 ka); Karimata's values every 2 kyr stay (15).
+- the primary index points (LGM 568, MIS 3 82);
+- the limiting samples (LGM 97, MIS 3 49), one-sided (`pm_compare.jl` `limit_misfit`): d = 0 on the side the sample
+  allows (marine: sea level above it; terrestrial: below), d = m − rsl beyond it, σ as an index point's. A sample that
+  holds adds 0 to χ² and 1 to n, so every series is scored on the same points. Kikaijima's 46 marine-limiting corals of
+  38-60 ka are left out (`LIMITING_EXCLUDE`): every series, PaleoMIST's own GIA and every ESL record included, has sea
+  level 63-78 m below them, so they measure the site's uplift correction (GAPSLIP's primary rate; its alternatives of
+  1.7-2.3 mm/yr are not primary data), not the ice; Kikaijima's index points stay;
+- the two proxy records of GAPSLIP, FesmData `RSL-GAPSLIP_proxy` (FesmData #16; staged in `kryos-work/fesmdata-staging`
+  until released: `[score] rsl_proxy`), as site RSL by age: the Red Sea at Bab-el-Mandeb (Grant et al. 2012, 2014; index
+  points, ±12 m), thinned to the mean of each 1-kyr bin (`read_proxies`: a continuous record of 4-5 samples per kyr whose
+  δ18O scatter is not independent; LGM 6 points, MIS 3 30), and the Karimata Strait (Weiss et al. 2022; terrestrial
+  limiting, 60-32 ka, every 2 kyr: 15 in MIS 3).
 
-Far-field samples older than 60 ka are in no group (few, and the 2.5-kyr records of the ice hold MIS 4 badly).
+Far-field samples older than 60 ka are in no group. **MIS 3 is reported, not judged** (`[ensemble] report_only`): its
+data are few (82 index points, most at Huon and Cairns), the limiting samples and the Red Sea carry it, and the ice's
+2.5-kyr records miss its millennial changes; every series misses it (C7 92, PaleoMIST 61) mostly by too little MIS 3 ice
+(C7 26-42 m above the Red Sea). The far field LGM is judged.
 
-The error model is a priori, not fitted on members: a fit to members that are all short of the LGM ice would take their
-common deficit for model error, which is what hid it. σ_m 6 m: the GIA of a good Earth at a far-field site (site RSL less
-ESL, −9 to +6 m at 30-20 ka over Earths and ice histories) and the tectonic uplift corrections (Huon, Barbados: 0.1-0.3
-mm/yr over 20-60 kyr); L_x 2000 km, that term being of ocean-basin scale (ocean syphoning, continental levering); L_t 5
-kyr, the 2.5-kyr ice records and the millennial MIS 3 changes they miss. The group's I is high for every series (C7
-188.8, PaleoMIST's ice on E117 150.0, `pub-PMIST` 144.9): the LGM index points alone give 74 for C7 against 111 for
-`pub-PMIST`, the Red Sea and the MIS 3 limiting samples the rest (C7 is 26-42 m above the Red Sea at 25-60 ka: too
-little MIS 3 ice). Kikaijima's 46 marine-limiting samples of 38-60 ka are violated by every series by 63-78 m (its
-uplift correction; GAPSLIP's alternatives with 1.7-2.3 mm/yr are not in the primary data): they add 13-16 to I, and are
-kept. With σ_m 8 or 10 m C7 would still read 140 and 120. `pub-GLAC1D` and the GLAC-1D runs (no record at 32.5 and
-37.5 ka) have no score here: `pub-PMIST` alone sets the bar of the group.
+The error model of both is a priori, not fitted on members: a fit to members that are all short of the LGM ice would take
+their common deficit for model error, which is what hid it. σ_m 6 m: the GIA of a good Earth at a far-field site (site
+RSL less ESL, −9 to +6 m at 30-20 ka over Earths and ice histories) and the tectonic uplift corrections (Huon, Barbados:
+0.1-0.3 mm/yr over 20-60 kyr); L_x 2000 km, that term being of ocean-basin scale (ocean syphoning, continental levering);
+L_t 5 kyr, the 2.5-kyr ice records. Under it the LGM's I is high for every series (C7 158.7, `pub-PMIST` 119.7,
+PaleoMIST's ice on E117 121.8, JE-lo 457.8), and the bar is set accordingly ([below](#the-bar)). The index-point RMSE of
+the far-field sites, the metric of the first comparisons, is kept for context (`sites.csv` of a score folder,
+`plastic_ensemble.jl` `write_sites`; [results](results.md#scores-v5)).
 
 ### GNSS in new regions
 
@@ -176,8 +180,10 @@ mm/yr over 175 km.
 
 ### Antarctic ice cores
 
-Not added (2026-11-18). Buizert et al. (2021) give their LGM elevation changes per core only in the supplement
-(Fig. S12, Data S1), which is not openly readable; the open NOAA archive of the study (doi:10.25921/hnt8-bv54) has
+Not added. Buizert et al. (2021) do not give their elevation changes as data: Data S1 of the supplement
+(`abd2897_datas1.xlsx`, 564 KB) holds the firn-based temperature and accumulation of the seven cores (0-40 ka), the total
+air content of WAIS Divide and Dome Fuji, δ15N, CH4, borehole temperatures and Δage, no elevation (checked 2026-11-18);
+an elevation history would have to be derived from the total air content (two cores); the open NOAA archive of the study (doi:10.25921/hnt8-bv54) has
 temperature and accumulation, no elevation. The main text has only the West-minus-East contrast (WAIS Divide 420 m,
 280-590 m, higher than central East Antarctica). Skytrain Ice Rise (Grieman et al. 2024, CC BY 4.0) has a 430 ± 110 m
 lowering between 9.5-8.5 and 6.6-5.0 ka (total air content), and no peer-reviewed Holocene elevation numbers were found
@@ -200,7 +206,7 @@ fitted, then held fixed for every simulation:
   16 m over 50 km and 20 kyr (all six PaleoMIST's; until scores v4 23 m over 100 km and 20 kyr, from ens-v2, every age).
   An error model fitted on our members takes their common misfit for model error; on the imposed ice it is what the
   best Earths cannot fit under a published ice;
-- the far field LGM/MIS 3 a priori, 6 m over 2000 km and 5 kyr ([above](#far-field-lgmmis-3));
+- the far field LGM and MIS 3 a priori, 6 m over 2000 km and 5 kyr ([above](#far-field-lgm-and-mis-3));
 - GNSS from wave A of the Earth search: Fennoscandia 0.7 mm/yr over 750 km, Hudson Bay 1.5 mm/yr over 500 km, Greenland
   2.0 mm/yr over 1000 km, Antarctica 4.0 mm/yr over 250 km, North America forebulge 1.5 mm/yr over 750 km, British Isles
   0.7 mm/yr over 175 km;
@@ -217,20 +223,23 @@ fitted, then held fixed for every simulation:
   far field split in two): higher is better. Differences of a few tens are large. This is the one scale of all the tables.
 - **I**, the implausibility of a group, (χ² − n)/√(2n) with χ² = d′R⁻¹d: about 0 when the residuals are as large as the
   error model expects, ≤ 3 passes.
-- **passed**, the number of judging groups within the bar: of 16 (seven RSL groups, ESL, six GNSS groups, ice cores,
-  rotation; of 13 until scores v4, of 9 until 2026-11-18), over the groups a series has a score in: a published
-  reconstruction has no GNSS and no rotation, `pub-GLAC1D` no far field LGM/MIS 3, a run before 2026-11-12 no GNSS. In
-  the Earth search ESL is reported, not judged.
+- **passed**, the number of judging groups within the bar: of 14 (seven RSL groups, ESL, five GNSS groups, rotation; of 16
+  in scores v4, of 13 until then, of 9 until 2026-11-18), over the groups a series has a score in: a published
+  reconstruction has no GNSS and no rotation, `pub-GLAC1D` no far field LGM, a run before 2026-11-12 no GNSS. Reported,
+  not judged: the far field MIS 3, the Greenland ice cores, GNSS British Isles (scores v5: no member of the joint
+  ensemble passes the last two). In the Earth search ESL is reported, not judged.
 - **RMSE** [m] and **RMS z** (the root mean square of the residuals normalized by σ_i, the score of the first
   comparisons) are reported for reference only. A few points with tiny σ_i dominate RMS z, Greenland above all.
 
 ## The bar
 
 A group passes at I ≤ 3. Where both published reconstructions fail a group, the cut is raised to the better of their
-two scores: Greenland 7.9 (PaleoMIST) and, since scores v4, the far field below 15 ka 3.3 (PaleoMIST; GLAC-1D 4.4). The far field LGM/MIS 3 takes `pub-PMIST`'s 144.9 (`pub-GLAC1D` has no score
-there: its own RSL ends at 26 ka). Every series misses that group far beyond 3, the publication too: the cut asks
-for no worse than PaleoMIST at the LGM and in MIS 3 (C7 188.8, PaleoMIST's ice on E117 150.0). Every other RSL
-group keeps 3, and so do the ice cores (GLAC-1D 2.6). No publication has a GNSS or rotation score: those groups keep 3.
+two scores: Greenland 7.9 (PaleoMIST) and, since scores v4, the far field below 15 ka 3.3 (PaleoMIST; GLAC-1D 4.4).
+The far field LGM has bar references of its own (`[ensemble] bar_groups`, `plastic_ensemble.jl` `bar_refs`,
+`group_cut`): `pub-PMIST` and, for GLAC-1D, whose own RSL ends at 26 ka, its ice on our solver with Gowan's 1-D Earth
+(I5, `ice-GLAC1D | E1D-PMIST`, 184.5); the cut is PaleoMIST's 119.7. Under its a priori error model every series misses
+that group far beyond 3, the publication too: the cut asks for an LGM at the far-field sites no worse than PaleoMIST's
+(C7 158.7). Every other RSL group keeps 3. No publication has a GNSS or rotation score: those groups keep 3.
 
 ESL's target is the Spratt and Lisiecki (2016) stack, and its bar is the plain cut 3. No published reconstruction sets
 it: PaleoMIST no longer sets the ESL bar (until 2026-11-18 the Earth search and the Coulomb tables took PaleoMIST's own
