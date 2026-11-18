@@ -395,7 +395,8 @@ contains
         ! Streams 2D and 1D: the default writer (the exports on lon, lat; rounded by the table `geo`). `gia`: the global
         ! ice field VILMA2 got (the host imports, table `geo-vilma2`). `vilma`: VILMA2's own diagnostics file
         ! (vilma_write_step, rounded by its own table; the ice, sea level, bed, the bed's rate over the last update
-        ! dz_bed_rate [m/yr], ocean function and the scalar series: not the viscoelastic memory). h_ice is the load of the solve (with the host terms of
+        ! dz_bed_rate [m/yr], ocean function and the scalar series, the polar motion rot_m_re, rot_m_im when the rotation
+        ! solver runs: not the viscoelastic memory). h_ice is the load of the solve (with the host terms of
         ! the plastic or Yelmo instances: I_g + (1 - w) h_ice_ext), h_ice_ext the external ice of the 1 - w part.
         class(vilma_earth_t), intent(inout) :: self
         character(len=*),     intent(in)    :: file, stream
@@ -405,6 +406,9 @@ contains
         character(len=*), parameter :: DIMS_LL(3) = [character(len=32) :: "lon", "lat", "time"]
         character(len=*), parameter :: VARS_VILMA(14) = [character(len=12) :: "h_ice", "h_ice_ext", "rsl", "z_bed", "C_ocean", &
             "dz_bed", "dz_bed_rate", "dz_ss", "bsl", "dphi", "bsl_ive", "bsl_ive_host", "fill_int", "fill_int_own"]
+        ! the polar motion m = m1 + i m2 [rad] (the true polar wander of the scores): only when VILMA2's rotation solver runs
+        ! (l_rotation), else VILMA2 would write a zero it did not compute (vilma_drive's rule)
+        character(len=*), parameter :: VARS_ROT(2) = [character(len=12) :: "rot_m_re", "rot_m_im"]
         type(var_io_type) :: row
         real(dp), allocatable :: a(:,:)
         integer :: hs(5), i, ncid, n
@@ -434,7 +438,11 @@ contains
             call nc_close(ncid)
         case ("vilma")
             call require_built(self, "write_output")
-            call vilma_write_step(self%se, file, t, nms=VARS_VILMA, init=init)
+            if (self%se%rotation%enabled) then
+                call vilma_write_step(self%se, file, t, nms=[VARS_VILMA, VARS_ROT], init=init)
+            else
+                call vilma_write_step(self%se, file, t, nms=VARS_VILMA, init=init)
+            end if
         case default
             call component_write_output(self, file, t, stream, init)
         end select
