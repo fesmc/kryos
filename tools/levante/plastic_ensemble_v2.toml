@@ -74,7 +74,7 @@ theta_max     = 1.5
 [ensemble]
 n          = 49                          # members besides the prior mean (m000)
 seed       = 1
-obs_groups = ["Laurentide", "Greenland", "Fennoscandia", "Barents", "Antarctica", "far field"]   # pm_compare.jl's GROUPS
+obs_groups = ["Laurentide", "Greenland", "Fennoscandia", "Barents", "Antarctica", "far field", "far field LGM/MIS 3"]   # pm_compare.jl's GROUPS
 compare_max_age_ka = 25.0                # judging and the comparison with the references: GLAC1D's own GIA ends at 26 ka
 bar        = ["pub-PMIST", "pub-GLAC1D"]  # the cut per group: as good as the best published reconstruction (plastic_ensemble.jl weights)
 fixed_cut  = []                        # groups that keep the plain cut; ESL always does (its target is the Spratt stack, never a bar
@@ -102,14 +102,26 @@ corr_time_kyr = 40.0
 sigma_m = 10.0
 corr_dist_km = 250.0
 corr_time_kyr = 40.0
-[likelihood."far field"]
+[likelihood."far field"]                 # below 15 ka (pm_compare.jl GROUP_AGES); refit in scores-v4 below
 sigma_m = 23.0
 corr_dist_km = 100.0
 corr_time_kyr = 20.0
+[likelihood."far field LGM/MIS 3"]       # 15-60 ka: a priori, not fitted on members (a fit to members that are all short of the
+sigma_m = 6.0                            # LGM ice would take their common deficit for model error). sigma_m: the GIA of a good Earth
+corr_dist_km = 2000.0                    # at a far-field site, the site RSL less ESL (-9 to +6 m at 30-20 ka over Earths and ice),
+corr_time_kyr = 5.0                      # and the tectonic uplift corrections (Huon, Barbados: 0.1-0.3 mm/yr over 20-60 kyr);
+                                         # L_x: that term is of ocean-basin scale (ocean syphoning, levering); L_t: the 2.5-kyr
+                                         # records of the ice and the millennial MIS 3 changes they miss
 [likelihood."GNSS Fennoscandia"]         # GNSS: sigma_m [mm/yr], no time term; starting values (plastic_ensemble.jl errmodel)
 sigma_m = 1.0
 corr_dist_km = 300.0
 [likelihood."GNSS Hudson Bay"]
+sigma_m = 1.0
+corr_dist_km = 300.0
+[likelihood."GNSS North America forebulge"]   # starting values, refit in scores-v4 below
+sigma_m = 1.0
+corr_dist_km = 300.0
+[likelihood."GNSS British Isles"]
 sigma_m = 1.0
 corr_dist_km = 300.0
 [likelihood."GNSS Greenland"]            # fitted as Fennoscandia's and Hudson Bay's (errmodel refs=E1D-ES1-E, the 6 best Earths of
@@ -159,6 +171,8 @@ time       = "11:00:00"                  # within albedo's 12h queue
 throttle   = 25                          # 25 members + the weights job + one other run: within 30 jobs
 
 [score]
+rsl_proxy = "{work}/fesmdata-staging/fesmdata/Records/RSL/RSL-GAPSLIP_proxy.nc"   # the proxy records of GAPSLIP (FesmData PR
+                                         # gapslip-proxy, staged; the default <fesmdata>/Records/RSL/RSL-GAPSLIP_proxy.nc once released)
 # gnss_dir = "{fesmdata}/Records/GPS"   # the default (FesmData GPS v2.2.0: Schumacher2018, MIDAS, BIFROST2015, GNET,
 #                                         MartinEspanol2016)
 
@@ -247,6 +261,16 @@ min_years = 5.0                          # series of at least 5 years
 name    = "GNSS Greenland"
 product = "GNET"                         # Berg et al. 2024, IGS14; sd combined with the elastic part's
 rate    = "gia"                          # observed less the elastic response to the ice loss of 2000-2020 (1.5-13.8 mm/yr)
+[[gnss]]
+name    = "GNSS North America forebulge"   # the Great Lakes, the St Lawrence and the US Atlantic coast south of the Hudson Bay box:
+product = "Schumacher2018"               # the collapsing forebulge (the lower mantle, the Laurentide load); Schumacher et al.
+rate    = "corrected"                    # 2018, elastic-corrected (not MIDAS: its hydrology and groundwater signals uncorrected)
+box     = [[-95.0, -65.0, 35.0, 50.0]]
+[[gnss]]
+name    = "GNSS British Isles"           # a thin load on a thin lithosphere (Schumacher et al. 2018: the British Isles too)
+product = "Schumacher2018"
+rate    = "corrected"
+box     = [[-11.0, 2.0, 49.0, 61.0]]
 [[gnss]]
 name    = "GNSS Antarctica"
 product = "MartinEspanol2016"            # Martín-Español et al. 2016, ITRF2008, elastic-corrected (REAR, the Antarctic ice loss of
