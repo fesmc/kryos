@@ -6,7 +6,10 @@ page-layout: full
 
 Every scored simulation, on one scale: what each changes against its parent ([Methods](methods.md#the-ladder)) and how
 well it fits ([Data and scores](data-scores.md)). Status 2026-11-18 (ESL rescored: the barystatic sea level, linear in time;
-[Data and scores](data-scores.md#esl)).
+[Data and scores](data-scores.md#esl)). The tables below are on that scale; [scores v4](#scores-v4) (the ESL stack as
+given against the ice mass with the records' spread, the far field split at 15 ka and its LGM/MIS 3 group, the TPW
+velocity, GNSS in two more regions) rescores the key runs, and moves only ESL, the far field and the rotation of the
+groups below.
 
 **Columns.** **log L**, the log-likelihood over the six RSL groups, higher is better (differences of a few tens are
 large); **passed**, the groups within the bar, of 7 (RSL and ESL) or of 9 with the GNSS rates (of 8 in the Earth search,
@@ -18,6 +21,51 @@ Greenland, **Fenn.** Fennoscandia, **Bar.** Barents,
 
 ![Every reference simulation of the ladder: log L (left) and I per data group against the bar (right; blue within it,
 red beyond it, the colour the distance from the cut).](figures/simulations/ladder.png)
+
+## Scores v4
+
+Scores v4 (2026-11-18, [Data and scores](data-scores.md)): ESL against the Spratt and Lisiecki stack as given (0 at 5 ka)
+with the model's ice mass `bsl_ive` and the spread of the data-based records in the model error; the far field split at
+15 ka, its error model refit on the imposed ice of the Earth search (16 m over 50 km and 20 kyr), and the far field LGM/MIS 3
+group (15-60 ka: index points, limiting samples, the Red Sea and Karimata proxies; 6 m over 2000 km and 5 kyr, a priori);
+the true polar wander as a velocity; GNSS North America forebulge and British Isles. The key runs, I per group before
+(scores v3, `kryos-work/scores-v3/test`) → after (`kryos-work/scores-v4/regress-v4`; equal: one number). Every other
+group is unchanged to the digit. C7, C8 and CBW are kryos runs from before 2026-11-18: their rotation group is J̇2 alone.
+
+| group (n before/after) | C7 | C8 pDE | ED-pNE25 | CBW-H300 | PaleoMIST's ice, E117 | GLAC-1D's ice, E117 | I1 | I5 | P1 | P2 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Laurentide (892) | −1.3 | −1.3 | −1.3 | −1.5 | −3.2 | 0.1 | −3.5 | −3.0 | 6.7 | −0.3 |
+| Greenland (276) | 0.9 | 0.9 | 0.9 | 0.8 | 2.0 | 4.7 | 6.8 | 5.7 | 7.9 | 9.8 |
+| Fennoscandia (718) | 0.0 | −0.2 | −0.0 | 0.1 | 1.6 | 1.1 | 1.0 | 0.5 | 0.4 | 1.8 |
+| Barents (370) | 2.0 | 1.7 | 1.9 | 2.0 | 1.4 | 1.4 | 0.7 | 1.2 | 2.6 | 5.6 |
+| Antarctica (47) | 3.0 | 3.0 | 3.0 | 1.5 | 0.2 | 0.4 | 0.4 | −0.2 | 3.4 | −0.2 |
+| far field (2248 → 1787) | −2.7 → 2.7 | −3.0 → 2.2 | −3.1 → 2.3 | −1.9 → 2.8 | −0.7 → 3.0 | −0.9 → 4.1 | −0.6 → 3.1 | −0.8 → 4.3 | 6.4 → 3.3 | −0.6 → 4.4 |
+| far field LGM/MIS 3 (893) | 188.8 | 188.8 | 176.0 | 172.8 | 150.1 | – | 149.8 | – | 144.9 | – |
+| ESL (7) | 15.2 → 0.3 | 15.2 → 0.3 | 5.2 → −1.4 | 13.6 → 0.1 | 10.2 → −0.4 | 7.5 → −1.1 | 10.2 → −0.4 | 7.6 → −1.1 | 7.2 → −0.3 | – |
+| ice cores (Greenland) (20) | 8.5 | 8.5 | 8.5 | 8.4 | 4.3 | 2.6 | 3.9 | 2.1 | 3.9 | 2.6 |
+| GNSS Fennoscandia (164) | 5.7 | 5.3 | 6.3 | 5.5 | 5.7 | 6.0 | 7.3 | 7.1 | – | – |
+| GNSS Hudson Bay (61) | 4.5 | 4.5 | 4.3 | 4.4 | 6.4 | 1.2 | 3.5 | 2.7 | – | – |
+| GNSS North America forebulge (661) | 3.1 | 3.1 | 3.1 | 3.1 | 4.0 | 3.5 | 3.3 | 3.3 | – | – |
+| GNSS British Isles (112) | 7.3 | 7.4 | 7.5 | 7.5 | 7.2 | 7.0 | 6.8 | 6.7 | – | – |
+| GNSS Greenland (55) | 2.7 | 2.7 | 2.7 | 2.7 | 3.6 | 2.2 | 2.1 | 1.8 | – | – |
+| GNSS Antarctica (67) | 1.3 | 1.3 | 1.3 | 6.9 | 4.2 | 4.5 | 3.3 | 3.4 | – | – |
+| rotation (3; kryos runs 1) | 13.1 | 13.1 | 12.9 | 17.0 | 32.8 → 8.2 | 35.5 → 10.8 | 3.4 → 2.5 | 3.4 → 2.2 | – | – |
+| log L (RSL) | −8788 → −13581 | −8769 → −13555 | −8774 → −13304 | −8800 → −13231 | −8801 → −12709 | −8903 → −7592 | −8860 → −12767 | −8835 → −7526 | −9311 → −12850 | −9117 → −7802 |
+| passed (of 16) | 9 | 9 | 9 | 8 | 7 | 9/15 | 9 | 10/15 | 6/9 | 4/7 |
+
+- **ESL no longer separates the runs.** The stack as given lies 8.5 m higher, `bsl_ive` holds 10 m more ice than `bsl`,
+  and the records' spread (10-16 m at 25-15 ka) widens the error: every series reads −1.4 to 0.3. The
+  LGM ice volume is now judged at the sites, by the far field LGM/MIS 3.
+- **The far field LGM/MIS 3 fails every series**, the publication's own GIA too (P1 144.9, the bar of the group; P2 and
+  the GLAC-1D runs have no records at 32.5 and 37.5 ka and no score). The LGM index points alone give 74 for C7 against
+  111 for P1: C7 is closer at the LGM, the rest is MIS 3 (C7 26-42 m above the Red Sea at 25-60 ka; Kikaijima's 46
+  limiting samples, violated by 63-78 m by every series, add 13-16).
+- **The far field below 15 ka** now fails P2 and the GLAC-1D runs (4.1-4.4) and sets its bar at P1's 3.3; our runs pass
+  (2.2-2.8).
+- **The new GNSS groups**: the North America forebulge sits at the bar (3.1-4.0), the British Isles fail every run
+  (6.7-7.5, the fitted error model leaves χ²/n 1.8 on its best Earths).
+- log L is not comparable across the change (the far field split, the new group's 893 points), nor between series with
+  and without a score in the far field LGM/MIS 3 (P2, the GLAC-1D runs).
 
 ## Published reconstructions
 
@@ -301,6 +349,7 @@ The runs are on AWI's albedo:
 | E1 | `/albedo/work/projects/p_forclima/kryos-work/levante/ens-v1` (copied from Levante) |
 | S0-S5 | `/albedo/work/user/alrobi001/kryos-search` (`kryos_data/refcorr/`, `score/ens/`); the emulators in `/albedo/work/projects/p_forclima/kryos-work/earth-search/emulateB` |
 | S6 | `/albedo/work/projects/p_forclima/kryos-work/earth-search/waveB2` |
+| scores v4 | `/albedo/work/projects/p_forclima/kryos-work/scores-v4`: `regress-v4` (the key runs; `old-new.md`), `errfit` (the far field and the new GNSS error models), `ffdiag` (the far field LGM/MIS 3 by subset and site); the proxy product (staging) `kryos-work/fesmdata-staging/fesmdata/Records/RSL/RSL-GAPSLIP_proxy.nc` |
 
 The ESL numbers since 2026-11-18 (all other scores unchanged) are from the rescore of every score folder above with the
 same config and error model: `/albedo/work/projects/p_forclima/kryos-work/rescore-esl/<folder>/score/iter_01/scores.csv`
