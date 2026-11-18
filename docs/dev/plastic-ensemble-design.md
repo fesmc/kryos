@@ -86,11 +86,12 @@ config; implemented 2026-11-12):
 |---|---|---|---|---|---|
 | GNSS Fennoscandia | BIFROST2015 (Kierulf et al. 2021) | gia | all | yes | 1.0 |
 | GNSS Hudson Bay | Schumacher2018 (Schumacher et al. 2018), then MIDAS (Blewitt et al. 2016) | corrected; observed (little present-day ice there) | 100-65 W, 50-70 N; MIDAS series of at least 5 years | yes | 1.0 |
-| GNSS Greenland | GNET (Berg et al. 2024) | gia, sd combined with the elastic sd | all | no (`judge = false`: reported) | 2.5 |
-| GNSS Antarctica | MartinEspanol2016 (Martín-Español et al. 2016) | corrected | all | no (reported) | 2.5 |
+| GNSS Greenland | GNET (Berg et al. 2024) | gia, sd combined with the elastic sd | all | yes | 2.0 (1000 km) |
+| GNSS Antarctica | MartinEspanol2016 (Martín-Español et al. 2016) | corrected | all | yes | 4.0 (250 km) |
 
-  Greenland and Antarctica are reported only: Little Ice Age loading, a transient (non-Maxwell) viscosity and the
-  elastic correction make their rates unreliable as a GIA constraint.
+  Greenland and Antarctica were reported only until 2026-11-18; they judge since, with a model error fitted as the
+  others' that carries the Little Ice Age loading, the weak mantle under the recent ice loss and the elastic correction
+  ([Data and scores](../science/data-scores.md#gnss-greenland-and-antarctica)).
 - **Model:** `dz_bed_rate` of the run's last VILMA2 record (`geo_glob_vilma.nc` of a kryos run, `vilma_out.nc` of a
   standalone run), bilinear at the station, in mm/yr. It is the rate of the bed over VILMA2's last update: 100 yr in
   a kryos run (`geo_glob` cadence), 100 yr in a `gia_refcorr.sh` case (its forcing has a slice 100 yr before present).
