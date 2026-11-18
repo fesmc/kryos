@@ -21,7 +21,7 @@
 # [scale], [prior] (kind: exponential with sigma, ramp_ka, corr_time_kyr, or random_walk with step_sigma, step_kyr, level_sigma
 # (plastic_esmda.jl prior_cov); theta_max), [run], [score] as plastic_esmda_v2.toml; [ensemble]: n (members
 # besides the prior mean, m000), seed, obs_groups, compare_max_age_ka (the window of the judging and of the comparison with the
-# references, 25), bar (the references whose best I_g per group sets the cut, weights), fixed_cut (groups that keep the plain cut;
+# references, 25; a group with its own age range, pm_compare.jl GROUP_AGES, has that range in every window: score_window), bar (the references whose best I_g per group sets the cut, weights), fixed_cut (groups that keep the plain cut;
 # ESL always does: plain_cut_groups),
 # implausibility, use_groups;
 # [[references]] (name and product | topo | run: the reconstructions the members are compared with, reference_series); [likelihood.<obs group>]: sigma_m [m], corr_dist_km, corr_time_kyr.
@@ -62,9 +62,10 @@
 # key (vilma.visc_shift_file).
 # Sample: a Latin hypercube in the standard normal space of the parameters (n strata per parameter, one point in each, random
 # order), correlated by the Cholesky factor of the prior covariance, clipped to |theta| <= theta_max; m000 = the prior mean.
-# Likelihood: per data group g the index points of the group (pm_compare.jl GROUPS), d = model - obs, R_g = diag(sigma_i^2) +
-# sigma_m,g^2 C_g, C_ij = exp(-dist_ij / L_x,g - |t_i - t_j| / L_t,g), sigma_i the scorer's ip_sigma of the member (its slope and
-# the side of d); log L = sum_g -1/2 (d' R_g^-1 d + log det R_g) (+ const). Groups are independent. Weights: w_m ∝ L_m (the
+# Likelihood: per data group g the index points of the group (pm_compare.jl GROUPS; the limiting samples one-sided in LIMITING_GROUPS,
+# limit_misfit), d = model - obs, R_g = diag(sigma_i^2) + s_i s_j C_g,ij, s_i = sqrt(sigma_m,g^2 + sm_i^2) (sm_i a point's own model
+# error: the ESL spread; 0 elsewhere), C_ij = exp(-dist_ij / L_x,g - |t_i - t_j| / L_t,g), sigma_i the scorer's ip_sigma of the
+# member (its slope and the side of d); log L = sum_g -1/2 (d' R_g^-1 d + log det R_g) (+ const). Groups are independent. Weights: w_m ∝ L_m (the
 # sample follows the prior, so the prior and the sampling density cancel), normalised over the members that ran; the effective
 # sample size ESS = 1 / sum w^2. The error model: [likelihood] of the config, or <folder>/errmodel.toml once errmodel has
 # estimated it from a wave (maximum likelihood from the residuals of the members that fit each group best). Plausibility
