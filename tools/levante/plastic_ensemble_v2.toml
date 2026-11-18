@@ -81,6 +81,9 @@ compare_max_age_ka = 25.0                # judging and the comparison with the r
 bar        = ["pub-PMIST", "pub-GLAC1D"]  # the cut per group: as good as the best published reconstruction (plastic_ensemble.jl weights)
 fixed_cut  = []                        # groups that keep the plain cut; ESL always does (its target is the Spratt stack, never a bar
                                        # reference's score: plastic_ensemble.jl plain_cut_groups)
+[ensemble.bar_groups]                    # a group's own bar references (plastic_ensemble.jl bar_refs): the far field LGM, 15-30 ka,
+"far field LGM" = ["pub-PMIST", "ice-GLAC1D | E1D-PMIST"]   # where GLAC-1D's own RSL (to 26 ka) has no score: its ice on our
+                                         # solver with Gowan's 1-D Earth (I5) stands in for it; the cut is PaleoMIST's 119.7
 
 [likelihood."Laurentide"]                # the error model of the scores (the errmodel.toml of the score folders since scores
                                          # v3: the RSL groups from ens-v2, GNSS from wave A of the Earth search; until v5 this
