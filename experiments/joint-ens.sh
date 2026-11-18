@@ -142,7 +142,7 @@ score)
         "tau-CBF-H300 | E1D-ES1-E117=$C7/tau-CBF-H300_E1D-ES1-E117" "tau-CBF-H300-pDE | E1D-ES1-E117=$C8" \
         "ice-PMIST | E1D-PMIST=$I1" "ice-GLAC1D | E1D-PMIST=$I5" << 'EOF'
 import os, re, sys
-src, out, r, nf = sys.argv[1:5]; runs = [a.split("=", 1) for a in sys.argv[5:]]
+src, out, r, nf = sys.argv[1:5]; runs = [tuple(a.split("=", 1)) for a in sys.argv[5:]]
 txt = open(src).read(); i = txt.index("[[references]]"); head, refs = txt[:i], txt[i:]
 assert all(h == "[[references]]" for h in re.findall(r"^\s*\[\[?[^\]]+\]\]?", refs, re.M)), "tables after [[references]]"
 # the paths of the config ({work}, {fesmdata}, {kryos_data}, {kryos}: plastic_esmda.jl expand_paths) from env.sh
