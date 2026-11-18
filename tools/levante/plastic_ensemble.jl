@@ -4,7 +4,7 @@
 #   julia --project=tools/levante plastic_ensemble.jl init <config.toml> <ensemble folder>    wave 1: the members (iter_01/<m>)
 #   julia --project=tools/levante plastic_ensemble.jl weights <ensemble folder> [<wave>]     score the members, the weights
 #   julia --project=tools/levante plastic_ensemble.jl errmodel <ensemble folder> [<wave>] [<top>] [refs=<regex>] [groups=<g1;g2>]
-#       the error model from a wave (refs: of the point groups, from the run references whose name matches; groups: only those fitted)
+#       the error model from a wave (refs: from the run references whose name matches, RSL and point groups; groups: only those fitted)
 #   julia --project=tools/levante plastic_ensemble.jl scores <ensemble folder> [<wave>]     RMSE, RMS z, I_g, log L of every series
 #   julia --project=tools/levante plastic_ensemble.jl earth-regions <config.toml> <out.nc>   the region masks of [earth]
 #   julia --project=tools/levante plastic_ensemble.jl earth-shift <config.toml> <out.nc> UM=0.5 LM=0 <region>=1.0   one shift file
@@ -414,14 +414,17 @@ function rsl_obs(cfg, og)
     obs
 end
 
+# the ages [yr] of the RSL series, ascending: those of PaleoMIST (FesmData GLOBAL-0.5DEG), 2.5 kyr apart
+record_ages(cfg) = sort(NCDataset(ds -> Float64.(ds["time"][:]),
+                                  joinpath(cfg["score"]["fesmdata"], "Global", "GLOBAL-0.5DEG", "GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc")))
+
 # the members of wave k that ran, their residuals per group (RSL from S; GNSS from G, the model rates at the stations, nothing without
 # dz_bed_rate) and ESL at 20 ka (esl_at of gd.esl_var); gd the point data (point_data)
 function wave_residuals(C, k, cfg)
     og = data_groups(cfg); gd = point_data(cfg)
     obs = rsl_obs(cfg, og)
     idx = [(g, findall(o -> PM.in_group(o, g), obs)) for g in og if g in RSL_GROUPS]
-    A = sort(NCDataset(ds -> Float64.(ds["time"][:]),
-                       joinpath(cfg["score"]["fesmdata"], "Global", "GLOBAL-0.5DEG", "GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc")))
+    A = record_ages(cfg)
     ids, Θ = ES.read_theta(C, k)
     res = Dict{Int,Any}()
     for m in ids
@@ -541,19 +544,30 @@ const GRID_SIGMA_GNSS = [0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 
 const GRID_SIGMA_ESL = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 15.0, 20.0, 30.0]                       # [m]
 function errmodel(C, k; top = 6, refs = nothing, groups = nothing)
     C = abspath(C); cfg = ES.config(C)
+    og = data_groups(cfg); fitg = groups === nothing ? og : String.(groups)
     if refs === nothing
         ids, _, res, og = wave_residuals(C, k, cfg)
-    else            # the point groups from the run references whose name matches refs (the cases of an Earth search)
-        og = data_groups(cfg); gd = point_data(cfg); res = Dict{String,Any}()
+    else            # the run references whose name matches refs (the cases of an Earth search, the imposed ice histories): their
+                    # point groups, and their RSL groups on the judging window when fitg has one (score_window, window_residuals)
+        gd = point_data(cfg); res = Dict{String,Any}()
+        rsl = any(g -> group_kind(cfg, g) == :rsl, fitg)
+        if rsl
+            obs = rsl_obs(cfg, og); A = record_ages(cfg)
+            W = score_window(obs, A, og, 1000.0 * get(cfg["ensemble"], "compare_max_age_ka", Inf))
+        end
         for ref in get(cfg, "references", [])
             (haskey(ref, "run") && occursin(Regex(refs), ref["name"])) || continue
-            G = point_model(ref_dir(ref), gd); G === nothing || (res[ref["name"]] = (rg = point_residuals(gd, G),))
+            G = point_model(ref_dir(ref), gd); rg = G === nothing ? Dict{String,Any}() : point_residuals(gd, G)
+            if rsl
+                S, why = reference_series(ref, cfg["score"]["fesmdata"], obs, A)
+                rr = S === nothing ? nothing : window_residuals(S, W)
+                rr === nothing ? println(ref["name"], ": no RSL series on the window ", why) : merge!(rg, rr)
+            end
+            isempty(rg) || (res[ref["name"]] = (rg = rg,))
         end
         println("errmodel from ", length(res), " references matching ", refs)
     end
-    fitg = groups === nothing ? og : String.(groups)
     all(in(og), fitg) || error("groups $(fitg) not all data groups $(og)")
-    refs === nothing || all(g -> group_kind(cfg, g) != :rsl, fitg) || error("errmodel from references: point groups (GNSS, ESL) only, not $(fitg)")
     em, src = error_model(cfg, C); ok = sort(collect(keys(res)))
     lk = Dict{String,Any}(); rows = []
     for g in og
@@ -591,7 +605,7 @@ function errmodel(C, k; top = 6, refs = nothing, groups = nothing)
         TOML.print(io, Dict("likelihood" => lk))
     end
     open(joinpath(C, "errmodel.md"), "w") do io
-        println(io, "# Error model from wave $k
+        println(io, "# Error model from ", refs === nothing ? "wave $k" : "the references matching $refs", "
 
 Per data group: sigma_m, L_x, L_t by maximum likelihood on a grid, from the residuals ",
                 "of the $top members that fit the group best under the previous error model ($src). chi2/n: the mean over those members ",
