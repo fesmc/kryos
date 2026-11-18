@@ -31,8 +31,8 @@
 # reference's: plain_cut_groups; judge = false in the Earth search, where the imposed ice sets ESL), model_var (the model's ESL: "bsl", the
 # barystatic sea level of the volume above flotation, the default; "bsl_ive", the whole grounded column, the scores before
 # 2026-11-18; pm_compare.jl ESL_VARS); a reference's esl = "<product>" gives a published reconstruction its ESL (pub-PMIST:
-# PaleoMIST). Model ESL: model_var of the run's VILMA2 records relative to its last (0 ka) (pm_compare.jl esl_at); model and data
-# each linear in time on their own axis, compared at the ages (esl_at, sealevel_at).
+# PaleoMIST). Model ESL: model_var of the run's VILMA2 records relative to its last (0 ka) (pm_compare.jl esl_at); the data as their
+# authors give them (Spratt: 0 at 5 ka); model and data each linear in time on their own axis, compared at the ages (esl_at, sealevel_at).
 # [[gnss]] (optional): GNSS data groups, the present-day uplift rate at GNSS stations: name (the group), product
 # (FesmData Records/GPS/GPS-<product>.nc under [score] gnss_dir, default <fesmdata>/Records/GPS), rate (gia | corrected | observed),
 # box, exclude, min_years (pm_compare.jl read_gnss), judge (default true; false: reported only, not in the default use_groups);

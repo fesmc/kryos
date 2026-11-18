@@ -224,17 +224,18 @@ function tlin(t, x, a)
     k = clamp(searchsortedlast(t, a), 1, length(t) - 1); w = (a - t[k]) / (t[k+1] - t[k])
     w == 0 ? x[k] : w == 1 ? x[k+1] : (1 - w) * x[k] + w * x[k+1]
 end
-# A global sea-level curve of FesmData Records/SeaLevel/SeaLevel-<product>.nc (sl or the variable var, negative when lower; region 1),
-# relative to its own present (the value at 0 ka subtracted: Spratt and Lisiecki 2016 are +8.5 m there), at the ages [yr], linear
-# in time between its records (Spratt and Lisiecki: every 1 kyr, so 22.5 ka is the mean of 22 and 23 ka); with its 1 sigma (var_sd,
-# linear the same way; NaN without one). The time of the file in years ago.
+# A global sea-level curve of FesmData Records/SeaLevel/SeaLevel-<product>.nc (sl or the variable var, negative when lower; region 1)
+# as its authors give it, at the ages [yr], linear in time between its records (Spratt and Lisiecki: every 1 kyr, so 22.5 ka is the
+# mean of 22 and 23 ka); with its 1 sigma (var_sd, linear the same way; NaN without one). The time of the file in years ago. Not
+# re-zeroed at 0 ka: a curve's datum is its authors' (Spratt and Lisiecki 2016 is 0 at 5 ka by definition, -130 m at 24 ka the
+# anchor of Clark et al. 2009; its +8.5 m at 0 ka is the noise of the stack near the present, and re-zeroing there, as until
+# 2026-11-18, moved the whole glacial curve 8.5 m down).
 function sealevel_at(fesmdata, product, ages; var = "sl")
     NCDataset(joinpath(fesmdata, "Records", "SeaLevel", "SeaLevel-" * product * ".nc")) do ds
         t = Float64.(ds["time"][:]); x = Float64.(nomissing(ds[var][:], NaN)); x = ndims(x) > 1 ? vec(x[1, :]) : x
         sd = haskey(ds, var * "_sd") ? (y = Float64.(nomissing(ds[var * "_sd"][:], NaN)); ndims(y) > 1 ? vec(y[1, :]) : y) : fill(NaN, length(t))
         p = sortperm(t); t = t[p]; x = x[p]; sd = sd[p]
-        x0 = tlin(t, x, 0.0)
-        [tlin(t, x, a) - x0 for a in ages], [tlin(t, sd, a) for a in ages]
+        [tlin(t, x, a) for a in ages], [tlin(t, sd, a) for a in ages]
     end
 end
 # The points of the ESL group ([esl] of an ensemble config: name, product, var, ages_ka): the curve at the ages, each a point at

@@ -169,7 +169,7 @@ throttle   = 25                          # 25 members + the weights job + one ot
 # group compares GIA alone: the data elastic-corrected (Hudson Bay's MIDAS stations: little present-day ice there).
 [esl]                                    # global sea level against an independent (δ18O-based) curve: plastic_ensemble.jl [esl]
 name             = "ESL"
-product          = "Spratt2016"          # Spratt and Lisiecki 2016 stack (1 sigma), relative to its own present (+8.5 m there)
+product          = "Spratt2016"          # Spratt and Lisiecki 2016 stack (1 sigma) as given: 0 at 5 ka, -130 m at 24 ka (its anchor)
 var              = "sl_short"
 ages_ka          = [25.0, 22.5, 20.0, 17.5, 15.0, 12.5, 10.0]
 reference_curves = ["Lambeck2014", "Waelbroeck2002", "Bintanja2008"]   # shown, not scored (Lambeck: far-field RSL, ours too)
