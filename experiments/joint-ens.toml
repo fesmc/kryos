@@ -1,0 +1,56 @@
+# The joint ice + Earth ensemble (experiments/joint-ens.sh; tools/levante/plastic_joint_ens.jl; docs/science/joint-ensemble.md):
+# the ice parameters and their prior ranges (uniform; scale = "log": log-uniform), in the order of plastic_joint_ens.jl. The
+# Earth is the sixth part of a member: one of wave A's 1-D Earths not ruled out (joint-ens.sh earths), its 5 parameters.
+
+[design]
+n      = 200            # members of wave 1
+seed   = 1
+starts = 8              # maximin: random starts of the swap search, and swaps per start
+swaps  = 40000
+
+[[param]]
+name  = "H_N"           # [m] the Coulomb law's H_N, one for every instance
+lo    = 300.0
+hi    = 1000.0
+scale = "log"
+[[param]]
+name = "lam_N"          # lambda_min of ice_nor and ice_pat (ramp zb -300 / 200 m)
+lo   = 0.4
+hi   = 0.9
+[[param]]
+name = "lam_A"          # lambda_min of ice_ant (ramp zb -600 / 0 m, fixed)
+lo   = 0.15
+hi   = 0.4
+# ln c_f - ln c_f*(H_N, lambda_min): the deviation from the calibration surface (plastic_cf_surface.jl), per region; Patagonia
+# takes Fennoscandia's c_f* (no deviation)
+[[param]]
+name = "dlcf_NAIS"
+lo   = -0.3
+hi   = 0.3
+[[param]]
+name = "dlcf_Greenland"
+lo   = -0.15
+hi   = 0.15
+[[param]]
+name = "dlcf_Fennoscandia"
+lo   = -0.3
+hi   = 0.3
+[[param]]
+name = "dlcf_BarentsKara"
+lo   = -0.3
+hi   = 0.3
+[[param]]
+name = "dlcf_Antarctica"
+lo   = -0.3
+hi   = 0.3
+# the LGM timing: the margin at 25 and 22.5 ka (NAIS: PaleoMIST's slices; Eurasia: DATED-1's slices at 25-21 ka) mixed by the
+# signed distance with its union with the 20 ka extent, 0 the chronology as it is, 1 the 20 ka extent from 25 ka on
+# (margin_patch.jl --blend)
+[[param]]
+name = "tau_NA"         # region 1, NAIS
+lo   = 0.0
+hi   = 1.0
+[[param]]
+name = "tau_EU"         # regions 3 and 6, Eurasia
+lo   = 0.0
+hi   = 1.0
