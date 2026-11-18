@@ -36,8 +36,8 @@ GH="HIST=$GLAC1D/GLOBAL-0.25DEG/GLOBAL-0.25DEG_IceHistory-GLAC1D_80k.nc XHIST=$G
 export KEEP=last DOMAINS="North:NH-32KM:North/NH-32KM/NH-32KM_TOPO-GEBCO2026.nc"
 mkdir -p "$W" "$KD/refcorr"
 
-# the scoring folder: a linked copy of ens-v2 (members read-only) with its config (ens-v2's: the split RSL groups, the GNSS groups
-# and ESL of plastic_ensemble_v2.toml, ESL reported, not judged) and errmodel ($ERRMODEL; GNSS refitted by score), and as references
+# the scoring folder: a linked copy of ens-v2 (members read-only) with its config (ens-v2's: the split RSL groups, the GNSS groups,
+# ESL and the rotation group of plastic_ensemble_v2.toml, ESL reported, not judged, the rotation judged) and errmodel ($ERRMODEL; GNSS refitted by score), and as references
 # the bar, I1/I5, the 3-D Bagge references and every case of the lists; config_nognss.toml: the same without GNSS in the cut
 score_folder() {
     W=$W W2=$W2 KD=$KD ENS=$ENS ERRMODEL=$ERRMODEL V2=$T/plastic_ensemble_v2.toml python3 - <<'EOF'
@@ -59,7 +59,9 @@ esl = re.search(r'^\[esl\].*?(?=^\[)', v2, flags=re.M | re.S).group(0)
 # ESL reported, not judged: under imposed ice it is a property of the ice, not of the Earth
 esl = esl.replace("[esl]", "[esl]\njudge = false                            # reported only: under imposed ice ESL is the ice's, not the Earth's", 1)
 gn = re.findall(r'^\[\[gnss\]\].*?(?=^\[|^#|\Z)', v2, flags=re.M | re.S)
-s += "\n" + "".join(lk) + "\n" + esl + "\n" + "".join(gn) + "\n"
+# the rotation group, judged: J2dot and the true polar wander are the Earth's (the lower mantle above all), whatever the ice
+rot = re.search(r'^\[rotation\].*?^\[likelihood\."rotation"\].*?(?=^\[|\Z)', v2, flags=re.M | re.S).group(0)
+s += "\n" + "".join(lk) + "\n" + esl + "\n" + rot + "\n" + "".join(gn) + "\n"
 w = "/albedo/work/user/alrobi001/kryos-work/kryos_data/refcorr"
 refs = [("pub-PMIST", 'esl     = "PaleoMIST"\nproduct = "Global/GLOBAL-0.5DEG/GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc"'),
         ("pub-GLAC1D", 'topo = "Global/GLOBAL-0.5DEG/GLOBAL-0.5DEG_IceHistory-GLAC1D.nc"'),
