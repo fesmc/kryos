@@ -3,7 +3,7 @@
 # replaces the base's in some regions of the region map within a time window, the base's elsewhere and at other times untouched.
 #
 #   julia --project=tools/levante tools/levante/margin_patch.jl <product> <var> <region ids> <t0> <t1> <out> [<figure folder>]
-#         [--base=<file>] [--regions=<file>] [--band=<cells>]
+#         [--base=<file>] [--regions=<file>] [--band=<cells>] [--blend=<fraction>] [--blend-window=<ta>,<tb>]
 #
 #   <product>     the product file (FesmData IceHistory), of one of two kinds, told by the dimensions of <var>:
 #                 slices  var(xc, yc, time) on the base's grid, time in years ago (Dalton2020, DATED1, ...: var f_ice, or
@@ -19,7 +19,12 @@
 #   <out>         the patch (NetCDF), and next to it <out>_check.md and <out>_check.png (also copied to <figure folder>);
 #   --base        the base chronology (default $FESMDATA/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST.nc, f_ice > 0.5);
 #   --regions     the region map on the base's grid (default $KRYOS_DATA/plastic/<grid>_taub_regions_v2.nc, variable region);
-#   --band        the seam band, cells (default 2).
+#   --band        the seam band, cells (default 2);
+#   --blend       an earlier LGM: the patch's slices at ta >= t > tb (--blend-window, default 25000,20000 years ago) mixed in the
+#                 region by the signed distance with their union with the patch's mask at tb, by the fraction (0 to 1):
+#                 sd = (1 - fraction) sd(slice) + fraction sd(slice united with the tb mask), the ice where sd > 0 (0 or 1).
+#                 0 leaves the slices as they are (bit for bit), 1 is the union: the ice at its tb extent from ta on. The
+#                 product may be the base itself (PaleoMIST's own slices in the region). The window must lie in [t1, t0].
 #
 # The slices. At a product time a slice is the product's ice fraction in its domain, the base's (sdist-interpolated) mask
 # elsewhere, and in a band of --band cells either side of the domain's boundary with other ice (the footprint of the base or
@@ -33,6 +38,8 @@
 #              region_file = 'kryos_data/plastic/{grid_name}_taub_regions_v2.nc', region_var = 'region', region_ids = '<ids>'  /
 #
 # Examples ($S: a FesmData products folder with the dated margins):
+#   NAIS as PaleoMIST with its 25 and 22.5 ka slices 40 % of the way to their union with the 20 ka extent (joint-ens: tau_NA):
+#     margin_patch.jl $FESMDATA/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST.nc f_ice 1 27500 20000 <out> --blend=0.4
 #   Greenland from PaleoGrIS, 15-5 ka, region 2 (the patch of C4):
 #     margin_patch.jl $FESMDATA/GreenlandPaleo/GRL-PAL-1KM/GRL-PAL-1KM_IceHistory-PaleoGrIS.nc age_deglac 2 15000 5000 <out>
 #   North America from Dalton et al. (2020), Eurasia from DATED-1 (most-credible; Hughes et al. 2016):
@@ -56,15 +63,15 @@
 using CairoMakie, NCDatasets, Printf, Statistics, Dates
 
 # --- arguments ----------------------------------------------------------------------------------------------------------------
-const OPTS = ("base", "regions", "band")
+const OPTS = ("base", "regions", "band", "blend", "blend-window")
 opts = Dict{String,String}(); pos = String[]
 for a in ARGS
-    m = match(r"^--([a-z]+)=(.*)$", a)
+    m = match(r"^--([a-z-]+)=(.*)$", a)
     m === nothing ? push!(pos, a) : (opts[m[1]] = m[2])
 end
 issubset(keys(opts), OPTS) || error("unknown options $(setdiff(keys(opts), OPTS)) (available: $(join(OPTS, ", ")))")
 length(pos) in (6, 7) || error("usage: margin_patch.jl <product> <var> <region ids> <t0> <t1> <out> [<figure folder>] " *
-                               "[--base=<file>] [--regions=<file>] [--band=<cells>]")
+                               "[--base=<file>] [--regions=<file>] [--band=<cells>] [--blend=<fraction>] [--blend-window=<ta>,<tb>]")
 f_prod, VAR = pos[1], pos[2]
 const REGION_IDS = parse.(Int, split(pos[3], ','))
 const T0, T1 = parse(Float64, pos[4]), parse(Float64, pos[5])
@@ -72,6 +79,11 @@ T0 > T1 || error("t0 = $T0 must be older (larger, years ago) than t1 = $T1")
 out = pos[6]; figdir = length(pos) == 7 ? pos[7] : ""
 const T_END = (T0, T1)                                                                                     # the base's slices
 const BAND = parse(Int, get(opts, "band", "2"))                                                            # cells
+const TAU = parse(Float64, get(opts, "blend", "0"))                                                        # the blend fraction
+const TA, TB = parse.(Float64, split(get(opts, "blend-window", "25000,20000"), ','))                        # its window [yr ago]
+0 <= TAU <= 1 || error("--blend=$TAU: a fraction from 0 to 1")
+haskey(opts, "blend-window") && !haskey(opts, "blend") && error("--blend-window without --blend")
+haskey(opts, "blend") && !(TA > TB && T1 <= TB && TA <= T0) && error("--blend-window=$TA,$TB: ta > tb within the window [$T1, $T0]")
 f_pm = get(opts, "base", joinpath(ENV["FESMDATA"], "North", "NH-32KM", "NH-32KM_IceHistory-PaleoMIST.nc"))
 const GRID = split(basename(f_pm), '_')[1]
 f_rg = get(opts, "regions", joinpath(ENV["KRYOS_DATA"], "plastic", "$(GRID)_taub_regions_v2.nc"))
@@ -280,6 +292,22 @@ for (k, t) in enumerate(t_p)
     end
     F[:, :, k] = a
 end
+# the blend: the slices at TA >= t > TB in the region, by the signed distance toward their union with the mask at TB
+kbl = haskey(opts, "blend") ? findall(t -> TA >= t > TB, t_p) : Int[]
+haskey(opts, "blend") && isempty(kbl) && error("--blend: no slice of the patch at $TA >= t > $TB")
+A_bl = NamedTuple[]                              # per blended slice: ice in the region before, of the union, after [cells]
+if !isempty(kbl)
+    Fb = (k = findfirst(==(TB), t_p); k !== nothing ? F[:, :, k] :
+          Float64.(mask_at(t_p, [sdist(F[:, :, j] .> 0.5, dx, dy) for j in eachindex(t_p)], TB)))
+    for k in kbl
+        a = F[:, :, k]; u = max.(a, Fb)
+        m = TAU == 0 ? a .> 0.5 : ((1 - TAU) .* sdist(a .> 0.5, dx, dy) .+ TAU .* sdist(u .> 0.5, dx, dy)) .> 0
+        TAU > 0 && (F[:, :, k] = ifelse.(R, Float64.(m), a))
+        push!(A_bl, (t = t_p[k], before = count((a .> 0.5) .& R), union = count((u .> 0.5) .& R), after = count((F[:, :, k] .> 0.5) .& R)))
+    end
+end
+blend_txt = isempty(kbl) ? "" : "blend $(@sprintf("%.3f", TAU)): the slices $(join(Int.(t_p[kbl]), ", ")) years ago in the region " *
+    "mixed by the signed distance with their union with the mask at $(Int(TB)) years ago (0: as they are, 1: the union)"
 dmap = Int8.(ifelse.(B, 2, ifelse.(G, 1, 0)))
 ids = join(REGION_IDS, ",")
 ids_nml = join(["'$i'" for i in REGION_IDS], ", ")
@@ -308,7 +336,9 @@ NCDataset(out, "c") do o
                         "'margin_x'; &margin_x file = '$out', var = 'f_ice', H_min = 0.5, region_file = " *
                         "'kryos_data/plastic/{grid_name}_taub_regions_v2.nc', region_var = 'region', region_ids = $ids_nml"
     o.attrib["comment"] = "$(pr.comment). Band of $BAND cells at the domain's boundary with other ice: max of both. Made by " *
-                          "tools/levante/margin_patch.jl (kryos): margin_patch.jl $(join(pos[1:5], ' ')) <out>"
+                          "tools/levante/margin_patch.jl (kryos): margin_patch.jl $(join(pos[1:5], ' ')) <out>" *
+                          join([" --$k=$(opts[k])" for k in sort(collect(keys(opts))) if startswith(k, "blend")])
+    isempty(blend_txt) || (o.attrib["blend"] = blend_txt)
     o.attrib["references"] = "Gowan et al. 2021, Nat. Commun. 12, 1199, doi:10.1038/s41467-021-21469-w (base); $(pr.refs)"
     o.attrib["sources"] = join([f_pm, f_prod, f_rg], ", ")
     o.attrib["history"] = "$(Dates.format(now(), "yyyy-mm-ddTHH:MM:SS")): margin_patch.jl"
@@ -333,6 +363,11 @@ println(io, "slices: $(join(Int.(t_p), ", ")) years ago (the domain from the pro
 println(io, "regions $ids (the patch's): $(count(R)) cells; domain $(count(G)) cells ($(count(G .& R)) in the region), band ",
         "$(count(B)) cells ($(count(B .& R)) in the region)\n")
 foreach(n -> println(io, n, "\n"), pr.notes)
+if !isempty(A_bl)
+    println(io, blend_txt, "; ice in the region [10³ km²]:\n\n| t ka | slice | union | blended |\n|---|---|---|---|")
+    for b in A_bl; println(io, @sprintf("| %.2f | %.0f | %.0f | %.0f |", b.t / 1000, b.before * dA, b.union * dA, b.after * dA)); end
+    println(io)
+end
 println(io, "product ice of the slices outside the region (not used online): ", count(fp_pr .& G .& .!R), " cells\n")
 println(io, "patch footprint in the region: $(count(fp_p .& R)) cells, the base's $(count(fp_pm .& R)); new: ",
         "$(count(fp_p .& R .& .!fp_pm))\n")
