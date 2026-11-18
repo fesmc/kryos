@@ -36,8 +36,20 @@
 # [[gnss]] (optional): GNSS data groups, the present-day uplift rate at GNSS stations: name (the group), product
 # (FesmData Records/GPS/GPS-<product>.nc under [score] gnss_dir, default <fesmdata>/Records/GPS), rate (gia | corrected | observed),
 # box, exclude, min_years (pm_compare.jl read_gnss), judge (default true; false: reported only, not in the default use_groups);
-# several entries of one name: one group of their stations, each once (gnss_data); every [[gnss]] group is a data group (after
+# several entries of one name: one group of their stations, each once (point_data); every [[gnss]] group is a data group (after
 # obs_groups: data_groups); [likelihood."<name>"]: sigma_m [mm/yr], corr_dist_km (no time term).
+# [cores] (optional): the ice-core group, the surface elevation change relative to the present at ice-core sites: name ("ice cores"),
+# product (FesmData Records/IceCores/IceCores-<product>.nc, Vinther2009: dz_srf, dz_srf_sd), ages_ka, window_kyr (the data: the mean
+# of the records within window_kyr / 2 of an age, 0.5), sites (optional, default all), judge (true); the model: ice (the kryos run's ice
+# output, "ice_nor": z_srf - z_sl, the surface above the sea level of the time) on the grid of domain, grid (North, NH-32KM; its
+# projection), a standalone VILMA2 run z_bed + h_ice of its stream, a published reconstruction its z_topo (pm_compare.jl read_cores,
+# core_at, core_product); [likelihood."<name>"]: sigma_m [m], corr_dist_km, corr_time_kyr, as an RSL group. A point per site and
+# age (t the age): the error covariance has its time and distance terms.
+# [rotation] (optional): the rotation group, the present-day rotation of the Earth from GIA: name ("rotation"), judge (true),
+# [[rotation.data]] (quantity: J2dot [1e-11/yr], TPW rate [deg/Myr], TPW direction [deg east]; value, sd (the data, its non-GIA parts
+# removed), sd_model (the model error), source); the model: rotation_rates of the run's VILMA2 stream over its last record interval
+# (pm_compare.jl: J2 from dz_ss, the polar motion from rot_m_re, rot_m_im, which a kryos run's stream lacks: J2dot only). Each quantity a
+# point of sd sqrt(sd^2 + sd_model^2); [likelihood."<name>"] sigma_m = 0 (the model error is per quantity), not fitted by errmodel.
 # [[ice_grids]]: the grids of the ice runs for [rate] and [[volume]] (ice_grids). [rate] (optional): a limit on how fast each scale
 # group's ice may change, from the published reconstructions (rate_spec). [[volume]] (optional): windows on the excess ice volume of
 # scale groups at an age (volume_spec).
@@ -99,7 +111,7 @@ function init(cfgfile, C)
     C = abspath(C)
     en = TOML.parsefile(cfgfile)["ensemble"]
     cfg, sg, obs = ES.prepare(cfgfile, C, [g for g in en["obs_groups"] if g in RSL_GROUPS])
-    gd = gnss_data(cfg)
+    gd = point_data(cfg)
     P = ES.params(cfg, sg); pr = cfg["prior"]; nP = length(P)
     E = haskey(cfg, "earth") ? ES.earth_spec(cfg) : nothing; nE = E === nothing ? 0 : length(E.names)
     Cθ = ES.prior_cov(P, pr, cfg["scale"]["groups"])
@@ -122,38 +134,49 @@ function init(cfgfile, C)
     println("init: ", C, ", wave 1 with members 0-", en["n"])
 end
 
-# --- GNSS -------------------------------------------------------------------------------------------------------------------------
-# The data groups are of two kinds: RSL (the index points of pm_compare.jl's GROUPS) and GNSS ([[gnss]] of the config, by name).
+# --- point data: GNSS, ESL, ice cores ----------------------------------------------------------------------------------------------
+# The data groups are of two kinds: RSL (the index points of pm_compare.jl's GROUPS) and point groups, each a list of points (group,
+# kind, site_name, lat, lon, t, value, sd): GNSS ([[gnss]] of the config, by name: :gnss), and the groups of one config section each,
+# POINT_SECTIONS: [esl] (:esl), [cores] (:core), [rotation] (:rot).
 const RSL_GROUPS = [first.(PM.GROUPS); collect(keys(PM.GROUP_UNIONS))]   # the RSL groups, and their unions (older configs)
-# The data groups of a config: [ensemble] obs_groups and the GNSS groups of [[gnss]] (in the order of their entries); and those that
-# judge by default (use_groups absent): all but the GNSS groups of judge = false.
-esl_name(cfg) = haskey(cfg, "esl") ? String(get(cfg["esl"], "name", "ESL")) : nothing
+const POINT_SECTIONS = ["esl" => (:esl, "ESL"), "cores" => (:core, "ice cores"), "rotation" => (:rot, "rotation")]   # section => (kind, default name)
+# the group name of a point section of the config (nothing when the config has none)
+section_name(cfg, sec) = haskey(cfg, sec) ? String(get(cfg[sec], "name", Dict(POINT_SECTIONS)[sec][2])) : nothing
+esl_name(cfg) = section_name(cfg, "esl")
+section_groups(cfg) = String[section_name(cfg, sec) for (sec, _) in POINT_SECTIONS if haskey(cfg, sec)]
 # the model's ESL, [esl] model_var (pm_compare.jl esl_at): :bsl (the default) or :bsl_ive
 function esl_var(cfg)
     v = Symbol(haskey(cfg, "esl") ? get(cfg["esl"], "model_var", "bsl") : "bsl")
     v in PM.ESL_VARS || error("[esl] model_var = \"$(v)\": not one of ", join(string.(PM.ESL_VARS), ", "))
     v
 end
-data_groups(cfg) = unique([String.(cfg["ensemble"]["obs_groups"]); [String(sp["name"]) for sp in get(cfg, "gnss", Any[])];
-                           esl_name(cfg) === nothing ? String[] : [esl_name(cfg)]])
+# The data groups of a config: [ensemble] obs_groups, the GNSS groups of [[gnss]] (in the order of their entries) and those of the point
+# sections; and those that judge by default (use_groups absent): all but the GNSS groups and sections of judge = false.
+data_groups(cfg) = unique([String.(cfg["ensemble"]["obs_groups"]); [String(sp["name"]) for sp in get(cfg, "gnss", Any[])]; section_groups(cfg)])
 judging_groups(cfg) = [g for g in data_groups(cfg) if !any(sp -> sp["name"] == g && !get(sp, "judge", true), get(cfg, "gnss", Any[])) &&
-                                                     !(g == esl_name(cfg) && !get(cfg["esl"], "judge", true))]
+                                                     !any(sec -> section_name(cfg, sec) == g && !get(cfg[sec], "judge", true), first.(POINT_SECTIONS))]
 # the groups that keep the plain cut ([ensemble] implausibility) whatever the bar references score: [ensemble] fixed_cut and
 # always the ESL group, whose target is the stack of [esl] (Spratt and Lisiecki 2016): no reconstruction sets its bar
 plain_cut_groups(cfg) = unique([String.(get(cfg["ensemble"], "fixed_cut", String[])); esl_name(cfg) === nothing ? String[] : [esl_name(cfg)]])
-# the kind of a data group: :rsl (index points), :gnss ([[gnss]]) or :esl ([esl])
-group_kind(cfg, g) = g in RSL_GROUPS ? :rsl : g == esl_name(cfg) ? :esl : :gnss
+# the kind of a data group: :rsl (index points), :gnss ([[gnss]]) or that of its point section (:esl, :core, :rot)
+function group_kind(cfg, g)
+    g in RSL_GROUPS && return :rsl
+    for (sec, (kind, _)) in POINT_SECTIONS; section_name(cfg, sec) == g && return kind; end
+    :gnss
+end
 # The point data of a config, the data groups that are not RSL index points: the stations of its GNSS groups (pm_compare.jl
-# read_gnss) and the ages of its ESL group (read_esl), as points (group, kind, site_name, lat, lon, t, value, sd), and per group their
-# indices (idx), and the model's ESL (esl_var: gnss_model); every group of obs_groups must be an RSL group, a [[gnss]] entry or the [esl] group. A group of several entries (products) takes their
-# stations in the order of the entries, without those of a later entry that an earlier one has (the same site name, or within
-# MERGE_KM): a station counts once.
+# read_gnss), the ages of its ESL group (read_esl), the sites and ages of its ice-core group (read_cores) and the quantities of its
+# rotation group (read_rotation), and per group their
+# indices (idx), the model's ESL (esl_var: point_model) and the grid of the ice-core group (core_grid); every group of obs_groups must
+# be an RSL group, a [[gnss]] entry or a point section. A GNSS group of several entries (products) takes their stations in the order
+# of the entries, without those of a later entry that an earlier one has (the same site name, or within MERGE_KM): a station counts once.
 const MERGE_KM = 1.0
-function gnss_data(cfg)
-    og = data_groups(cfg); specs = get(cfg, "gnss", Any[])
-    bad = [g for g in og if !(g in RSL_GROUPS) && !any(sp -> sp["name"] == g, specs) && g != esl_name(cfg)]
-    isempty(bad) || error("obs_groups: neither an RSL group (pm_compare.jl GROUPS) nor a [[gnss]] entry nor [esl]: ", join(bad, ", "))
-    dir = get(cfg["score"], "gnss_dir", joinpath(cfg["score"]["fesmdata"], "Records", "GPS"))
+function point_data(cfg)
+    og = data_groups(cfg); specs = get(cfg, "gnss", Any[]); fes = cfg["score"]["fesmdata"]
+    bad = [g for g in og if !(g in RSL_GROUPS) && !any(sp -> sp["name"] == g, specs) && !(g in section_groups(cfg))]
+    isempty(bad) || error("obs_groups: neither an RSL group (pm_compare.jl GROUPS) nor a [[gnss]] entry nor a point section (",
+                          join(first.(POINT_SECTIONS), ", "), "): ", join(bad, ", "))
+    dir = get(cfg["score"], "gnss_dir", joinpath(fes, "Records", "GPS"))
     sts = NamedTuple[]
     for sp in specs
         sp["name"] in og || continue
@@ -161,11 +184,21 @@ function gnss_data(cfg)
         append!(sts, [st for st in PM.read_gnss(dir, sp)
                       if !any(s -> s.site_name == st.site_name || ES.gcdist(s, st) < MERGE_KM, have)])
     end
-    esl_name(cfg) in og && append!(sts, PM.read_esl(cfg["score"]["fesmdata"], cfg["esl"]))
+    esl_name(cfg) in og && append!(sts, PM.read_esl(fes, cfg["esl"]))
+    section_name(cfg, "cores") in og && append!(sts, PM.read_cores(fes, cfg["cores"]))
+    section_name(cfg, "rotation") in og && append!(sts, PM.read_rotation(cfg["rotation"]))
     idx = [(g, findall(s -> s.group == g, sts)) for g in og if !(g in RSL_GROUPS)]
     none = [g for (g, ii) in idx if isempty(ii)]
-    isempty(none) || error("[[gnss]]: no station selected in ", join(none, ", "))
-    (obs = sts, idx = idx, dir = dir, esl_var = esl_var(cfg))
+    isempty(none) || error("no point (station, age, site) selected in ", join(none, ", "))
+    (obs = sts, idx = idx, dir = dir, esl_var = esl_var(cfg), cores = core_grid(cfg))
+end
+# The model side of [cores]: ice (the kryos run's ice output, default "ice_nor"), domain and grid (its FesmData grid, default North,
+# NH-32KM: <domain>/<grid>/<grid>_grid.nc, its projection: pm_compare.jl stereo_grid); nothing without [cores]
+function core_grid(cfg)
+    haskey(cfg, "cores") || return nothing
+    c = cfg["cores"]; dom = String(get(c, "domain", "North")); grid = String(get(c, "grid", "NH-32KM"))
+    g = PM.stereo_grid(joinpath(cfg["score"]["fesmdata"], dom, grid, grid * "_grid.nc"))
+    (ice = String(get(c, "ice", "ice_nor")), xc = g.xc, yc = g.yc, xy = g.xy)
 end
 # the GNSS stations of an ensemble: <folder>/gnss.csv (group, site, lat, lon, rate, sd [mm/yr]), and per group a line in ensemble.md
 function write_gnss(C, gd, cfg)
@@ -183,24 +216,29 @@ function write_gnss(C, gd, cfg)
     end
 end
 # the model's values at the points of gd for the run folder dir: the rates [mm/yr] at the GNSS stations (pm_compare.jl read_rate;
-# NaN without dz_bed_rate) and ESL [m] at the ages of the ESL group (esl_at of gd.esl_var); nothing when it has none
-function gnss_model(dir, gd)
+# NaN without dz_bed_rate), ESL [m] at the ages of the ESL group (esl_at of gd.esl_var) and the surface elevation change [m] at the
+# sites and ages of the ice-core group (core_at) and the rotation of the rotation group (rotation_rates); nothing when it has none
+function point_model(dir, gd)
     isempty(gd.obs) && return nothing
     v = fill(NaN, length(gd.obs)); ig = findall(s -> s.kind == :gnss, gd.obs); ie = findall(s -> s.kind == :esl, gd.obs)
+    ic = findall(s -> s.kind == :core, gd.obs); ir = findall(s -> s.kind == :rot, gd.obs)
     if !isempty(ig)
         R = PM.run_done(dir) ? PM.read_rate(dir) : nothing                   # the present-day rate: of a finished run only
         R === nothing || (v[ig] = PM.rate_at(R, [gd.obs[i].lon for i in ig], [gd.obs[i].lat for i in ig]))
     end
     isempty(ie) || (v[ie] = PM.esl_at(dir, [gd.obs[i].t for i in ie]; var = gd.esl_var))
+    isempty(ic) || (v[ic] = PM.core_at(dir, gd.cores, gd.obs[ic]))
+    isempty(ir) || (rr = PM.rotation_rates(dir); v[ir] = [rr[gd.obs[i].site_name] for i in ir])
     all(isnan, v) ? nothing : v
 end
-# the misfit per GNSS group of the model rates G (nothing: no group): d = model - obs, sigma_i the station's sd
-function gnss_residuals(gd, G)
+# the misfit per point group of the model values G (nothing: no group): d = model - obs (a direction: wrapped, pm_compare.jl point_diff),
+# sigma_i the point's sd; the points where G is NaN are left out
+function point_residuals(gd, G)
     out = Dict{String,Any}()
     G === nothing && return out
     for (g, ii) in gd.idx
         k = [i for i in ii if isfinite(G[i])]
-        isempty(k) || (out[g] = (pts = gd.obs[k], d = G[k] .- [gd.obs[i].value for i in k], σ = [gd.obs[i].sd for i in k]))
+        isempty(k) || (out[g] = (pts = gd.obs[k], d = [PM.point_diff(gd.obs[i], G[i]) for i in k], σ = [gd.obs[i].sd for i in k]))
     end
     out
 end
@@ -339,9 +377,9 @@ end
 implausibility(χ2, n) = (χ2 - n) / sqrt(2n)
 
 # the members of wave k that ran, their residuals per group (RSL from S; GNSS from G, the model rates at the stations, nothing without
-# dz_bed_rate) and ESL at 20 ka (esl_at of gd.esl_var); gd the GNSS data (gnss_data)
+# dz_bed_rate) and ESL at 20 ka (esl_at of gd.esl_var); gd the point data (point_data)
 function wave_residuals(C, k, cfg)
-    og = data_groups(cfg); gd = gnss_data(cfg)
+    og = data_groups(cfg); gd = point_data(cfg)
     obs = [o for o in PM.read_indicators(cfg["score"]["fesmdata"]) if o.type == 0 && any(g -> PM.in_group(o, g), og)]
     idx = [(g, findall(o -> PM.in_group(o, g), obs)) for g in og if g in RSL_GROUPS]
     A = sort(NCDataset(ds -> Float64.(ds["time"][:]),
@@ -351,8 +389,8 @@ function wave_residuals(C, k, cfg)
     for m in ids
         r, why = ES.member_series(ES.mdir(C, k, m), obs, A)
         r === nothing && (println("member $m: $why"); continue)
-        G = gnss_model(ES.mdir(C, k, m), gd)
-        res[m] = (esl = PM.esl_at(ES.mdir(C, k, m), [20000.0]; var = gd.esl_var)[1], rg = merge(group_residuals(obs, idx, r.S, A), gnss_residuals(gd, G)), S = r.S, G = G)
+        G = point_model(ES.mdir(C, k, m), gd)
+        res[m] = (esl = PM.esl_at(ES.mdir(C, k, m), [20000.0]; var = gd.esl_var)[1], rg = merge(group_residuals(obs, idx, r.S, A), point_residuals(gd, G)), S = r.S, G = G)
     end
     isempty(gd.idx) || println("GNSS: ", count(m -> res[m].G !== nothing, keys(res)), " of ", length(res), " members with dz_bed_rate")
     ids, Θ, res, og, obs, A, gd
@@ -400,18 +438,20 @@ function references(cfg, obs, A)
     end
     out
 end
-# the ESL of a published reconstruction at the points of the ESL group: from the reference's esl = "<SeaLevel product>" (pm_compare.jl
-# sealevel_at; SeaLevel-PaleoMIST for pub-PMIST); nothing without one
-function esl_reference(cfg, ref, gd)
-    (haskey(ref, "esl") && any(s -> s.kind == :esl, gd.obs)) || return nothing
-    v = fill(NaN, length(gd.obs)); ie = findall(s -> s.kind == :esl, gd.obs)
-    v[ie] = PM.sealevel_at(cfg["score"]["fesmdata"], ref["esl"], [gd.obs[i].t for i in ie])[1]
-    v
+# the point values of a published reconstruction: its ESL at the points of the ESL group from the reference's esl = "<SeaLevel product>"
+# (pm_compare.jl sealevel_at; SeaLevel-PaleoMIST for pub-PMIST), its surface elevation change at the ice-core sites from its IceHistory
+# file (product or topo: z_topo, pm_compare.jl core_product); nothing without either
+function point_reference(cfg, ref, gd)
+    v = fill(NaN, length(gd.obs)); ie = findall(s -> s.kind == :esl, gd.obs); ic = findall(s -> s.kind == :core, gd.obs)
+    haskey(ref, "esl") && !isempty(ie) && (v[ie] = PM.sealevel_at(cfg["score"]["fesmdata"], ref["esl"], [gd.obs[i].t for i in ie])[1])
+    f = haskey(ref, "product") ? ref["product"] : get(ref, "topo", nothing)
+    f === nothing || isempty(ic) || (v[ic] = PM.core_product(joinpath(cfg["score"]["fesmdata"], f), gd.obs[ic]))
+    all(isnan, v) ? nothing : v
 end
-# the model rates at the GNSS stations of every reference (gnss_model): nothing for a published reconstruction (product, topo) and a
-# run without dz_bed_rate
-function reference_rates(cfg, gd)
-    G = Dict{String,Any}(ref["name"] => (haskey(ref, "run") ? gnss_model(ref_dir(ref), gd) : esl_reference(cfg, ref, gd))
+# the model's values at the points of every reference: of a run, point_model (a run without dz_bed_rate has no GNSS rates); of a
+# published reconstruction (product, topo), point_reference (ESL and the ice cores, no GNSS rates)
+function reference_points(cfg, gd)
+    G = Dict{String,Any}(ref["name"] => (haskey(ref, "run") ? point_model(ref_dir(ref), gd) : point_reference(cfg, ref, gd))
                          for ref in get(cfg, "references", []))
     isempty(gd.idx) || println("GNSS: references with dz_bed_rate: ", join(sort([n for (n, g) in G if g !== nothing]), ", "))
     G
@@ -430,7 +470,7 @@ end
 function score_series(S, W, em, og; G = nothing, gd = nothing)
     Sw = S[W.kp, W.ka]; any(k -> all(isnan, view(Sw, :, k)), axes(Sw, 2)) && return nothing
     rg = group_residuals(W.obs, W.idx, Sw, W.A)
-    gd === nothing || merge!(rg, gnss_residuals(gd, G))
+    gd === nothing || merge!(rg, point_residuals(gd, G))
     Dict(g => (v = loglik_group(rg[g], em[g]...); (v..., implausibility(v[2], v[3]))) for g in og if haskey(rg, g))
 end
 # a value of a series' score s in group g (i: 1 log L, 2 chi2, 3 n, 4 I), NaN (n: 0) when it has no score there
@@ -451,10 +491,10 @@ function errmodel(C, k; top = 6, refs = nothing, groups = nothing)
     if refs === nothing
         ids, _, res, og = wave_residuals(C, k, cfg)
     else            # the point groups from the run references whose name matches refs (the cases of an Earth search)
-        og = data_groups(cfg); gd = gnss_data(cfg); res = Dict{String,Any}()
+        og = data_groups(cfg); gd = point_data(cfg); res = Dict{String,Any}()
         for ref in get(cfg, "references", [])
             (haskey(ref, "run") && occursin(Regex(refs), ref["name"])) || continue
-            G = gnss_model(ref_dir(ref), gd); G === nothing || (res[ref["name"]] = (rg = gnss_residuals(gd, G),))
+            G = point_model(ref_dir(ref), gd); G === nothing || (res[ref["name"]] = (rg = point_residuals(gd, G),))
         end
         println("errmodel from ", length(res), " references matching ", refs)
     end
@@ -464,9 +504,10 @@ function errmodel(C, k; top = 6, refs = nothing, groups = nothing)
     em, src = error_model(cfg, C); ok = sort(collect(keys(res)))
     lk = Dict{String,Any}(); rows = []
     for g in og
-        okg = g in fitg ? [m for m in ok if haskey(res[m].rg, g)] : []
+        okg = g in fitg && group_kind(cfg, g) != :rot ? [m for m in ok if haskey(res[m].rg, g)] : []   # rotation: sd per quantity, not fitted
         if isempty(okg)
-            println(g, g in fitg ? ": no member has a score (no dz_bed_rate); not fitted" : ": kept")
+            println(g, !(g in fitg) ? ": kept" : group_kind(cfg, g) == :rot ? ": the sd of its quantities (config), not fitted" :
+                       ": no member has a score (no dz_bed_rate); not fitted")
             haskey(em, g) && (lk[g] = Dict{String,Any}("sigma_m" => em[g][1], "corr_dist_km" => em[g][2]);
                               isfinite(em[g][3]) && (lk[g]["corr_time_kyr"] = em[g][3] / 1000))
             continue
@@ -537,7 +578,7 @@ function weights(C, k)
     sc = Dict(m => score_series(res[m].S, W, em, og; G = res[m].G, gd = gd) for m in ok)   # g => (log L, chi2, n, I)
     nos = [g for g in ug0 if !all(m -> haskey(sc[m], g), ok)]      # judging groups without a score in every member
     ug = [g for g in ug0 if !(g in nos)]
-    refs = references(cfg, obs, A); rG = reference_rates(cfg, gd)
+    refs = references(cfg, obs, A); rG = reference_points(cfg, gd)
     rsc = [(nm, s) for (nm, s) in ((nm, score_series(S, W, em, og; G = rG[nm], gd = gd)) for (nm, S) in refs) if s !== nothing]
     # the bar: per group the lowest I_g of the bar's references that have a score there, and which one
     bar = String.(get(en, "bar", String[])); nob = setdiff(bar, first.(rsc))
@@ -679,23 +720,29 @@ function compare_references(It, cfg, res, og, obs, A, em, ug, cut, refs; gd = no
         println(io, "\nMembers passing each group: ", join([@sprintf("%s %d", g, count(s -> haskey(s, g) && s[g][4] <= cut[g], values(ms))) for g in og], ", "),
                 "; all groups that judge: ", count(s -> np(s) == length(ug), values(ms)), " of ", length(ms), ".")
     end
-    # ESL: the data, the reference curves of [esl] reference_curves (SeaLevel products, not scored: Lambeck et al. 2014 uses far-field
-    # RSL that the far-field group already has), the references and the 5 members of the highest log L on the window
-    ie = gd === nothing ? Int[] : findall(s -> s.kind == :esl, gd.obs)
-    if !isempty(ie)
-        ages = [gd.obs[i].t for i in ie]; f0(v) = join([isfinite(x) ? @sprintf("%.0f", x) : "-" for x in v], " | ")
-        println(io, "\n## ESL [m], relative to the present: the data (", cfg["esl"]["product"], ", 1 sigma), reference curves (not scored), ",
-                "the references and the 5 best members\n")
-        println(io, "| series | ", join([@sprintf("%g ka", a / 1000) for a in ages], " | "), " |\n|---|", repeat("---|", length(ages)))
-        println(io, "| **data** | ", join([@sprintf("%.0f ± %.0f", gd.obs[i].value, gd.obs[i].sd) for i in ie], " | "), " |")
-        for c in get(cfg["esl"], "reference_curves", String[])
-            println(io, "| ", c, " (curve) | ", f0(PM.sealevel_at(cfg["score"]["fesmdata"], c, ages)[1]), " |")
+    # the point groups by value: ESL (with the reference curves of [esl] reference_curves, SeaLevel products not scored: Lambeck et
+    # al. 2014 uses far-field RSL that the far-field group already has) and the ice cores; the data, the references and the 5 members
+    # of the highest log L on the window
+    for (kind, title, f0) in (gd === nothing ? () : ((:esl, "ESL [m], relative to the present", "%.0f"),
+                                                     (:core, "Ice cores: surface elevation change [m] relative to the present", "%.0f"),
+                                                     (:rot, "Rotation: J2dot [1e-11/yr], TPW rate [deg/Myr], direction [deg E]", "%.2f")))
+        ie = findall(s -> s.kind == kind, gd.obs); isempty(ie) && continue
+        fv(v) = join([isfinite(x) ? Printf.format(Printf.Format(f0), x) : "-" for x in v], " | ")
+        src = kind == :esl ? cfg["esl"]["product"] : kind == :core ? cfg["cores"]["product"] : "[rotation] of the config"
+        println(io, "\n## ", title, ": the data (", src, ", 1 sigma)", kind == :esl ? ", reference curves (not scored)" : "",
+                ", the references and the 5 best members\n")
+        println(io, "| series | ", join([gd.obs[i].site_name for i in ie], " | "), " |\n|---|", repeat("---|", length(ie)))
+        println(io, "| **data** | ", join([Printf.format(Printf.Format(f0 * " ± " * f0), gd.obs[i].value, gd.obs[i].sd) for i in ie], " | "), " |")
+        if kind == :esl
+            for c in get(cfg["esl"], "reference_curves", String[])
+                println(io, "| ", c, " (curve) | ", fv(PM.sealevel_at(cfg["score"]["fesmdata"], c, [gd.obs[i].t for i in ie])[1]), " |")
+            end
         end
         for (nm, G) in sort(collect(rG), by = first)
-            (G === nothing || all(isnan, G[ie])) || println(io, "| **", nm, "** | ", f0(G[ie]), " |")
+            (G === nothing || all(isnan, G[ie])) || println(io, "| **", nm, "** | ", fv(G[ie]), " |")
         end
         for m in best1
-            G = get(res[m], :G, nothing); G === nothing || println(io, "| m", lpad(m, 3, "0"), " | ", f0(G[ie]), " |")
+            G = get(res[m], :G, nothing); G === nothing || println(io, "| m", lpad(m, 3, "0"), " | ", fv(G[ie]), " |")
         end
     end
     close(io); close(csv)
@@ -709,7 +756,7 @@ end
 #   julia --project=tools/levante plastic_ensemble.jl scores <ensemble folder> [<wave>]
 function scores(C, k)
     C = abspath(C); cfg = ES.config(C); ids, Θ, res, og, obs, A, gd = wave_residuals(C, k, cfg)
-    em, src = error_model(cfg, C); refs = references(cfg, obs, A); rG = reference_rates(cfg, gd)
+    em, src = error_model(cfg, C); refs = references(cfg, obs, A); rG = reference_points(cfg, gd)
     tw = 1000.0 * get(cfg["ensemble"], "compare_max_age_ka", 25.0)
     series = [[(nm, S, 1, rG[nm]) for (nm, S) in refs]; [("m" * lpad(m, 3, "0"), res[m].S, 0, res[m].G) for m in sort(collect(keys(res)))]]
     f = joinpath(ES.itdir(C, k), "scores.csv")
@@ -718,7 +765,7 @@ function scores(C, k)
         for (wn, W) in (("window", score_window(obs, A, og, tw)), ("all", score_window(obs, A, og, Inf)))
             for (nm, S, isref, G) in series
                 Sw = S[W.kp, W.ka]; any(c -> all(isnan, view(Sw, :, c)), axes(Sw, 2)) && continue
-                for (rg, tname) in ((group_residuals(W.obs, W.idx, Sw, W.A), "all"), (gnss_residuals(gd, G), "all points"))
+                for (rg, tname) in ((group_residuals(W.obs, W.idx, Sw, W.A), "all"), (point_residuals(gd, G), "all points"))
                     tot = (n = 0, d2 = 0.0, z2 = 0.0, chi2 = 0.0, ll = 0.0)
                     for g in og
                         haskey(rg, g) || continue
