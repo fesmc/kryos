@@ -23,7 +23,8 @@
 # Writes: pm_metrics.md (tables), pm_metrics_B1_PM.csv (all records), pm_sites.csv, pm_gmsl.csv, pm_fields.nc (for pm_maps.jl),
 # pm_indicators.md (scores), pm_ind_samples.csv (per sample), pm_ind_sites.csv (per site), pm_ind_curves.csv (model RSL at the sites).
 # GNSS uplift rates (the GNSS groups of plastic_ensemble.jl): read_gnss (the stations of a group, FesmData Records/GPS), read_rate and
-# rate_at (the model's present-day uplift rate, dz_bed_rate of the run's last VILMA2 record, at the stations).
+# rate_at (the model's present-day uplift rate, dz_bed_rate of the run's last VILMA2 record, at the stations). Ice-core elevations (the
+# ice-core group): read_cores (the data, FesmData Records/IceCores) and core_at (the model's surface elevation change at the sites).
 # Included by plastic_esmda.jl (in a module) for the scoring functions: main runs only as a script.
 using NCDatasets, Printf, Statistics
 
@@ -268,6 +269,100 @@ function esl_at(dir, ages; var = :bsl)
     r = read_run(dir); r === nothing && return fill(NaN, length(ages))
     b = getfield(r, var); a = rec_age(r); p = sortperm(a); x = b .- b[end]
     [tlin(a[p], x[p], age) for age in ages]
+end
+
+# --- ice-core elevations ----------------------------------------------------------------------------------------------------------
+# The points of the ice-core group ([cores] of an ensemble config: plastic_ensemble.jl): the surface elevation change relative to the
+# present at the sites of FesmData Records/IceCores/IceCores-<product>.nc (dz_srf, dz_srf_sd [m] by station and time, time in years
+# ago; Vinther2009: the elevation above sea level, the bed's isostatic change included) at the ages (ages_ka), each the mean of the
+# records within window_kyr / 2 of the age (0.5 kyr: 25 of the 20-yr values of Vinther et al. 2009), with the mean of their sd; sites
+# (optional): the site names to use (default all). Returns per site and age (group, kind = :core, site_name "<site> <age> ka", lat,
+# lon, t = the age, value, sd) [m].
+function read_cores(fesmdata, spec)
+    nm = String(get(spec, "name", "ice cores")); f = joinpath(fesmdata, "Records", "IceCores", "IceCores-" * spec["product"] * ".nc")
+    isfile(f) || error("[cores]: no $f")
+    ages = 1000.0 .* Float64.(spec["ages_ka"]); hw = 500.0 * Float64(get(spec, "window_kyr", 0.5))
+    NCDataset(f) do ds
+        site = string.(ds["site_name"][:]); lat = Float64.(ds["lat"][:]); lon = Float64.(ds["lon"][:]); t = Float64.(ds["time"][:])
+        g(v) = (x = Float64.(nomissing(ds[v][:, :], NaN)); dimnames(ds[v])[1] == "station" ? x : permutedims(x))    # (station, time)
+        dz = g("dz_srf"); sd = g("dz_srf_sd")
+        use = haskey(spec, "sites") ? [findfirst(==(String(s)), site) for s in spec["sites"]] : collect(eachindex(site))
+        any(isnothing, use) && error("[cores] sites $(spec["sites"]): not all in $f ($(site))")
+        pts = NamedTuple[]
+        for s in use, a in ages
+            k = [i for i in findall(x -> abs(x - a) <= hw, t) if isfinite(dz[s, i]) && isfinite(sd[s, i])]
+            isempty(k) && error("[cores]: $(site[s]) has no record within $(hw) yr of $(a) years ago ($f)")
+            push!(pts, (group = nm, kind = :core, site_name = @sprintf("%s %g ka", site[s], a / 1000), lat = lat[s], lon = lon[s], t = a,
+                        value = mean(dz[s, k]), sd = mean(sd[s, k])))
+        end
+        pts
+    end
+end
+# The projection of a FesmData grid file (its crs: polar_stereographic, latitude_of_projection_origin ±90, standard_parallel,
+# straight_vertical_longitude_from_pole, semi_major_axis, inverse_flattening; Snyder 1987, eqs. 21-33 and 21-34 of the ellipsoid) and
+# its axes xc, yc [km]: (xc, yc, xy), xy(lon, lat) the projected point [km].
+function stereo_grid(file)
+    NCDataset(file) do ds
+        c = ds["crs"].attrib; get(c, "grid_mapping_name", "") == "polar_stereographic" || error("$file: crs not polar_stereographic")
+        south = c["latitude_of_projection_origin"] < 0; φc = Float64(c["standard_parallel"]); λ0 = Float64(c["straight_vertical_longitude_from_pole"])
+        a = Float64(c["semi_major_axis"]); e = sqrt(1 - (1 - 1 / Float64(c["inverse_flattening"]))^2)
+        tf(φ) = tand(45 - φ / 2) / ((1 - e * sind(φ)) / (1 + e * sind(φ)))^(e / 2)
+        sg = south ? -1.0 : 1.0; mc = cosd(sg * φc) / sqrt(1 - e^2 * sind(sg * φc)^2)
+        u = get(ds["xc"].attrib, "units", "m") == "km" ? 1.0 : 1000.0
+        function xy(lon, lat)
+            ρ = a * mc * tf(sg * lat) / tf(sg * φc) / 1000; λ = sg * (lon - λ0)
+            (sg * ρ * sind(λ), -sg * ρ * cosd(λ))
+        end
+        (xc = Float64.(ds["xc"][:]) ./ u, yc = Float64.(ds["yc"][:]) ./ u, xy = xy)
+    end
+end
+# bilinear on a regular grid (ascending axes x, y) at the point (px, py)
+function bilin_xy(F, x, y, px, py)
+    i = clamp(searchsortedlast(x, px), 1, length(x) - 1); j = clamp(searchsortedlast(y, py), 1, length(y) - 1)
+    wx = (px - x[i]) / (x[i+1] - x[i]); wy = (py - y[j]) / (y[j+1] - y[j])
+    (1 - wy) * ((1 - wx) * F[i, j] + wx * F[i+1, j]) + wy * ((1 - wx) * F[i, j+1] + wx * F[i+1, j+1])
+end
+# The model's surface elevation change [m] at the points pts (lon, lat, t the age [yr]), relative to the present: e(t) - e(0 ka), e the
+# surface above the sea level of the time, linear in time between the records (an age outside them: NaN); NaN for a run that has not
+# finished (run_done). Of a kryos run with the ice output <gr.ice>.nc (the plastic or Yelmo instance on the grid of gr, stereo_grid):
+# z_srf - z_sl, bilinear in the projected x, y; otherwise (a standalone VILMA2 run under a reconstruction's ice: vilma_out.nc) of the
+# VILMA2 stream: z_bed + h_ice (z_bed relative to the sea level of the time), bilinear on the Gauss grid.
+function core_at(dir, gr, pts; inst = "geo_glob")
+    run_done(dir) || return fill(NaN, length(pts))
+    fi = joinpath(dir, gr.ice * ".nc"); fv = joinpath(dir, "vilma_out.nc"); isfile(fv) || (fv = joinpath(dir, inst * "_vilma.nc"))
+    ice = isfile(fi); f = ice ? fi : fv; isfile(f) || return fill(NaN, length(pts))
+    NCDataset(f) do ds
+        age = -10.0 .* round.(Float64.(ds["time"][:]) ./ 10.0); p = sortperm(age)      # records' ages (kryos: t = -age; VILMA2: -age + 1)
+        if ice
+            xy = [gr.xy(o.lon, o.lat) for o in pts]
+            surf = k -> (F = Float64.(nomissing(ds["z_srf"][:, :, k], NaN)) .- Float64.(nomissing(ds["z_sl"][:, :, k], NaN));
+                         [bilin_xy(F, gr.xc, gr.yc, x, y) for (x, y) in xy])
+        else
+            lon = Float64.(ds["lon"][:]); lat = Float64.(ds["lat"][:]); jl = sortperm(lat); il = sortperm(mod.(lon, 360)); glon = mod.(lon[il], 360)
+            w = [(xweight(glon, o.lon), yweight(lat[jl], o.lat)) for o in pts]
+            surf = k -> (F = (Float64.(nomissing(ds["z_bed"][:, :, k], NaN)) .+ Float64.(nomissing(ds["h_ice"][:, :, k], NaN)))[il, jl];
+                         [interp(F, a, b) for (a, b) in w])
+        end
+        series_at(age[p], k -> surf(p[k]), pts)
+    end
+end
+# The surface elevation change of a published reconstruction (FesmData IceHistory file on a lon-lat grid: z_topo, the topography
+# relative to the sea level of the time, the surface of grounded ice on the ice sheets; time in years ago) at pts, as core_at.
+function core_product(file, pts)
+    NCDataset(file) do ds
+        lon = Float64.(ds["lon"][:]); lat = Float64.(ds["lat"][:]); jl = sortperm(lat); il = sortperm(mod.(lon, 360)); glon = mod.(lon[il], 360)
+        age = Float64.(ds["time"][:]); p = sortperm(age)
+        w = [(xweight(glon, o.lon), yweight(lat[jl], o.lat)) for o in pts]
+        series_at(age[p], k -> (F = Float64.(nomissing(ds["z_topo"][:, :, p[k]], NaN))[il, jl]; [interp(F, a, b) for (a, b) in w]), pts)
+    end
+end
+# per point i the value of the series at its age pts[i].t minus that at 0 ka, linear between the records of the ascending ages A,
+# srf(k) the values of record k at all points (read once per record needed)
+function series_at(A, srf, pts)
+    cache = Dict{Int,Vector{Float64}}(); rec(k) = haskey(cache, k) ? cache[k] : (cache[k] = srf(k))
+    at(i, a) = (a < A[1] - 1 || a > A[end] + 1) ? NaN : (k = clamp(searchsortedlast(A, a), 1, length(A) - 1);
+                w = clamp((a - A[k]) / (A[k+1] - A[k]), 0.0, 1.0); w == 0 ? rec(k)[i] : w == 1 ? rec(k + 1)[i] : (1 - w) * rec(k)[i] + w * rec(k + 1)[i])
+    [at(i, o.t) - at(i, 0.0) for (i, o) in enumerate(pts)]
 end
 
 # linear in time: the value and the slope at t; the range over [t0, t1]

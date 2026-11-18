@@ -1,6 +1,7 @@
 # Weighted ensemble v2: tau_b multipliers of the plastic ice and the Earth (shifts of log10 viscosity of the 3-D Earth, Bagge 2021,
 # globally and by region; plastic_earth_shift.jl), NH-32KM, ANT-16KM and PAT-PAL-8KM; the data groups that judge: every RSL
-# group and the GNSS uplift rates of Fennoscandia and Hudson Bay ([[gnss]]; Greenland and Antarctica reported only). The error model
+# group, ESL, the GNSS uplift rates of Fennoscandia and Hudson Bay ([[gnss]]; Greenland and Antarctica reported only) and the
+# ice-core elevations of Greenland ([cores]). The error model
 # from ens-v1 wave 1 (errmodel.toml there); GNSS: starting values.
 # docs/dev/plastic-ensemble-design.md.
 #   tools/levante/plastic_ensemble.sh start tools/levante/plastic_ensemble_v2.toml <ensemble folder>
@@ -178,6 +179,22 @@ model_var        = "bsl"                 # the model's ESL: VILMA2 bsl, barystat
 sigma_m       = 5.0
 corr_dist_km  = 1.0
 corr_time_kyr = 10.0
+
+[cores]                                  # ice-core elevation histories: plastic_ensemble.jl [cores]
+name     = "ice cores (Greenland)"
+product  = "Vinther2009"                 # Vinther et al. 2009: Camp Century, NGRIP, GRIP, DYE-3; elevation above sea level, the
+                                         # bed's isostatic change included; 1 sigma 40 m (GRIP, NGRIP), 65 m (Camp Century, DYE-3)
+ages_ka  = [11.0, 9.0, 7.0, 5.0, 3.0]    # every 2 kyr: the data errors (the uplift correction of Agassiz and Renland) are
+                                         # correlated in time and not in the covariance
+window_kyr = 0.5                         # the data at an age: the mean of the 20-yr values within ±0.25 kyr
+ice      = "ice_nor"                     # the model: z_srf - z_sl of ice_nor.nc on NH-32KM
+domain   = "North"
+grid     = "NH-32KM"
+
+[likelihood."ice cores (Greenland)"]     # starting values: refit by errmodel. sigma_m: the surface of the plastic ice on 32 km
+sigma_m       = 75.0                     # misses the present elevation of the sites by 30-380 m (RMS 240 m, C7); in the change
+corr_dist_km  = 500.0                    # relative to the present most of it cancels: a third of it. L_t: the time scale of the
+corr_time_kyr = 5.0                      # Holocene thinning; L_x: the sites are 300-1300 km apart
 
 [[gnss]]
 name    = "GNSS Fennoscandia"
