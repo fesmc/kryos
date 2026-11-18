@@ -111,6 +111,9 @@ Greenland 7.9, ESL 7.04; under the bar of our ice, ESL ≤ 3, every Coulomb run 
 | | `tau-CBDAR-H300 \| E1D-ES1-E117` | CBDA H300 with λ_min 0.22, c_f 0.04154 (refcorr bed) | done | −8822 | 5/9 | 14.2 | −1.4 / 1.0 / −0.2 / 2.2 / 3.2 / −1.4 | 5.7 / 6.8 | 7.3 |
 | C7 | `tau-CBF-H1000 \| E1D-ES1-E117` | CBDAR H1000 with λ fixed on the file (`taub_lambda_bed = "file"`) in every instance, Antarctica's c_f 0.01943 recalibrated on it | done | −8810 | 5/9 | 14.3 | −0.5 / 0.6 / −0.1 / 1.7 / 4.0 / −2.0 | 6.3 / 8.2 | 8.1 |
 | | `tau-CBF-H300 \| E1D-ES1-E117` | CBDAR H300 with λ on the file, Antarctica's c_f 0.04212 | done | −8788 | 6/9 | 14.5 | −1.3 / 0.9 / 0.0 / 2.0 / 3.0 / −2.7 | 5.7 / 4.5 | 9.1 |
+| C8 | `tau-CBF-H300-pDA \| E1D-ES1-E117` | C7 H300: NAIS's margin from Dalton et al. (2020), 25-20 ka (a margin patch) | done | −8788 | 5/9 | 14.5 | −1.4 / 0.9 / −0.0 / 2.0 / 3.0 / −2.6 | 5.7 / 4.5 | 9.1 |
+| | `tau-CBF-H300-pDE \| E1D-ES1-E117` | C7 H300: Eurasia's margin from DATED-1 (most-credible), 27.5-7.5 ka | done | −8769 | 6/9 | 14.4 | −1.3 / 0.9 / −0.2 / 1.7 / 3.0 / −3.0 | 5.3 / 4.5 | 9.1 |
+| | `tau-CBF-H300-pDAE \| E1D-ES1-E117` | both | done | −8779 | 5/9 | 14.4 | −1.4 / 0.9 / −0.2 / 1.8 / 3.0 / −2.7 | 5.3 / 4.5 | 9.1 |
 
 The far field passes on every run (D1: 5.0) and log L rises with H_N on both Earths; Barents fails on all (too much
 Eurasian ice at 20 ka, 20-21 m against PaleoMIST's 18), Antarctica worsens with H_N. A larger H_N lowers τ_b where the
@@ -202,6 +205,21 @@ gains (3.2 → 3.0), and ESL is worse (8.1, 9.1 against 7.5, 7.3: less northern 
 Earth, −8801), H_N 1000 passes 5/9. No alternating jumps in Antarctica (max |ΔM| 3.6 and 2.0 × 10⁵ Gt); the North keeps
 5 and 3 pairs at the deglacial retreat (10.3 ka), as CBDAR.
 
+C8 (coulomb-taub/dated-margins) takes the dated margin chronologies of FesmData's `IceHistory-Dalton2020` (North
+America, 36 isochrones 22.1-0.91 cal ka) and `IceHistory-DATED1` (Eurasia, 25-10 ka every 1 kyr, most-credible) as margin
+patches on C7 H300 (`tools/levante/margin_patch.jl`, `experiments/coulomb-dated-margins.sh`): Dalton in region 1 from 25
+to 20 ka (its slices 22.1, 21.1, 20.5 ka between PaleoMIST's 25 and 20 ka), DATED-1 in regions 3 and 6 from 27.5 to
+7.5 ka (all its slices), and both. PaleoMIST 1.0 is close to both at its own slices (intersection over union of the
+masks 0.97-1.0 for DATED-1 at 25, 20, 15, 10 ka, 0.91-0.94 for Dalton at 22-17 ka), so the patches change the ice only
+between them: NAIS +0.2 m at 22.5 ka, −0.2 m at 20 ka, Eurasia within 0.05 m; ESL at 25 ka is C7's (−93.2 m against the
+stack's −135.4 m), I 9.1. DATED-1 improves Fennoscandia (I 0.0 → −0.2), Barents (2.0 → 1.7), the far field and
+Fennoscandia's GNSS (5.7 → 5.3): log L −8769 (C7 −8788). Dalton gives nothing (−8788) and its hand-over to PaleoMIST at
+20 ka is a step of 1.6 × 10⁶ Gt (20.4 ka; C7's largest 8.6 × 10⁵ at 10.3 ka); Antarctica's I 3.008 against 2.995 is the
+one group fewer passed. The early LGM ice that ESL wants (esl-diag's ED-pNE25: −8774, ESL I 0.8) is not in these
+chronologies: Dalton 2020 starts at 22.1 ka, DATED-1 equals PaleoMIST at 25 ka. With the ESL scoring of the branch
+esl-score (bsl, linear in time) the log L and groups are the same and ESL I is 15.2 for C7 and all C8 runs, 5.2 for
+ED-pNE25.
+
 ## Ensembles
 
 τ_b sampled per scale group and node, in ens-v2 the Earth too (shifts of structure 6); members weighted by their
@@ -275,6 +293,7 @@ The runs are on AWI's albedo:
 | C5b | `.../coulomb-taub/delta/runs/tau-CBDC-H<H_N>_E1D-ES1-E117`; scores as C5; calibration `.../lgm-calib-v3/fine`; jumps `.../delta/jumps-centre/jumps.md`; volumes `.../delta/coupled-centre/coupled.md` |
 | C6 | `.../coulomb-taub/ant-runs/runs/tau-{CBDA,CBDAR}-H<H_N>_E1D-ES1-E117`; scores `.../ant-runs/score/iter_01/scores.csv`; calibration `.../coulomb-taub/ant-calib/fine` (CBDA), `.../ant-calib/fine-ref/report.md` (CBDAR); jumps `.../ant-runs/jumps/jumps.md`; volumes `.../ant-runs/coupled/coupled.md` |
 | C7 | `.../coulomb-taub/lambda-file/runs/tau-CBF-H<H_N>_E1D-ES1-E117`; scores `.../lambda-file/score/iter_01/scores.csv`; calibration `.../coulomb-taub/lgm-calib-v4` (north), `.../lgm-calib-v4/ant/pick.txt` (Antarctica); jumps `.../lambda-file/jumps/jumps.md`; volumes `.../lambda-file/coupled/coupled.md`; λ files `/albedo/work/projects/p_forclima/kryos_data/plastic/{grid}_lambda_bed.nc` |
+| C8 | `.../coulomb-taub/dated-margins/runs/tau-CBF-H300-{pDA,pDE,pDAE}_E1D-ES1-E117`; scores `.../dated-margins/score/iter_01/scores.csv` (and `score-esl`, the esl-score branch); patches `.../dated-margins/margins`; jumps `.../dated-margins/jumps/jumps.md`; volumes `.../dated-margins/coupled/coupled.md`; ESL by age `.../dated-margins/diag/esl.csv`; products (staging) `/albedo/work/projects/p_forclima/kryos-work/fesmdata-staging/fesmdata` |
 | D2, E2 | `/albedo/work/user/alrobi001/kryos-plastic/kryos/runs/ens-v2/iter_01/<m>` |
 | D3 | `/albedo/work/user/alrobi001/kryos-work/runs/res16/m000-NH16` |
 | E1 | `/albedo/work/projects/p_forclima/kryos-work/levante/ens-v1` (copied from Levante) |
