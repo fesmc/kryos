@@ -12,6 +12,6 @@ deps = [
     "chion:main",            # the ITM |lat| offset, the BESSI bare-surface fix and chion_init_state(swe, t_init): not yet on stable
     "insol:stable",
     "vilma2:main",
-    "PaleoEmulator:main",
+    "PaleoEmu:main",
     "PlasticIceSheet:main",
 ]

@@ -67,6 +67,6 @@ else
     colgap!(fig.layout, 1, 10); colgap!(fig.layout, 2, 18)
 end
 rowgap!(fig.layout, 4)
-Label(fig[0, (1+off):(4+off)], mode == "abs" ? "Northern Hemisphere on imposed PaleoMIST ice: PaleoEmulator climate, chion-BESSI SMB" :
+Label(fig[0, (1+off):(4+off)], mode == "abs" ? "Northern Hemisphere on imposed PaleoMIST ice: PaleoEmu climate, chion-BESSI SMB" :
       "Change against pre-industrial: JJA temperature, precipitation ratio; SMB as is"; fontsize=18, font=:bold)
 save(out, fig; px_per_unit=2)

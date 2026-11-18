@@ -1,9 +1,9 @@
 ---
-title: "PaleoEmulator (climate)"
+title: "PaleoEmu (climate)"
 ---
 
 The climate backend `paleoemu` couples the CESM-3Ma climate emulator of
-[PaleoEmulator](https://github.com/fesmc/PaleoEmulator) to kryos. The emulator
+[PaleoEmu](https://github.com/fesmc/PaleoEmu) to kryos. The emulator
 returns monthly 2-m temperature and precipitation anomalies against pre-industrial,
 and the annual ocean temperature change at 8 levels between 4 and 1475 m.
 Its inputs are the orbit, CO2 and the Northern Hemisphere ice sheets: the regional
@@ -25,12 +25,12 @@ drive the ice. A port with a present-day ocean also gives the shelf its ocean
 profiles (set A), the present day plus the emulator's change ([The ocean](#the-ocean)).
 
 - **Build:** `paleoemu=1`.
-  - `config/common.mk` expects `PaleoEmulator/fortran/build` (`libpaleoemu.a`,
-    `paleoemu.mod`), a sibling checkout or symlink `PaleoEmulator`.
+  - `config/common.mk` expects `PaleoEmu/fortran/build` (`libpaleoemu.a`,
+    `paleoemu.mod`), a sibling checkout or symlink `PaleoEmu`.
   - Build it with the compiler and the fesm-utils of kryos: `make paleoemu-static`
     (it is serial and uses ncio).
   - Without it, the stub stops the run.
-- **Code:** [fesmc/PaleoEmulator](https://github.com/fesmc/PaleoEmulator).
+- **Code:** [fesmc/PaleoEmu](https://github.com/fesmc/PaleoEmu).
   - The Fortran module is `fortran/paleoemu.f90`.
   - The API, the emulator file and its formulas are described in the README.
 - **Select:**
@@ -79,7 +79,7 @@ and the floating surface `z_sl + (1 − ρ_i/ρ_sw) H` elsewhere.
   `clock = "forcing"`;
 - **CO2:** the coefficient `coef_co2`;
 - **orbit:** the forcing's elements, which are also the surface's; without them, the
-  emulator's own table (Laskar et al. 2004) at that time, as when PaleoEmulator runs
+  emulator's own table (Laskar et al. 2004) at that time, as when PaleoEmu runs
   standalone;
 - **ice:** the geometry on the emulator's ice grid, against the reference.
 
@@ -91,7 +91,7 @@ and the floating surface `z_sl + (1 − ρ_i/ρ_sw) H` elsewhere.
   outside the range CESM-3Ma saw at that ice, 185-236 ppm at LGM ice).
 - `bias` (default "", none) adds a bias correction, `bias_scale` (default 1) times the
   NH ice-volume weight `w` = (dV North America + Eurasia) / `dV_ref`: it follows the
-  glacial state and vanishes at present. PaleoEmulator's
+  glacial state and vanishes at present. PaleoEmu's
   `scripts/prep_bias_pmip.jl` makes it from PMIP3 and PMIP4 (FesmData's monthly
   climatologies): per model, the LGM minus piControl temperature at the reference surface
   (the lapse effect of its ice sheets removed) minus the emulator's 21 ka state, in
@@ -107,7 +107,7 @@ At a cold start (the first update, PASS_BOUNDARY) the key `filter_start` sets th
 
 - `"training"` (default): the run's input plus the lag CESM-3Ma's trajectory had at
   that time, f(t0) = x(t0) + f_train(t0) − x_train(t0), from the emulator file's
-  training inputs (PaleoEmulator's `paleoemu_init`). At 0 ka the 10-kyr filters still
+  training inputs (PaleoEmu's `paleoemu_init`). At 0 ka the 10-kyr filters still
   hold the deglaciation (North America +21.2 m SLE, Eurasia +3.9 m SLE, log(CO2/280)
   −0.11): a run at the reference state (the reference ice, CESM-3Ma's 280.4 ppm, the
   CO2 series' value at 0) reproduces the reference climate, `dtas`, `dlogpr`, `dto` 0.
@@ -136,7 +136,7 @@ reference climate on the grid (key `reference`), with the same formulas as
 
 **Reference climate.** It is a file on the instance grid holding `tas_ref` [K] and
 `pr_ref` [mm d-1] by month, `z_srf_ref` [m] and the global attribute `grid_name`.
-PaleoEmulator writes it from ERA5 1981-2010 minus the HadCRUT 5.1 warming since
+PaleoEmu writes it from ERA5 1981-2010 minus the HadCRUT 5.1 warming since
 1850-1900, corrected over the ice sheets by regional climate models of the same
 period (MAR v3.14 for Greenland, RACMO2.3p2 for Antarctica), remapped by FesmData
 onto the same grid. ERA5 alone is 1-2 K too cold in summer over Greenland's ablation
@@ -312,4 +312,4 @@ the monthly mean top-of-atmosphere insolation on 1° latitudes, as a diagnostic.
   - The volume and elevation changes are therefore measured against kryos's present
     day.
 - **Cold LIG and mid-Holocene.** The emulator inherits CESM-3Ma's: the run's 5×
-  acceleration, the 1.5× GHG scaling (see PaleoEmulator's PMIP4 comparison).
+  acceleration, the 1.5× GHG scaling (see PaleoEmu's PMIP4 comparison).

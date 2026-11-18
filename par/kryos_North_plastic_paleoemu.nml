@@ -1,12 +1,12 @@
-! kryos par file: the CESM-3Ma emulator (climate = paleoemu, PaleoEmulator) driving the chion snowpack on the plastic
+! kryos par file: the CESM-3Ma emulator (climate = paleoemu, PaleoEmu) driving the chion snowpack on the plastic
 ! PaleoMIST ice of domain North (NH-32KM), from 21 ka to 20 ka. The global part of the climate (`clim_glob`, globe)
 ! steps the emulator on the ice of [globe_ice] (PaleoMIST's history outside the domain, the plastic ice inside it),
 ! CO2 and the orbit of the forcing (coef_co2; [orbit], also the surface's insolation); the domain's climate `climate_nor` is its regional port, and
 ! the surface takes tas and pr through the lapse rows. No geo: the bed is today's (+ r), z_sl = 0. The plastic ice is
 ! driven by the PaleoMIST margins (drive = "taub"); the surface's smb and T_srf are diagnostics here.
 ! Build: plastic=1 paleoemu=1 (yelmo=0 is enough; make paleoemu-static first). Inputs: the emulator file
-! (PaleoEmulator scripts/06_emulator.jl) and its reference climate on GLOBAL-0.5DEG
-! (PaleoEmulator scripts/prep_kryos_reference.jl); the paths below are those on Levante.
+! (PaleoEmu scripts/06_emulator.jl) and its reference climate on GLOBAL-0.5DEG
+! (PaleoEmu scripts/prep_kryos_reference.jl); the paths below are those on Levante.
 !   runme / kryos.x par/kryos_North_plastic_paleoemu.nml
 
 &kryos

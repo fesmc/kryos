@@ -29,7 +29,7 @@ program test_climate_paleoemu
     !     over its sample (default zone:shelf_break_buffer, offshore of the basins) of the regions on the
     !     port's grid; a basin without a sample the mean over its ocean cells of the reference topography
     !     (z_bed < 0, not grounded); a basin without ocean either keeps its cells' values.
-    ! Needs the emulator file in $PALEOEMU_FILE (PaleoEmulator scripts/06_emulator.jl); skipped without.
+    ! Needs the emulator file in $PALEOEMU_FILE (PaleoEmu scripts/06_emulator.jl); skipped without.
     ! With paleoemu=0 the test is not built (test_skip in config/common.mk).
 
     use precision,       only: dp

@@ -3,7 +3,7 @@
 ! part on the merged ice of the globe, a port per domain) driving the chion snowpack (itm, insolation on the forcing's
 ! orbit). The ice is the PaleoMIST margins with Gowan's tau_b (drive = "taub", as the _b1 file): the plastic ice takes
 ! no smb, so the climate and chion's smb and T_srf are diagnostics of the reconstructed geometry. CO2: the CESM-3Ma
-! series (PaleoEmulator scripts/prep_kryos_co2.jl). Output: 2D every 5 kyr, 1D every 100 yr.
+! series (PaleoEmu scripts/prep_kryos_co2.jl). Output: 2D every 5 kyr, 1D every 100 yr.
 ! Build: plastic=1 vilma=1 paleoemu=1 (yelmo=0). Inputs in kryos_data/paleoemu/ (its README): the emulator file, its
 ! reference climate on GLOBAL-0.5DEG, the CO2 table.
 !   runme -r -s -q shared -w 02:00:00 --omp 16 -m 60G -o <run> -n par/kryos_NH-ANT_plastic_vilma2_b1_paleoemu.nml

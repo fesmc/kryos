@@ -1,6 +1,6 @@
 # Paleo SMB of the Northern Hemisphere ice sheets: literature (LGM, deglaciation, MIS3)
 
-A review made for the chion-BESSI SMB tuning on imposed PaleoMIST geometry with the PaleoEmulator climate
+A review made for the chion-BESSI SMB tuning on imposed PaleoMIST geometry with the PaleoEmu climate
 (2026-11-12). "Read" means seen in the abstract, full text or tables; "inferred" means a conversion or
 interpretation (1 mm SLE ≈ 362 Gt). Not read in full: Ullman et al. 2015 and Niu et al. 2024 (paywalled), Gandy et
 al. 2023 (blocked).

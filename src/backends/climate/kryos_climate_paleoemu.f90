@@ -1,6 +1,6 @@
 module kryos_climate_paleoemu
     ! climate backend paleoemu, built with paleoemu=1, else the stub: the
-    ! CESM-3Ma emulator of PaleoEmulator (fesmc/PaleoEmulator, module paleoemu of
+    ! CESM-3Ma emulator of PaleoEmu (fesmc/PaleoEmu, module paleoemu of
     ! its fortran/) as a two-level climate, as geo = vilma2 is a two-level geo:
     !
     !   paleoemu_climate_t  the global part (scope global, one per run) on its own
@@ -16,7 +16,7 @@ module kryos_climate_paleoemu
     !                       as key filter_start says: "training" (default) from the
     !                       run's inputs plus the lag CESM-3Ma's trajectory had then
     !                       (its deglacial memory at 0 ka; equilibrium outside 0-3
-    !                       Ma), "equilibrium" at the run's inputs (PaleoEmulator's
+    !                       Ma), "equilibrium" at the run's inputs (PaleoEmu's
     !                       paleoemu_init). Each update binds the geometry to the
     !                       emulator's ice grid, steps the emulator and applies its
     !                       anomalies to the pre-industrial reference climate on

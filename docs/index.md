@@ -20,7 +20,7 @@ viscosity structure, and scored against the GAPSLIP 2.1 sea-level index points.
 - [Architecture](architecture.qmd) and [Global hub and regional domains](global-hub.qmd): how a run is put
   together and how the regional ice reaches the global Earth and back.
 - Backends: [PlasticIceSheet](backend-plastic.md), [data](backend-data.md), [VILMA2](backend-vilma2.md),
-  [PaleoEmulator](backend-paleoemu.md), [smb_simple](backend-smb-simple.md).
+  [PaleoEmu](backend-paleoemu.md), [smb_simple](backend-smb-simple.md).
 
 ## Experiments
 

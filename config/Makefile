@@ -151,7 +151,7 @@ $(PLASTIC_ARCHIVE):
 	@$(call dep_missing,PlasticIceSheet,make -C $(PLASTICROOT) static openmp=$(openmp) lis=1 FESMUTILSROOT=$(abspath $(FESMUTILSROOT)))
 
 $(PALEOEMU_ARCHIVE):
-	@$(call dep_missing,PaleoEmulator,make paleoemu-static)
+	@$(call dep_missing,PaleoEmu,make paleoemu-static)
 
 $(SHTNS_ARCHIVE):
 	@$(call dep_missing,SHTns of fesm-utils (one-time),make -C $(FESMUTILSROOT) shtns openmp=$(openmp))
@@ -186,7 +186,7 @@ vilma-static: fesmutils-static
 plastic-static: fesmutils-static
 	$(MAKE) -C $(PLASTICROOT) static openmp=$(openmp) lis=1 FESMUTILSROOT=$(abspath $(FESMUTILSROOT))
 
-# PaleoEmulator: serial, with kryos' compiler and fesm-utils (its ncio)
+# PaleoEmu: serial, with kryos' compiler and fesm-utils (its ncio)
 paleoemu-static: fesmutils-static
 	$(MAKE) -C $(PALEOEMUROOT)/fortran FC="$(FC)" FESMUTILS=$(abspath $(FESMUTILSLIBDIR))
 

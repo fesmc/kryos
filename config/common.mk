@@ -104,11 +104,11 @@ INC_PLASTIC = -I${PLASTICROOT}/libplastic/include
 LIB_PLASTIC = -L${PLASTICROOT}/libplastic/include -lplastic ${LIB_LIS}
 PLASTIC_ARCHIVE = $(PLASTICROOT)/libplastic/include/libplastic.a
 
-# PaleoEmulator (climate = paleoemu): the Fortran module paleoemu (fortran/ of
-# the PaleoEmulator repository, a sibling checkout or symlink `PaleoEmulator`),
+# PaleoEmu (climate = paleoemu): the Fortran module paleoemu (fortran/ of
+# the PaleoEmu repository, a sibling checkout or symlink `PaleoEmu`),
 # libpaleoemu.a with paleoemu.mod. Serial, uses ncio of fesm-utils: build it
 # with the compiler and the fesm-utils of kryos (make paleoemu-static).
-PALEOEMUROOT = PaleoEmulator
+PALEOEMUROOT = PaleoEmu
 INC_PALEOEMU = -I${PALEOEMUROOT}/fortran/build
 LIB_PALEOEMU = -L${PALEOEMUROOT}/fortran/build -lpaleoemu
 PALEOEMU_ARCHIVE = $(PALEOEMUROOT)/fortran/build/libpaleoemu.a

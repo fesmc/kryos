@@ -262,7 +262,7 @@ The default is the plastic ice backend with VILMA2 (`yelmo=0 fastisostasy=0 vilm
 tools/albedo/stack.sh /albedo/work/user/$USER/kryos-plastic
 ```
 
-The climate backend paleoemu needs `paleoemu=1` in `BUILD` (PaleoEmulator), e.g. the SMB tuning's stack:
+The climate backend paleoemu needs `paleoemu=1` in `BUILD` (PaleoEmu), e.g. the SMB tuning's stack:
 
 ```bash
 BUILD="yelmo=0 fastisostasy=0 vilma=0 plastic=0 paleoemu=1 openmp=1" \

@@ -8,7 +8,7 @@
 #
 #   <dir>        a new folder, e.g. /albedo/work/user/$USER/kryos-plastic; it gets kryos/ (the checkout, <kryos ref>,
 #                default main) and the packages: fesm-utils, chion, insol always; yelmo (yelmo=1), FastIsostasy
-#                (fastisostasy=1), vilma2 (vilma=1), PlasticIceSheet (plastic=1), PaleoEmulator (paleoemu=1). An existing
+#                (fastisostasy=1), vilma2 (vilma=1), PlasticIceSheet (plastic=1), PaleoEmu (paleoemu=1). An existing
 #                checkout in <dir> is kept as it is.
 #   BUILD        the make flags of the backends (default "yelmo=0 fastisostasy=0 vilma=1 plastic=1 openmp=1": the plastic
 #                ice backend with VILMA2); a backend is on when BUILD has <flag>=1
@@ -46,7 +46,7 @@ yelmo           yelmo         yelmo-static      1
 FastIsostasy    fastisostasy  isostasy-static   1
 vilma2          vilma         vilma-static      1
 PlasticIceSheet plastic       plastic-static    1
-PaleoEmulator   paleoemu      paleoemu-static   0
+PaleoEmu        paleoemu      paleoemu-static   0
 LIST
 ref() { sed -n "s/^ *\"$1:\([^\"]*\)\".*/\1/p" kryos/.configme/manifest.toml; }
 for e in "${pkgs[@]}"; do
