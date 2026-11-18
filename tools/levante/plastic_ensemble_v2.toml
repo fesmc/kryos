@@ -199,6 +199,7 @@ corr_time_kyr = 5.0                      # Holocene thinning; L_x: the sites are
 
 [rotation]                               # the present-day rotation of the Earth from GIA: plastic_ensemble.jl [rotation]
 name = "rotation"
+tpw_axis_deg = -79.0                     # the axis of the TPW components: the observed direction (Argus and Gross 2004)
 [[rotation.data]]
 quantity = "J2dot"                       # [1e-11/yr], unnormalized J2 (J2 = -√5 C̄20)
 value    = -5.7                          # observed -3.7 ± 0.1 (SLR, 1976-1990; -3.4 to -4.0 by the window: Mitrovica et al. 2015)
@@ -209,19 +210,18 @@ sd_model = 1.0                           # -5.7 ± 0.5 (Nakada et al. 2015, GJI 
                                          # C7's J2dot over the two last intervals differs by 0.9)
 source   = "Nakada et al. 2015; Mitrovica et al. 2015"
 [[rotation.data]]
-quantity = "TPW rate"                    # [deg/Myr]: observed 3.5 mas/yr = 0.97 deg/Myr toward 79 W relative to the mean lithosphere
-value    = 0.6                           # (Argus and Gross 2004, GRL 31, L06614, doi:10.1029/2004GL019657); the GIA part 33 ± 18 %
-sd       = 0.3                           # (Adhikari et al. 2018, EPSL 502, 126, doi:10.1016/j.epsl.2018.08.059: mantle convection the
-sd_model = 0.2                           # rest) to 0.85 deg/Myr (Nakada et al. 2015; Adhikari and Ivins 2016, Sci. Adv. 2, e1501693);
-                                         # the 20th-century melt adds < 0.1 deg/Myr (Nakada et al. 2015)
+quantity = "TPW along"                   # [deg/Myr], the true polar wander velocity along tpw_axis_deg: observed 3.5 mas/yr = 0.97
+value    = 0.6                           # deg/Myr toward 79 W relative to the mean lithosphere (Argus and Gross 2004, GRL 31, L06614,
+sd       = 0.3                           # doi:10.1029/2004GL019657); the GIA part 33 ± 18 % (Adhikari et al. 2018, EPSL 502, 126,
+sd_model = 0.2                           # doi:10.1016/j.epsl.2018.08.059: mantle convection the rest) to 0.85 deg/Myr (Nakada et al.
+                                         # 2015; Adhikari and Ivins 2016, Sci. Adv. 2, e1501693); the 20th-century melt < 0.1 deg/Myr
 source   = "Argus and Gross 2004; Adhikari et al. 2018; Nakada et al. 2015"
 [[rotation.data]]
-quantity = "TPW direction"               # [deg east]: the GIA polar motion toward 75-79 W (Nakada et al. 2015; Argus and Gross 2004)
-value    = -77.0
-sd       = 15.0
-sd_model = 15.0
+quantity = "TPW across"                  # [deg/Myr], 90 deg east of the axis: the GIA models point at 75-79 W (Nakada et al. 2015),
+value    = 0.0                           # along the observed motion; the non-GIA part (convection) is of unknown direction, so the
+sd       = 0.3                           # across component has the along one's sd. A velocity, not rate and direction: where the rate
+sd_model = 0.2                           # is near zero its direction is noise, and the components stay Gaussian
 source   = "Argus and Gross 2004; Nakada et al. 2015"
-
 [likelihood."rotation"]                  # the model error is per quantity (sd_model): sigma_m 0, not fitted
 sigma_m      = 0.0
 corr_dist_km = 1.0

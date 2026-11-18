@@ -46,10 +46,12 @@
 # core_at, core_product); [likelihood."<name>"]: sigma_m [m], corr_dist_km, corr_time_kyr, as an RSL group. A point per site and
 # age (t the age): the error covariance has its time and distance terms.
 # [rotation] (optional): the rotation group, the present-day rotation of the Earth from GIA: name ("rotation"), judge (true),
-# [[rotation.data]] (quantity: J2dot [1e-11/yr], TPW rate [deg/Myr], TPW direction [deg east]; value, sd (the data, its non-GIA parts
-# removed), sd_model (the model error), source); the model: rotation_rates of the run's VILMA2 stream over its last record interval
-# (pm_compare.jl: J2 from dz_ss, the polar motion from rot_m_re, rot_m_im, which a kryos run's stream lacks: J2dot only). Each quantity a
-# point of sd sqrt(sd^2 + sd_model^2); [likelihood."<name>"] sigma_m = 0 (the model error is per quantity), not fitted by errmodel.
+# tpw_axis_deg (the observed direction of the polar motion [deg east], the axis of the TPW components), [[rotation.data]] (quantity:
+# J2dot [1e-11/yr], TPW along, TPW across [deg/Myr] (the true polar wander velocity along the axis and 90 deg east of it); value, sd
+# (the data, its non-GIA parts removed), sd_model (the model error), source); the model: rotation_rates of the run's VILMA2 stream over
+# its last record interval (pm_compare.jl: J2 from dz_ss, the polar motion from rot_m_re, rot_m_im, which the stream of a kryos run
+# before 2026-11-18 lacks: J2dot only). Each quantity a point of sd sqrt(sd^2 + sd_model^2); [likelihood."<name>"] sigma_m = 0 (the
+# model error is per quantity), not fitted by errmodel.
 # [[ice_grids]]: the grids of the ice runs for [rate] and [[volume]] (ice_grids). [rate] (optional): a limit on how fast each scale
 # group's ice may change, from the published reconstructions (rate_spec). [[volume]] (optional): windows on the excess ice volume of
 # scale groups at an age (volume_spec).
@@ -190,7 +192,13 @@ function point_data(cfg)
     idx = [(g, findall(s -> s.group == g, sts)) for g in og if !(g in RSL_GROUPS)]
     none = [g for (g, ii) in idx if isempty(ii)]
     isempty(none) || error("no point (station, age, site) selected in ", join(none, ", "))
-    (obs = sts, idx = idx, dir = dir, esl_var = esl_var(cfg), cores = core_grid(cfg))
+    (obs = sts, idx = idx, dir = dir, esl_var = esl_var(cfg), cores = core_grid(cfg), rot_axis = rot_axis(cfg, sts))
+end
+# the axis of the TPW components, [rotation] tpw_axis_deg [deg east]: needed when the group has a TPW component
+function rot_axis(cfg, sts)
+    any(s -> s.kind == :rot && startswith(s.site_name, "TPW"), sts) || return 0.0
+    haskey(cfg["rotation"], "tpw_axis_deg") || error("[rotation]: TPW components without tpw_axis_deg (the observed direction, deg east)")
+    Float64(cfg["rotation"]["tpw_axis_deg"])
 end
 # The model side of [cores]: ice (the kryos run's ice output, default "ice_nor"), domain and grid (its FesmData grid, default North,
 # NH-32KM: <domain>/<grid>/<grid>_grid.nc, its projection: pm_compare.jl stereo_grid); nothing without [cores]
@@ -228,17 +236,17 @@ function point_model(dir, gd)
     end
     isempty(ie) || (v[ie] = PM.esl_at(dir, [gd.obs[i].t for i in ie]; var = gd.esl_var))
     isempty(ic) || (v[ic] = PM.core_at(dir, gd.cores, gd.obs[ic]))
-    isempty(ir) || (rr = PM.rotation_rates(dir); v[ir] = [rr[gd.obs[i].site_name] for i in ir])
+    isempty(ir) || (rr = PM.rotation_rates(dir; axis = gd.rot_axis); v[ir] = [rr[gd.obs[i].site_name] for i in ir])
     all(isnan, v) ? nothing : v
 end
-# the misfit per point group of the model values G (nothing: no group): d = model - obs (a direction: wrapped, pm_compare.jl point_diff),
-# sigma_i the point's sd; the points where G is NaN are left out
+# the misfit per point group of the model values G (nothing: no group): d = model - obs, sigma_i the point's sd; the points where G is
+# NaN are left out
 function point_residuals(gd, G)
     out = Dict{String,Any}()
     G === nothing && return out
     for (g, ii) in gd.idx
         k = [i for i in ii if isfinite(G[i])]
-        isempty(k) || (out[g] = (pts = gd.obs[k], d = [PM.point_diff(gd.obs[i], G[i]) for i in k], σ = [gd.obs[i].sd for i in k]))
+        isempty(k) || (out[g] = (pts = gd.obs[k], d = [G[i] - gd.obs[i].value for i in k], σ = [gd.obs[i].sd for i in k]))
     end
     out
 end
@@ -725,7 +733,7 @@ function compare_references(It, cfg, res, og, obs, A, em, ug, cut, refs; gd = no
     # of the highest log L on the window
     for (kind, title, f0) in (gd === nothing ? () : ((:esl, "ESL [m], relative to the present", "%.0f"),
                                                      (:core, "Ice cores: surface elevation change [m] relative to the present", "%.0f"),
-                                                     (:rot, "Rotation: J2dot [1e-11/yr], TPW rate [deg/Myr], direction [deg E]", "%.2f")))
+                                                     (:rot, "Rotation: J2dot [1e-11/yr], TPW along and across [deg/Myr]", "%.2f")))
         ie = findall(s -> s.kind == kind, gd.obs); isempty(ie) && continue
         fv(v) = join([isfinite(x) ? Printf.format(Printf.Format(f0), x) : "-" for x in v], " | ")
         src = kind == :esl ? cfg["esl"]["product"] : kind == :core ? cfg["cores"]["product"] : "[rotation] of the config"

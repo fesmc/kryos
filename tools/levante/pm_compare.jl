@@ -25,7 +25,8 @@
 # GNSS uplift rates (the GNSS groups of plastic_ensemble.jl): read_gnss (the stations of a group, FesmData Records/GPS), read_rate and
 # rate_at (the model's present-day uplift rate, dz_bed_rate of the run's last VILMA2 record, at the stations). Ice-core elevations (the
 # ice-core group): read_cores (the data, FesmData Records/IceCores) and core_at (the model's surface elevation change at the sites).
-# Earth rotation (the rotation group): read_rotation (the data of the config) and rotation_rates (J2dot and true polar wander).
+# Earth rotation (the rotation group): read_rotation (the data of the config) and rotation_rates (J2dot and the true polar wander
+# velocity).
 # Included by plastic_esmda.jl (in a module) for the scoring functions: main runs only as a script.
 using NCDatasets, Printf, Statistics
 
@@ -369,12 +370,16 @@ end
 # --- Earth rotation ---------------------------------------------------------------------------------------------------------------
 # The points of the rotation group ([rotation] of an ensemble config: plastic_ensemble.jl): per [[rotation.data]] entry the quantity
 # (ROT_QUANTITIES), its value and 1 sigma, the data's sd and the model error sd_model combined (sqrt(sd^2 + sd_model^2)); each a point
-# at (0, 0), t = 0 (the present). Returns (group, kind = :rot, site_name = the quantity, lat, lon, t, value, sd).
-const ROT_QUANTITIES = ("J2dot", "TPW rate", "TPW direction")   # [1e-11 / yr], [deg / Myr], [deg east]
+# at (0, 0), t = 0 (the present). The true polar wander as a velocity, its two components along and across tpw_axis_deg ([rotation]:
+# the observed direction [deg east]): a rate near zero has no direction, so the components, not rate and direction, are the data.
+# Returns (group, kind = :rot, site_name = the quantity, lat, lon, t, value, sd).
+const ROT_QUANTITIES = ("J2dot", "TPW along", "TPW across")   # [1e-11 / yr], [deg / Myr] along and across the axis (90 deg east of it)
 function read_rotation(spec)
     nm = String(get(spec, "name", "rotation"))
     map(get(spec, "data", Any[])) do d
-        q = String(d["quantity"]); q in ROT_QUANTITIES || error("[[rotation.data]] quantity \"$q\": not one of ", join(ROT_QUANTITIES, ", "))
+        q = String(d["quantity"])
+        q in ROT_QUANTITIES || error("[[rotation.data]] quantity \"$q\": not one of ", join(ROT_QUANTITIES, ", "),
+                                     " (TPW rate and direction became the components along and across tpw_axis_deg)")
         (group = nm, kind = :rot, site_name = q, lat = 0.0, lon = 0.0, t = 0.0, value = Float64(d["value"]),
          sd = hypot(Float64(d["sd"]), Float64(get(d, "sd_model", 0.0))))
     end
@@ -398,12 +403,12 @@ function j2_of(N, lat, w)
     -5 / (4π * R_EARTH_M) * sum(w[j] * P2[j] * sum(N[:, j]) * 2π / size(N, 1) for j in eachindex(lat))
 end
 # The model's present-day rotation of a run, over the last interval of the records of its VILMA2 stream (vilma_out.nc of a standalone
-# run, <inst>_vilma.nc of a kryos run): J2dot [1e-11 / yr] from dz_ss (j2_of), the true polar wander rate [deg / Myr] and direction
-# [deg east] from the polar motion m = m1 + i m2 (rot_m_re, rot_m_im; m1 toward Greenwich, m2 toward 90 E: the pole moves toward
-# atan(dm2, dm1)). NaN for what the stream lacks (rot_m: a kryos run, whose VILMA2 stream does not write it), and all for a run that
-# has not finished. The last interval: 100 yr in the standalone runs, 500 yr (the record interval) in the kryos runs; the model's
-# own ice change over it is in the rates.
-function rotation_rates(dir; inst = "geo_glob")
+# run, <inst>_vilma.nc of a kryos run): J2dot [1e-11 / yr] from dz_ss (j2_of), the true polar wander [deg / Myr] from the polar motion
+# m = m1 + i m2 (rot_m_re, rot_m_im; m1 toward Greenwich, m2 toward 90 E), its components along the axis [deg east] and across it (90
+# deg east of the axis). NaN for what the stream lacks (rot_m: a kryos run before 2026-11-18, or one without the rotation solver),
+# and all for a run that has not finished. The last interval: 100 yr in the standalone runs, 500 yr (the record interval) in the kryos
+# runs; the model's own ice change over it is in the rates.
+function rotation_rates(dir; axis = 0.0, inst = "geo_glob")
     out = Dict(q => NaN for q in ROT_QUANTITIES)
     run_done(dir) || return out
     f = joinpath(dir, "vilma_out.nc"); isfile(f) || (f = joinpath(dir, inst * "_vilma.nc")); isfile(f) || return out
@@ -417,15 +422,12 @@ function rotation_rates(dir; inst = "geo_glob")
         end
         if haskey(ds, "rot_m_re") && haskey(ds, "rot_m_im")
             m1 = Float64.(ds["rot_m_re"][:]); m2 = Float64.(ds["rot_m_im"][:])
-            v1 = (m1[n] - m1[n-1]) / dt; v2 = (m2[n] - m2[n-1]) / dt
-            out["TPW rate"] = rad2deg(hypot(v1, v2)) * 1e6; out["TPW direction"] = atand(v2, v1)
+            v1 = rad2deg((m1[n] - m1[n-1]) / dt) * 1e6; v2 = rad2deg((m2[n] - m2[n-1]) / dt) * 1e6
+            out["TPW along"] = v1 * cosd(axis) + v2 * sind(axis); out["TPW across"] = -v1 * sind(axis) + v2 * cosd(axis)
         end
         out
     end
 end
-# the misfit of a model value x at the point s: x - s.value, the difference of directions wrapped to [-180, 180)
-point_diff(s, x) = s.kind == :rot && s.site_name == "TPW direction" ? mod(x - s.value + 180, 360) - 180 : x - s.value
-
 # linear in time: the value and the slope at t; the range over [t0, t1]
 function tval(A, s, t)
     k = clamp(searchsortedlast(A, t), 1, length(A) - 1); w = (t - A[k]) / (A[k+1] - A[k])
