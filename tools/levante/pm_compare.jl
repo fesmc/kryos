@@ -238,15 +238,29 @@ function sealevel_at(fesmdata, product, ages; var = "sl")
         [tlin(t, x, a) for a in ages], [tlin(t, sd, a) for a in ages]
     end
 end
-# The points of the ESL group ([esl] of an ensemble config: name, product, var, ages_ka): the curve at the ages, each a point at
-# (0, 0) with t its age, so that the error covariance has only its time term. Returns (group, kind = :esl, site_name, lat, lon, t,
-# value [m], sd [m]).
+# The points of the ESL group ([esl] of an ensemble config: name, product, var, ages_ka, spread_file): the curve at the ages, each a
+# point at (0, 0) with t its age, so that the error covariance has only its time term. sm: the spread of the data-based records at the
+# age (spread_file, the s_m column of tools/levante/esl_spread.jl's output, linear in age; a relative path is relative to this tool's
+# folder; 0 without one), the point's own part of the model error: σ_m,i = sqrt(σ_m^2 + sm_i^2) (plastic_ensemble.jl loglik_group).
+# Returns (group, kind = :esl, site_name, lat, lon, t, value [m], sd [m], sm [m]).
 function read_esl(fesmdata, spec)
     ages = 1000.0 .* Float64.(get(spec, "ages_ka", [25.0, 22.5, 20.0, 17.5, 15.0, 12.5, 10.0]))
     v, sd = sealevel_at(fesmdata, spec["product"], ages; var = get(spec, "var", "sl"))
     any(x -> !(isfinite(x) && x > 0), sd) && error("[esl]: $(spec["product"]) has no positive sd at every age")
+    sm = haskey(spec, "spread_file") ? spread_at(spec["spread_file"], ages) : zeros(length(ages))
     [(group = get(spec, "name", "ESL"), kind = :esl, site_name = @sprintf("ESL %g ka", a / 1000), lat = 0.0, lon = 0.0, t = a,
-      value = v[i], sd = sd[i]) for (i, a) in enumerate(ages)]
+      value = v[i], sd = sd[i], sm = sm[i]) for (i, a) in enumerate(ages)]
+end
+# s_m of a spread file (CSV, columns age_ka and s_m, comment lines #) at the ages [yr], linear in age; an age outside it is an error
+function spread_at(file, ages)
+    f = isabspath(file) ? file : joinpath(@__DIR__, file)
+    rows = [split(l, ",") for l in eachline(f) if !startswith(l, "#")]
+    h = rows[1]; ia = findfirst(==("age_ka"), h); is = findfirst(==("s_m"), h)
+    (ia === nothing || is === nothing) && error("$f: no columns age_ka, s_m")
+    a = [1000 * parse(Float64, r[ia]) for r in rows[2:end]]; s = [parse(Float64, r[is]) for r in rows[2:end]]
+    p = sortperm(a); x = [tlin(a[p], s[p], t) for t in ages]
+    any(!isfinite, x) && error("$f: no s_m at every age of ", ages ./ 1000, " ka")
+    x
 end
 # whether the run of a folder has finished without error: its status file (written at the end: the exit code and the run time, by
 # runme's job and by gia_refcorr.sh) says 0. VILMA2 writes the whole time axis of its output when it starts, so the output alone does

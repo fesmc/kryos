@@ -176,7 +176,9 @@ reference_curves = ["Lambeck2014", "Waelbroeck2002", "Bintanja2008"]   # shown, 
 model_var        = "bsl_ive"             # the model's ESL by what the record measures: a δ18O stack sees the mass of all grounded
                                          # ice, below flotation too (VILMA2 bsl_ive); "bsl" (the ice above flotation) is for a direct
                                          # curve of the mean sea surface (pm_compare.jl ESL_VARS)
-[likelihood."ESL"]                       # starting values: refit by errmodel
+spread_file      = "esl_spread.csv"      # the records' disagreement s(t) (tools/levante/esl_spread.jl: 10-13 m at 25-20 ka, 16 m at
+                                         # 17.5 ka, 6-7 m at 12.5-10 ka): the model error at an age sqrt(sigma_m^2 + s(t)^2)
+[likelihood."ESL"]                       # sigma_m: the part every age has (5 m), with s(t) of spread_file
 sigma_m       = 5.0
 corr_dist_km  = 1.0
 corr_time_kyr = 10.0

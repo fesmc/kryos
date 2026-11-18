@@ -27,6 +27,7 @@
 # [[references]] (name and product | topo | run: the reconstructions the members are compared with, reference_series); [likelihood.<obs group>]: sigma_m [m], corr_dist_km, corr_time_kyr.
 # [esl] (optional): the ESL group, global sea level relative to the present against an independent curve: name ("ESL"), product
 # (FesmData Records/SeaLevel/SeaLevel-<product>.nc, e.g. Spratt2016), var (sl_short), ages_ka (25 to 10 every 2.5), judge (true),
+# spread_file (the disagreement s(t) of the data-based records, esl_spread.jl: the model error at an age sqrt(sigma_m^2 + s(t)^2)),
 # reference_curves (SeaLevel products shown in weights.md, not scored, e.g. Lambeck2014), its cut the plain one (never a bar
 # reference's: plain_cut_groups; judge = false in the Earth search, where the imposed ice sets ESL), model_var (the model's ESL by what the record
 # measures: "bsl_ive", the mass of the whole grounded column, for the δ18O stacks and mass-based curves, the default; "bsl", the
@@ -365,12 +366,18 @@ function group_residuals(obs, idx, S, A)
     end
     out
 end
-# log L (+ const), chi2 = d' R^-1 d and n of one group's misfit r under the model error (sigma_m [m], L_x [km], L_t [yr])
+# log L (+ const), chi2 = d' R^-1 d and n of one group's misfit r under the model error (sigma_m [m], L_x [km], L_t [yr]): R =
+# diag(σ_i^2) + s_i s_j C_ij, s_i = sqrt(sigma_m^2 + sm_i^2) with sm_i the point's own part of the model error (point_sm: the spread
+# of the ESL records; 0 elsewhere, s_i = sigma_m); DT: the distances and age differences of the points (errmodel, once per member)
 function loglik_group(r, σm, Lx, Lt; DT = nothing)
-    R = DT === nothing ? ES.obs_cov(r.pts, r.σ, σm, Lx, Lt) : σm^2 .* exp.(.-DT.D ./ Lx .- DT.T ./ Lt) .+ Diagonal(r.σ .^ 2)
+    C = DT === nothing ? ES.obs_cov(r.pts, zeros(length(r.pts)), 1.0, Lx, Lt) : exp.(.-DT.D ./ Lx .- DT.T ./ Lt)
+    s = sqrt.(σm^2 .+ point_sm(r) .^ 2)
+    R = (s * s') .* C .+ Diagonal(r.σ .^ 2)
     F = cholesky(Symmetric(R)); x = F.L \ r.d; χ2 = sum(abs2, x)
     (-0.5 * (χ2 + logdet(F)), χ2, length(r.d))
 end
+# the points' own part of the model error [m]: the field sm of a point (the ESL group, pm_compare.jl read_esl), 0 without
+point_sm(r) = [get(p, :sm, 0.0) for p in r.pts]
 # the error model per data group: <ensemble folder>/errmodel.toml (plastic_ensemble.jl errmodel) when it exists, else the config's;
 # the config's too for a group the file does not have (a GNSS group added after the fit). No corr_time_kyr: no time term (GNSS).
 function error_model(cfg, C)
