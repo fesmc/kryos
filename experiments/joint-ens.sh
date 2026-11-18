@@ -15,9 +15,12 @@
 #                                               or the members of <points.csv> (the smoke test: experiments/joint-ens-smoke.csv)
 #   experiments/joint-ens.sh setup <set>        per member the par file, c_f file and margin patches (a job), the run folder
 #   experiments/joint-ens.sh submit <set> [<member> ...]   runme jobs (default every member), my jobs kept below 50
-#   experiments/joint-ens.sh score <set>        a score folder ($W/<set>/score; C8's rescored config and error model) with the
-#                                               bar, C7, C8 pDE and the members as references
-#   experiments/joint-ens.sh post <set> [plots] the emulator (plastic_joint_emulate.jl, $W/<set>/emulate); plots: the jumps
+#   experiments/joint-ens.sh score <set> [<folder>]   a score folder ($W/<set>/<folder>, default score, a new one): the groups,
+#                                               data and error model of tools/levante/plastic_ensemble_v2.toml (the scores of the
+#                                               checkout), and as references the bar (pub-PMIST, pub-GLAC1D), the published ice on
+#                                               Gowan's Earth (I1, I5: the bar of the far field LGM), C7, C8 pDE and the members
+#   experiments/joint-ens.sh post <set> [plots|-] [<folder>]   the emulator (plastic_joint_emulate.jl) of the scores of <folder>
+#                                               (default score) in $W/<set>/emulate (emulate-<folder> for another); plots: the jumps
 #                                               and volumes per ice sheet of the members (plastic_mass_jumps.jl,
 #                                               plastic_coulomb_coupled.jl; a small set)
 #
@@ -31,15 +34,18 @@
 # (default $C7/par_tau-CBF-H300_E1D-ES1-E117.nml), V4 (lgm-calib-v4), SEARCH (the Earth search of wave A: earths/, kryos_data/refcorr/;
 # default /albedo/work/user/alrobi001/kryos-search), EMU (the wave-A emulator without ESL judging:
 # $KRYOS_WORK/rescore-esl/earth-search/emulate-noesl), S (the FesmData products with DATED-1, default
-# $KRYOS_WORK/fesmdata-staging/fesmdata), SCORE (the score folder whose config and error model are used:
-# $KRYOS_WORK/coulomb-taub/dated-margins/score-esl), WALL (01:30:00), NJOBS (50).
+# $KRYOS_WORK/fesmdata-staging/fesmdata), I1, I5 (PaleoMIST's and GLAC-1D's ice on Gowan's Earth, standalone VILMA2: default
+# /albedo/work/user/alrobi001/kryos-gnss/kryos_data/refcorr/ice-PMIST_E1D-PMIST, .../kryos-work/kryos_data/refcorr/GLAC1D-1D),
+# WALL (01:30:00), NJOBS (50).
 set -euo pipefail
 X=$(cd "$(dirname "$(readlink -f "$0")")" && pwd); T=$X/../tools/levante; . "$T/env.sh"
 [ $# -ge 1 ] || { sed -n '2,39p' "$0"; exit 1; }
 W=${W:-$KRYOS_WORK/joint-ens}; C7=${C7:-$KRYOS_WORK/coulomb-taub/lambda-file/runs}
 TEMPLATE=${TEMPLATE:-$C7/par_tau-CBF-H300_E1D-ES1-E117.nml}; V4=${V4:-$KRYOS_WORK/coulomb-taub/lgm-calib-v4}
 SEARCH=${SEARCH:-/albedo/work/user/alrobi001/kryos-search}; EMU=${EMU:-$KRYOS_WORK/rescore-esl/earth-search/emulate-noesl}
-S=${S:-$KRYOS_WORK/fesmdata-staging/fesmdata}; SCORE=${SCORE:-$KRYOS_WORK/coulomb-taub/dated-margins/score-esl}
+S=${S:-$KRYOS_WORK/fesmdata-staging/fesmdata}
+I1=${I1:-/albedo/work/user/alrobi001/kryos-gnss/kryos_data/refcorr/ice-PMIST_E1D-PMIST}
+I5=${I5:-/albedo/work/user/alrobi001/kryos-work/kryos_data/refcorr/GLAC1D-1D}
 WALL=${WALL:-01:30:00}; NJOBS=${NJOBS:-50}
 F=$FESMDATA; J="$KRYOS_JULIA --project=$T"
 PM=$F/North/NH-32KM/NH-32KM_IceHistory-PaleoMIST.nc; DATED=$S/North/NH-32KM/NH-32KM_IceHistory-DATED1.nc
@@ -128,24 +134,31 @@ submit)
         $KRYOS_RUNME -r -s -e kryos -n "par_$n.nml" -o "$n" -q "$KRYOS_QUEUE" -w "$WALL" --omp 64 -m 30G --jobname "JE-$m" 2>&1 | tail -1
     done < <(names "$SD/design.csv") ;;
 score)
-    setdir "$2"; SC=$SD/score; mkdir -p "$SC/iter_01"
-    cp "$SCORE/errmodel.toml" "$SC/"; cp "$C7/../score/iter_01/theta.csv" "$SC/iter_01/"
-    python3 - "$SCORE/config.toml" "$SC/config.toml" "$SD/runs" "$C7" <(names "$SD/design.csv") << 'EOF'
-import re, sys
-src, out, r, c7, nf = sys.argv[1:6]
+    setdir "$2"; SC=$SD/${3:-score}
+    [ -e "$SC/config.toml" ] && { echo "$SC/config.toml exists: give a new folder"; exit 1; }
+    mkdir -p "$SC/iter_01"; cp "$C7/../score/iter_01/theta.csv" "$SC/iter_01/"
+    C8=$KRYOS_WORK/coulomb-taub/dated-margins/runs/tau-CBF-H300-pDE_E1D-ES1-E117
+    python3 - "$T/plastic_ensemble_v2.toml" "$SC/config.toml" "$SD/runs" <(names "$SD/design.csv") \
+        "tau-CBF-H300 | E1D-ES1-E117=$C7/tau-CBF-H300_E1D-ES1-E117" "tau-CBF-H300-pDE | E1D-ES1-E117=$C8" \
+        "ice-PMIST | E1D-PMIST=$I1" "ice-GLAC1D | E1D-PMIST=$I5" << 'EOF'
+import os, re, sys
+src, out, r, nf = sys.argv[1:5]; runs = [a.split("=", 1) for a in sys.argv[5:]]
 txt = open(src).read(); i = txt.index("[[references]]"); head, refs = txt[:i], txt[i:]
 assert all(h == "[[references]]" for h in re.findall(r"^\s*\[\[?[^\]]+\]\]?", refs, re.M)), "tables after [[references]]"
-keep = [b for b in refs.split("[[references]]") if re.search(r'name = "(pub-PMIST|pub-GLAC1D|tau-CBF-H300 \| E1D-ES1-E117|tau-CBF-H300-pDE \| E1D-ES1-E117)"', b)]
-assert len(keep) == 4, "the bar, C7 and C8 pDE are not all in " + src
-new = [(n.replace("_", " | ", 1), "%s/%s" % (r, n)) for _, n in (l.split() for l in open(nf))]
-open(out, "w").write(head + "".join("[[references]]" + b for b in keep) +
-                     "".join('[[references]]\nname = "%s"\nrun  = "%s"\n' % nd for nd in new))
+# the paths of the config ({work}, {fesmdata}, {kryos_data}, {kryos}: plastic_esmda.jl expand_paths) from env.sh
+for k, v in (("{work}", "KRYOS_WORK"), ("{fesmdata}", "FESMDATA"), ("{kryos_data}", "KRYOS_DATA"), ("{kryos}", "KRYOS")):
+    head = head.replace(k, os.environ[v])
+pubs = [b for b in refs.split("[[references]]") if re.search(r'name *= *"(pub-PMIST|pub-GLAC1D)"', b)]
+assert len(pubs) == 2, "pub-PMIST, pub-GLAC1D not both in " + src
+new = runs + [(n.replace("_", " | ", 1), "%s/%s" % (r, n)) for _, n in (l.split() for l in open(nf))]
+open(out, "w").write("# joint-ens.sh score: %s, with the bar, I1, I5, C7, C8 pDE and the members as references\n" % src + head +
+                     "".join("[[references]]" + b for b in pubs) + "".join('[[references]]\nname = "%s"\nrun  = "%s"\n' % nd for nd in new))
 EOF
     "$X/scores.sh" "$SC" ;;
 post)
-    setdir "$2"; SC=$SD/score
-    JL_TIME=02:00:00 JL_MEM=32G "$T/jl.sh" "$SD/emulate.log" "$T/plastic_joint_emulate.jl" "$SD/design.csv" "$X/joint-ens.toml" \
-        "$W/earths.csv" "$SC/iter_01/scores.csv" "$SC/config.toml" "$SD/emulate"
+    setdir "$2"; F=${4:-score}; SC=$SD/$F; E=$SD/emulate; [ "$F" = score ] || E=$SD/emulate-$F
+    JL_TIME=02:00:00 JL_MEM=32G "$T/jl.sh" "$E.log" "$T/plastic_joint_emulate.jl" "$SD/design.csv" "$X/joint-ens.toml" \
+        "$W/earths.csv" "$SC/iter_01/scores.csv" "$SC/config.toml" "$E"
     if [ "${3:-}" = plots ]; then
         L=("tau-CBF-H300=$C7/tau-CBF-H300_E1D-ES1-E117")
         while read -r m n; do [ -f "$SD/runs/$n/ice_nor_ts.nc" ] && L+=("tau-JE-$m=$SD/runs/$n"); done < <(names "$SD/design.csv")
