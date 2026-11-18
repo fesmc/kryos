@@ -30,7 +30,7 @@ program test_geo_vilma2
 
     use precision,       only: sp, dp
     use coordinates,     only: grid_class, grid_init
-    use ncio,            only: nc_read
+    use ncio,            only: nc_read, nc_exists_var
     use constants,       only: pi
     use phys_constants,  only: phys_const_load
     use fesm_fields,     only: fields_get, fields_put, fields_restart_write, fields_restart_read
@@ -456,6 +456,7 @@ contains
         type(solid_earth), intent(in)    :: d
         real(dp),          intent(in)    :: t1
         real(dp), allocatable :: hl(:,:), he(:,:), load(:,:), ur(:,:)
+        real(dp) :: m1(1), m2(1)
         integer :: np, nl
         np = d%sht%nphi;  nl = d%sht%nlat
         allocate(hl(np,nl), he(np,nl), ur(np,nl))
@@ -469,6 +470,15 @@ contains
         call nc_read(DIR//"vilma.nc", "dz_bed_rate", ur, start=[1,1,1], count=[np,nl,1])
         call check(maxval(abs(ur - d%gg%dz_bed_rate)) <= 1.0e-5_dp + 1.0e-12_dp .and. maxval(abs(d%gg%dz_bed_rate)) > 1.0e-5_dp, &
                    "stream vilma: dz_bed_rate, the bed's rate over the last update (rounded to 1e-5 m/yr)")
+        ! the polar motion: written when the rotation solver runs (the scores' true polar wander), lossless
+        if (d%rotation%enabled) then
+            call nc_read(DIR//"vilma.nc", "rot_m_re", m1, start=[1], count=[1])
+            call nc_read(DIR//"vilma.nc", "rot_m_im", m2, start=[1], count=[1])
+            call check(m1(1) == real(d%rotation%m, dp) .and. m2(1) == aimag(d%rotation%m), &
+                       "stream vilma: rot_m_re, rot_m_im, the polar motion (rotation on)")
+        else
+            call check(.not. nc_exists_var(DIR//"vilma.nc", "rot_m_re"), "stream vilma: no rot_m_re (rotation off)")
+        end if
     end subroutine test_stream
 
     function exp2(g, h) result(a)

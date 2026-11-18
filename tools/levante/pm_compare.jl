@@ -18,14 +18,16 @@
 # records (2.5 kyr). Index points: d = model - rsl, sigma^2 = sigma_z^2 + (dRSL/dt sigma_t)^2 with sigma_z the 1-sigma (half the 2-sigma)
 # elevation uncertainty on the side of d and sigma_t that of the age, dRSL/dt the slope of the model at the age; reported: RMS of d/sigma
 # and the fraction with |d/sigma| <= 2. Limiting data: violated if no model RSL over the 2-sigma age range reaches the 2-sigma range of
-# the sample (marine: max RSL < rsl_min; terrestrial: min RSL > rsl_max). By the groups of Gowan's regions (GROUPS) and the marine-bed
-# areas (FOCUS).
+# the sample (marine: max RSL < rsl_min; terrestrial: min RSL > rsl_max); in the scores of LIMITING_GROUPS one-sided misfits
+# (limit_misfit). By the groups of Gowan's regions and ages (GROUPS, GROUP_AGES) and the marine-bed areas (FOCUS). The proxy records
+# of GAPSLIP (RSL-GAPSLIP_proxy): read_proxies.
 # Writes: pm_metrics.md (tables), pm_metrics_B1_PM.csv (all records), pm_sites.csv, pm_gmsl.csv, pm_fields.nc (for pm_maps.jl),
 # pm_indicators.md (scores), pm_ind_samples.csv (per sample), pm_ind_sites.csv (per site), pm_ind_curves.csv (model RSL at the sites).
 # GNSS uplift rates (the GNSS groups of plastic_ensemble.jl): read_gnss (the stations of a group, FesmData Records/GPS), read_rate and
 # rate_at (the model's present-day uplift rate, dz_bed_rate of the run's last VILMA2 record, at the stations). Ice-core elevations (the
 # ice-core group): read_cores (the data, FesmData Records/IceCores) and core_at (the model's surface elevation change at the sites).
-# Earth rotation (the rotation group): read_rotation (the data of the config) and rotation_rates (J2dot and true polar wander).
+# Earth rotation (the rotation group): read_rotation (the data of the config) and rotation_rates (J2dot and the true polar wander
+# velocity).
 # Included by plastic_esmda.jl (in a module) for the scoring functions: main runs only as a script.
 using NCDatasets, Printf, Statistics
 
@@ -38,9 +40,27 @@ const BKEYS = ["B1", "B1_170", "B1_L80", "B1_bm", "B3"]
 const EFFECTS = [("B1_170", "B1", "lmax 170 - 256 (B1)"), ("B1_L80", "B1_170", "lithosphere: B1_L80 - B1"),
                  ("B1_bm", "B1_L80", "radial profile: B1_bm - B1_L80"), ("B3", "B1_bm", "lateral: B3 - B1_bm"),
                  ("B3", "B1_170", "3-D - 1-D: B3 - B1 (l170)")]
+const FAR_FIELD = ["Caribbean", "East_Asia", "Southeast_Asia", "South_Asia", "Australia", "Pacific_Islands"]
 const GROUPS = ["Laurentide" => ["North_America_Arctic", "North_America_Atlantic"], "Greenland" => ["Greenland"],
                 "Fennoscandia" => ["Europe"], "Barents" => ["Eurasian_Arctic"], "Antarctica" => ["Antarctica"],
-                "far field" => ["Caribbean", "East_Asia", "Southeast_Asia", "South_Asia", "Australia", "Pacific_Islands"]]
+                "far field" => FAR_FIELD, "far field LGM/MIS 3" => FAR_FIELD]
+# The groups of the same regions split by age [yr] (lo <= t < hi): the far field below 15 ka (the deglaciation and the Holocene,
+# dense coral and mangrove data) and from 15 to 60 ka (the LGM and MIS 3: few index points, the limiting data and the proxy records
+# carry it, and a model error of their own); far-field samples older than 60 ka are in no group. A group's own range is its
+# window in every scoring window (plastic_ensemble.jl score_window). Groups not listed: all ages.
+const GROUP_AGES = Dict("far field" => (0.0, 15000.0), "far field LGM/MIS 3" => (15000.0, 60000.0 + 1))
+# the groups whose limiting data are scored (one-sided, limit_misfit) besides their index points, and the group of the proxy
+# records (read_proxies)
+const LIMITING_GROUPS = ["far field LGM/MIS 3"]
+const PROXY_GROUP = "far field LGM/MIS 3"
+# the group of a sample of a region at the age t: the first of GROUPS that has the region and t in its age range ("" for none)
+function group_of(region, t)
+    for (g, rs) in GROUPS
+        lo, hi = get(GROUP_AGES, g, (-Inf, Inf))
+        region in rs && lo <= t < hi && return g
+    end
+    ""
+end
 # groups made of groups (the configs before the split of Fennoscandia/Barents, 2026-11-12: the Fennoscandian shield and the softer,
 # thinner Barents shelf want different Earths); in_group: an index point is in a group or in a union that holds its group
 const GROUP_UNIONS = Dict("Fennoscandia/Barents" => ["Fennoscandia", "Barents"])
@@ -106,17 +126,43 @@ function stats(d, w, m)
 end
 
 # --- sea-level indicators ---------------------------------------------------------------------------------------------------------
-# the primary data (alternative = 0) of age 0-80 ka of FesmData RSL-GAPSLIP_global, with the group of their region
+# the primary data (alternative = 0) of age 0-80 ka of FesmData RSL-GAPSLIP_global, with the group of their region and age (group_of)
 function read_indicators(fesmdata)
-    grp = Dict(r => g for (g, rs) in GROUPS for r in rs)
     NCDataset(joinpath(fesmdata, "Records", "RSL", "RSL-GAPSLIP_global.nc")) do ds
         v(n) = ds[n][:]
         t = Float64.(v("time")); keep = findall((v("alternative") .== 0) .& (0 .<= t .<= 80000))
         reg = v("region"); sec = v("sector"); site = v("site_name"); la = Float64.(v("lat")); lo = Float64.(v("lon"))
         t0 = Float64.(v("time_min")); t1 = Float64.(v("time_max")); r = Float64.(v("rsl")); r0 = Float64.(v("rsl_min"))
         r1 = Float64.(v("rsl_max")); ty = Int.(v("type"))
-        [(region = reg[i], group = grp[reg[i]], sector = sec[i], site_name = site[i], lat = la[i], lon = lo[i], t = t[i],
+        [(region = reg[i], group = group_of(reg[i], t[i]), sector = sec[i], site_name = site[i], lat = la[i], lon = lo[i], t = t[i],
           tmin = max(t0[i], 0.0), tmax = min(t1[i], 80000.0), st = (t1[i] - t0[i]) / 4, rsl = r[i], rmin = r0[i], rmax = r1[i], type = ty[i]) for i in keep]
+    end
+end
+
+# The proxy records of GAPSLIP 2.1 (FesmData RSL-GAPSLIP_proxy: the Red Sea at Bab-el-Mandeb, Grant et al. 2012, 2014, index
+# points; the Karimata Strait, Weiss et al. 2022, terrestrial limiting), site RSL, as samples of read_indicators in PROXY_GROUP
+# where their age is in its range. Thinned: a continuous record's samples are not independent (the Red Sea: 4-5 per kyr, scattered
+# by the δ18O of the planktic foraminifera, whose noise the 1-kyr mean averages and whose level error the ±12 m of each sample
+# keeps): per site and type the mean of the samples in bins of thin_kyr [kyr] (age, RSL, its range and the age range), so about one
+# point per kyr; the Karimata values (every 2 kyr, GAPSLIP's interpolation between two estimates) stay as they are.
+function read_proxies(file; thin_kyr = 1.0)
+    isfile(file) || error("no $file (FesmData RSL-GAPSLIP_proxy; [score] rsl_proxy)")
+    NCDataset(file) do ds
+        v(n) = ds[n][:]
+        t = Float64.(v("time")); site = String.(v("site_name")); ty = Int.(v("type")); reg = String.(v("region")); sec = String.(v("sector"))
+        la = Float64.(v("lat")); lo = Float64.(v("lon")); t0 = Float64.(v("time_min")); t1 = Float64.(v("time_max"))
+        r = Float64.(v("rsl")); r0 = Float64.(v("rsl_min")); r1 = Float64.(v("rsl_max"))
+        bins = unique([(site[i], ty[i], floor(Int, t[i] / (1000 * thin_kyr))) for i in eachindex(t)])
+        out = NamedTuple[]
+        for (st, typ, b) in bins
+            k = [i for i in eachindex(t) if site[i] == st && ty[i] == typ && floor(Int, t[i] / (1000 * thin_kyr)) == b]
+            m(x) = sum(x[k]) / length(k); tm = m(t); g = PROXY_GROUP
+            lo_, hi_ = GROUP_AGES[g]; lo_ <= tm < hi_ || continue
+            a0 = max(m(t0), 0.0); a1 = min(m(t1), 80000.0)
+            push!(out, (region = reg[k[1]], group = g, sector = sec[k[1]], site_name = st, lat = la[k[1]], lon = lo[k[1]], t = tm,
+                        tmin = a0, tmax = a1, st = (m(t1) - m(t0)) / 4, rsl = m(r), rmin = m(r0), rmax = m(r1), type = typ))
+        end
+        sort!(out, by = o -> (o.site_name, o.t))
     end
 end
 
@@ -223,28 +269,43 @@ function tlin(t, x, a)
     k = clamp(searchsortedlast(t, a), 1, length(t) - 1); w = (a - t[k]) / (t[k+1] - t[k])
     w == 0 ? x[k] : w == 1 ? x[k+1] : (1 - w) * x[k] + w * x[k+1]
 end
-# A global sea-level curve of FesmData Records/SeaLevel/SeaLevel-<product>.nc (sl or the variable var, negative when lower; region 1),
-# relative to its own present (the value at 0 ka subtracted: Spratt and Lisiecki 2016 are +8.5 m there), at the ages [yr], linear
-# in time between its records (Spratt and Lisiecki: every 1 kyr, so 22.5 ka is the mean of 22 and 23 ka); with its 1 sigma (var_sd,
-# linear the same way; NaN without one). The time of the file in years ago.
+# A global sea-level curve of FesmData Records/SeaLevel/SeaLevel-<product>.nc (sl or the variable var, negative when lower; region 1)
+# as its authors give it, at the ages [yr], linear in time between its records (Spratt and Lisiecki: every 1 kyr, so 22.5 ka is the
+# mean of 22 and 23 ka); with its 1 sigma (var_sd, linear the same way; NaN without one). The time of the file in years ago. Not
+# re-zeroed at 0 ka: a curve's datum is its authors' (Spratt and Lisiecki 2016 is 0 at 5 ka by definition, -130 m at 24 ka the
+# anchor of Clark et al. 2009; its +8.5 m at 0 ka is the noise of the stack near the present, and re-zeroing there, as until
+# 2026-11-18, moved the whole glacial curve 8.5 m down).
 function sealevel_at(fesmdata, product, ages; var = "sl")
     NCDataset(joinpath(fesmdata, "Records", "SeaLevel", "SeaLevel-" * product * ".nc")) do ds
         t = Float64.(ds["time"][:]); x = Float64.(nomissing(ds[var][:], NaN)); x = ndims(x) > 1 ? vec(x[1, :]) : x
         sd = haskey(ds, var * "_sd") ? (y = Float64.(nomissing(ds[var * "_sd"][:], NaN)); ndims(y) > 1 ? vec(y[1, :]) : y) : fill(NaN, length(t))
         p = sortperm(t); t = t[p]; x = x[p]; sd = sd[p]
-        x0 = tlin(t, x, 0.0)
-        [tlin(t, x, a) - x0 for a in ages], [tlin(t, sd, a) for a in ages]
+        [tlin(t, x, a) for a in ages], [tlin(t, sd, a) for a in ages]
     end
 end
-# The points of the ESL group ([esl] of an ensemble config: name, product, var, ages_ka): the curve at the ages, each a point at
-# (0, 0) with t its age, so that the error covariance has only its time term. Returns (group, kind = :esl, site_name, lat, lon, t,
-# value [m], sd [m]).
+# The points of the ESL group ([esl] of an ensemble config: name, product, var, ages_ka, spread_file): the curve at the ages, each a
+# point at (0, 0) with t its age, so that the error covariance has only its time term. sm: the spread of the data-based records at the
+# age (spread_file, the s_m column of tools/levante/esl_spread.jl's output, linear in age; a relative path is relative to this tool's
+# folder; 0 without one), the point's own part of the model error: σ_m,i = sqrt(σ_m^2 + sm_i^2) (plastic_ensemble.jl loglik_group).
+# Returns (group, kind = :esl, site_name, lat, lon, t, value [m], sd [m], sm [m]).
 function read_esl(fesmdata, spec)
     ages = 1000.0 .* Float64.(get(spec, "ages_ka", [25.0, 22.5, 20.0, 17.5, 15.0, 12.5, 10.0]))
     v, sd = sealevel_at(fesmdata, spec["product"], ages; var = get(spec, "var", "sl"))
     any(x -> !(isfinite(x) && x > 0), sd) && error("[esl]: $(spec["product"]) has no positive sd at every age")
+    sm = haskey(spec, "spread_file") ? spread_at(spec["spread_file"], ages) : zeros(length(ages))
     [(group = get(spec, "name", "ESL"), kind = :esl, site_name = @sprintf("ESL %g ka", a / 1000), lat = 0.0, lon = 0.0, t = a,
-      value = v[i], sd = sd[i]) for (i, a) in enumerate(ages)]
+      value = v[i], sd = sd[i], sm = sm[i]) for (i, a) in enumerate(ages)]
+end
+# s_m of a spread file (CSV, columns age_ka and s_m, comment lines #) at the ages [yr], linear in age; an age outside it is an error
+function spread_at(file, ages)
+    f = isabspath(file) ? file : joinpath(@__DIR__, file)
+    rows = [split(l, ",") for l in eachline(f) if !startswith(l, "#")]
+    h = rows[1]; ia = findfirst(==("age_ka"), h); is = findfirst(==("s_m"), h)
+    (ia === nothing || is === nothing) && error("$f: no columns age_ka, s_m")
+    a = [1000 * parse(Float64, r[ia]) for r in rows[2:end]]; s = [parse(Float64, r[is]) for r in rows[2:end]]
+    p = sortperm(a); x = [tlin(a[p], s[p], t) for t in ages]
+    any(!isfinite, x) && error("$f: no s_m at every age of ", ages ./ 1000, " ka")
+    x
 end
 # whether the run of a folder has finished without error: its status file (written at the end: the exit code and the run time, by
 # runme's job and by gia_refcorr.sh) says 0. VILMA2 writes the whole time axis of its output when it starts, so the output alone does
@@ -253,14 +314,17 @@ run_done(dir) = (f = joinpath(dir, "status"); isfile(f) && (w = split(read(f, St
 # the age [yr] of each record of a run: its time rounded to 10 yr, without the 1 yr of trec / trun (records 100 yr apart or more)
 rec_age(r::Run) = -10.0 .* round.(r.t ./ 10.0)
 # The model's ESL: a scalar of VILMA2's own diagnostics (vilma_coupling.f90 update_bsl; in a kryos run geo_glob_vilma.nc of the
-# global instance), var of esl_at, [esl] model_var of an ensemble config:
+# global instance), var of esl_at, [esl] model_var of an ensemble config. The comparator follows what the record measures:
+#   bsl_ive  −ρ_i/ρ_w ∫ΔI_g dA / ∫C dA, the mass of the whole grounded column (below flotation too) as sea level over the ocean
+#            of the time: what a record built on ice mass measures, the δ18O stacks (Spratt and Lisiecki 2016, Waelbroeck et
+#            al. 2002) and the mass-based curves (Lambeck et al. 2014, Rohling, PaleoMIST's own ESL). δ18O sees every
+#            kilogram of ice, floating or not. The default.
 #   bsl      the barystatic sea level, the ocean mean of C rsl, ∫C rsl dA / ∫C dA over the ocean of the time; by the mass balance of
 #            the sea-level equation the melt water (−ρ_i/ρ_w ∫ΔI_g dA, ΔI_g the grounded-ice change) plus the flooded-area fill
-#            (vilma_coupling.f90 fill_int, with the host's F in a kryos run). The ocean that fills newly flooded area (the
-#            cavity of lost marine ice, flooding shelves) does not raise it, so in effect the ice above flotation counts, with the
-#            change of the ocean area: the ice-volume-equivalent sea level of a stack. The default.
-#   bsl_ive  −ρ_i/ρ_w ∫ΔI_g dA / ∫C dA, the whole grounded column, below flotation too (about 10 m more ice at the LGM; bsl −
-#            bsl_ive = fill_int / ∫C dA): the comparator before 2026-11-18, kept to reproduce the old scores
+#            (vilma_coupling.f90 fill_int, with the host's F in a kryos run): the ocean that fills newly flooded area (the cavity
+#            of lost marine ice, flooding shelves) does not raise it, so the ice above flotation counts. What a direct curve of the
+#            mean sea surface measures; a site record (the Red Sea) is site RSL, not either. About 10 m less ice than bsl_ive at
+#            the LGM (bsl − bsl_ive = fill_int / ∫C dA). The comparator of 2026-11-18 (PR #55), which took it for the stack's.
 const ESL_VARS = (:bsl, :bsl_ive)
 # a run's ESL [m] at the ages [yr]: var (ESL_VARS) relative to its last record (0 ka), linear in time between the records (rec_age; the
 # record itself at an age it has); NaN for a run that has not finished
@@ -369,12 +433,16 @@ end
 # --- Earth rotation ---------------------------------------------------------------------------------------------------------------
 # The points of the rotation group ([rotation] of an ensemble config: plastic_ensemble.jl): per [[rotation.data]] entry the quantity
 # (ROT_QUANTITIES), its value and 1 sigma, the data's sd and the model error sd_model combined (sqrt(sd^2 + sd_model^2)); each a point
-# at (0, 0), t = 0 (the present). Returns (group, kind = :rot, site_name = the quantity, lat, lon, t, value, sd).
-const ROT_QUANTITIES = ("J2dot", "TPW rate", "TPW direction")   # [1e-11 / yr], [deg / Myr], [deg east]
+# at (0, 0), t = 0 (the present). The true polar wander as a velocity, its two components along and across tpw_axis_deg ([rotation]:
+# the observed direction [deg east]): a rate near zero has no direction, so the components, not rate and direction, are the data.
+# Returns (group, kind = :rot, site_name = the quantity, lat, lon, t, value, sd).
+const ROT_QUANTITIES = ("J2dot", "TPW along", "TPW across")   # [1e-11 / yr], [deg / Myr] along and across the axis (90 deg east of it)
 function read_rotation(spec)
     nm = String(get(spec, "name", "rotation"))
     map(get(spec, "data", Any[])) do d
-        q = String(d["quantity"]); q in ROT_QUANTITIES || error("[[rotation.data]] quantity \"$q\": not one of ", join(ROT_QUANTITIES, ", "))
+        q = String(d["quantity"])
+        q in ROT_QUANTITIES || error("[[rotation.data]] quantity \"$q\": not one of ", join(ROT_QUANTITIES, ", "),
+                                     " (TPW rate and direction became the components along and across tpw_axis_deg)")
         (group = nm, kind = :rot, site_name = q, lat = 0.0, lon = 0.0, t = 0.0, value = Float64(d["value"]),
          sd = hypot(Float64(d["sd"]), Float64(get(d, "sd_model", 0.0))))
     end
@@ -398,12 +466,12 @@ function j2_of(N, lat, w)
     -5 / (4π * R_EARTH_M) * sum(w[j] * P2[j] * sum(N[:, j]) * 2π / size(N, 1) for j in eachindex(lat))
 end
 # The model's present-day rotation of a run, over the last interval of the records of its VILMA2 stream (vilma_out.nc of a standalone
-# run, <inst>_vilma.nc of a kryos run): J2dot [1e-11 / yr] from dz_ss (j2_of), the true polar wander rate [deg / Myr] and direction
-# [deg east] from the polar motion m = m1 + i m2 (rot_m_re, rot_m_im; m1 toward Greenwich, m2 toward 90 E: the pole moves toward
-# atan(dm2, dm1)). NaN for what the stream lacks (rot_m: a kryos run, whose VILMA2 stream does not write it), and all for a run that
-# has not finished. The last interval: 100 yr in the standalone runs, 500 yr (the record interval) in the kryos runs; the model's
-# own ice change over it is in the rates.
-function rotation_rates(dir; inst = "geo_glob")
+# run, <inst>_vilma.nc of a kryos run): J2dot [1e-11 / yr] from dz_ss (j2_of), the true polar wander [deg / Myr] from the polar motion
+# m = m1 + i m2 (rot_m_re, rot_m_im; m1 toward Greenwich, m2 toward 90 E), its components along the axis [deg east] and across it (90
+# deg east of the axis). NaN for what the stream lacks (rot_m: a kryos run before 2026-11-18, or one without the rotation solver),
+# and all for a run that has not finished. The last interval: 100 yr in the standalone runs, 500 yr (the record interval) in the kryos
+# runs; the model's own ice change over it is in the rates.
+function rotation_rates(dir; axis = 0.0, inst = "geo_glob")
     out = Dict(q => NaN for q in ROT_QUANTITIES)
     run_done(dir) || return out
     f = joinpath(dir, "vilma_out.nc"); isfile(f) || (f = joinpath(dir, inst * "_vilma.nc")); isfile(f) || return out
@@ -417,15 +485,12 @@ function rotation_rates(dir; inst = "geo_glob")
         end
         if haskey(ds, "rot_m_re") && haskey(ds, "rot_m_im")
             m1 = Float64.(ds["rot_m_re"][:]); m2 = Float64.(ds["rot_m_im"][:])
-            v1 = (m1[n] - m1[n-1]) / dt; v2 = (m2[n] - m2[n-1]) / dt
-            out["TPW rate"] = rad2deg(hypot(v1, v2)) * 1e6; out["TPW direction"] = atand(v2, v1)
+            v1 = rad2deg((m1[n] - m1[n-1]) / dt) * 1e6; v2 = rad2deg((m2[n] - m2[n-1]) / dt) * 1e6
+            out["TPW along"] = v1 * cosd(axis) + v2 * sind(axis); out["TPW across"] = -v1 * sind(axis) + v2 * cosd(axis)
         end
         out
     end
 end
-# the misfit of a model value x at the point s: x - s.value, the difference of directions wrapped to [-180, 180)
-point_diff(s, x) = s.kind == :rot && s.site_name == "TPW direction" ? mod(x - s.value + 180, 360) - 180 : x - s.value
-
 # linear in time: the value and the slope at t; the range over [t0, t1]
 function tval(A, s, t)
     k = clamp(searchsortedlast(A, t), 1, length(A) - 1); w = (t - A[k]) / (A[k+1] - A[k])
@@ -441,6 +506,19 @@ end
 function ip_sigma(o, d, dmdt)
     sz = (d > 0 ? o.rmax - o.rsl : o.rsl - o.rmin) / 2
     sqrt(sz^2 + (dmdt * o.st)^2)
+end
+
+# The misfit of a limiting sample, one-sided (a hinge): the model RSL m at its age against the sample's rsl, d = 0 on the side the
+# sample allows (marine, type -1: sea level above it, m >= rsl; terrestrial, type 1: below it, m <= rsl), d = m - rsl beyond it;
+# sigma as an index point's (ip_sigma: half the 2-sigma range on the side of the bound, the age's through the model's slope). A sample
+# that holds adds 0 to chi2 and 1 to n: the group's implausibility is low when every bound holds, as it should, and every series is
+# scored on the same points. (d, sigma), NaN with a gap in s.
+function limit_misfit(o, A, s)
+    any(isnan, s) && return (d = NaN, σ = NaN)
+    m, dmdt = tval(A, s, o.t)
+    d = o.type == -1 ? min(0.0, m - o.rsl) : max(0.0, m - o.rsl)
+    sz = (o.type == -1 ? o.rsl - o.rmin : o.rmax - o.rsl) / 2
+    (d = d, σ = sqrt(sz^2 + (dmdt * o.st)^2))
 end
 
 # score of one sample: index point -> (d, z), limiting -> violated (as 1.0 / 0.0)

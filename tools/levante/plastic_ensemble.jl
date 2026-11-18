@@ -4,7 +4,7 @@
 #   julia --project=tools/levante plastic_ensemble.jl init <config.toml> <ensemble folder>    wave 1: the members (iter_01/<m>)
 #   julia --project=tools/levante plastic_ensemble.jl weights <ensemble folder> [<wave>]     score the members, the weights
 #   julia --project=tools/levante plastic_ensemble.jl errmodel <ensemble folder> [<wave>] [<top>] [refs=<regex>] [groups=<g1;g2>]
-#       the error model from a wave (refs: of the point groups, from the run references whose name matches; groups: only those fitted)
+#       the error model from a wave (refs: from the run references whose name matches, RSL and point groups; groups: only those fitted)
 #   julia --project=tools/levante plastic_ensemble.jl scores <ensemble folder> [<wave>]     RMSE, RMS z, I_g, log L of every series
 #   julia --project=tools/levante plastic_ensemble.jl earth-regions <config.toml> <out.nc>   the region masks of [earth]
 #   julia --project=tools/levante plastic_ensemble.jl earth-shift <config.toml> <out.nc> UM=0.5 LM=0 <region>=1.0   one shift file
@@ -21,18 +21,19 @@
 # [scale], [prior] (kind: exponential with sigma, ramp_ka, corr_time_kyr, or random_walk with step_sigma, step_kyr, level_sigma
 # (plastic_esmda.jl prior_cov); theta_max), [run], [score] as plastic_esmda_v2.toml; [ensemble]: n (members
 # besides the prior mean, m000), seed, obs_groups, compare_max_age_ka (the window of the judging and of the comparison with the
-# references, 25), bar (the references whose best I_g per group sets the cut, weights), fixed_cut (groups that keep the plain cut;
+# references, 25; a group with its own age range, pm_compare.jl GROUP_AGES, has that range in every window: score_window), bar (the references whose best I_g per group sets the cut, weights), fixed_cut (groups that keep the plain cut;
 # ESL always does: plain_cut_groups),
 # implausibility, use_groups;
 # [[references]] (name and product | topo | run: the reconstructions the members are compared with, reference_series); [likelihood.<obs group>]: sigma_m [m], corr_dist_km, corr_time_kyr.
 # [esl] (optional): the ESL group, global sea level relative to the present against an independent curve: name ("ESL"), product
 # (FesmData Records/SeaLevel/SeaLevel-<product>.nc, e.g. Spratt2016), var (sl_short), ages_ka (25 to 10 every 2.5), judge (true),
+# spread_file (the disagreement s(t) of the data-based records, esl_spread.jl: the model error at an age sqrt(sigma_m^2 + s(t)^2)),
 # reference_curves (SeaLevel products shown in weights.md, not scored, e.g. Lambeck2014), its cut the plain one (never a bar
-# reference's: plain_cut_groups; judge = false in the Earth search, where the imposed ice sets ESL), model_var (the model's ESL: "bsl", the
-# barystatic sea level of the volume above flotation, the default; "bsl_ive", the whole grounded column, the scores before
-# 2026-11-18; pm_compare.jl ESL_VARS); a reference's esl = "<product>" gives a published reconstruction its ESL (pub-PMIST:
-# PaleoMIST). Model ESL: model_var of the run's VILMA2 records relative to its last (0 ka) (pm_compare.jl esl_at); model and data
-# each linear in time on their own axis, compared at the ages (esl_at, sealevel_at).
+# reference's: plain_cut_groups; judge = false in the Earth search, where the imposed ice sets ESL), model_var (the model's ESL by what the record
+# measures: "bsl_ive", the mass of the whole grounded column, for the δ18O stacks and mass-based curves, the default; "bsl", the
+# barystatic sea level (the ice above flotation), for a direct curve of the mean sea surface; pm_compare.jl ESL_VARS); a reference's esl = "<product>" gives a published reconstruction its ESL (pub-PMIST:
+# PaleoMIST). Model ESL: model_var of the run's VILMA2 records relative to its last (0 ka) (pm_compare.jl esl_at); the data as their
+# authors give them (Spratt: 0 at 5 ka); model and data each linear in time on their own axis, compared at the ages (esl_at, sealevel_at).
 # [[gnss]] (optional): GNSS data groups, the present-day uplift rate at GNSS stations: name (the group), product
 # (FesmData Records/GPS/GPS-<product>.nc under [score] gnss_dir, default <fesmdata>/Records/GPS), rate (gia | corrected | observed),
 # box, exclude, min_years (pm_compare.jl read_gnss), judge (default true; false: reported only, not in the default use_groups);
@@ -46,10 +47,12 @@
 # core_at, core_product); [likelihood."<name>"]: sigma_m [m], corr_dist_km, corr_time_kyr, as an RSL group. A point per site and
 # age (t the age): the error covariance has its time and distance terms.
 # [rotation] (optional): the rotation group, the present-day rotation of the Earth from GIA: name ("rotation"), judge (true),
-# [[rotation.data]] (quantity: J2dot [1e-11/yr], TPW rate [deg/Myr], TPW direction [deg east]; value, sd (the data, its non-GIA parts
-# removed), sd_model (the model error), source); the model: rotation_rates of the run's VILMA2 stream over its last record interval
-# (pm_compare.jl: J2 from dz_ss, the polar motion from rot_m_re, rot_m_im, which a kryos run's stream lacks: J2dot only). Each quantity a
-# point of sd sqrt(sd^2 + sd_model^2); [likelihood."<name>"] sigma_m = 0 (the model error is per quantity), not fitted by errmodel.
+# tpw_axis_deg (the observed direction of the polar motion [deg east], the axis of the TPW components), [[rotation.data]] (quantity:
+# J2dot [1e-11/yr], TPW along, TPW across [deg/Myr] (the true polar wander velocity along the axis and 90 deg east of it); value, sd
+# (the data, its non-GIA parts removed), sd_model (the model error), source); the model: rotation_rates of the run's VILMA2 stream over
+# its last record interval (pm_compare.jl: J2 from dz_ss, the polar motion from rot_m_re, rot_m_im, which the stream of a kryos run
+# before 2026-11-18 lacks: J2dot only). Each quantity a point of sd sqrt(sd^2 + sd_model^2); [likelihood."<name>"] sigma_m = 0 (the
+# model error is per quantity), not fitted by errmodel.
 # [[ice_grids]]: the grids of the ice runs for [rate] and [[volume]] (ice_grids). [rate] (optional): a limit on how fast each scale
 # group's ice may change, from the published reconstructions (rate_spec). [[volume]] (optional): windows on the excess ice volume of
 # scale groups at an age (volume_spec).
@@ -59,9 +62,10 @@
 # key (vilma.visc_shift_file).
 # Sample: a Latin hypercube in the standard normal space of the parameters (n strata per parameter, one point in each, random
 # order), correlated by the Cholesky factor of the prior covariance, clipped to |theta| <= theta_max; m000 = the prior mean.
-# Likelihood: per data group g the index points of the group (pm_compare.jl GROUPS), d = model - obs, R_g = diag(sigma_i^2) +
-# sigma_m,g^2 C_g, C_ij = exp(-dist_ij / L_x,g - |t_i - t_j| / L_t,g), sigma_i the scorer's ip_sigma of the member (its slope and
-# the side of d); log L = sum_g -1/2 (d' R_g^-1 d + log det R_g) (+ const). Groups are independent. Weights: w_m ∝ L_m (the
+# Likelihood: per data group g the index points of the group (pm_compare.jl GROUPS; the limiting samples one-sided in LIMITING_GROUPS,
+# limit_misfit), d = model - obs, R_g = diag(sigma_i^2) + s_i s_j C_g,ij, s_i = sqrt(sigma_m,g^2 + sm_i^2) (sm_i a point's own model
+# error: the ESL spread; 0 elsewhere), C_ij = exp(-dist_ij / L_x,g - |t_i - t_j| / L_t,g), sigma_i the scorer's ip_sigma of the
+# member (its slope and the side of d); log L = sum_g -1/2 (d' R_g^-1 d + log det R_g) (+ const). Groups are independent. Weights: w_m ∝ L_m (the
 # sample follows the prior, so the prior and the sampling density cancel), normalised over the members that ran; the effective
 # sample size ESS = 1 / sum w^2. The error model: [likelihood] of the config, or <folder>/errmodel.toml once errmodel has
 # estimated it from a wave (maximum likelihood from the residuals of the members that fit each group best). Plausibility
@@ -144,9 +148,9 @@ const POINT_SECTIONS = ["esl" => (:esl, "ESL"), "cores" => (:core, "ice cores"),
 section_name(cfg, sec) = haskey(cfg, sec) ? String(get(cfg[sec], "name", Dict(POINT_SECTIONS)[sec][2])) : nothing
 esl_name(cfg) = section_name(cfg, "esl")
 section_groups(cfg) = String[section_name(cfg, sec) for (sec, _) in POINT_SECTIONS if haskey(cfg, sec)]
-# the model's ESL, [esl] model_var (pm_compare.jl esl_at): :bsl (the default) or :bsl_ive
+# the model's ESL, [esl] model_var (pm_compare.jl esl_at, ESL_VARS): :bsl_ive (the default, ice mass: the δ18O stacks) or :bsl
 function esl_var(cfg)
-    v = Symbol(haskey(cfg, "esl") ? get(cfg["esl"], "model_var", "bsl") : "bsl")
+    v = Symbol(haskey(cfg, "esl") ? get(cfg["esl"], "model_var", "bsl_ive") : "bsl_ive")
     v in PM.ESL_VARS || error("[esl] model_var = \"$(v)\": not one of ", join(string.(PM.ESL_VARS), ", "))
     v
 end
@@ -190,7 +194,13 @@ function point_data(cfg)
     idx = [(g, findall(s -> s.group == g, sts)) for g in og if !(g in RSL_GROUPS)]
     none = [g for (g, ii) in idx if isempty(ii)]
     isempty(none) || error("no point (station, age, site) selected in ", join(none, ", "))
-    (obs = sts, idx = idx, dir = dir, esl_var = esl_var(cfg), cores = core_grid(cfg))
+    (obs = sts, idx = idx, dir = dir, esl_var = esl_var(cfg), cores = core_grid(cfg), rot_axis = rot_axis(cfg, sts))
+end
+# the axis of the TPW components, [rotation] tpw_axis_deg [deg east]: needed when the group has a TPW component
+function rot_axis(cfg, sts)
+    any(s -> s.kind == :rot && startswith(s.site_name, "TPW"), sts) || return 0.0
+    haskey(cfg["rotation"], "tpw_axis_deg") || error("[rotation]: TPW components without tpw_axis_deg (the observed direction, deg east)")
+    Float64(cfg["rotation"]["tpw_axis_deg"])
 end
 # The model side of [cores]: ice (the kryos run's ice output, default "ice_nor"), domain and grid (its FesmData grid, default North,
 # NH-32KM: <domain>/<grid>/<grid>_grid.nc, its projection: pm_compare.jl stereo_grid); nothing without [cores]
@@ -228,17 +238,17 @@ function point_model(dir, gd)
     end
     isempty(ie) || (v[ie] = PM.esl_at(dir, [gd.obs[i].t for i in ie]; var = gd.esl_var))
     isempty(ic) || (v[ic] = PM.core_at(dir, gd.cores, gd.obs[ic]))
-    isempty(ir) || (rr = PM.rotation_rates(dir); v[ir] = [rr[gd.obs[i].site_name] for i in ir])
+    isempty(ir) || (rr = PM.rotation_rates(dir; axis = gd.rot_axis); v[ir] = [rr[gd.obs[i].site_name] for i in ir])
     all(isnan, v) ? nothing : v
 end
-# the misfit per point group of the model values G (nothing: no group): d = model - obs (a direction: wrapped, pm_compare.jl point_diff),
-# sigma_i the point's sd; the points where G is NaN are left out
+# the misfit per point group of the model values G (nothing: no group): d = model - obs, sigma_i the point's sd; the points where G is
+# NaN are left out
 function point_residuals(gd, G)
     out = Dict{String,Any}()
     G === nothing && return out
     for (g, ii) in gd.idx
         k = [i for i in ii if isfinite(G[i])]
-        isempty(k) || (out[g] = (pts = gd.obs[k], d = [PM.point_diff(gd.obs[i], G[i]) for i in k], σ = [gd.obs[i].sd for i in k]))
+        isempty(k) || (out[g] = (pts = gd.obs[k], d = [G[i] - gd.obs[i].value for i in k], σ = [gd.obs[i].sd for i in k]))
     end
     out
 end
@@ -347,22 +357,40 @@ end
 volume_ok(vs, x) = all(!w.judge || w.lo <= v <= w.hi for (w, v) in zip(vs.windows, x))
 
 # --- likelihood ---------------------------------------------------------------------------------------------------------------------
-# the misfit of a member per data group: the index points with a finite score, d = model - obs and the scorer's 1 sigma
+# the misfit of a member per data group: the index points with a finite score, d = model - obs and the scorer's 1 sigma; the limiting
+# samples (LIMITING_GROUPS) one-sided (pm_compare.jl limit_misfit). idx: per group (g, the points' indices) or (g, indices, the columns
+# of S and A the group needs: score_window)
 function group_residuals(obs, idx, S, A)
     out = Dict{String,Any}()
-    for (g, ii) in idx
-        sc = [PM.score(obs[i], A, S[i, :]) for i in ii]
-        k = [j for j in eachindex(ii) if isfinite(sc[j].z) && sc[j].z != 0]
-        out[g] = (pts = [obs[ii[j]] for j in k], d = [sc[j].d for j in k], σ = [sc[j].d / sc[j].z for j in k])
+    for e in idx
+        g, ii = e[1], e[2]; kc = length(e) >= 3 ? e[3] : axes(S, 2); Ag = A[kc]
+        pts = NamedTuple[]; d = Float64[]; σ = Float64[]
+        for i in ii
+            o = obs[i]; s = S[i, kc]
+            if o.type == 0
+                sc = PM.score(o, Ag, s); (isfinite(sc.z) && sc.z != 0) || continue
+                push!(pts, o); push!(d, sc.d); push!(σ, sc.d / sc.z)
+            else
+                lm = PM.limit_misfit(o, Ag, s); (isfinite(lm.d) && isfinite(lm.σ)) || continue
+                push!(pts, o); push!(d, lm.d); push!(σ, lm.σ)
+            end
+        end
+        out[g] = (pts = pts, d = d, σ = σ)
     end
     out
 end
-# log L (+ const), chi2 = d' R^-1 d and n of one group's misfit r under the model error (sigma_m [m], L_x [km], L_t [yr])
+# log L (+ const), chi2 = d' R^-1 d and n of one group's misfit r under the model error (sigma_m [m], L_x [km], L_t [yr]): R =
+# diag(σ_i^2) + s_i s_j C_ij, s_i = sqrt(sigma_m^2 + sm_i^2) with sm_i the point's own part of the model error (point_sm: the spread
+# of the ESL records; 0 elsewhere, s_i = sigma_m); DT: the distances and age differences of the points (errmodel, once per member)
 function loglik_group(r, σm, Lx, Lt; DT = nothing)
-    R = DT === nothing ? ES.obs_cov(r.pts, r.σ, σm, Lx, Lt) : σm^2 .* exp.(.-DT.D ./ Lx .- DT.T ./ Lt) .+ Diagonal(r.σ .^ 2)
+    C = DT === nothing ? ES.obs_cov(r.pts, zeros(length(r.pts)), 1.0, Lx, Lt) : exp.(.-DT.D ./ Lx .- DT.T ./ Lt)
+    s = sqrt.(σm^2 .+ point_sm(r) .^ 2)
+    R = (s * s') .* C .+ Diagonal(r.σ .^ 2)
     F = cholesky(Symmetric(R)); x = F.L \ r.d; χ2 = sum(abs2, x)
     (-0.5 * (χ2 + logdet(F)), χ2, length(r.d))
 end
+# the points' own part of the model error [m]: the field sm of a point (the ESL group, pm_compare.jl read_esl), 0 without
+point_sm(r) = [get(p, :sm, 0.0) for p in r.pts]
 # the error model per data group: <ensemble folder>/errmodel.toml (plastic_ensemble.jl errmodel) when it exists, else the config's;
 # the config's too for a group the file does not have (a GNSS group added after the fit). No corr_time_kyr: no time term (GNSS).
 function error_model(cfg, C)
@@ -376,14 +404,28 @@ end
 # the implausibility of a group's misfit: (chi2 - n) / sqrt(2 n), the standardized chi2 (N(0, 1) for large n when R is right)
 implausibility(χ2, n) = (χ2 - n) / sqrt(2n)
 
+# The RSL samples of the data groups og: the primary index points (pm_compare.jl read_indicators) of the RSL groups of og, the limiting
+# samples of LIMITING_GROUPS too, and the proxy records (read_proxies: [score] rsl_proxy, default <fesmdata>/Records/RSL/
+# RSL-GAPSLIP_proxy.nc; proxy_thin_kyr, 1) when og has PROXY_GROUP
+function rsl_obs(cfg, og)
+    sc = cfg["score"]; fes = sc["fesmdata"]
+    obs = NamedTuple[o for o in PM.read_indicators(fes) if (o.type == 0 || o.group in PM.LIMITING_GROUPS) && any(g -> PM.in_group(o, g), og)]
+    PM.PROXY_GROUP in og && append!(obs, PM.read_proxies(get(sc, "rsl_proxy", joinpath(fes, "Records", "RSL", "RSL-GAPSLIP_proxy.nc"));
+                                                         thin_kyr = Float64(get(sc, "proxy_thin_kyr", 1.0))))
+    obs
+end
+
+# the ages [yr] of the RSL series, ascending: those of PaleoMIST (FesmData GLOBAL-0.5DEG), 2.5 kyr apart
+record_ages(cfg) = sort(NCDataset(ds -> Float64.(ds["time"][:]),
+                                  joinpath(cfg["score"]["fesmdata"], "Global", "GLOBAL-0.5DEG", "GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc")))
+
 # the members of wave k that ran, their residuals per group (RSL from S; GNSS from G, the model rates at the stations, nothing without
 # dz_bed_rate) and ESL at 20 ka (esl_at of gd.esl_var); gd the point data (point_data)
 function wave_residuals(C, k, cfg)
     og = data_groups(cfg); gd = point_data(cfg)
-    obs = [o for o in PM.read_indicators(cfg["score"]["fesmdata"]) if o.type == 0 && any(g -> PM.in_group(o, g), og)]
+    obs = rsl_obs(cfg, og)
     idx = [(g, findall(o -> PM.in_group(o, g), obs)) for g in og if g in RSL_GROUPS]
-    A = sort(NCDataset(ds -> Float64.(ds["time"][:]),
-                       joinpath(cfg["score"]["fesmdata"], "Global", "GLOBAL-0.5DEG", "GLOBAL-0.5DEG_IceHistory-PaleoMIST.nc")))
+    A = record_ages(cfg)
     ids, Θ = ES.read_theta(C, k)
     res = Dict{Int,Any}()
     for m in ids
@@ -457,19 +499,34 @@ function reference_points(cfg, gd)
     G
 end
 
-# A scoring window: the index points of age <= tmax [yr] and the records of age <= tmax (the references that end there: GLAC1D's own
-# GIA at 26 ka, so tmax = 25 ka, its last record of the 2.5 kyr ages of the scores). The series of all, members and references, are
-# scored on the same window.
+# A scoring window: the RSL samples of age <= tmax [yr] and the records of age <= tmax (the references that end there: GLAC1D's own
+# GIA at 26 ka, so tmax = 25 ka, its last record of the 2.5 kyr ages of the scores); a group with an age range of its own
+# (pm_compare.jl GROUP_AGES: the far field below 15 ka, and from 15 to 60 ka) all its samples, and the records up to its end. Per
+# group (idx) its samples and the columns of A it needs (kc: the records up to the first at or after its end, so that every sample
+# lies between two of them); kb, those of tmax. The series of all, members and references, are scored on the same window: a series
+# without the records of tmax has no score in it, one without those of a group's own range none in that group (window_residuals).
 function score_window(obs, A, og, tmax)
-    kp = findall(o -> o.t <= tmax, obs); ka = findall(<=(tmax), A)
-    (tmax = tmax, kp = kp, ka = ka, A = A[ka], obs = obs[kp], idx = [(g, findall(o -> PM.in_group(o, g), obs[kp])) for g in og if g in RSL_GROUPS])
+    rg = [g for g in og if g in RSL_GROUPS]
+    own(g) = haskey(PM.GROUP_AGES, g)
+    inw(o, g) = PM.in_group(o, g) && (own(g) || o.t <= tmax)
+    need(t) = (k = findfirst(>=(t), A); k === nothing ? length(A) : k)
+    nk(g) = need(own(g) ? PM.GROUP_AGES[g][2] : tmax)
+    kp = findall(o -> any(g -> inw(o, g), rg), obs); ka = 1:maximum([need(tmax); nk.(rg)])
+    (tmax = tmax, kp = kp, ka = ka, kb = 1:need(tmax), A = A[ka], obs = obs[kp],
+     idx = [(g, findall(o -> inw(o, g), obs[kp]), 1:nk(g)) for g in rg])
 end
-# per data group (log L, chi2, n, I) of a series S (all points x all ages) on the window W; nothing when S misses a record there (the
+# the RSL residuals per group (group_residuals) of a series S (all points x all ages) on the window W: nothing when S misses a
+# record of tmax (a column without a value at every sample), and without a group whose own range has a record S misses
+function window_residuals(S, W)
+    Sw = S[W.kp, W.ka]
+    any(k -> all(isnan, view(Sw, :, k)), W.kb) && return nothing
+    group_residuals(W.obs, [e for e in W.idx if !any(k -> all(isnan, view(Sw, e[2], k)), e[3])], Sw, W.A)
+end
+# per data group (log L, chi2, n, I) of a series S on the window W (window_residuals); nothing when S misses a record there (the
 # points where S has gaps are dropped, as in group_residuals). The GNSS groups (present day, in every window) from the series' model
 # rates G at the stations of gd: none when G is nothing (no dz_bed_rate), so a series may lack the GNSS groups.
 function score_series(S, W, em, og; G = nothing, gd = nothing)
-    Sw = S[W.kp, W.ka]; any(k -> all(isnan, view(Sw, :, k)), axes(Sw, 2)) && return nothing
-    rg = group_residuals(W.obs, W.idx, Sw, W.A)
+    rg = window_residuals(S, W); rg === nothing && return nothing
     gd === nothing || merge!(rg, point_residuals(gd, G))
     Dict(g => (v = loglik_group(rg[g], em[g]...); (v..., implausibility(v[2], v[3]))) for g in og if haskey(rg, g))
 end
@@ -488,19 +545,30 @@ const GRID_SIGMA_GNSS = [0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 
 const GRID_SIGMA_ESL = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 15.0, 20.0, 30.0]                       # [m]
 function errmodel(C, k; top = 6, refs = nothing, groups = nothing)
     C = abspath(C); cfg = ES.config(C)
+    og = data_groups(cfg); fitg = groups === nothing ? og : String.(groups)
     if refs === nothing
         ids, _, res, og = wave_residuals(C, k, cfg)
-    else            # the point groups from the run references whose name matches refs (the cases of an Earth search)
-        og = data_groups(cfg); gd = point_data(cfg); res = Dict{String,Any}()
+    else            # the run references whose name matches refs (the cases of an Earth search, the imposed ice histories): their
+                    # point groups, and their RSL groups on the judging window when fitg has one (score_window, window_residuals)
+        gd = point_data(cfg); res = Dict{String,Any}()
+        rsl = any(g -> group_kind(cfg, g) == :rsl, fitg)
+        if rsl
+            obs = rsl_obs(cfg, og); A = record_ages(cfg)
+            W = score_window(obs, A, og, 1000.0 * get(cfg["ensemble"], "compare_max_age_ka", Inf))
+        end
         for ref in get(cfg, "references", [])
             (haskey(ref, "run") && occursin(Regex(refs), ref["name"])) || continue
-            G = point_model(ref_dir(ref), gd); G === nothing || (res[ref["name"]] = (rg = point_residuals(gd, G),))
+            G = point_model(ref_dir(ref), gd); rg = G === nothing ? Dict{String,Any}() : point_residuals(gd, G)
+            if rsl
+                S, why = reference_series(ref, cfg["score"]["fesmdata"], obs, A)
+                rr = S === nothing ? nothing : window_residuals(S, W)
+                rr === nothing ? println(ref["name"], ": no RSL series on the window ", why) : merge!(rg, rr)
+            end
+            isempty(rg) || (res[ref["name"]] = (rg = rg,))
         end
         println("errmodel from ", length(res), " references matching ", refs)
     end
-    fitg = groups === nothing ? og : String.(groups)
     all(in(og), fitg) || error("groups $(fitg) not all data groups $(og)")
-    refs === nothing || all(g -> group_kind(cfg, g) != :rsl, fitg) || error("errmodel from references: point groups (GNSS, ESL) only, not $(fitg)")
     em, src = error_model(cfg, C); ok = sort(collect(keys(res)))
     lk = Dict{String,Any}(); rows = []
     for g in og
@@ -538,7 +606,7 @@ function errmodel(C, k; top = 6, refs = nothing, groups = nothing)
         TOML.print(io, Dict("likelihood" => lk))
     end
     open(joinpath(C, "errmodel.md"), "w") do io
-        println(io, "# Error model from wave $k
+        println(io, "# Error model from ", refs === nothing ? "wave $k" : "the references matching $refs", "
 
 Per data group: sigma_m, L_x, L_t by maximum likelihood on a grid, from the residuals ",
                 "of the $top members that fit the group best under the previous error model ($src). chi2/n: the mean over those members ",
@@ -725,7 +793,7 @@ function compare_references(It, cfg, res, og, obs, A, em, ug, cut, refs; gd = no
     # of the highest log L on the window
     for (kind, title, f0) in (gd === nothing ? () : ((:esl, "ESL [m], relative to the present", "%.0f"),
                                                      (:core, "Ice cores: surface elevation change [m] relative to the present", "%.0f"),
-                                                     (:rot, "Rotation: J2dot [1e-11/yr], TPW rate [deg/Myr], direction [deg E]", "%.2f")))
+                                                     (:rot, "Rotation: J2dot [1e-11/yr], TPW along and across [deg/Myr]", "%.2f")))
         ie = findall(s -> s.kind == kind, gd.obs); isempty(ie) && continue
         fv(v) = join([isfinite(x) ? Printf.format(Printf.Format(f0), x) : "-" for x in v], " | ")
         src = kind == :esl ? cfg["esl"]["product"] : kind == :core ? cfg["cores"]["product"] : "[rotation] of the config"
@@ -764,8 +832,8 @@ function scores(C, k)
         println(io, "window,series,reference,group,n,rmse_m,rmsz,chi2n,I,logL")
         for (wn, W) in (("window", score_window(obs, A, og, tw)), ("all", score_window(obs, A, og, Inf)))
             for (nm, S, isref, G) in series
-                Sw = S[W.kp, W.ka]; any(c -> all(isnan, view(Sw, :, c)), axes(Sw, 2)) && continue
-                for (rg, tname) in ((group_residuals(W.obs, W.idx, Sw, W.A), "all"), (point_residuals(gd, G), "all points"))
+                rr = window_residuals(S, W); rr === nothing && continue
+                for (rg, tname) in ((rr, "all"), (point_residuals(gd, G), "all points"))
                     tot = (n = 0, d2 = 0.0, z2 = 0.0, chi2 = 0.0, ll = 0.0)
                     for g in og
                         haskey(rg, g) || continue
