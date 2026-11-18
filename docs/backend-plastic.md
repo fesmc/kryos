@@ -168,9 +168,18 @@ gather (and so the run) from the start, before the patch's time range.
 /
 ```
 
-Greenland from PaleoGrIS 1.0 (Leger et al. 2024): `tools/levante/margin_patch.jl` writes
-that patch on NH-32KM (PaleoGrIS's isochrones, 13.5 to 6.75 ka, and PaleoMIST's 15 and
-5 ka slices; used in region 2 of the maps v2, Greenland).
+`tools/levante/margin_patch.jl <product> <var> <region ids> <t0> <t1> <out>` writes a
+patch from a dated margin product of FesmData (IceHistory): PaleoMIST's slices (or its
+interpolated mask) at t0 and t1, so that the patch hands over to the base continuously at
+both ends, and the product's slices strictly between them, in the given regions of the
+maps v2 (outside them, PaleoMIST's), with a seam band of 2 cells (the larger of both) at
+the regions' boundary with other ice. Products: slices `f_ice(xc, yc, time)` on NH-32KM
+(`IceHistory-Dalton2020`, North America, 22.1-0.91 ka; `IceHistory-DATED1`, Eurasia,
+25-10 ka every 1 kyr, `f_ice` most-credible, `f_ice_min`, `f_ice_max`), or PaleoGrIS's
+ages of deglaciation on GRL-PAL-1KM (one slice per isochrone). Greenland from PaleoGrIS
+1.0 (Leger et al. 2024), the patch above (its isochrones 13.5 to 6.75 ka between
+PaleoMIST's 15 and 5 ka slices, region 2):
+`margin_patch.jl $FESMDATA/GreenlandPaleo/GRL-PAL-1KM/GRL-PAL-1KM_IceHistory-PaleoGrIS.nc age_deglac 2 15000 5000 <out>`.
 
 ## Basal shear stress
 
