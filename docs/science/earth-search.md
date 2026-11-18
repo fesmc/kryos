@@ -4,7 +4,8 @@ title: "The Earth search"
 
 Which Earth do the sea-level data want, independently of our ice? Imposed ice on many sampled Earths, scored as every
 other simulation ([Data and scores](data-scores.md)), with an emulator to cover the space that was not run. Status
-2026-11-16: wave A done, wave B emulated on 96 of its 100 runs, wave B2 running.
+2026-11-16: wave A done, wave B emulated on 96 of its 100 runs, wave B2 running; since 2026-11-18 ESL is reported, not
+judged ([below](#esl-in-the-earth-search)).
 
 ## Why
 
@@ -49,8 +50,8 @@ model.
 
 ![Radial viscosity profiles: the prior range per layer (shaded), Gowan's 1-D Earth, the area means of Bagge's 8
 structures, and sampled Earths. Wave A: E165 and E117, the best 1-D Earths on RSL under GLAC-1D's and PaleoMIST's ice;
-E050 and E120, which pass at least 8 of 9 groups under both. Wave B: E014, its radial profile P and the area mean of its
-3-D field (the lateral pattern stiffens it below the lithosphere). The elastic lithosphere is drawn at the right edge.
+E050 and E120, which pass at least 7 of the 8 judging groups under both. Wave B: E014,
+its radial profile P and the area mean of its 3-D field (the lateral pattern stiffens it below the lithosphere). The elastic lithosphere is drawn at the right edge.
 `tools/levante/plastic_earth_profiles.jl`.](figures/earth-search/profiles.png)
 
 ## Waves, emulator and cut
@@ -99,7 +100,8 @@ pair.](figures/earth-search/wave-a-nroi-either.png)
 - **The upper mantle orders the scores, the lower mantle hardly matters.** The lithosphere (thinner than about 170 km)
   and the upper mantle are constrained; the transition zone and the lower mantle are not, in 1-D.
 - **Fennoscandia rules out half of the space** (it wants a thin lithosphere and a soft UM and TZ), Greenland a quarter
-  (a stiffer UM), the GNSS rates 23-62 %. The far field, Antarctica and ESL rule out nothing.
+  (a stiffer UM), the GNSS rates 23-62 %. The far field and Antarctica rule out nothing; ESL is reported, not judged
+  ([below](#esl-in-the-earth-search)).
 - **The two ice histories want different Earths.** PaleoMIST's ice a soft UM (10^20.1^-10^20.4^) with a stiffer TZ,
   GLAC-1D's a UM of 10^20.6^-10^21^. Requiring both would rule Earths out for the ice's sake, so wave B samples from
   "either".
@@ -134,19 +136,19 @@ marginalized.](figures/earth-search/wave-b-nroi-radial-both.png)
   LM1 low (10^21^), α low, the Fennoscandian shift low (−1) and the West Antarctic shift high (+1).
 
 **The best 3-D Earths** (log L over the RSL groups, the 1-D run of the same profile in brackets; I per group: Laurentide /
-Greenland / Fennoscandia / Barents / Antarctica / far field | GNSS Fennoscandia / Hudson Bay | ESL; references: Gowan's
+Greenland / Fennoscandia / Barents / Antarctica / far field | GNSS Fennoscandia / Hudson Bay | ESL, not judged; references: Gowan's
 Earth under PaleoMIST −8860, under GLAC-1D −8835):
 
 | ice | Earth | log L (1-D) | passed | I |
 |---|---|---|---|---|
-| GLAC-1D | E014 | **−8717** (−9140) | 8/9 | −3.0 / 3.2 / 0.7 / 2.0 / −0.3 / −3.2 \| 7.8 / 1.2 \| 3.4 |
-| GLAC-1D | E036 | −8893 (−8825) | 8/9 | 2.1 / 6.7 / 3.8 / 0.7 / −0.8 / −4.5 \| 0.5 / 2.1 \| 3.4 |
-| GLAC-1D | E038 | −8842 (−8797) | 7/9 | −0.3 / 3.1 / 5.5 / 1.0 / 0.8 / −4.5 \| 7.4 / 2.8 \| 3.4 |
-| GLAC-1D | E043 | −8952 (−8763) | 7/9 | 4.9 / 2.6 / 4.2 / 0.9 / 0.1 / −1.8 \| 2.4 / 1.8 \| 3.4 |
-| PaleoMIST | E014 | **−8836** (−8884) | 8/9 | −2.5 / 2.6 / 1.4 / 0.8 / 2.6 / −1.3 \| 5.6 / 1.0 \| 6.0 |
-| PaleoMIST | E043 | −8966 (−8935) | 8/9 | 2.9 / 1.4 / 4.9 / 1.3 / 0.6 / −1.7 \| 2.3 / 0.9 \| 6.0 |
-| PaleoMIST | E041 | −8857 (−8819) | 7/9 | −3.5 / 3.3 / 2.0 / 2.2 / 0.4 / −1.1 \| 4.9 / 4.5 \| 5.9 |
-| PaleoMIST | E015 | −8900 (−8967) | 7/9 | 0.2 / 5.4 / 1.9 / 1.8 / 1.6 / −1.7 \| 7.5 / 7.4 \| 5.9 |
+| GLAC-1D | E014 | **−8717** (−9140) | 7/8 | −3.0 / 3.2 / 0.7 / 2.0 / −0.3 / −3.2 \| 7.8 / 1.2 \| 8.1 |
+| GLAC-1D | E036 | −8893 (−8825) | 7/8 | 2.1 / 6.7 / 3.8 / 0.7 / −0.8 / −4.5 \| 0.5 / 2.1 \| 8.1 |
+| GLAC-1D | E038 | −8842 (−8797) | 6/8 | −0.3 / 3.1 / 5.5 / 1.0 / 0.8 / −4.5 \| 7.4 / 2.8 \| 8.2 |
+| GLAC-1D | E043 | −8952 (−8763) | 6/8 | 4.9 / 2.6 / 4.2 / 0.9 / 0.1 / −1.8 \| 2.4 / 1.8 \| 8.0 |
+| PaleoMIST | E014 | **−8836** (−8884) | 7/8 | −2.5 / 2.6 / 1.4 / 0.8 / 2.6 / −1.3 \| 5.6 / 1.0 \| 10.7 |
+| PaleoMIST | E043 | −8966 (−8935) | 7/8 | 2.9 / 1.4 / 4.9 / 1.3 / 0.6 / −1.7 \| 2.3 / 0.9 \| 10.5 |
+| PaleoMIST | E041 | −8857 (−8819) | 6/8 | −3.5 / 3.3 / 2.0 / 2.2 / 0.4 / −1.1 \| 4.9 / 4.5 \| 10.3 |
+| PaleoMIST | E015 | −8900 (−8967) | 6/8 | 0.2 / 5.4 / 1.9 / 1.8 / 1.6 / −1.7 \| 7.5 / 7.4 \| 10.6 |
 
 | Earth | lithosphere, UM / TZ / LM1 / LM2 | α, c₂, c₃ | shifts F / B / L / G / W | distance from the experts (radial, lateral) |
 |---|---|---|---|---|
@@ -155,8 +157,8 @@ Earth under PaleoMIST −8860, under GLAC-1D −8835):
 | E043 | 157 km, 20.98 / 20.60 / 22.09 / 21.02 | 0.59, −0.17, +2.27 | 0.0 / −0.9 / +0.7 / −0.4 / −0.5 | 0.67 (Lloyd), 0.47 (Bagge 2) |
 | E041 | 110 km, 20.51 / 21.09 / 23.36 / 21.11 | 0.34, +0.20, +2.00 | −0.2 / +0.5 / −0.7 / +0.7 / +0.2 | 1.13 (Lloyd), 0.71 (Bagge 2) |
 
-**E014.** The one 3-D Earth that passes 8 of 9 groups under both ice histories and beats Gowan's Earth under both. Its
-lateral structure gains 422 in log L over its own radial profile under GLAC-1D's ice and turns both GNSS groups from
+**E014.** The one 3-D Earth that passes 7 of 8 groups under both ice histories (all but GNSS Fennoscandia) and beats
+Gowan's Earth under both. Its lateral structure gains 422 in log L over its own radial profile under GLAC-1D's ice and turns both GNSS groups from
 failing (I 24 and 5) to nearly passing; under PaleoMIST's ice the gain is smaller (+49) but again mostly in the GNSS
 rates. On the RSL log L alone, the best 1-D Earths of wave A fit as well under GLAC-1D's ice (−8709) and better under
 PaleoMIST's (−8801); what sets E014 apart is that it fits the RSL and the present-day rates together.
@@ -180,6 +182,25 @@ stiff one helps Fennoscandia and Antarctica under PaleoMIST's ice. Against the u
 UM-TZ ridge: a stiffer upper mantle (10^20.5^-10^21^) over a transition zone in the experts' range fits as well. E014 also
 sits at the edges of the prior (TZ 22.47 of 22.5; LM1 and LM2 near 21), which may be the spread of the sample rather
 than the data.
+
+## ESL in the Earth search
+
+The Earth search reports ESL but does not judge it (`[esl] judge = false`, decided 2026-11-18): under imposed ice ESL is
+a property of the ice, not of the Earth. ESL's target is the Spratt and Lisiecki (2016) stack with the bar 3, for our ice
+only; PaleoMIST no longer sets the ESL bar ([Data and scores](data-scores.md#the-bar)). Until then the search judged ESL
+against PaleoMIST's own score (7.04), under which ESL ruled out nothing. Since the rescore of 2026-11-18 the runs are
+scored on their barystatic sea level `bsl`, with the data linear in time ([Data and scores](data-scores.md#esl)):
+PaleoMIST's ice scores I 10.0-11.0 on every Earth and GLAC-1D's 7.3-8.4.
+
+The emulator on the rescored scores (`kryos-work/rescore-esl/earth-search/emulate`, `emulateB`), 8 groups judging:
+
+| not ruled out | GLAC-1D | PaleoMIST | both | either |
+|---|---|---|---|---|
+| wave A | 13.5 % | 20.2 % | 4.9 % | 28.8 % |
+| wave B | 45 % | 39 % | 33 % | 51 % |
+
+Wave A is unchanged. Wave B now has all 50 3-D runs per ice (PaleoMIST 42 → 39 %, both 36 → 33 % against the 96 runs
+above). Wave B2: its 1-D runs are scored, its 3-D runs not yet.
 
 ## Wave B2
 

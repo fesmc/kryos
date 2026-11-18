@@ -37,7 +37,7 @@ export KEEP=last DOMAINS="North:NH-32KM:North/NH-32KM/NH-32KM_TOPO-GEBCO2026.nc"
 mkdir -p "$W" "$KD/refcorr"
 
 # the scoring folder: a linked copy of ens-v2 (members read-only) with its config (ens-v2's: the split RSL groups, the GNSS groups
-# and ESL of plastic_ensemble_v2.toml, ESL keeping the bar) and errmodel ($ERRMODEL; GNSS refitted by score), and as references
+# and ESL of plastic_ensemble_v2.toml, ESL reported, not judged) and errmodel ($ERRMODEL; GNSS refitted by score), and as references
 # the bar, I1/I5, the 3-D Bagge references and every case of the lists; config_nognss.toml: the same without GNSS in the cut
 score_folder() {
     W=$W W2=$W2 KD=$KD ENS=$ENS ERRMODEL=$ERRMODEL V2=$T/plastic_ensemble_v2.toml python3 - <<'EOF'
@@ -51,11 +51,13 @@ for f in os.listdir(E + "/iter_01"):
     if f not in skip and not os.path.lexists(C + "/iter_01/" + f): os.symlink(E + "/iter_01/" + f, C + "/iter_01/" + f)
 s = open(E + "/config.toml").read(); s = s[:s.index("[[references]]")]
 s = re.sub(r'^obs_groups = .*$', 'obs_groups = ["Laurentide", "Greenland", "Fennoscandia", "Barents", "Antarctica", "far field"]', s, flags=re.M)
-s = s.replace("[ensemble]\n", "[ensemble]\nfixed_cut = []                           # ESL keeps the bar: a property of the imposed ice, not the Earth\n", 1)
+s = s.replace("[ensemble]\n", "[ensemble]\nfixed_cut = []\n", 1)
 s = s.replace('[likelihood."Fennoscandia/Barents"]', '[likelihood.Fennoscandia]', 1)
 v2 = open(V2).read()
 lk = re.findall(r'^\[likelihood\."(?:GNSS [^"]+|ESL|Barents)"\].*?(?=^\[|\Z)', v2, flags=re.M | re.S)
 esl = re.search(r'^\[esl\].*?(?=^\[)', v2, flags=re.M | re.S).group(0)
+# ESL reported, not judged: under imposed ice it is a property of the ice, not of the Earth
+esl = esl.replace("[esl]", "[esl]\njudge = false                            # reported only: under imposed ice ESL is the ice's, not the Earth's", 1)
 gn = re.findall(r'^\[\[gnss\]\].*?(?=^\[|^#|\Z)', v2, flags=re.M | re.S)
 s += "\n" + "".join(lk) + "\n" + esl + "\n" + "".join(gn) + "\n"
 w = "/albedo/work/user/alrobi001/kryos-work/kryos_data/refcorr"
@@ -73,7 +75,7 @@ for d, kd, f in [(W, KD, "cases.txt"), (W, KD, "casesB1.txt"), (W, KD, "casesB3.
             refs.append((ice + " | " + earth, 'run  = "%s/%s%s"' % (kd, c, "/it0" if "E3D-ES2" in c else "")))
 s += "".join('[[references]]\nname = "%s"\n%s\n' % r for r in refs)
 open(C + "/config.toml", "w").write(s)
-og = '["Laurentide", "Greenland", "Fennoscandia", "Barents", "Antarctica", "far field", "ESL"]'
+og = '["Laurentide", "Greenland", "Fennoscandia", "Barents", "Antarctica", "far field"]'
 open(C + "/config_nognss.toml", "w").write(s.replace("[ensemble]\n", "[ensemble]\nuse_groups = " + og + "\n", 1))
 open(C + "/errmodel.toml", "w").write("# copied from " + os.environ["ERRMODEL"] + "\n" + open(os.environ["ERRMODEL"]).read())
 print("scoring folder", C, len(refs), "references")

@@ -56,7 +56,7 @@ Three steps, each removing one unknown before the next:
   mantle and the transition zone trade off along a ridge ([The Earth search](earth-search.md)).
 - **Lateral structure usually costs fit, with one clear exception.** Most 3-D Earths of wave B score worse than their
   own radial profile. One, E014 (thin lithosphere, soft upper mantle, stiff transition zone, Lloyd-like lateral
-  pattern), fits better than every published Earth under both ice histories and passes 8 of 9 groups under each. It sits
+  pattern), fits better than every published Earth under both ice histories and passes 7 of 8 groups under each. It sits
   at the edge of the prior, which wave B2 tests.
 - **Our own ice does not yet reach the imposed references.** The best ens-v2 members beat GLAC-1D overall but fail
   Fennoscandia, on Bagge's structure 6, which the Earth search has since shown to be a poor Earth.

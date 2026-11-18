@@ -21,13 +21,18 @@
 # [scale], [prior] (kind: exponential with sigma, ramp_ka, corr_time_kyr, or random_walk with step_sigma, step_kyr, level_sigma
 # (plastic_esmda.jl prior_cov); theta_max), [run], [score] as plastic_esmda_v2.toml; [ensemble]: n (members
 # besides the prior mean, m000), seed, obs_groups, compare_max_age_ka (the window of the judging and of the comparison with the
-# references, 25), bar (the references whose best I_g per group sets the cut, weights), fixed_cut (groups that keep the plain cut),
+# references, 25), bar (the references whose best I_g per group sets the cut, weights), fixed_cut (groups that keep the plain cut;
+# ESL always does: plain_cut_groups),
 # implausibility, use_groups;
 # [[references]] (name and product | topo | run: the reconstructions the members are compared with, reference_series); [likelihood.<obs group>]: sigma_m [m], corr_dist_km, corr_time_kyr.
 # [esl] (optional): the ESL group, global sea level relative to the present against an independent curve: name ("ESL"), product
 # (FesmData Records/SeaLevel/SeaLevel-<product>.nc, e.g. Spratt2016), var (sl_short), ages_ka (25 to 10 every 2.5), judge (true),
-# reference_curves (SeaLevel products shown in weights.md, not scored, e.g. Lambeck2014); a reference's esl = "<product>" gives a
-# published reconstruction its ESL (pub-PMIST: PaleoMIST). Model ESL: bsl_ive of the run's records (pm_compare.jl esl_at).
+# reference_curves (SeaLevel products shown in weights.md, not scored, e.g. Lambeck2014), its cut the plain one (never a bar
+# reference's: plain_cut_groups; judge = false in the Earth search, where the imposed ice sets ESL), model_var (the model's ESL: "bsl", the
+# barystatic sea level of the volume above flotation, the default; "bsl_ive", the whole grounded column, the scores before
+# 2026-11-18; pm_compare.jl ESL_VARS); a reference's esl = "<product>" gives a published reconstruction its ESL (pub-PMIST:
+# PaleoMIST). Model ESL: model_var of the run's VILMA2 records relative to its last (0 ka) (pm_compare.jl esl_at); model and data
+# each linear in time on their own axis, compared at the ages (esl_at, sealevel_at).
 # [[gnss]] (optional): GNSS data groups, the present-day uplift rate at GNSS stations: name (the group), product
 # (FesmData Records/GPS/GPS-<product>.nc under [score] gnss_dir, default <fesmdata>/Records/GPS), rate (gia | corrected | observed),
 # box, exclude, min_years (pm_compare.jl read_gnss), judge (default true; false: reported only, not in the default use_groups);
@@ -123,15 +128,24 @@ const RSL_GROUPS = [first.(PM.GROUPS); collect(keys(PM.GROUP_UNIONS))]   # the R
 # The data groups of a config: [ensemble] obs_groups and the GNSS groups of [[gnss]] (in the order of their entries); and those that
 # judge by default (use_groups absent): all but the GNSS groups of judge = false.
 esl_name(cfg) = haskey(cfg, "esl") ? String(get(cfg["esl"], "name", "ESL")) : nothing
+# the model's ESL, [esl] model_var (pm_compare.jl esl_at): :bsl (the default) or :bsl_ive
+function esl_var(cfg)
+    v = Symbol(haskey(cfg, "esl") ? get(cfg["esl"], "model_var", "bsl") : "bsl")
+    v in PM.ESL_VARS || error("[esl] model_var = \"$(v)\": not one of ", join(string.(PM.ESL_VARS), ", "))
+    v
+end
 data_groups(cfg) = unique([String.(cfg["ensemble"]["obs_groups"]); [String(sp["name"]) for sp in get(cfg, "gnss", Any[])];
                            esl_name(cfg) === nothing ? String[] : [esl_name(cfg)]])
 judging_groups(cfg) = [g for g in data_groups(cfg) if !any(sp -> sp["name"] == g && !get(sp, "judge", true), get(cfg, "gnss", Any[])) &&
                                                      !(g == esl_name(cfg) && !get(cfg["esl"], "judge", true))]
+# the groups that keep the plain cut ([ensemble] implausibility) whatever the bar references score: [ensemble] fixed_cut and
+# always the ESL group, whose target is the stack of [esl] (Spratt and Lisiecki 2016): no reconstruction sets its bar
+plain_cut_groups(cfg) = unique([String.(get(cfg["ensemble"], "fixed_cut", String[])); esl_name(cfg) === nothing ? String[] : [esl_name(cfg)]])
 # the kind of a data group: :rsl (index points), :gnss ([[gnss]]) or :esl ([esl])
 group_kind(cfg, g) = g in RSL_GROUPS ? :rsl : g == esl_name(cfg) ? :esl : :gnss
 # The point data of a config, the data groups that are not RSL index points: the stations of its GNSS groups (pm_compare.jl
 # read_gnss) and the ages of its ESL group (read_esl), as points (group, kind, site_name, lat, lon, t, value, sd), and per group their
-# indices (idx); every group of obs_groups must be an RSL group, a [[gnss]] entry or the [esl] group. A group of several entries (products) takes their
+# indices (idx), and the model's ESL (esl_var: gnss_model); every group of obs_groups must be an RSL group, a [[gnss]] entry or the [esl] group. A group of several entries (products) takes their
 # stations in the order of the entries, without those of a later entry that an earlier one has (the same site name, or within
 # MERGE_KM): a station counts once.
 const MERGE_KM = 1.0
@@ -151,7 +165,7 @@ function gnss_data(cfg)
     idx = [(g, findall(s -> s.group == g, sts)) for g in og if !(g in RSL_GROUPS)]
     none = [g for (g, ii) in idx if isempty(ii)]
     isempty(none) || error("[[gnss]]: no station selected in ", join(none, ", "))
-    (obs = sts, idx = idx, dir = dir)
+    (obs = sts, idx = idx, dir = dir, esl_var = esl_var(cfg))
 end
 # the GNSS stations of an ensemble: <folder>/gnss.csv (group, site, lat, lon, rate, sd [mm/yr]), and per group a line in ensemble.md
 function write_gnss(C, gd, cfg)
@@ -169,7 +183,7 @@ function write_gnss(C, gd, cfg)
     end
 end
 # the model's values at the points of gd for the run folder dir: the rates [mm/yr] at the GNSS stations (pm_compare.jl read_rate;
-# NaN without dz_bed_rate) and ESL [m] at the ages of the ESL group (esl_at); nothing when it has none
+# NaN without dz_bed_rate) and ESL [m] at the ages of the ESL group (esl_at of gd.esl_var); nothing when it has none
 function gnss_model(dir, gd)
     isempty(gd.obs) && return nothing
     v = fill(NaN, length(gd.obs)); ig = findall(s -> s.kind == :gnss, gd.obs); ie = findall(s -> s.kind == :esl, gd.obs)
@@ -177,7 +191,7 @@ function gnss_model(dir, gd)
         R = PM.run_done(dir) ? PM.read_rate(dir) : nothing                   # the present-day rate: of a finished run only
         R === nothing || (v[ig] = PM.rate_at(R, [gd.obs[i].lon for i in ig], [gd.obs[i].lat for i in ig]))
     end
-    isempty(ie) || (v[ie] = PM.esl_at(dir, [gd.obs[i].t for i in ie]))
+    isempty(ie) || (v[ie] = PM.esl_at(dir, [gd.obs[i].t for i in ie]; var = gd.esl_var))
     all(isnan, v) ? nothing : v
 end
 # the misfit per GNSS group of the model rates G (nothing: no group): d = model - obs, sigma_i the station's sd
@@ -325,7 +339,7 @@ end
 implausibility(χ2, n) = (χ2 - n) / sqrt(2n)
 
 # the members of wave k that ran, their residuals per group (RSL from S; GNSS from G, the model rates at the stations, nothing without
-# dz_bed_rate) and ESL at 20 ka; gd the GNSS data (gnss_data)
+# dz_bed_rate) and ESL at 20 ka (esl_at of gd.esl_var); gd the GNSS data (gnss_data)
 function wave_residuals(C, k, cfg)
     og = data_groups(cfg); gd = gnss_data(cfg)
     obs = [o for o in PM.read_indicators(cfg["score"]["fesmdata"]) if o.type == 0 && any(g -> PM.in_group(o, g), og)]
@@ -338,7 +352,7 @@ function wave_residuals(C, k, cfg)
         r, why = ES.member_series(ES.mdir(C, k, m), obs, A)
         r === nothing && (println("member $m: $why"); continue)
         G = gnss_model(ES.mdir(C, k, m), gd)
-        res[m] = (esl = r.esl, rg = merge(group_residuals(obs, idx, r.S, A), gnss_residuals(gd, G)), S = r.S, G = G)
+        res[m] = (esl = PM.esl_at(ES.mdir(C, k, m), [20000.0]; var = gd.esl_var)[1], rg = merge(group_residuals(obs, idx, r.S, A), gnss_residuals(gd, G)), S = r.S, G = G)
     end
     isempty(gd.idx) || println("GNSS: ", count(m -> res[m].G !== nothing, keys(res)), " of ", length(res), " members with dz_bed_rate")
     ids, Θ, res, og, obs, A, gd
@@ -528,9 +542,8 @@ function weights(C, k)
     # the bar: per group the lowest I_g of the bar's references that have a score there, and which one
     bar = String.(get(en, "bar", String[])); nob = setdiff(bar, first.(rsc))
     isempty(nob) || error("bar references not scored on the window: ", join(nob, ", "))
-    # [ensemble] fixed_cut: the groups that keep the plain cut whatever the bar (an independent constraint the published
-    # reconstructions were not built against, e.g. ESL)
-    fixed = String.(get(en, "fixed_cut", String[]))
+    # the groups that keep the plain cut whatever the bar (plain_cut_groups: [ensemble] fixed_cut and ESL)
+    fixed = plain_cut_groups(cfg)
     best = Dict(g => (b = [(s[g][4], nm) for (nm, s) in rsc if nm in bar && haskey(s, g) && !(g in fixed)]; isempty(b) ? (-Inf, "") : minimum(b))
                 for g in og)
     cut = Dict(g => max(cut0, best[g][1]) for g in og)
