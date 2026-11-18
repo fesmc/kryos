@@ -21,12 +21,14 @@
 # [scale], [prior] (kind: exponential with sigma, ramp_ka, corr_time_kyr, or random_walk with step_sigma, step_kyr, level_sigma
 # (plastic_esmda.jl prior_cov); theta_max), [run], [score] as plastic_esmda_v2.toml; [ensemble]: n (members
 # besides the prior mean, m000), seed, obs_groups, compare_max_age_ka (the window of the judging and of the comparison with the
-# references, 25), bar (the references whose best I_g per group sets the cut, weights), fixed_cut (groups that keep the plain cut),
+# references, 25), bar (the references whose best I_g per group sets the cut, weights), fixed_cut (groups that keep the plain cut;
+# ESL always does: plain_cut_groups),
 # implausibility, use_groups;
 # [[references]] (name and product | topo | run: the reconstructions the members are compared with, reference_series); [likelihood.<obs group>]: sigma_m [m], corr_dist_km, corr_time_kyr.
 # [esl] (optional): the ESL group, global sea level relative to the present against an independent curve: name ("ESL"), product
 # (FesmData Records/SeaLevel/SeaLevel-<product>.nc, e.g. Spratt2016), var (sl_short), ages_ka (25 to 10 every 2.5), judge (true),
-# reference_curves (SeaLevel products shown in weights.md, not scored, e.g. Lambeck2014), model_var (the model's ESL: "bsl", the
+# reference_curves (SeaLevel products shown in weights.md, not scored, e.g. Lambeck2014), its cut the plain one (never a bar
+# reference's: plain_cut_groups; judge = false in the Earth search, where the imposed ice sets ESL), model_var (the model's ESL: "bsl", the
 # barystatic sea level of the volume above flotation, the default; "bsl_ive", the whole grounded column, the scores before
 # 2026-11-18; pm_compare.jl ESL_VARS); a reference's esl = "<product>" gives a published reconstruction its ESL (pub-PMIST:
 # PaleoMIST). Model ESL: model_var of the run's VILMA2 records relative to its last (0 ka) (pm_compare.jl esl_at); model and data
@@ -136,6 +138,9 @@ data_groups(cfg) = unique([String.(cfg["ensemble"]["obs_groups"]); [String(sp["n
                            esl_name(cfg) === nothing ? String[] : [esl_name(cfg)]])
 judging_groups(cfg) = [g for g in data_groups(cfg) if !any(sp -> sp["name"] == g && !get(sp, "judge", true), get(cfg, "gnss", Any[])) &&
                                                      !(g == esl_name(cfg) && !get(cfg["esl"], "judge", true))]
+# the groups that keep the plain cut ([ensemble] implausibility) whatever the bar references score: [ensemble] fixed_cut and
+# always the ESL group, whose target is the stack of [esl] (Spratt and Lisiecki 2016): no reconstruction sets its bar
+plain_cut_groups(cfg) = unique([String.(get(cfg["ensemble"], "fixed_cut", String[])); esl_name(cfg) === nothing ? String[] : [esl_name(cfg)]])
 # the kind of a data group: :rsl (index points), :gnss ([[gnss]]) or :esl ([esl])
 group_kind(cfg, g) = g in RSL_GROUPS ? :rsl : g == esl_name(cfg) ? :esl : :gnss
 # The point data of a config, the data groups that are not RSL index points: the stations of its GNSS groups (pm_compare.jl
@@ -537,9 +542,8 @@ function weights(C, k)
     # the bar: per group the lowest I_g of the bar's references that have a score there, and which one
     bar = String.(get(en, "bar", String[])); nob = setdiff(bar, first.(rsc))
     isempty(nob) || error("bar references not scored on the window: ", join(nob, ", "))
-    # [ensemble] fixed_cut: the groups that keep the plain cut whatever the bar (an independent constraint the published
-    # reconstructions were not built against, e.g. ESL)
-    fixed = String.(get(en, "fixed_cut", String[]))
+    # the groups that keep the plain cut whatever the bar (plain_cut_groups: [ensemble] fixed_cut and ESL)
+    fixed = plain_cut_groups(cfg)
     best = Dict(g => (b = [(s[g][4], nm) for (nm, s) in rsc if nm in bar && haskey(s, g) && !(g in fixed)]; isempty(b) ? (-Inf, "") : minimum(b))
                 for g in og)
     cut = Dict(g => max(cut0, best[g][1]) for g in og)

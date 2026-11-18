@@ -64,23 +64,28 @@ Fennoscandia 0.7 mm/yr over 750 km, Hudson Bay 1.5 mm/yr over 500 km) and then h
 - **I**, the implausibility of a group, (χ² − n)/√(2n) with χ² = d′R⁻¹d: about 0 when the residuals are as large as the
   error model expects, ≤ 3 passes.
 - **passed**, the number of judging groups within the bar: of 9 (six RSL groups, ESL, GNSS Fennoscandia and Hudson
-  Bay), of 7 for a simulation without GNSS rates (the published reconstructions and runs before 2026-11-12).
+  Bay), of 7 for a simulation without GNSS rates (the published reconstructions and runs before 2026-11-12), of 8 in the
+  Earth search (ESL reported, not judged).
 - **RMSE** [m] and **RMS z** (the root mean square of the residuals normalized by σ_i, the score of the first
   comparisons) are reported for reference only. A few points with tiny σ_i dominate RMS z, Greenland above all.
 
 ## The bar
 
 A group passes at I ≤ 3. Where both published reconstructions fail a group, the cut is raised to the better of their
-two scores: Greenland 7.9 (PaleoMIST). Every other RSL group and the GNSS groups keep 3. ESL depends on what is judged:
+two scores: Greenland 7.9 (PaleoMIST). Every other RSL group and the GNSS groups keep 3.
 
-- **Our ice** (the ensembles): the plain cut 3. ESL is an independent constraint on the ice, which the publications were
-  not built against.
-- **An Earth under imposed ice** (the Earth search): PaleoMIST's own score, 7.22. Under imposed ice ESL is a property of
-  the ice, not of the Earth (10.0-11.0 under PaleoMIST's ice on every Earth, 7.3-8.4 under GLAC-1D's), so a plain cut
-  would rule Earths out for the ice's sake. PaleoMIST's own ESL (`SeaLevel-PaleoMIST`) is its whole ice volume, below
-  flotation included, while the runs are scored on `bsl`: since the rescore of 2026-11-18 both ice histories on our
-  solver score worse than the bar, so ESL rules out every Earth
-  ([The Earth search](earth-search.md#esl-after-the-rescore)). Open: a bar on the same comparator.
+ESL's target is the Spratt and Lisiecki (2016) stack, and its bar is the plain cut 3. No published reconstruction sets
+it: PaleoMIST no longer sets the ESL bar (until 2026-11-18 the Earth search and the Coulomb tables took PaleoMIST's own
+score, 7.04, whose ESL is its whole ice volume, below flotation included). Where it is judged:
+
+- **Our ice** (the Coulomb runs, the ensembles, the joint ice and Earth ensemble): judged at 3. ESL is an independent
+  constraint on the ice, which the publications were not built against.
+- **An Earth under imposed ice** (the Earth search): reported, not judged. Under imposed ice ESL is a property of the
+  ice, not of the Earth (10.0-11.0 under PaleoMIST's ice on every Earth, 7.3-8.4 under GLAC-1D's), so it would rule
+  Earths out for the ice's sake.
+
+The code holds to this: the ESL group always keeps the plain cut (`plastic_ensemble.jl` `plain_cut_groups`), and the
+Earth search's config has `[esl] judge = false` (`experiments/earth-search.sh`).
 
 A simulation is *as good as the publications* when it passes every group, and *better* when it does so with a higher
-log L. The Earth search uses the same bar to rule Earths out ([The Earth search](earth-search.md)).
+log L. The Earth search uses the same bar to rule Earths out, ESL aside ([The Earth search](earth-search.md)).

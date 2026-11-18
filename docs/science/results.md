@@ -9,9 +9,11 @@ well it fits ([Data and scores](data-scores.md)). Status 2026-11-18 (ESL rescore
 [Data and scores](data-scores.md#esl)).
 
 **Columns.** **log L**, the log-likelihood over the six RSL groups, higher is better (differences of a few tens are
-large); **passed**, the groups within the bar, of 7 (RSL and ESL) or of 9 with the GNSS rates; **RMSE** over all RSL
-points [m]; **RMS z** of the normalized residuals; **I** per group, ≤ 3 passes (Greenland ≤ 7.9; ESL ≤ 3 for our ice,
-≤ 7.22, PaleoMIST's own score, in the Earth search and the Coulomb tables): **Laur.** Laurentide, **Greenl.** Greenland, **Fenn.** Fennoscandia, **Bar.** Barents,
+large); **passed**, the groups within the bar, of 7 (RSL and ESL) or of 9 with the GNSS rates (of 8 in the Earth search,
+which reports ESL but does not judge it); **RMSE** over all RSL
+points [m]; **RMS z** of the normalized residuals; **I** per group, ≤ 3 passes (Greenland ≤ 7.9; ESL ≤ 3 for all:
+the Spratt and Lisiecki stack is its target; PaleoMIST no longer sets the ESL bar): **Laur.** Laurentide, **Greenl.**
+Greenland, **Fenn.** Fennoscandia, **Bar.** Barents,
 **Antarc.** Antarctica, **FF** far field, **ESL** the barystatic sea level against the Spratt and Lisiecki (2016) stack.
 
 ![Every reference simulation of the ladder: log L (left) and I per data group against the bar (right; blue within it,
@@ -85,8 +87,8 @@ stays the default.
 PlasticIceSheet online on VILMA2 with the Coulomb yield law instead of PaleoMIST's τ_b (`taub_method = "coulomb"`, λ on
 the relaxed bed, one c_f per ice sheet): four (H_N, λ_min) of the band that meets the 20 ka targets (H_N 30, 100, 300,
 1000 m with λ_min 0.2, 0.3, 0.5, 0.75; c_f of the calibration, Patagonia Eurasia's), each on Gowan's Earth and on the
-Earth search's E117, with the r of PaleoMIST's ice on that Earth. Scored on the Earth search's scale (9 groups; the bars
-Greenland 7.9, ESL 7.22; under the bar of our ice, ESL ≤ 3, every Coulomb run but C5 at H_N 1000 fails ESL).
+Earth search's E117, with the r of PaleoMIST's ice on that Earth. Scored on the Earth search's scale, but with ESL judged
+(9 groups; the bars Greenland 7.9, ESL 3 against the Spratt stack: every Coulomb run but C5 at H_N 1000 fails ESL).
 
 | id | simulation | changes against | status | log L | passed | RMSE [m] | I L / G / F / B / A / FF | I GNSS F / HB | I ESL |
 |---|---|---|---|---|---|---|---|---|---|
@@ -103,7 +105,7 @@ Greenland 7.9, ESL 7.22; under the bar of our ice, ESL ≤ 3, every Coulomb run 
 | | `tau-CBS-H3000 \| E1D-ES1-E117` | H_N 3000 m, λ_min 1.0 | done | −8871 | 5/9 | 14.3 | 0.5 / 0.8 / 1.2 / 2.3 / 5.0 / −1.3 | 7.0 / 12.8 | 10.9 |
 | C4 | `tau-CBS-H1000-pPG \| E1D-ES1-E117` | C3 H1000: Greenland's margin from PaleoGrIS 1.0, 15-5 ka (a margin patch) | done | −8811 | 5/9 | 13.9 | −1.1 / 0.6 / 0.6 / 2.2 / 4.1 / −2.0 | 6.3 / 8.6 | 10.5 |
 | C5 | `tau-CBD-H1000 \| E1D-ES1-E117` | C3 H1000: the floor of N, δ = 0.05, c_f recalibrated (lgm-calib-v3) | done | −9194 | 5/9 | 14.2 | −0.9 / 1.2 / −0.1 / 2.5 / 4.7 / 16.6 | 5.8 / 9.7 | 2.1 |
-| | `tau-CBD-H300 \| E1D-ES1-E117` | C2 H300 (λ_min 0.5) on the maps v2, with the floor, lgm-calib-v3 | done | −8918 | 5/9 | 13.6 | −1.8 / 1.3 / −0.1 / 2.6 / 3.7 / 6.0 | 5.5 / 6.8 | 5.2 |
+| | `tau-CBD-H300 \| E1D-ES1-E117` | C2 H300 (λ_min 0.5) on the maps v2, with the floor, lgm-calib-v3 | done | −8918 | 4/9 | 13.6 | −1.8 / 1.3 / −0.1 / 2.6 / 3.7 / 6.0 | 5.5 / 6.8 | 5.2 |
 | C5b | `tau-CBDC-H1000 \| E1D-ES1-E117` | C5 H1000 on the band's centre line: λ_min 0.34 | done | −8894 | 5/9 | 14.5 | 1.9 / 1.1 / −0.3 / 2.2 / 4.2 / −0.9 | 6.1 / 12.7 | 10.7 |
 | | `tau-CBDC-H300 \| E1D-ES1-E117` | C5 H300 on the centre line: λ_min 0.24 | done | −8872 | 5/9 | 14.3 | 0.4 / 1.4 / −0.3 / 2.6 / 3.6 / −0.9 | 5.7 / 8.9 | 10.9 |
 | C6 | `tau-CBDA-H1000 \| E1D-ES1-E117` | C5 H1000 with Antarctica of ant-calib: λ_min 0.34, zb −600 / 0 m, c_f 0.0194 (λ on BedMachine v4) | done | −8815 | 5/9 | 14.1 | −0.6 / 0.7 / −0.2 / 1.8 / 4.0 / −1.6 | 6.2 / 9.7 | 12.3 |
@@ -164,7 +166,7 @@ excess rises from 12.7 to 35.2 m (H_N 1000) and from 11.8 to 26.9 m (H_N 300): b
 (C3: 14.6, C2 H300: 12.8; PaleoMIST 11.2); the northern sheets are as before (NAIS 76.3, Fennoscandia 11.9-12.2,
 BarentsKara 6.9-7.2 m). The far field, passed by every earlier Coulomb run, fails (I 16.6 at H_N 1000, 6.0 at 300: too
 much Antarctic ice), Antarctica still fails (4.7, 3.7); ESL drops to 2.1 and 5.2, H_N 1000 the only Coulomb run under the
-bar of our ice (3). log L drops against C3 (−9194, −8918), 5/9 groups. The floor itself works;
+ESL bar (3). log L drops against C3 (−9194, −8918), 5/9 and 4/9 groups. The floor itself works;
 these two points need a smaller λ_min (or a recalibrated Antarctic c_f) to stay in the band.
 
 C5b reruns both H_N on the centre line of the new band, by the rule of C1 (the Antarctic 20 ka excess near 12.5 m),
@@ -222,31 +224,30 @@ it on structure 6, best m013, I 0.2).
 
 ## The Earth search
 
-Imposed ice on sampled Earths ([The Earth search](earth-search.md)), scored on 9 groups: the six RSL groups, GNSS
-Fennoscandia and Hudson Bay, and ESL (the bar 7.22; [ESL after the rescore](earth-search.md#esl-after-the-rescore)). Earth: lithosphere [km], log10 η UM / TZ / LM1 / LM2 [Pa s].
+Imposed ice on sampled Earths ([The Earth search](earth-search.md)), judged on 8 groups: the six RSL groups, GNSS
+Fennoscandia and Hudson Bay; ESL is reported, not judged ([ESL in the Earth search](earth-search.md#esl-in-the-earth-search)). Earth: lithosphere [km], log10 η UM / TZ / LM1 / LM2 [Pa s].
 
 | id | simulation | Earth | log L | passed | I L / G / F / B / A / FF | I GNSS F / HB | I ESL |
 |---|---|---|---|---|---|---|---|
-| S0 | `ice-PMIST \| E1D-ES1-PMIST` | Gowan's, in the search's parameters (the check: I1 again) | −8860 | 6/9 | −3.5 / 6.8 / 1.0 / 0.7 / 0.4 / −0.6 | 7.4 / 3.5 | 10.2 |
-| | `ice-GLAC1D \| E1D-PMIST` | I5 on this scale | −8835 | 7/9 | −3.0 / 5.7 / 0.5 / 1.2 / −0.2 / −0.8 | 7.1 / 2.7 | 7.6 |
-| S1 | `ice-PMIST \| E1D-ES1-E<nnn>` | wave A, 200 1-D Earths: 20.2 % of the space not ruled out without ESL, 0 % with it | | | | | |
-| | best log L: `ice-PMIST \| E1D-ES1-E117` | 111, 20.13 / 21.75 / 23.15 / 21.69 | −8801 | 6/9 | −3.2 / 2.0 / 1.6 / 1.4 / 0.2 / −0.7 | 5.7 / 6.4 | 10.2 |
-| | most groups: `ice-PMIST \| E1D-ES1-E017` | 87, 20.56 / 20.61 / 21.68 / 21.02 | −8906 | 7/9 | −0.7 / 2.5 / 0.6 / 1.0 / 0.8 / −1.6 | 4.9 / 2.1 | 10.7 |
-| S2 | `ice-GLAC1D \| E1D-ES1-E<nnn>` | wave A: 13.5 % not ruled out; under either ice 28.8 %, both 4.9 % (without ESL; 0 % with it) | | | | | |
-| | best log L: `ice-GLAC1D \| E1D-ES1-E165` | 67, 20.77 / 20.08 / 22.54 / 21.88 | −8709 | 6/9 | −3.5 / 2.6 / 0.8 / 3.3 / −1.4 / −4.4 | 3.6 / 2.9 | 7.9 |
-| | most groups: `ice-GLAC1D \| E1D-ES1-E033` (14 Earths pass all but ESL) | 106, 20.84 / 21.43 / 21.08 / 22.08 | −8746 | 8/9 | −2.4 / 1.7 / 2.2 / 0.7 / −1.1 / −4.4 | 0.5 / 1.1 | 8.0 |
+| S0 | `ice-PMIST \| E1D-ES1-PMIST` | Gowan's, in the search's parameters (the check: I1 again) | −8860 | 6/8 | −3.5 / 6.8 / 1.0 / 0.7 / 0.4 / −0.6 | 7.4 / 3.5 | 10.2 |
+| | `ice-GLAC1D \| E1D-PMIST` | I5 on this scale | −8835 | 7/8 | −3.0 / 5.7 / 0.5 / 1.2 / −0.2 / −0.8 | 7.1 / 2.7 | 7.6 |
+| S1 | `ice-PMIST \| E1D-ES1-E<nnn>` | wave A, 200 1-D Earths: 20.2 % of the space not ruled out | | | | | |
+| | best log L: `ice-PMIST \| E1D-ES1-E117` | 111, 20.13 / 21.75 / 23.15 / 21.69 | −8801 | 6/8 | −3.2 / 2.0 / 1.6 / 1.4 / 0.2 / −0.7 | 5.7 / 6.4 | 10.2 |
+| | most groups: `ice-PMIST \| E1D-ES1-E017` | 87, 20.56 / 20.61 / 21.68 / 21.02 | −8906 | 7/8 | −0.7 / 2.5 / 0.6 / 1.0 / 0.8 / −1.6 | 4.9 / 2.1 | 10.7 |
+| S2 | `ice-GLAC1D \| E1D-ES1-E<nnn>` | wave A: 13.5 % not ruled out; under either ice 28.8 %, both 4.9 % | | | | | |
+| | best log L: `ice-GLAC1D \| E1D-ES1-E165` | 67, 20.77 / 20.08 / 22.54 / 21.88 | −8709 | 6/8 | −3.5 / 2.6 / 0.8 / 3.3 / −1.4 / −4.4 | 3.6 / 2.9 | 7.9 |
+| | all groups: `ice-GLAC1D \| E1D-ES1-E033` (14 Earths pass all 8) | 106, 20.84 / 21.43 / 21.08 / 22.08 | −8746 | 8/8 | −2.4 / 1.7 / 2.2 / 0.7 / −1.1 / −4.4 | 0.5 / 1.1 | 8.0 |
 | S3 | `ice-<ICE> \| E1D-ES2-E<nnn>` | wave B, the radial profiles of the 50 3-D Earths, under each ice | done, scored (in the emulator of S4) | | | | | |
-| S4 | `ice-PMIST \| E3D-ES2-E<nnn>` | wave B, 50 3-D Earths: 42 % of the 13-D space not ruled out without ESL (96 of 100 runs), 0 % with it | | | | | |
-| | best: `ice-PMIST \| E3D-ES2-E014` | 55, 19.68 / 22.47 / 21.13 / 21.09; α 0.74 (Lloyd-like) | −8836 | 7/9 | −2.5 / 2.6 / 1.4 / 0.8 / 2.6 / −1.3 | 5.6 / 1.0 | 10.7 |
-| | `ice-PMIST \| E3D-ES2-E043` | 157, 20.98 / 20.60 / 22.09 / 21.02; α 0.59 | −8966 | 7/9 | 2.9 / 1.4 / 4.9 / 1.3 / 0.6 / −1.7 | 2.3 / 0.9 | 10.5 |
-| S5 | `ice-GLAC1D \| E3D-ES2-E<nnn>` | wave B: 45 % not ruled out; under both 36 % (without ESL; with it 0.7 % and 0 %) | | | | | |
-| | best: `ice-GLAC1D \| E3D-ES2-E014` | as above | **−8717** | 7/9 | −3.0 / 3.2 / 0.7 / 2.0 / −0.3 / −3.2 | 7.8 / 1.2 | 8.1 |
-| | `ice-GLAC1D \| E3D-ES2-E036` | 124, 21.39 / 20.64 / 21.24 / 21.75; α 0.08 (nearly 1-D) | −8893 | 7/9 | 2.1 / 6.7 / 3.8 / 0.7 / −0.8 / −4.5 | 0.5 / 2.1 | 8.1 |
+| S4 | `ice-PMIST \| E3D-ES2-E<nnn>` | wave B, 50 3-D Earths: 39 % of the 13-D space not ruled out (all 100 runs; 42 % on 96) | | | | | |
+| | best: `ice-PMIST \| E3D-ES2-E014` | 55, 19.68 / 22.47 / 21.13 / 21.09; α 0.74 (Lloyd-like) | −8836 | 7/8 | −2.5 / 2.6 / 1.4 / 0.8 / 2.6 / −1.3 | 5.6 / 1.0 | 10.7 |
+| | `ice-PMIST \| E3D-ES2-E043` | 157, 20.98 / 20.60 / 22.09 / 21.02; α 0.59 | −8966 | 7/8 | 2.9 / 1.4 / 4.9 / 1.3 / 0.6 / −1.7 | 2.3 / 0.9 | 10.5 |
+| S5 | `ice-GLAC1D \| E3D-ES2-E<nnn>` | wave B: 45 % not ruled out; under both 33 % (36 % on 96 runs) | | | | | |
+| | best: `ice-GLAC1D \| E3D-ES2-E014` | as above | **−8717** | 7/8 | −3.0 / 3.2 / 0.7 / 2.0 / −0.3 / −3.2 | 7.8 / 1.2 | 8.1 |
+| | `ice-GLAC1D \| E3D-ES2-E036` | 124, 21.39 / 20.64 / 21.24 / 21.75; α 0.08 (nearly 1-D) | −8893 | 7/8 | 2.1 / 6.7 / 3.8 / 0.7 / −0.8 / −4.5 | 0.5 / 2.1 | 8.1 |
 | S6 | `ice-<ICE> \| E3D-ES2-E1<nn>` | wave B2, 30 3-D Earths in two widened boxes | running | | | | | |
 
-No 3-D Earth passes all 9 groups. E014 is the only one that beats Gowan's Earth under both ice histories. No run of the
-search passes ESL at the bar 7.22: PaleoMIST's ice scores 10.0-11.0 on every Earth, GLAC-1D's 7.3-8.4 ([Data and
-scores](data-scores.md#the-bar)).
+No 3-D Earth passes all 8 groups. E014 is the only one that beats Gowan's Earth under both ice histories. ESL, reported
+only: PaleoMIST's ice scores 10.0-11.0 on every Earth, GLAC-1D's 7.3-8.4 ([Data and scores](data-scores.md#the-bar)).
 
 ## Misfit common to every simulation
 
