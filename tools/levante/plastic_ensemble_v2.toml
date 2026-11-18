@@ -182,6 +182,7 @@ time       = "11:00:00"                  # within albedo's 12h queue
 throttle   = 25                          # 25 members + the weights job + one other run: within 30 jobs
 
 [score]
+fesmdata  = "{fesmdata}"                 # the FesmData store (init and joint-ens.sh score expand it)
 rsl_proxy = "{work}/fesmdata-staging/fesmdata/Records/RSL/RSL-GAPSLIP_proxy.nc"   # the proxy records of GAPSLIP (FesmData PR
                                          # #16, staged; the default <fesmdata>/Records/RSL/RSL-GAPSLIP_proxy.nc once released)
 # gnss_dir = "{fesmdata}/Records/GPS"   # the default (FesmData GPS v2.2.0: Schumacher2018, MIDAS, BIFROST2015, GNET,
