@@ -9,7 +9,8 @@ well it fits ([Data and scores](data-scores.md)). Status 2026-11-18 (ESL rescore
 [Data and scores](data-scores.md#esl)). The tables below are on that scale; [scores v4](#scores-v4) (the ESL stack as
 given against the ice mass with the records' spread, the far field split at 15 ka and its LGM/MIS 3 group, the TPW
 velocity, GNSS in two more regions) rescores the key runs, and moves only ESL, the far field and the rotation of the
-groups below.
+groups below. [Scores v5](#scores-v5) is the current scale: it changes ESL's spread, splits the far field
+LGM/MIS 3 and reports the groups no run can pass.
 
 **Columns.** **log L**, the log-likelihood over the six RSL groups, higher is better (differences of a few tens are
 large); **passed**, the groups within the bar, of 7 (RSL and ESL) or of 9 with the GNSS rates (of 8 in the Earth search,
@@ -21,6 +22,50 @@ Greenland, **Fenn.** Fennoscandia, **Bar.** Barents,
 
 ![Every reference simulation of the ladder: log L (left) and I per data group against the bar (right; blue within it,
 red beyond it, the colour the distance from the cut).](figures/simulations/ladder.png)
+
+## Scores v5
+
+Scores v5 (2026-11-18, [Data and scores](data-scores.md)): ESL's spread from Spratt and Lambeck alone (2.8-11.6 m); the
+far field LGM (15-30 ka, judged, cut 119.7: PaleoMIST, with GLAC-1D's ice on Gowan's Earth for GLAC-1D) and MIS 3 (30-60
+ka, reported), Kikaijima's limiting samples out; the Greenland ice cores and GNSS British Isles reported. 14 groups
+judge. The key runs (`kryos-work/scores-v5/regress`); I per group, the groups of scores v4 not listed are unchanged:
+
+| group | P1 | I1 | I5 | PaleoMIST's ice, E117 | C7 | C8 pDE | ED-pNE25 | CBW-H300 | JE-centre | JE-lo | JE-hi |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| far field LGM (671) | 119.7 | 120.5 | 184.5 | 121.8 | 158.7 | 158.8 | 144.0 | 142.7 | 138.3 | 457.8 | 351.8 |
+| far field MIS 3 (176, reported) | 60.6 | 74.1 | – | 73.0 | 92.2 | 92.0 | 91.7 | 85.9 | 91.7 | 133.4 | 68.6 |
+| ESL (7) | 3.3 | 2.6 | −0.1 | 2.6 | 4.8 | 4.8 | −1.0 | 4.0 | 0.1 | 15.7 | 6.3 |
+| RMSE far field < 15 ka [m] | 13.5 | 14.0 | 16.1 | 13.6 | 14.3 | 14.3 | 14.3 | 14.2 | 14.3 | 18.1 | 13.8 |
+| RMSE far field LGM [m] | 16.0 | 20.6 | 22.9 | 20.3 | 24.8 | 24.8 | 21.7 | 23.3 | 22.0 | 42.0 | 21.7 |
+| RMSE far field MIS 3 [m] | 29.0 | 32.0 | – | 31.8 | 36.3 | 36.3 | 36.2 | 35.2 | 36.4 | 42.5 | 32.4 |
+
+(RMSE over every point of the group, the limiting samples with their one-sided misfit; JE-lo, -centre, -hi: the corners
+and the centre of the joint ensemble's smoke test.) ESL now tells the low corner (83 m at the LGM: 15.7) from C7 (4.8,
+which fails) and from ED-pNE25 (−1.0). The far field LGM orders the runs as the RMSE does: C7 is 25 m off the LGM index
+points against PaleoMIST's 16-20 m.
+
+The far field by site, index-point RMSE [m] (number of points) over the three groups, [violated/limiting samples]
+(`sites.csv` of the score folders):
+
+| series | all | Barbados | Tahiti | Bonaparte | Cairns | Hydrographers Passage | Townsville | Sunda Shelf | Huon | Vanuatu | Red Sea | Karimata |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| P1 | 16.0 (2473) [45/161] | 15.6 (203) | 24.3 (195) | 16.5 (74) [7/19] | 19.6 (350) [1/14] | 16.3 (260) [10/39] | 12.1 (337) | 11.2 (40) [10/24] | 20.2 (61) | 10.0 (76) | 33.3 (36) | [0/15] |
+| P2 | 15.2 (1787) | 17.5 (146) | 16.0 (168) | 43.3 (8) | 23.6 (158) | 25.1 (68) | 12.4 (334) | 18.8 (17) | 12.8 (18) | 14.4 (56) | – | – |
+| I1 | 18.0 (2473) [26/161] | 21.8 (203) | 20.6 (195) | 22.1 (74) [0/19] | 23.2 (350) [1/14] | 22.3 (260) [0/39] | 11.6 (337) | 13.6 (40) [8/24] | 18.2 (61) | 10.8 (76) | 38.3 (36) | [1/15] |
+| I5 | 18.6 (2361) [10/97] | 24.2 (197) | 16.1 (186) | 29.6 (74) [0/19] | 22.3 (334) [1/8] | 26.6 (257) [0/35] | 12.7 (336) | 19.9 (39) [5/14] | 15.6 (25) | 14.8 (71) | 19.4 (6) | – |
+| C7 | 20.0 (2473) [29/161] | 21.2 (203) | 19.9 (195) | 27.8 (74) [0/19] | 27.1 (350) [1/14] | 27.1 (260) [0/39] | 11.7 (337) | 17.9 (40) [8/24] | 20.1 (61) | 14.1 (76) | 45.1 (36) | [3/15] |
+| ED-pNE25 | 19.0 (2473) [28/161] | 18.5 (203) | 19.9 (195) | 26.9 (74) [0/19] | 24.9 (350) [1/14] | 25.1 (260) [0/39] | 11.7 (337) | 17.7 (40) [8/24] | 20.6 (61) | 13.1 (76) | 44.5 (36) | [3/15] |
+| JE-lo | 28.7 (2473) [38/161] | 34.1 (203) | 23.2 (195) | 45.3 (74) [0/19] | 38.7 (350) [0/14] | 44.9 (260) [0/39] | 11.8 (337) | 39.9 (40) [10/24] | 23.8 (61) | 25.3 (76) | 54.3 (36) | [10/15] |
+| JE m196 (wave 1) | 18.8 (2473) [29/161] | 17.6 (203) | 19.7 (195) | 23.8 (74) [0/19] | 25.2 (350) [1/14] | 24.2 (260) [0/39] | 11.8 (337) | 20.0 (40) [8/24] | 20.6 (61) | 11.4 (76) | 45.8 (36) | [3/15] |
+| JE m105 (wave 1) | 17.7 (2473) [32/161] | 15.2 (203) | 21.1 (195) | 21.2 (74) [1/19] | 23.3 (350) [1/14] | 21.5 (260) [2/39] | 11.9 (337) | 16.8 (40) [9/24] | 21.0 (61) | 10.9 (76) | 44.0 (36) | [3/15] |
+| JE m088 (wave 1) | 17.4 (2473) [38/161] | 16.2 (203) | 21.2 (195) | 20.2 (74) [5/19] | 22.5 (350) [1/14] | 20.3 (260) [3/39] | 12.0 (337) | 15.6 (40) [9/24] | 20.6 (61) | 10.8 (76) | 42.6 (36) | [3/15] |
+
+The joint ensemble's wave 1 on this scale (`kryos-work/joint-ens/wave1/score-v5`, `emulate-score-v5`): no member passes
+all 14 groups (the best, m196 on E050, 11: it fails the far field LGM 131.0, GNSS Fennoscandia 3.2 and Hudson Bay 4.0);
+members passing each group: Laurentide 177, Greenland 189, Fennoscandia 149, Barents 170, Antarctica 98, far field 102,
+far field LGM 18, GNSS Fennoscandia 1, Hudson Bay 17, Greenland 75, North America forebulge 52, Antarctica 163, ESL
+164, rotation 73. The emulator leaves 0.0004 of the prior not ruled out (GNSS Fennoscandia alone rules out 0.91, Hudson
+Bay 0.85, the far field LGM 0.52).
 
 ## Scores v4
 
@@ -351,6 +396,7 @@ The runs are on AWI's albedo:
 | E1 | `/albedo/work/projects/p_forclima/kryos-work/levante/ens-v1` (copied from Levante) |
 | S0-S5 | `/albedo/work/user/alrobi001/kryos-search` (`kryos_data/refcorr/`, `score/ens/`); the emulators in `/albedo/work/projects/p_forclima/kryos-work/earth-search/emulateB` |
 | S6 | `/albedo/work/projects/p_forclima/kryos-work/earth-search/waveB2` |
+| scores v5 | `/albedo/work/projects/p_forclima/kryos-work/scores-v5/regress` (the key runs, `sites.csv`); wave 1 `.../joint-ens/wave1/score-v5`, `emulate-score-v5` |
 | scores v4 | `/albedo/work/projects/p_forclima/kryos-work/scores-v4`: `regress-v4` (the key runs; `old-new.md`), `errfit` (the far field and the new GNSS error models), `ffdiag` (the far field LGM/MIS 3 by subset and site); the proxy product (staging) `kryos-work/fesmdata-staging/fesmdata/Records/RSL/RSL-GAPSLIP_proxy.nc` |
 
 The ESL numbers since 2026-11-18 (all other scores unchanged) are from the rescore of every score folder above with the
