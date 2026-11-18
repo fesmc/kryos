@@ -38,6 +38,8 @@ website:
             href: science/earth-search.md
           - text: "The ice: τ_b ensembles"
             href: science/ice-ensembles.md
+          - text: "The joint ice + Earth ensemble"
+            href: science/joint-ensemble.md
           - text: "Results"
             href: science/results.md
           - text: "Maps: data and models"

@@ -233,6 +233,7 @@ likelihood ([The ice: τ_b ensembles](ice-ensembles.md)).
 | | best log L: `tau-ENS2-E048 \| E3D-B21-6-E048` | | | −9017 | 4/7 | 19.7 | 32.2 | −0.5 | 13.0 | 4.5 | 1.1 | 0.9 | −0.6 | 7.0 |
 | | most groups passed: `tau-ENS2-E036 \| E3D-B21-6-E036` | | | −9063 | 6/7 | 18.5 | 27.3 | 1.3 | 6.2 | 6.8 | 1.2 | 2.9 | 0.4 | 2.2 |
 | | median of the 50 | | | −9474 | | | | | | | | | | |
+| E4 | `tau-JE-<m> \| E1D-ES1-<Earth>` | C8 pDE with PaleoGrIS: H_N, λ_min, c_f, the LGM timing and 53 of wave A's 1-D Earths sampled together ([The joint ice + Earth ensemble](joint-ensemble.md)) | smoke test done (3 members), wave 1 (200) set up | | | | | | | | | | | |
 | E3 | the final ensemble: our τ_b on the Earths of the Earth search | E2: the Earth chosen without our ice, a wide τ_b prior | proposed | | | | | | | | | | | |
 
 The best members beat P2 but not the imposed references (I1, I5); Fennoscandia limits most of them (4 of the 50 pass
@@ -296,6 +297,7 @@ The runs are on AWI's albedo:
 | C6 | `.../coulomb-taub/ant-runs/runs/tau-{CBDA,CBDAR}-H<H_N>_E1D-ES1-E117`; scores `.../ant-runs/score/iter_01/scores.csv`; calibration `.../coulomb-taub/ant-calib/fine` (CBDA), `.../ant-calib/fine-ref/report.md` (CBDAR); jumps `.../ant-runs/jumps/jumps.md`; volumes `.../ant-runs/coupled/coupled.md` |
 | C7 | `.../coulomb-taub/lambda-file/runs/tau-CBF-H<H_N>_E1D-ES1-E117`; scores `.../lambda-file/score/iter_01/scores.csv`; calibration `.../coulomb-taub/lgm-calib-v4` (north), `.../lgm-calib-v4/ant/pick.txt` (Antarctica); jumps `.../lambda-file/jumps/jumps.md`; volumes `.../lambda-file/coupled/coupled.md`; λ files `/albedo/work/projects/p_forclima/kryos_data/plastic/{grid}_lambda_bed.nc` |
 | C8 | `.../coulomb-taub/dated-margins/runs/tau-CBF-H300-{pDA,pDE,pDAE}_E1D-ES1-E117`; scores `.../dated-margins/score-esl/iter_01/scores.csv` (ESL rescored; `score` has the old comparator); patches `.../dated-margins/margins`; jumps `.../dated-margins/jumps/jumps.md`; volumes `.../dated-margins/coupled/coupled.md`; ESL by age `.../dated-margins/diag/esl.csv`; products (staging) `/albedo/work/projects/p_forclima/kryos-work/fesmdata-staging/fesmdata` |
+| E4 | `/albedo/work/projects/p_forclima/kryos-work/joint-ens/<set>/runs/tau-JE-<m>_E1D-ES1-<Earth>` (sets `smoke`, `wave1`); design `.../<set>/design.csv`; scores `.../<set>/score/iter_01/scores.csv`; emulator `.../<set>/emulate`; Earths `.../joint-ens/earths.csv`, `refcorr/`; calibration `.../joint-ens/calib` |
 | D2, E2 | `/albedo/work/user/alrobi001/kryos-plastic/kryos/runs/ens-v2/iter_01/<m>` |
 | D3 | `/albedo/work/user/alrobi001/kryos-work/runs/res16/m000-NH16` |
 | E1 | `/albedo/work/projects/p_forclima/kryos-work/levante/ens-v1` (copied from Levante) |
