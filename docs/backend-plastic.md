@@ -133,6 +133,12 @@ to present, in `years ago`.
 
 The static export `footprint` is 1 where some slice has ice: every interpolated mask
 lies in it.
+`footprint_file` (`footprint_var`, default `"footprint"`) gives it instead, from a file
+on the instance grid (1 where the variable exceeds 0.5); the run stops if the margins reach
+outside it. The footprint enters the reference load of the globe (present-day ice inside
+it, the background outside) and with it VILMA2's reference, which a restart must match: the
+members of an ensemble that differ in their margins and branch from one restart share a
+footprint file, the union of every chronology they can draw.
 
 ### Margin patches
 
@@ -446,6 +452,7 @@ the core keys of `[instance]` (`backend`, `grid`, `dt`, `out_2D`, ...).
 | `margin_extrapolate` | `"error"` | `"error"`, `"hold"` |
 | `margin_position` | `"sdist"` | `"sdist"`, `"face"`, `"centre"` |
 | `margin_patches` | `""` | groups of regional chronologies (template `[margin_patch]`: `file`, `var`, `H_min`, `region_file`, `region_var`, `region_ids`) |
+| `footprint_file`, `footprint_var` | `""`, `"footprint"` | the footprint from a file (must hold the margins'); `""`: the margins' |
 | `taub_method` | `"const"` | `"const"`, `"file"`, `"domains"`, `"coulomb"` |
 | `taub_const` | 0.0 | [Pa] `"const"` (> 0) |
 | `taub_file`, `taub_var` | `""`, `"taub"` | `"file"` |

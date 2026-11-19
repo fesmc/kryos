@@ -30,7 +30,8 @@ module kryos_ice_plastic
     use kryos_outfile,   only: outfile_dims_2d, outfile_open, outfile_var2d
     use kryos_ice,       only: ice_t, ice_opt_t
     use kryos_plastic_margin, only: margin_t, margin_init, margin_interp_code, margin_set_t, margin_set_init, &
-                                    margin_set_add, margin_set_at, margin_set_footprint, margin_region
+                                    margin_set_add, margin_set_at, margin_set_footprint, margin_region, &
+                                    margin_footprint_read
     use kryos_config,    only: config_t, config_validate, config_read
     use kryos_plastic_taub,   only: taub_t, taub_method_code, TAUB_M_CONST, TAUB_M_FILE, TAUB_M_DOMAINS, TAUB_M_COULOMB, &
                                     taub_set_const, taub_read_field, taub_read_domains, taub_read_scale, taub_at, &
@@ -74,6 +75,8 @@ module kryos_ice_plastic
         real(dp), allocatable :: z_bed(:,:), z_sl(:,:)   ! [m] the bed and sea level of the last solve
         real(dp), allocatable :: tau_b(:,:), sd(:,:)     ! [Pa], [m] its basal shear stress and signed distance
         real(dp), allocatable :: mu(:,:)                 ! taub_method = "coulomb": c_f lambda of the last solve
+        character(len=PATH_LEN) :: footprint_file = ""   ! footprint_file, footprint_var: the footprint of the ensemble
+        character(len=NAME_LEN) :: footprint_var = "footprint"   ! (else the margins'; see footprint_set)
         character(len=8)  :: lambda_bed = "file"         ! "coulomb": lambda fixed, of the bed of taub_lambda_file |
                                                          ! of the relaxed reference bed ("relaxed") | "current"
         logical,  allocatable :: mask(:,:)               ! its ice mask
@@ -141,7 +144,7 @@ contains
         self%H_ice_pd  = ctx%ref%H_ice
         call constants_check(self, ctx)
 
-        self%footprint = margin_set_footprint(self%ms)
+        call footprint_set(self)
         allocate(self%z_bed(self%nx, self%ny), self%z_sl(self%nx, self%ny), self%tau_b(self%nx, self%ny), &
                  self%sd(self%nx, self%ny), self%mask(self%nx, self%ny), self%H_prev(self%nx, self%ny))
         self%z_bed  = self%z_bed_ref
@@ -965,6 +968,9 @@ contains
         if (len_trim(margin_file) == 0) call fesm_error(proc, "margin_file is not set", who)
         call substitute(margin_file, ctx)
         call margin_patches_read(self, ctx, trim(margin_file), trim(margin_var), margin_H_min, interp, hold)
+        call rd_s("footprint_file", self%footprint_file)
+        call rd_s("footprint_var", self%footprint_var)
+        if (len_trim(self%footprint_file) > 0) call substitute(self%footprint_file, ctx)
 
         ! tau_b
         if (trim(self%drive) == "taub") then
@@ -1110,6 +1116,32 @@ contains
         end subroutine rd_i
 
     end subroutine group_read
+
+    subroutine footprint_set(self)
+        ! The footprint: the margins' (every mask they can give lies in it), or footprint_file's, which must
+        ! hold the margins'. The footprint enters the reference load of the globe (kryos_globe_ice: present
+        ! day inside it, the background outside) and so VILMA2's reference: the members of an ensemble that
+        ! branch from one restart must share it, whatever their margins.
+        class(plastic_ice_t), intent(inout) :: self
+
+        character(len=*), parameter :: proc = "kryos_ice_plastic::init"
+        real(dp), allocatable :: own(:,:)
+        integer :: n_out
+
+        own = margin_set_footprint(self%ms)
+        if (len_trim(self%footprint_file) == 0) then
+            self%footprint = own
+            return
+        end if
+        self%footprint = margin_footprint_read(trim(self%footprint_file), trim(self%footprint_var), self%nx, self%ny)
+        n_out = count(own > 0.5_dp .and. self%footprint < 0.5_dp)
+        if (n_out > 0) call fesm_error(proc, "the margins reach "//to_str(n_out)//" cells outside footprint_file", &
+                                       "instance "//trim(self%name)//": "//trim(self%footprint_file)// &
+                                       " must hold every slice of margin_file and of the patches")
+        call log_msg(LOG_INFO, "kryos_ice_plastic", "footprint of "//trim(self%footprint_file)//": "// &
+                     to_str(count(self%footprint > 0.5_dp))//" cells, the margins' "//to_str(count(own > 0.5_dp)), &
+                     "instance "//trim(self%name))
+    end subroutine footprint_set
 
     subroutine margin_patches_read(self, ctx, file, var, H_min, interp, hold)
         ! The margin chronology of the instance: margin_file (the base, everywhere) and the patches of

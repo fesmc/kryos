@@ -214,6 +214,11 @@
                                                ! them) | "face" | "centre" (the ice-free cell centre, PlasticIceSheet.jl)
     margin_patches     = ""                    ! regional chronologies in place of margin_file's: groups of template
                                                ! [margin_patch], e.g. "margin_grl" ("" = none; regions must not overlap)
+    footprint_file     = ""                    ! the footprint (static export: the cells the instance owns in the globe's
+                                               ! reference load) from a file, {domain}, {grid_name} replaced; it must hold
+                                               ! the margins' ("" = the margins': where some slice has ice). For members
+                                               ! of an ensemble that branch from one restart (one VILMA2 reference)
+    footprint_var      = "footprint"           ! its variable: 1 (> 0.5) in the footprint
     ! tau_b (drive = "taub")
     taub_method        = "const"               ! "const" | "file" | "domains" | "coulomb" (the Coulomb yield law
                                                ! tau_b = c_f lambda N_eff, solved with the geometry; mode "surface")
