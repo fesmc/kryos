@@ -51,7 +51,8 @@ module kryos_plastic_margin
     end type margin_set_t
 
     public :: margin_init, margin_set, margin_at, margin_footprint, margin_interp_code
-    public :: margin_set_init, margin_set_add, margin_set_at, margin_set_footprint, margin_region
+    public :: margin_set_init, margin_set_add, margin_set_at, margin_set_footprint, margin_region, &
+              margin_footprint_read
     public :: margin_signed_distance, margin_edt2, model_time_axis, time_order
 
 contains
@@ -349,6 +350,33 @@ contains
             region = region .or. map == ids(k)
         end do
     end function margin_region
+
+    function margin_footprint_read(file, var, nx, ny) result(fp)
+        ! A footprint given by a file (`var` on (x, y), the instance grid): 1 where it exceeds 0.5, else 0.
+        ! For an ensemble whose members differ in their margins but share one reference load (kryos_globe_ice):
+        ! the union of every chronology the members can draw, so that a member's own footprint lies inside it.
+        character(len=*), intent(in) :: file, var
+        integer,          intent(in) :: nx, ny
+        real(dp), allocatable :: fp(:,:)
+
+        character(len=*), parameter :: proc = "kryos_plastic_margin::margin_footprint_read"
+        character(len=64), allocatable :: names(:)
+        integer, allocatable :: dims(:)
+        real(dp), allocatable :: v(:,:)
+        logical :: exists
+
+        inquire(file=trim(file), exist=exists)
+        if (.not. exists) call fesm_error(proc, "the footprint file does not exist", trim(file))
+        call nc_dims(file, var, names, dims)
+        if (size(dims) /= 2) call fesm_error(proc, "`"//trim(var)//"` is not a map (x, y)", "file "//trim(file))
+        if (dims(1) /= nx .or. dims(2) /= ny) then
+            call fesm_error(proc, "`"//trim(var)//"` is not on the instance grid", "file "//trim(file)//": "// &
+                            to_str(dims(1))//" x "//to_str(dims(2))//", the grid "//to_str(nx)//" x "//to_str(ny))
+        end if
+        allocate(v(nx, ny))
+        call nc_read(file, var, v)
+        fp = merge(1.0_dp, 0.0_dp, v > 0.5_dp)
+    end function margin_footprint_read
 
     ! =========================================================================
     ! Distances
