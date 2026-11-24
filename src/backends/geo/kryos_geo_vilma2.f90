@@ -16,6 +16,7 @@ module kryos_geo_vilma2
     use fesm_log,        only: LOG_INFO, log_msg, fesm_error, to_str
     use fesm_fields,     only: fields_get, fields_put
     use nml,             only: nml_read, nml_has_param
+    use phys_constants,  only: phys_const_isset
     use ncio,            only: nc_open, nc_write, nc_close
     use variable_io,     only: var_io_type, var_io_write
     use kryos_outfile,   only: outfile_dims_lonlat, outfile_open, outfile_row, outfile_table_file
@@ -138,7 +139,7 @@ contains
         class(vilma_earth_t), intent(inout) :: self
         type(init_ctx_t),     intent(in)    :: ctx
 
-        real(dp) :: rho_ice0, rho_w0
+        real(dp) :: rho_ice0, rho_w0, rho_sw0
 
         associate (p => self%se%par)
             if (trim(p%solver) /= "v2") then
@@ -151,12 +152,21 @@ contains
                                 "` must be false", "instance "//trim(self%name)// &
                                 ": the host terms need a migrating coastline")
             end if
+            ! the run's densities: ice, melt water (fresh: the volume a melt adds to the ocean) and sea
+            ! water (flotation, the ocean load), VILMA2's rho_ice, rho_water, rho_seawater (vilma_sle)
+            if (.not. phys_const_isset(ctx%cnst%rho_w)) then
+                call fesm_error("kryos_geo_vilma2::init", "the run's constants lack rho_w (melt water)", &
+                                "instance "//trim(self%name))
+            end if
             rho_ice0 = p%rho_ice
             rho_w0   = p%rho_water
-            p%rho_ice   = ctx%cnst%rho_ice
-            p%rho_water = ctx%cnst%rho_sw
+            rho_sw0  = p%rho_seawater
+            p%rho_ice      = ctx%cnst%rho_ice
+            p%rho_water    = ctx%cnst%rho_w
+            p%rho_seawater = ctx%cnst%rho_sw
             call log_msg(LOG_INFO, "kryos_geo_vilma2", "densities from the run: rho_ice "//to_str(rho_ice0)//" -> "// &
-                         to_str(p%rho_ice)//", rho_water "//to_str(rho_w0)//" -> "//to_str(p%rho_water)//" kg m-3", &
+                         to_str(p%rho_ice)//", rho_water "//to_str(rho_w0)//" -> "//to_str(p%rho_water)// &
+                         ", rho_seawater "//to_str(rho_sw0)//" -> "//to_str(p%rho_seawater)//" kg m-3", &
                          "instance "//trim(self%name))
         end associate
     end subroutine params_check

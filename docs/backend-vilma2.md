@@ -57,8 +57,11 @@ ice grid by default), holds only the scattered anomalies and passes the ice's st
 reference bed through. Its cadence must be that of the global instance (a different
 `dt` stops the run). It writes no restart file.
 
-The densities are the run's (`phys_const`: `rho_ice`, `rho_sw`), not keys: the backend
-replaces VILMA2's `rho_ice` and `rho_water` and logs both. Gravity comes from VILMA2's
+The densities are the run's (`phys_const`: `rho_ice`, `rho_w`, `rho_sw`), not keys: the backend
+replaces VILMA2's `rho_ice`, `rho_water` (melt water, fresh: the volume a melt adds to the
+ocean) and `rho_seawater` (flotation, the ocean load) and logs all three. With two waters the
+geometric sea level rises by the melt's fresh-water volume while the load conserves mass
+(VILMA2's `vilma_sle`). Gravity comes from VILMA2's
 Earth model. `solver` must be `"v2"` and `sle_fixed_ocean` false (the host terms need
 the native solver and a migrating coastline).
 
