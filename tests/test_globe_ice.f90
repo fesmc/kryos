@@ -677,9 +677,9 @@ contains
         end do
         call check("diag: the grounded-ice change of A against the reference is the plain-sum one (1e-9)", &
                    dva > 0.0_dp .and. relerr(sc%gi%diag%dV_g(ia), dva) < 1.0e-9_dp)
-        call check("diag: Gt and ESL of A follow from the volume (rho_ice, rho_sw, sea surface)", &
+        call check("diag: Gt and ESL of A follow from the volume (rho_ice, rho_w: fresh water, sea surface)", &
                    relerr(sc%gi%diag%dM(ia), sc%gi%diag%dV_g(ia)*RHO_I*1.0e-12_dp) < 1.0e-12_dp .and. &
-                   relerr(sc%gi%diag%esl(ia), -(RHO_I/RHO_SW)*sc%gi%diag%dV_g(ia)/sc%gi%area_ocn) < 1.0e-12_dp .and. &
+                   relerr(sc%gi%diag%esl(ia), -(RHO_I/1000.0_dp)*sc%gi%diag%dV_g(ia)/sc%gi%area_ocn) < 1.0e-12_dp .and. &
                    sc%gi%diag%esl(ia) < 0.0_dp)
         call check("diag: B has no anomaly at t = 0", abs(dvb) <= 1.0e-9_dp*abs(sc%gi%diag%V_g(ib)) .and. &
                    abs(sc%gi%diag%dV_g(ib)) <= 1.0e-9_dp*abs(sc%gi%diag%V_g(ib)))

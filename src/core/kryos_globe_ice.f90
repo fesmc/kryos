@@ -114,7 +114,7 @@ module kryos_globe_ice
         real(dp), allocatable :: V_g(:)                  ! grounded ice volume [m3] (host terms of the domain)
         real(dp), allocatable :: dV_g(:)                 ! against the reference [m3]
         real(dp), allocatable :: dM(:)                   ! [Gt]
-        real(dp), allocatable :: esl(:)                  ! sea-level equivalent [m] (negative for growth)
+        real(dp), allocatable :: esl(:)                  ! sea-level equivalent [m] (negative for growth): fresh-water volume
         real(dp) :: ext_dV = 0.0_dp, ext_dM = 0.0_dp, ext_esl = 0.0_dp   ! the external part (1 - w)
         real(dp) :: clip_Gt = 0.0_dp                     ! external mass clipped at zero thickness [Gt]
         real(dp) :: cons_I = 0.0_dp, cons_ext = 0.0_dp   ! relative closure of the two merges
@@ -131,7 +131,7 @@ module kryos_globe_ice
         character(len=8) :: ext = "ref"                  ! "ref" | "file": ice outside the footprints
         real(dp) :: ext_tref = 0.0_dp                    ! [yr] model time of the history's present day
         real(dp) :: overlap_tol = 1.0e-2_dp, cons_tol = 1.0e-9_dp
-        real(dp) :: rho_ice = 0.0_dp, rho_sw = 0.0_dp, area_ocn = 0.0_dp      ! [kg m-3], [kg m-3], [m2]
+        real(dp) :: rho_ice = 0.0_dp, rho_w = 0.0_dp, rho_sw = 0.0_dp, area_ocn = 0.0_dp   ! [kg m-3] x 3, [m2]
         ! the datasrc of the globe (background grid): X at ext_tref, the history as an anomaly
         type(field_state_t) :: st_x, st_ext
         type(datasrc_t)     :: ds_x, ds_ext
@@ -229,12 +229,13 @@ contains
         end if
 
         if (.not. phys_const_isset(cnst%rho_ice) .or. .not. phys_const_isset(cnst%rho_sw) .or. &
-            .not. phys_const_isset(cnst%area_seasurf)) then
-            call fesm_error(proc, "the run's constants lack rho_ice, rho_sw or area_seasurf", "phys_const group "// &
+            .not. phys_const_isset(cnst%rho_w) .or. .not. phys_const_isset(cnst%area_seasurf)) then
+            call fesm_error(proc, "the run's constants lack rho_ice, rho_w, rho_sw or area_seasurf", "phys_const group "// &
                             trim(cnst%label))
         end if
         gi%rho_ice  = cnst%rho_ice
         gi%rho_sw   = cnst%rho_sw
+        gi%rho_w    = cnst%rho_w
         gi%area_ocn = cnst%area_seasurf*1.0e6_dp         ! km2 -> m2
 
         ! --- the grids ---
@@ -911,13 +912,13 @@ contains
             gi%diag%V_g(k)  = gi%dom(d)%V_src
             gi%diag%dV_g(k) = gi%dom(d)%V_src - gi%dom(d)%V_ref
             gi%diag%dM(k)   = gi%diag%dV_g(k)*gi%rho_ice*KG_TO_GT
-            gi%diag%esl(k)  = -(gi%rho_ice/gi%rho_sw)*gi%diag%dV_g(k)/area_ocn
+            gi%diag%esl(k)  = -(gi%rho_ice/gi%rho_w)*gi%diag%dV_g(k)/area_ocn   ! fresh-water volume
             line = line//" "//trim(gi%dom(d)%name)//" "//to_str(gi%diag%esl(k))
         end do
         ext_d = max(0.0_dp, 1.0_dp - gi%host_w)*(gi%H_ice_ext - gi%H_ice_ref)
         gi%diag%ext_dV  = coupler_integral(cpl, trim(gi%tgt), ext_d)
         gi%diag%ext_dM  = gi%diag%ext_dV*gi%rho_ice*KG_TO_GT
-        gi%diag%ext_esl = -(gi%rho_ice/gi%rho_sw)*gi%diag%ext_dV/area_ocn
+        gi%diag%ext_esl = -(gi%rho_ice/gi%rho_w)*gi%diag%ext_dV/area_ocn
         line = line//", external ice, all (floating included) "//to_str(gi%diag%ext_esl)//"; clipped external ice "//to_str(gi%diag%clip_Gt)// &
                " Gt; merge closure "//to_str(max(gi%diag%cons_I, gi%diag%cons_ext))
         call log_msg(LOG_INFO, "kryos_globe_ice", line)
